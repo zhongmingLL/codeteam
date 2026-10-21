@@ -1,6 +1,6 @@
 # F001: codeteam MVP - control plane, verifier, review gates
 
-Status: operator-approved; Phase 1 accepted; Phase 2 accepted; Phase 3 accepted; Phase 4 implemented, awaiting CI/review
+Status: operator-approved; Phase 1 accepted; Phase 2 accepted; Phase 3 accepted; Phase 4 implemented and CI-passing, awaiting non-author review
 Owner: 宪宪 (architect/coder)
 Reviewers: 砚砚 (review/security), 烁烁 (kernel/runtime)
 Acceptance: co-creator
@@ -117,7 +117,7 @@ Reviewer 烁烁 approved `42cba12` after `npm run check` and 66/66 tests. Two P2
 
 Operator accepted Phase 3 on 2026-10-21.
 
-### Phase 4 - interface and CI (implemented, awaiting CI/review)
+### Phase 4 - interface and CI (CI passing, awaiting non-author review)
 
 Carryover hardening from Phase 3 review:
 
@@ -139,6 +139,8 @@ Acceptance:
 
 Result (2026-10-21): the CLI adapter ran the Phase 3 demo end-to-end (`awaiting_merge`, 2 rounds, P1/P2 resolved, reviewer provider `kimi` vs author provider `deepseek`). CI workflow and branch workflow docs are in place. The Phase 3 P2 hardening items are fixed and covered by tests. Report: `docs/reports/2026-10-21-phase4-ci-adapter.md`.
 
+CI run [39564735595](https://github.com/zhongmingLL/codeteam/actions/runs/39564735595) passed on commit `676acc8` on the `codeteam` default branch. The workflow restores the pinned `pi-ai@1.3.0` provider data and builds the workspace before check and codeteam tests.
+
 ## Review gates
 
 - Design gate: this document plus the architecture plan require operator sign-off before Phase 1 starts.
@@ -153,6 +155,7 @@ Result (2026-10-21): the CLI adapter ran the Phase 3 demo end-to-end (`awaiting_
 - Local work branch: `codeteam-work` from `origin/codeteam`.
 - Local `codeteam` branch retains the pi v1.3.0 parent history at `def9bdc`.
 - Current checks: `npm run check`, 69 codeteam tests, 3/3 provider live smoke, Kimi/GLM review smoke.
+- CI: `codeteam CI` passes on `codeteam`; upstream `ci.yml` is unchanged.
 - Phase 2 corpus: `fixtures/review-corpus` (5 samples, clean + seeded variants) is implemented; the final run passed the registered thresholds.
 - Reports: `docs/reports/2026-10-21-gate-b-smoke.md`, `docs/reports/2026-10-21-review-smoke.md`, `docs/reports/2026-10-21-phase2-review-eval.md`, `docs/reports/2026-10-21-phase2-review-eval.json`, `docs/reports/2026-10-21-phase3-orchestrator-demo.md`, `docs/reports/2026-10-21-phase3-orchestrator-demo.json`, `docs/reports/2026-10-21-phase4-ci-adapter.md`, `docs/reports/2026-10-21-phase4-adapter-demo.json`.
 

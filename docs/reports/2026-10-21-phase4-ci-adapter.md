@@ -33,8 +33,9 @@ Raw result: `docs/reports/2026-10-21-phase4-adapter-demo.json`.
 - `npm run check` passes.
 - 69 codeteam tests pass.
 - The CLI usage path and the live adapter path were both exercised.
+- CI run [39564735595](https://github.com/zhongmingLL/codeteam/actions/runs/39564735595) passed on commit `676acc8` on the `codeteam` default branch.
 
 ## Caveats
 
 - CI does not call live model providers; the adapter demo remains a local acceptance run.
-- The CI status is recorded after the workflow run on GitHub.
+- The workflow had to restore the published `pi-ai@1.3.0` provider data and build the workspace before the codeteam tests could resolve their workspace package entry points. The first two CI attempts failed on those prerequisites, not on codeteam code.
