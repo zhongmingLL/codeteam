@@ -1,6 +1,6 @@
 # F001: codeteam MVP - control plane, verifier, review gates
 
-Status: draft, awaiting operator sign-off
+Status: operator-approved; Phase 1 implementation in review
 Owner: 宪宪 (architect/coder)
 Reviewers: 砚砚 (review/security), 烁烁 (kernel/runtime)
 Acceptance: co-creator
@@ -49,11 +49,13 @@ Delivered:
 Acceptance:
 
 - `npm run check` passes.
-- codeteam tests pass (currently 19).
+- codeteam tests pass (currently 35 after Phase 1 implementation).
 - DeepSeek, Kimi, and GLM each complete the fixture task; test file unchanged.
 - Kimi and GLM reviewers both approve a clean diff and reject a bad diff with blocking findings.
 
 ### Phase 1 - verifier and permission wrapper (next)
+
+Implementation: `packages/codeteam/src/verifier`. Status: awaiting non-author review.
 
 Deliver:
 

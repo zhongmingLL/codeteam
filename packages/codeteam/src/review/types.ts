@@ -4,6 +4,8 @@ export type FindingSeverity = "P1" | "P2" | "P3";
 
 export type EvidenceKind = "red_test" | "repro_command" | "static_check" | "code_reading" | "judgment";
 
+export type FalsifierExpected = "zero" | "nonzero";
+
 export interface ReviewFinding {
 	severity: FindingSeverity;
 	file?: string;
@@ -11,6 +13,7 @@ export interface ReviewFinding {
 	claim: string;
 	evidenceKind: EvidenceKind;
 	falsifier: string;
+	falsifierExpected?: FalsifierExpected;
 	requiredAction: string;
 }
 

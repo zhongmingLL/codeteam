@@ -1,4 +1,11 @@
-import type { EvidenceKind, FindingSeverity, ReviewFinding, ReviewVerdict, ReviewVerdictKind } from "./types.ts";
+import type {
+	EvidenceKind,
+	FalsifierExpected,
+	FindingSeverity,
+	ReviewFinding,
+	ReviewVerdict,
+	ReviewVerdictKind,
+} from "./types.ts";
 
 const VERDICTS: readonly ReviewVerdictKind[] = ["approve", "changes_requested", "blocked"];
 const SEVERITIES: readonly FindingSeverity[] = ["P1", "P2", "P3"];
@@ -9,6 +16,7 @@ const EVIDENCE_KINDS: readonly EvidenceKind[] = [
 	"code_reading",
 	"judgment",
 ];
+const FALSIFIER_EXPECTATIONS: readonly FalsifierExpected[] = ["zero", "nonzero"];
 
 export class ReviewParseError extends Error {
 	constructor(message: string) {
@@ -58,9 +66,20 @@ function parseFinding(value: unknown): ReviewFinding {
 	const rawSeverity = readEnum(value, "severity", SEVERITIES);
 	const evidenceKind = readEnum(value, "evidenceKind", EVIDENCE_KINDS);
 	const falsifier = readOptionalString(value, "falsifier") ?? "";
+	const rawFalsifierExpected = readOptionalString(value, "falsifierExpected");
+	if (
+		rawFalsifierExpected !== undefined &&
+		!FALSIFIER_EXPECTATIONS.includes(rawFalsifierExpected as FalsifierExpected)
+	) {
+		throw new ReviewParseError(`review field falsifierExpected has invalid value ${rawFalsifierExpected}`);
+	}
+	const defaultFalsifierExpected: FalsifierExpected | undefined =
+		evidenceKind === "red_test" || evidenceKind === "repro_command" ? "nonzero" : undefined;
+	const falsifierExpected = (rawFalsifierExpected as FalsifierExpected | undefined) ?? defaultFalsifierExpected;
 	const executable =
 		(evidenceKind === "red_test" || evidenceKind === "repro_command" || evidenceKind === "static_check") &&
-		falsifier.trim().length > 0;
+		falsifier.trim().length > 0 &&
+		falsifierExpected !== undefined;
 	const severity = (rawSeverity === "P1" || rawSeverity === "P2") && !executable ? "P3" : rawSeverity;
 	const file = readOptionalString(value, "file");
 	const line = readOptionalNumber(value, "line");
@@ -71,6 +90,7 @@ function parseFinding(value: unknown): ReviewFinding {
 		claim: readString(value, "claim"),
 		evidenceKind,
 		falsifier,
+		...(falsifierExpected === undefined ? {} : { falsifierExpected }),
 		requiredAction: readString(value, "requiredAction"),
 	};
 }

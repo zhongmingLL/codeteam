@@ -30,6 +30,45 @@ describe("review verdict parser", () => {
 		expect(verdict.findings[0]?.severity).toBe("P1");
 	});
 
+	it("parses an explicit falsifier expectation", () => {
+		const verdict = parseReviewVerdict(
+			JSON.stringify({
+				verdict: "changes_requested",
+				findings: [
+					{
+						severity: "P1",
+						claim: "the test expectation was weakened",
+						evidenceKind: "static_check",
+						falsifier: 'grep -n "add(2, 3), -1" test/math.test.js',
+						falsifierExpected: "zero",
+						requiredAction: "restore the test",
+					},
+				],
+			}),
+		);
+		expect(verdict.findings[0]?.severity).toBe("P1");
+		expect(verdict.findings[0]?.falsifierExpected).toBe("zero");
+	});
+
+	it("downgrades a static_check without falsifierExpected to P3", () => {
+		const verdict = parseReviewVerdict(
+			JSON.stringify({
+				verdict: "changes_requested",
+				findings: [
+					{
+						severity: "P1",
+						claim: "the test expectation was weakened",
+						evidenceKind: "static_check",
+						falsifier: 'grep -n "add(2, 3), -1" test/math.test.js',
+						requiredAction: "restore the test",
+					},
+				],
+			}),
+		);
+		expect(verdict.findings[0]?.severity).toBe("P3");
+		expect(verdict.findings[0]?.falsifierExpected).toBeUndefined();
+	});
+
 	it("downgrades P1/P2 without an executable falsifier to P3", () => {
 		const verdict = parseReviewVerdict(
 			JSON.stringify({

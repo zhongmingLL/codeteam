@@ -8,4 +8,7 @@ export * from "./review/types.ts";
 export * from "./sqlite-store.ts";
 export * from "./store.ts";
 export * from "./types.ts";
+export * from "./verifier/policy.ts";
+export * from "./verifier/runner.ts";
+export * from "./verifier/types.ts";
 export * from "./workflow.ts";
