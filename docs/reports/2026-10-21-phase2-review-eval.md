@@ -15,6 +15,8 @@
 
 Command: `node packages/codeteam/src/dev/review-eval.ts`
 
+Raw result: `docs/reports/2026-10-21-phase2-review-eval.json`.
+
 | Sample | Clean | Seeded bug | Seeded finding |
 |---|---|---|---|
 | s01-stats-mode | `approve`, 0 findings | `changes_requested`, 2 findings | P1 + P2, both confirmed |
@@ -54,3 +56,9 @@ The first runs exposed real harness and corpus defects. They were fixed before t
 - Each case was reviewed once. The iterative implement -> review -> fix -> re-review loop is Phase 3.
 - Five samples per condition is a small sample; rate estimates are noisy. Earlier runs showed one invalid verdict and different clean-case findings before the harness fixes.
 - Cost is reported as 0 because the model catalog has no price for this provider; token counts are the useful cost proxy.
+
+## Review
+
+Non-author review by 砚砚 (GLM-5.3-Flash) on 2026-10-21: **approve** at `83bdf20`. Review baseline: `npm run check`, 19/19 scoring/parser tests, and 10/10 corpus self-check cases.
+
+Follow-ups accepted as P3: archive the raw result, make the env file configurable, tighten recall matching in Phase 3, and report real review rounds once the repair loop exists.

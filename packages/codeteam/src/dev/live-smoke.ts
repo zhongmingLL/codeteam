@@ -9,6 +9,7 @@ import {
 	findConfig,
 	loadModelConfigs,
 	readProvider,
+	resolveEnvFile,
 	type SmokeProvider,
 	selectModel,
 } from "./provider-config.ts";
@@ -33,7 +34,7 @@ interface SmokeResult {
 async function main(): Promise<void> {
 	const repoRoot = resolve(fileURLToPath(new URL("../../../..", import.meta.url)));
 	const provider = readProvider("CODETEAM_SMOKE_PROVIDER", "deepseek");
-	const configs = loadModelConfigs("/home/ming/.env");
+	const configs = loadModelConfigs(resolveEnvFile());
 	configureAllAuth(configs);
 	const config = findConfig(configs, provider);
 	const fixture = join(repoRoot, "fixtures/smoke-bug-01");

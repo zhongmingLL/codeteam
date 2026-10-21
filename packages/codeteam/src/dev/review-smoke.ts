@@ -9,7 +9,14 @@ import { createCodeteamSession } from "../adapters/pi-session.ts";
 import { parseReviewVerdict } from "../review/parser.ts";
 import { buildReviewPrompt } from "../review/prompt.ts";
 import { hasBlockingFindings, type ReviewVerdict } from "../review/types.ts";
-import { configureAllAuth, findConfig, loadModelConfigs, readProvider, selectModel } from "./provider-config.ts";
+import {
+	configureAllAuth,
+	findConfig,
+	loadModelConfigs,
+	readProvider,
+	resolveEnvFile,
+	selectModel,
+} from "./provider-config.ts";
 import { copySmokeFixture, runNodeTest, sha256 } from "./smoke-utils.ts";
 
 interface ReviewRunResult {
@@ -100,7 +107,7 @@ async function runReviewer(input: {
 
 async function main(): Promise<void> {
 	const repoRoot = resolve(fileURLToPath(new URL("../../../..", import.meta.url)));
-	const configs = loadModelConfigs("/home/ming/.env");
+	const configs = loadModelConfigs(resolveEnvFile());
 	configureAllAuth(configs);
 	const coderProvider = readProvider("CODETEAM_SMOKE_PROVIDER", "deepseek");
 	const reviewerProvider = readProvider("CODETEAM_SMOKE_REVIEWER", "kimi");

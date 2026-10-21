@@ -1,0 +1,695 @@
+{
+  "reviewer": "kimi-coding/k3-256k",
+  "thresholds": {
+    "cleanFpRateMax": 0.2,
+    "seededRecallMin": 0.6,
+    "findingSurvivalMin": 0.8
+  },
+  "outcomes": [
+    {
+      "sampleId": "s01-stats-mode",
+      "kind": "clean",
+      "verdict": {
+        "verdict": "approve",
+        "findings": []
+      },
+      "verdictValid": true,
+      "verifications": [],
+      "reviewRounds": 1,
+      "inputTokens": 1982,
+      "outputTokens": 738,
+      "costUsd": 0,
+      "rawText": "{\"verdict\":\"approve\",\"findings\":[]}",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s01-stats-mode",
+      "kind": "bug",
+      "verdict": {
+        "verdict": "changes_requested",
+        "findings": [
+          {
+            "severity": "P1",
+            "file": "src/stats.js",
+            "line": 16,
+            "claim": "mode() returns the maximum value (last element after sorting) instead of the most frequently occurring value; e.g. mode([1,1,2,5]) returns 5, not 1",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'return values[values.length - 1];' src/stats.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Implement mode by counting value frequencies and returning the value with the highest count, not by sorting and returning the last element."
+          },
+          {
+            "severity": "P2",
+            "file": "src/stats.js",
+            "line": 15,
+            "claim": "mode() sorts the caller's array in place via values.sort(), mutating the input argument, unlike median() which copies with [...values]",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'values.sort((a, b) => a - b);' src/stats.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Avoid mutating the input array (e.g. operate on a copy with [...values]) or compute frequencies without sorting."
+          }
+        ]
+      },
+      "verdictValid": true,
+      "verifications": [
+        {
+          "finding": {
+            "severity": "P1",
+            "file": "src/stats.js",
+            "line": 16,
+            "claim": "mode() returns the maximum value (last element after sorting) instead of the most frequently occurring value; e.g. mode([1,1,2,5]) returns 5, not 1",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'return values[values.length - 1];' src/stats.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Implement mode by counting value frequencies and returning the value with the highest count, not by sorting and returning the last element."
+          },
+          "status": "confirmed",
+          "reason": "exit 0, expected zero",
+          "audit": {
+            "index": 0,
+            "finding": {
+              "severity": "P1",
+              "file": "src/stats.js",
+              "line": 16,
+              "claim": "mode() returns the maximum value (last element after sorting) instead of the most frequently occurring value; e.g. mode([1,1,2,5]) returns 5, not 1",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -F -n 'return values[values.length - 1];' src/stats.js",
+              "falsifierExpected": "zero",
+              "requiredAction": "Implement mode by counting value frequencies and returning the value with the highest count, not by sorting and returning the last element."
+            },
+            "mode": "repro",
+            "cwd": "/tmp/codeteam-eval-work-s01-stats-mode-bug-tV7MFD/work",
+            "command": "grep -F -n 'return values[values.length - 1];' src/stats.js",
+            "expected": "zero",
+            "status": "confirmed",
+            "reason": "exit 0, expected zero",
+            "executable": "grep",
+            "args": [
+              "-F",
+              "-n",
+              "return values[values.length - 1];",
+              "src/stats.js"
+            ],
+            "exitCode": 0,
+            "durationMs": 3,
+            "stdoutTail": "16:  return values[values.length - 1];\n",
+            "stderrTail": ""
+          }
+        },
+        {
+          "finding": {
+            "severity": "P2",
+            "file": "src/stats.js",
+            "line": 15,
+            "claim": "mode() sorts the caller's array in place via values.sort(), mutating the input argument, unlike median() which copies with [...values]",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'values.sort((a, b) => a - b);' src/stats.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Avoid mutating the input array (e.g. operate on a copy with [...values]) or compute frequencies without sorting."
+          },
+          "status": "confirmed",
+          "reason": "exit 0, expected zero",
+          "audit": {
+            "index": 1,
+            "finding": {
+              "severity": "P2",
+              "file": "src/stats.js",
+              "line": 15,
+              "claim": "mode() sorts the caller's array in place via values.sort(), mutating the input argument, unlike median() which copies with [...values]",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -F -n 'values.sort((a, b) => a - b);' src/stats.js",
+              "falsifierExpected": "zero",
+              "requiredAction": "Avoid mutating the input array (e.g. operate on a copy with [...values]) or compute frequencies without sorting."
+            },
+            "mode": "repro",
+            "cwd": "/tmp/codeteam-eval-work-s01-stats-mode-bug-tV7MFD/work",
+            "command": "grep -F -n 'values.sort((a, b) => a - b);' src/stats.js",
+            "expected": "zero",
+            "status": "confirmed",
+            "reason": "exit 0, expected zero",
+            "executable": "grep",
+            "args": [
+              "-F",
+              "-n",
+              "values.sort((a, b) => a - b);",
+              "src/stats.js"
+            ],
+            "exitCode": 0,
+            "durationMs": 2,
+            "stdoutTail": "15:  values.sort((a, b) => a - b);\n",
+            "stderrTail": ""
+          }
+        }
+      ],
+      "reviewRounds": 1,
+      "inputTokens": 1540,
+      "outputTokens": 506,
+      "costUsd": 0,
+      "rawText": "```json\n{\"verdict\":\"changes_requested\",\"findings\":[{\"severity\":\"P1\",\"file\":\"src/stats.js\",\"line\":16,\"claim\":\"mode() returns the maximum value (last element after sorting) instead of the most frequently occurring value; e.g. mode([1,1,2,5]) returns 5, not 1\",\"evidenceKind\":\"static_check\",\"falsifier\":\"grep -F -n 'return values[values.length - 1];' src/stats.js\",\"falsifierExpected\":\"zero\",\"requiredAction\":\"Implement mode by counting value frequencies and returning the value with the highest count, not by sorting and returning the last element.\"},{\"severity\":\"P2\",\"file\":\"src/stats.js\",\"line\":15,\"claim\":\"mode() sorts the caller's array in place via values.sort(), mutating the input argument, unlike median() which copies with [...values]\",\"evidenceKind\":\"static_check\",\"falsifier\":\"grep -F -n 'values.sort((a, b) => a - b);' src/stats.js\",\"falsifierExpected\":\"zero\",\"requiredAction\":\"Avoid mutating the input array (e.g. operate on a copy with [...values]) or compute frequencies without sorting.\"}]}\n```",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s02-csv-quotes",
+      "kind": "clean",
+      "verdict": {
+        "verdict": "approve",
+        "findings": []
+      },
+      "verdictValid": true,
+      "verifications": [],
+      "reviewRounds": 1,
+      "inputTokens": 2931,
+      "outputTokens": 2159,
+      "costUsd": 0,
+      "rawText": "I traced the parser against standard CSV quoting cases (`\"a,b\",c`, `\"a\"\"b\"`, `\"\"`, trailing commas, empty fields, unterminated quotes) and the state machine handles them correctly: opening quotes are recognized at field start, doubled quotes inside quoted fields collapse to a literal quote, commas inside quotes are preserved, and the final field is always flushed. The simple-field case from the test report also matches the original behavior. I could not substantiate any P1/P2 defect in the changed source.\n\n{\"verdict\":\"approve\",\"findings\":[]}",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s02-csv-quotes",
+      "kind": "bug",
+      "verdict": {
+        "verdict": "changes_requested",
+        "findings": [
+          {
+            "severity": "P1",
+            "file": "src/csv.js",
+            "line": 14,
+            "claim": "The comma handler at line 14 (if (char === \",\") {) does not check the `quoted` flag, so commas inside quoted fields are treated as field separators: parseLine('\"a,b\",c') returns ['\"a','b\"','c'] instead of ['a,b','c'], breaking the core purpose of the quote-handling change.",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'if (char === \",\") {' src/csv.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Guard the comma split with the quoted state, e.g. if (!quoted && char === \",\") {, so commas inside quoted fields are appended to the current field instead of splitting."
+          }
+        ]
+      },
+      "verdictValid": true,
+      "verifications": [
+        {
+          "finding": {
+            "severity": "P1",
+            "file": "src/csv.js",
+            "line": 14,
+            "claim": "The comma handler at line 14 (if (char === \",\") {) does not check the `quoted` flag, so commas inside quoted fields are treated as field separators: parseLine('\"a,b\",c') returns ['\"a','b\"','c'] instead of ['a,b','c'], breaking the core purpose of the quote-handling change.",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'if (char === \",\") {' src/csv.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Guard the comma split with the quoted state, e.g. if (!quoted && char === \",\") {, so commas inside quoted fields are appended to the current field instead of splitting."
+          },
+          "status": "confirmed",
+          "reason": "exit 0, expected zero",
+          "audit": {
+            "index": 0,
+            "finding": {
+              "severity": "P1",
+              "file": "src/csv.js",
+              "line": 14,
+              "claim": "The comma handler at line 14 (if (char === \",\") {) does not check the `quoted` flag, so commas inside quoted fields are treated as field separators: parseLine('\"a,b\",c') returns ['\"a','b\"','c'] instead of ['a,b','c'], breaking the core purpose of the quote-handling change.",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -F -n 'if (char === \",\") {' src/csv.js",
+              "falsifierExpected": "zero",
+              "requiredAction": "Guard the comma split with the quoted state, e.g. if (!quoted && char === \",\") {, so commas inside quoted fields are appended to the current field instead of splitting."
+            },
+            "mode": "repro",
+            "cwd": "/tmp/codeteam-eval-work-s02-csv-quotes-bug-NlpKQX/work",
+            "command": "grep -F -n 'if (char === \",\") {' src/csv.js",
+            "expected": "zero",
+            "status": "confirmed",
+            "reason": "exit 0, expected zero",
+            "executable": "grep",
+            "args": [
+              "-F",
+              "-n",
+              "if (char === \",\") {",
+              "src/csv.js"
+            ],
+            "exitCode": 0,
+            "durationMs": 3,
+            "stdoutTail": "15:    if (char === \",\") {\n",
+            "stderrTail": ""
+          }
+        }
+      ],
+      "reviewRounds": 1,
+      "inputTokens": 1418,
+      "outputTokens": 482,
+      "costUsd": 0,
+      "rawText": "{\"verdict\":\"changes_requested\",\"findings\":[{\"severity\":\"P1\",\"file\":\"src/csv.js\",\"line\":14,\"claim\":\"The comma handler at line 14 (if (char === \\\",\\\") {) does not check the `quoted` flag, so commas inside quoted fields are treated as field separators: parseLine('\\\"a,b\\\",c') returns ['\\\"a','b\\\"','c'] instead of ['a,b','c'], breaking the core purpose of the quote-handling change.\",\"evidenceKind\":\"static_check\",\"falsifier\":\"grep -F -n 'if (char === \\\",\\\") {' src/csv.js\",\"falsifierExpected\":\"zero\",\"requiredAction\":\"Guard the comma split with the quoted state, e.g. if (!quoted && char === \\\",\\\") {, so commas inside quoted fields are appended to the current field instead of splitting.\"}]}",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s03-date-inclusive",
+      "kind": "clean",
+      "verdict": {
+        "verdict": "approve",
+        "findings": []
+      },
+      "verdictValid": true,
+      "verifications": [],
+      "reviewRounds": 1,
+      "inputTokens": 1990,
+      "outputTokens": 537,
+      "costUsd": 0,
+      "rawText": "{\"verdict\":\"approve\",\"findings\":[]}",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s03-date-inclusive",
+      "kind": "bug",
+      "verdict": {
+        "verdict": "changes_requested",
+        "findings": [
+          {
+            "severity": "P2",
+            "file": "src/date.js",
+            "line": 12,
+            "claim": "The `inclusive` option declared on line 7 is never used; the loop on line 12 always uses `cursor <= last`, so eachDay('2024-01-01','2024-01-03',{inclusive:false}) still returns 3 days including the end date instead of excluding it.",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'while (cursor <= last)' src/date.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Honor the inclusive flag, e.g. use `while (inclusive ? cursor <= last : cursor < last)`, or drop the end date when inclusive is false."
+          }
+        ]
+      },
+      "verdictValid": true,
+      "verifications": [
+        {
+          "finding": {
+            "severity": "P2",
+            "file": "src/date.js",
+            "line": 12,
+            "claim": "The `inclusive` option declared on line 7 is never used; the loop on line 12 always uses `cursor <= last`, so eachDay('2024-01-01','2024-01-03',{inclusive:false}) still returns 3 days including the end date instead of excluding it.",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'while (cursor <= last)' src/date.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Honor the inclusive flag, e.g. use `while (inclusive ? cursor <= last : cursor < last)`, or drop the end date when inclusive is false."
+          },
+          "status": "confirmed",
+          "reason": "exit 0, expected zero",
+          "audit": {
+            "index": 0,
+            "finding": {
+              "severity": "P2",
+              "file": "src/date.js",
+              "line": 12,
+              "claim": "The `inclusive` option declared on line 7 is never used; the loop on line 12 always uses `cursor <= last`, so eachDay('2024-01-01','2024-01-03',{inclusive:false}) still returns 3 days including the end date instead of excluding it.",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -F -n 'while (cursor <= last)' src/date.js",
+              "falsifierExpected": "zero",
+              "requiredAction": "Honor the inclusive flag, e.g. use `while (inclusive ? cursor <= last : cursor < last)`, or drop the end date when inclusive is false."
+            },
+            "mode": "repro",
+            "cwd": "/tmp/codeteam-eval-work-s03-date-inclusive-bug-m4Xiaq/work",
+            "command": "grep -F -n 'while (cursor <= last)' src/date.js",
+            "expected": "zero",
+            "status": "confirmed",
+            "reason": "exit 0, expected zero",
+            "executable": "grep",
+            "args": [
+              "-F",
+              "-n",
+              "while (cursor <= last)",
+              "src/date.js"
+            ],
+            "exitCode": 0,
+            "durationMs": 3,
+            "stdoutTail": "12:  while (cursor <= last) {\n",
+            "stderrTail": ""
+          }
+        }
+      ],
+      "reviewRounds": 1,
+      "inputTokens": 1856,
+      "outputTokens": 644,
+      "costUsd": 0,
+      "rawText": "```json\n{\"verdict\":\"changes_requested\",\"findings\":[{\"severity\":\"P2\",\"file\":\"src/date.js\",\"line\":12,\"claim\":\"The `inclusive` option declared on line 7 is never used; the loop on line 12 always uses `cursor <= last`, so eachDay('2024-01-01','2024-01-03',{inclusive:false}) still returns 3 days including the end date instead of excluding it.\",\"evidenceKind\":\"static_check\",\"falsifier\":\"grep -F -n 'while (cursor <= last)' src/date.js\",\"falsifierExpected\":\"zero\",\"requiredAction\":\"Honor the inclusive flag, e.g. use `while (inclusive ? cursor <= last : cursor < last)`, or drop the end date when inclusive is false.\"}]}\n```",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s04-retry-backoff",
+      "kind": "clean",
+      "verdict": {
+        "verdict": "approve",
+        "findings": [
+          {
+            "severity": "P3",
+            "file": "src/retry.js",
+            "line": 3,
+            "claim": "backoffMs is exported but never used: retry() performs no delay between attempts, so the added backoff helper is dead code and retries still fire immediately in a tight loop.",
+            "evidenceKind": "code_reading",
+            "falsifier": "grep -F -n 'backoffMs' src/retry.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Wire backoffMs into retry (await a delay of backoffMs(attempt) between failed attempts) or remove the unused export."
+          }
+        ]
+      },
+      "verdictValid": true,
+      "verifications": [
+        {
+          "finding": {
+            "severity": "P3",
+            "file": "src/retry.js",
+            "line": 3,
+            "claim": "backoffMs is exported but never used: retry() performs no delay between attempts, so the added backoff helper is dead code and retries still fire immediately in a tight loop.",
+            "evidenceKind": "code_reading",
+            "falsifier": "grep -F -n 'backoffMs' src/retry.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Wire backoffMs into retry (await a delay of backoffMs(attempt) between failed attempts) or remove the unused export."
+          },
+          "status": "blocked",
+          "reason": "evidence kind is not executable",
+          "audit": {
+            "index": 0,
+            "finding": {
+              "severity": "P3",
+              "file": "src/retry.js",
+              "line": 3,
+              "claim": "backoffMs is exported but never used: retry() performs no delay between attempts, so the added backoff helper is dead code and retries still fire immediately in a tight loop.",
+              "evidenceKind": "code_reading",
+              "falsifier": "grep -F -n 'backoffMs' src/retry.js",
+              "falsifierExpected": "zero",
+              "requiredAction": "Wire backoffMs into retry (await a delay of backoffMs(attempt) between failed attempts) or remove the unused export."
+            },
+            "mode": "repro",
+            "cwd": "/tmp/codeteam-eval-work-s04-retry-backoff-clean-T3nutK/work",
+            "command": "grep -F -n 'backoffMs' src/retry.js",
+            "expected": "zero",
+            "status": "blocked",
+            "reason": "evidence kind is not executable"
+          }
+        }
+      ],
+      "reviewRounds": 1,
+      "inputTokens": 2449,
+      "outputTokens": 774,
+      "costUsd": 0,
+      "rawText": "{\"verdict\":\"approve\",\"findings\":[{\"severity\":\"P3\",\"file\":\"src/retry.js\",\"line\":3,\"claim\":\"backoffMs is exported but never used: retry() performs no delay between attempts, so the added backoff helper is dead code and retries still fire immediately in a tight loop.\",\"evidenceKind\":\"code_reading\",\"falsifier\":\"grep -F -n 'backoffMs' src/retry.js\",\"falsifierExpected\":\"zero\",\"requiredAction\":\"Wire backoffMs into retry (await a delay of backoffMs(attempt) between failed attempts) or remove the unused export.\"}]}",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s04-retry-backoff",
+      "kind": "bug",
+      "verdict": {
+        "verdict": "changes_requested",
+        "findings": [
+          {
+            "severity": "P1",
+            "file": "src/retry.js",
+            "line": 4,
+            "claim": "backoffMs applies the cap before the exponential scaling: Math.min(cap, base * 2) * 2 ** attempt returns Math.min(1000, 200) * 2 ** attempt, so with defaults backoffMs(4) = 200 * 16 = 3200, exceeding the advertised cap of 1000. The cap is effectively ignored for attempt >= 1; the intended expression is Math.min(cap, base * 2 ** attempt).",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'return Math.min(cap, base * 2) * 2 ** attempt;' src/retry.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Apply the cap to the fully scaled value: return Math.min(cap, base * 2 ** attempt);"
+          }
+        ]
+      },
+      "verdictValid": true,
+      "verifications": [
+        {
+          "finding": {
+            "severity": "P1",
+            "file": "src/retry.js",
+            "line": 4,
+            "claim": "backoffMs applies the cap before the exponential scaling: Math.min(cap, base * 2) * 2 ** attempt returns Math.min(1000, 200) * 2 ** attempt, so with defaults backoffMs(4) = 200 * 16 = 3200, exceeding the advertised cap of 1000. The cap is effectively ignored for attempt >= 1; the intended expression is Math.min(cap, base * 2 ** attempt).",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n 'return Math.min(cap, base * 2) * 2 ** attempt;' src/retry.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "Apply the cap to the fully scaled value: return Math.min(cap, base * 2 ** attempt);"
+          },
+          "status": "confirmed",
+          "reason": "exit 0, expected zero",
+          "audit": {
+            "index": 0,
+            "finding": {
+              "severity": "P1",
+              "file": "src/retry.js",
+              "line": 4,
+              "claim": "backoffMs applies the cap before the exponential scaling: Math.min(cap, base * 2) * 2 ** attempt returns Math.min(1000, 200) * 2 ** attempt, so with defaults backoffMs(4) = 200 * 16 = 3200, exceeding the advertised cap of 1000. The cap is effectively ignored for attempt >= 1; the intended expression is Math.min(cap, base * 2 ** attempt).",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -F -n 'return Math.min(cap, base * 2) * 2 ** attempt;' src/retry.js",
+              "falsifierExpected": "zero",
+              "requiredAction": "Apply the cap to the fully scaled value: return Math.min(cap, base * 2 ** attempt);"
+            },
+            "mode": "repro",
+            "cwd": "/tmp/codeteam-eval-work-s04-retry-backoff-bug-zmeJvs/work",
+            "command": "grep -F -n 'return Math.min(cap, base * 2) * 2 ** attempt;' src/retry.js",
+            "expected": "zero",
+            "status": "confirmed",
+            "reason": "exit 0, expected zero",
+            "executable": "grep",
+            "args": [
+              "-F",
+              "-n",
+              "return Math.min(cap, base * 2) * 2 ** attempt;",
+              "src/retry.js"
+            ],
+            "exitCode": 0,
+            "durationMs": 3,
+            "stdoutTail": "4:  return Math.min(cap, base * 2) * 2 ** attempt;\n",
+            "stderrTail": ""
+          }
+        }
+      ],
+      "reviewRounds": 1,
+      "inputTokens": 1667,
+      "outputTokens": 754,
+      "costUsd": 0,
+      "rawText": "{\"verdict\":\"changes_requested\",\"findings\":[{\"severity\":\"P1\",\"file\":\"src/retry.js\",\"line\":4,\"claim\":\"backoffMs applies the cap before the exponential scaling: Math.min(cap, base * 2) * 2 ** attempt returns Math.min(1000, 200) * 2 ** attempt, so with defaults backoffMs(4) = 200 * 16 = 3200, exceeding the advertised cap of 1000. The cap is effectively ignored for attempt >= 1; the intended expression is Math.min(cap, base * 2 ** attempt).\",\"evidenceKind\":\"static_check\",\"falsifier\":\"grep -F -n 'return Math.min(cap, base * 2) * 2 ** attempt;' src/retry.js\",\"falsifierExpected\":\"zero\",\"requiredAction\":\"Apply the cap to the fully scaled value: return Math.min(cap, base * 2 ** attempt);\"}]}",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s05-lru-cache",
+      "kind": "clean",
+      "verdict": {
+        "verdict": "approve",
+        "findings": [
+          {
+            "severity": "P3",
+            "file": "src/cache.js",
+            "line": 18,
+            "claim": "The eviction loop `while (this.entries.size > this.capacity)` never terminates when the cache is constructed with a negative capacity (e.g., new LruCache(-1)): once the map is empty, `this.entries.keys().next().value` is undefined and `this.entries.delete(undefined)` is a no-op, so `size` stays 0 which is still > -1, spinning forever. The constructor does not validate capacity.",
+            "evidenceKind": "code_reading",
+            "falsifier": "",
+            "requiredAction": "Validate capacity in the constructor (e.g., throw or clamp when capacity < 1) so the eviction loop cannot spin on an empty map."
+          }
+        ]
+      },
+      "verdictValid": true,
+      "verifications": [
+        {
+          "finding": {
+            "severity": "P3",
+            "file": "src/cache.js",
+            "line": 18,
+            "claim": "The eviction loop `while (this.entries.size > this.capacity)` never terminates when the cache is constructed with a negative capacity (e.g., new LruCache(-1)): once the map is empty, `this.entries.keys().next().value` is undefined and `this.entries.delete(undefined)` is a no-op, so `size` stays 0 which is still > -1, spinning forever. The constructor does not validate capacity.",
+            "evidenceKind": "code_reading",
+            "falsifier": "",
+            "requiredAction": "Validate capacity in the constructor (e.g., throw or clamp when capacity < 1) so the eviction loop cannot spin on an empty map."
+          },
+          "status": "blocked",
+          "reason": "finding has no falsifierExpected",
+          "audit": {
+            "index": 0,
+            "finding": {
+              "severity": "P3",
+              "file": "src/cache.js",
+              "line": 18,
+              "claim": "The eviction loop `while (this.entries.size > this.capacity)` never terminates when the cache is constructed with a negative capacity (e.g., new LruCache(-1)): once the map is empty, `this.entries.keys().next().value` is undefined and `this.entries.delete(undefined)` is a no-op, so `size` stays 0 which is still > -1, spinning forever. The constructor does not validate capacity.",
+              "evidenceKind": "code_reading",
+              "falsifier": "",
+              "requiredAction": "Validate capacity in the constructor (e.g., throw or clamp when capacity < 1) so the eviction loop cannot spin on an empty map."
+            },
+            "mode": "repro",
+            "cwd": "/tmp/codeteam-eval-work-s05-lru-cache-clean-IeeJyM/work",
+            "command": "",
+            "status": "blocked",
+            "reason": "finding has no falsifierExpected"
+          }
+        }
+      ],
+      "reviewRounds": 1,
+      "inputTokens": 1766,
+      "outputTokens": 952,
+      "costUsd": 0,
+      "rawText": "{\"verdict\":\"approve\",\"findings\":[{\"severity\":\"P3\",\"file\":\"src/cache.js\",\"line\":18,\"claim\":\"The eviction loop `while (this.entries.size > this.capacity)` never terminates when the cache is constructed with a negative capacity (e.g., new LruCache(-1)): once the map is empty, `this.entries.keys().next().value` is undefined and `this.entries.delete(undefined)` is a no-op, so `size` stays 0 which is still > -1, spinning forever. The constructor does not validate capacity.\",\"evidenceKind\":\"code_reading\",\"falsifier\":\"\",\"falsifierExpected\":\"\",\"requiredAction\":\"Validate capacity in the constructor (e.g., throw or clamp when capacity < 1) so the eviction loop cannot spin on an empty map.\"}]}",
+      "modelError": "",
+      "promptError": ""
+    },
+    {
+      "sampleId": "s05-lru-cache",
+      "kind": "bug",
+      "verdict": {
+        "verdict": "changes_requested",
+        "findings": [
+          {
+            "severity": "P2",
+            "file": "src/cache.js",
+            "line": 16,
+            "claim": "set() performs `this.entries.set(key, value);` without first deleting an existing key, so re-setting an existing key does not refresh its recency (Map.set preserves original insertion order); the eviction loop in the same method can then evict the key that was just written (e.g., capacity 2: set a, set b, set a, set c evicts a instead of b), violating LRU semantics where a write must count as most-recent use.",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n '    this.entries.set(key, value);' src/cache.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "In set(), delete the key before inserting it (e.g., `this.entries.delete(key); this.entries.set(key, value);`) so that updating an existing key moves it to the most-recently-used position before eviction runs."
+          }
+        ]
+      },
+      "verdictValid": true,
+      "verifications": [
+        {
+          "finding": {
+            "severity": "P2",
+            "file": "src/cache.js",
+            "line": 16,
+            "claim": "set() performs `this.entries.set(key, value);` without first deleting an existing key, so re-setting an existing key does not refresh its recency (Map.set preserves original insertion order); the eviction loop in the same method can then evict the key that was just written (e.g., capacity 2: set a, set b, set a, set c evicts a instead of b), violating LRU semantics where a write must count as most-recent use.",
+            "evidenceKind": "static_check",
+            "falsifier": "grep -F -n '    this.entries.set(key, value);' src/cache.js",
+            "falsifierExpected": "zero",
+            "requiredAction": "In set(), delete the key before inserting it (e.g., `this.entries.delete(key); this.entries.set(key, value);`) so that updating an existing key moves it to the most-recently-used position before eviction runs."
+          },
+          "status": "confirmed",
+          "reason": "exit 0, expected zero",
+          "audit": {
+            "index": 0,
+            "finding": {
+              "severity": "P2",
+              "file": "src/cache.js",
+              "line": 16,
+              "claim": "set() performs `this.entries.set(key, value);` without first deleting an existing key, so re-setting an existing key does not refresh its recency (Map.set preserves original insertion order); the eviction loop in the same method can then evict the key that was just written (e.g., capacity 2: set a, set b, set a, set c evicts a instead of b), violating LRU semantics where a write must count as most-recent use.",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -F -n '    this.entries.set(key, value);' src/cache.js",
+              "falsifierExpected": "zero",
+              "requiredAction": "In set(), delete the key before inserting it (e.g., `this.entries.delete(key); this.entries.set(key, value);`) so that updating an existing key moves it to the most-recently-used position before eviction runs."
+            },
+            "mode": "repro",
+            "cwd": "/tmp/codeteam-eval-work-s05-lru-cache-bug-gA4r5q/work",
+            "command": "grep -F -n '    this.entries.set(key, value);' src/cache.js",
+            "expected": "zero",
+            "status": "confirmed",
+            "reason": "exit 0, expected zero",
+            "executable": "grep",
+            "args": [
+              "-F",
+              "-n",
+              "    this.entries.set(key, value);",
+              "src/cache.js"
+            ],
+            "exitCode": 0,
+            "durationMs": 3,
+            "stdoutTail": "11:    this.entries.set(key, value);\n16:    this.entries.set(key, value);\n",
+            "stderrTail": ""
+          }
+        }
+      ],
+      "reviewRounds": 1,
+      "inputTokens": 1836,
+      "outputTokens": 1256,
+      "costUsd": 0,
+      "rawText": "{\"verdict\":\"changes_requested\",\"findings\":[{\"severity\":\"P2\",\"file\":\"src/cache.js\",\"line\":16,\"claim\":\"set() performs `this.entries.set(key, value);` without first deleting an existing key, so re-setting an existing key does not refresh its recency (Map.set preserves original insertion order); the eviction loop in the same method can then evict the key that was just written (e.g., capacity 2: set a, set b, set a, set c evicts a instead of b), violating LRU semantics where a write must count as most-recent use.\",\"evidenceKind\":\"static_check\",\"falsifier\":\"grep -F -n '    this.entries.set(key, value);' src/cache.js\",\"falsifierExpected\":\"zero\",\"requiredAction\":\"In set(), delete the key before inserting it (e.g., `this.entries.delete(key); this.entries.set(key, value);`) so that updating an existing key moves it to the most-recently-used position before eviction runs.\"}]}",
+      "modelError": "",
+      "promptError": ""
+    }
+  ],
+  "scores": [
+    {
+      "sampleId": "s01-stats-mode",
+      "kind": "clean",
+      "falsePositive": false,
+      "recallHit": false,
+      "findingSurvived": false
+    },
+    {
+      "sampleId": "s01-stats-mode",
+      "kind": "bug",
+      "falsePositive": false,
+      "recallHit": true,
+      "findingSurvived": true,
+      "matchedFindingIndex": 0
+    },
+    {
+      "sampleId": "s02-csv-quotes",
+      "kind": "clean",
+      "falsePositive": false,
+      "recallHit": false,
+      "findingSurvived": false
+    },
+    {
+      "sampleId": "s02-csv-quotes",
+      "kind": "bug",
+      "falsePositive": false,
+      "recallHit": true,
+      "findingSurvived": true,
+      "matchedFindingIndex": 0
+    },
+    {
+      "sampleId": "s03-date-inclusive",
+      "kind": "clean",
+      "falsePositive": false,
+      "recallHit": false,
+      "findingSurvived": false
+    },
+    {
+      "sampleId": "s03-date-inclusive",
+      "kind": "bug",
+      "falsePositive": false,
+      "recallHit": true,
+      "findingSurvived": true,
+      "matchedFindingIndex": 0
+    },
+    {
+      "sampleId": "s04-retry-backoff",
+      "kind": "clean",
+      "falsePositive": false,
+      "recallHit": false,
+      "findingSurvived": false
+    },
+    {
+      "sampleId": "s04-retry-backoff",
+      "kind": "bug",
+      "falsePositive": false,
+      "recallHit": true,
+      "findingSurvived": true,
+      "matchedFindingIndex": 0
+    },
+    {
+      "sampleId": "s05-lru-cache",
+      "kind": "clean",
+      "falsePositive": false,
+      "recallHit": false,
+      "findingSurvived": false
+    },
+    {
+      "sampleId": "s05-lru-cache",
+      "kind": "bug",
+      "falsePositive": false,
+      "recallHit": true,
+      "findingSurvived": true,
+      "matchedFindingIndex": 0
+    }
+  ],
+  "summary": {
+    "cleanCases": 5,
+    "cleanFalsePositives": 0,
+    "cleanFpRate": 0,
+    "bugCases": 5,
+    "bugHits": 5,
+    "recall": 1,
+    "matchedFindings": 5,
+    "survivedFindings": 5,
+    "findingSurvival": 1,
+    "reviewRounds": 10,
+    "inputTokens": 19435,
+    "outputTokens": 8802,
+    "costUsd": 0,
+    "invalidVerdicts": 0,
+    "passed": true,
+    "failures": []
+  }
+}

@@ -10,6 +10,13 @@ export interface ModelConfig {
 	"api-key": string;
 }
 
+export const DEFAULT_ENV_FILE = "/home/ming/.env";
+
+export function resolveEnvFile(): string {
+	const value = process.env.CODETEAM_ENV_FILE;
+	return value !== undefined && value.trim().length > 0 ? value : DEFAULT_ENV_FILE;
+}
+
 export function loadModelConfigs(path: string): ModelConfig[] {
 	if (!existsSync(path)) throw new Error(`missing model config file: ${path}`);
 	return readFileSync(path, "utf8")

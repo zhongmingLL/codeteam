@@ -1,6 +1,6 @@
 # F001: codeteam MVP - control plane, verifier, review gates
 
-Status: operator-approved; Phase 1 accepted; Phase 2 metrics passed, awaiting non-author review
+Status: operator-approved; Phase 1 accepted; Phase 2 reviewer-approved (`83bdf20`), awaiting operator acceptance
 Owner: 宪宪 (architect/coder)
 Reviewers: 砚砚 (review/security), 烁烁 (kernel/runtime)
 Acceptance: co-creator
@@ -76,7 +76,7 @@ Acceptance:
 - Verifier tool surface exposes no write primitives; strict mode executes no Node. Repro mode allows `node --test` only in a disposable worktree and is opt-in. Test code can still write/network; this is a known boundary until Phase 4 OS sandbox/low-privilege user, and the verifier must not be enabled on a real repo before that.
 - A finding is closed only by evidence.
 
-### Phase 2 - review reliability sample (metrics passed, awaiting non-author review)
+### Phase 2 - review reliability sample (reviewer-approved, awaiting operator acceptance)
 
 Deliver:
 
@@ -91,6 +91,8 @@ Acceptance:
 - Thresholds are registered before the run, not adjusted after seeing results.
 
 Result (2026-10-21): 5 clean + 5 seeded samples, reviewer `kimi-coding/k3-256k`. Clean FP 0/5 = 0%, seeded recall 5/5 = 100%, finding survival 5/5 = 100%, 0 invalid verdicts, 10 review rounds, 19,435 input / 8,802 output tokens. Report: `docs/reports/2026-10-21-phase2-review-eval.md`.
+
+Reviewer 砚砚 approved `83bdf20` after `npm run check`, 19/19 scoring/parser tests, and 10/10 corpus self-check cases. P3 follow-ups: configurable env file, archived raw result, stricter recall matching, and real review rounds in Phase 3.
 
 ### Phase 3 - SOP and A2A integration
 
@@ -136,7 +138,7 @@ Acceptance:
 - Local `codeteam` branch retains the pi v1.3.0 parent history at `def9bdc`.
 - Current checks: `npm run check`, 54 codeteam tests, 3/3 provider live smoke, Kimi/GLM review smoke.
 - Phase 2 corpus: `fixtures/review-corpus` (5 samples, clean + seeded variants) is implemented; the final run passed the registered thresholds.
-- Reports: `docs/reports/2026-10-21-gate-b-smoke.md`, `docs/reports/2026-10-21-review-smoke.md`, `docs/reports/2026-10-21-phase2-review-eval.md`.
+- Reports: `docs/reports/2026-10-21-gate-b-smoke.md`, `docs/reports/2026-10-21-review-smoke.md`, `docs/reports/2026-10-21-phase2-review-eval.md`, `docs/reports/2026-10-21-phase2-review-eval.json`.
 
 ## Risks and blockers
 

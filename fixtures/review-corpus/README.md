@@ -26,3 +26,5 @@ Run the live evaluation (reviewer provider defaults to `kimi`):
 ```bash
 CODETEAM_EVAL_REVIEWER=kimi node packages/codeteam/src/dev/review-eval.ts
 ```
+
+The dev scripts read `/home/ming/.env` by default. Set `CODETEAM_ENV_FILE` to point at a different model config file.

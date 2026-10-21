@@ -19,7 +19,14 @@ import { parseReviewVerdict } from "../review/parser.ts";
 import { buildReviewPrompt } from "../review/prompt.ts";
 import type { ReviewVerdict } from "../review/types.ts";
 import { verifyVerdict } from "../verifier/runner.ts";
-import { configureAllAuth, findConfig, loadModelConfigs, readProvider, selectModel } from "./provider-config.ts";
+import {
+	configureAllAuth,
+	findConfig,
+	loadModelConfigs,
+	readProvider,
+	resolveEnvFile,
+	selectModel,
+} from "./provider-config.ts";
 
 interface PreparedCase {
 	sampleId: string;
@@ -256,7 +263,7 @@ async function main(): Promise<void> {
 	console.log(`corpus check passed: ${prepared.length} cases`);
 	if (checkOnly) return;
 
-	const configs = loadModelConfigs("/home/ming/.env");
+	const configs = loadModelConfigs(resolveEnvFile());
 	configureAllAuth(configs);
 	const reviewerProvider = readProvider("CODETEAM_EVAL_REVIEWER", "kimi");
 	const reviewerConfig = findConfig(configs, reviewerProvider);
