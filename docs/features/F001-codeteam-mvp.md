@@ -1,6 +1,6 @@
 # F001: codeteam MVP - control plane, verifier, review gates
 
-Status: operator-approved; Phase 1 implementation in review
+Status: operator-approved; Phase 1 fixes applied, awaiting re-review
 Owner: 宪宪 (architect/coder)
 Reviewers: 砚砚 (review/security), 烁烁 (kernel/runtime)
 Acceptance: co-creator
@@ -49,25 +49,27 @@ Delivered:
 Acceptance:
 
 - `npm run check` passes.
-- codeteam tests pass (currently 35 after Phase 1 implementation).
+- codeteam tests pass (currently 43 after Phase 1 fixes).
 - DeepSeek, Kimi, and GLM each complete the fixture task; test file unchanged.
 - Kimi and GLM reviewers both approve a clean diff and reject a bad diff with blocking findings.
 
-### Phase 1 - verifier and permission wrapper (next)
+### Phase 1 - verifier and permission wrapper (in review)
 
-Implementation: `packages/codeteam/src/verifier`. Status: awaiting non-author review.
+Implementation: `packages/codeteam/src/verifier`. Review found 2 P1 and 4 P2; fixes applied, awaiting same-reviewer re-review.
 
 Deliver:
 
 - A verifier runner that executes only findings with executable evidence (`red_test`, `repro_command`, `static_check`).
-- Tool/permission policy: worktree containment, command allowlist, timeout, output cap, minimal env, audit log (full args + truncated output).
+- Strict mode: read-only commands only; no Node execution.
+- Repro mode: read-only commands plus `node --test` only; `node -e`, `--eval`, and code-loading flags are blocked.
+- Tool/permission policy: worktree + realpath containment, per-executable dangerous flag policy, nested secret path checks, timeout, output cap, minimal env, audit log (full args + truncated output).
 - Finding closure states: evidence confirmed, evidence rejected, or blocked; no reviewer re-review loop.
 
 Acceptance:
 
 - Dangerous commands and path escapes are rejected by tests.
 - A bad-diff finding's falsifier is executed and its exit code/output is recorded.
-- The verifier cannot modify source files.
+- Verifier tool surface exposes no write primitives; strict mode executes no Node. Repro mode allows `node --test` only in a disposable worktree and is opt-in. Test code can still write/network; this is a known boundary until Phase 4 OS sandbox/low-privilege user, and the verifier must not be enabled on a real repo before that.
 - A finding is closed only by evidence.
 
 ### Phase 2 - review reliability sample

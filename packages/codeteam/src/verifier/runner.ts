@@ -66,7 +66,7 @@ export function verifyFinding(finding: ReviewFinding, index: number, options: Ve
 		cwd: options.workdir,
 		encoding: "utf8",
 		timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-		maxBuffer: Math.max(outputLimitBytes * 4, 1_000_000),
+		maxBuffer: 16_000_000,
 		shell: false,
 		env: {
 			PATH: process.env.PATH ?? "",

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,16 +21,22 @@ function createFinding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
 describe("falsifier runner", () => {
 	let workdir: string;
 	let fixture: string;
+	let outsideDir: string;
 
 	beforeEach(() => {
 		workdir = mkdtempSync(join(tmpdir(), "codeteam-verifier-"));
+		outsideDir = mkdtempSync(join(tmpdir(), "codeteam-verifier-outside-"));
 		fixture = join(workdir, "fixture.txt");
 		writeFileSync(fixture, "bad line\n");
 		writeFileSync(join(workdir, "clean.txt"), "clean\n");
+		writeFileSync(join(workdir, "large.txt"), "x".repeat(10_000));
+		writeFileSync(join(outsideDir, "secret.txt"), "outside secret\n");
+		symlinkSync(join(outsideDir, "secret.txt"), join(workdir, "link.txt"));
 	});
 
 	afterEach(() => {
 		rmSync(workdir, { recursive: true, force: true });
+		rmSync(outsideDir, { recursive: true, force: true });
 	});
 
 	it("confirms a finding when the falsifier exits with the expected code", () => {
@@ -96,16 +102,43 @@ describe("falsifier runner", () => {
 		expect(missingExpected.reason).toContain("falsifierExpected");
 	});
 
-	it("can execute a node repro in repro mode and truncates output", () => {
+	it("blocks node -e in repro mode", () => {
 		const result = verifyFinding(
 			createFinding({
 				evidenceKind: "repro_command",
-				falsifier: "node -e \"console.log('x'.repeat(10000))\"",
-				falsifierExpected: "zero",
+				falsifier: 'node -e "process.exit(1)"',
+				falsifierExpected: "nonzero",
 			}),
 			0,
-			{ workdir, mode: "repro", outputLimitBytes: 100 },
+			{ workdir, mode: "repro" },
 		);
+		expect(result.status).toBe("blocked");
+		expect(result.reason).toContain("node");
+	});
+
+	it("blocks rg preprocessor flags", () => {
+		const result = verifyFinding(
+			createFinding({ falsifier: "rg --pre ./pwn.sh x .", falsifierExpected: "zero" }),
+			0,
+			{ workdir },
+		);
+		expect(result.status).toBe("blocked");
+		expect(result.reason).toContain("dangerous flag");
+	});
+
+	it("blocks symlink escapes before execution", () => {
+		const result = verifyFinding(createFinding({ falsifier: "cat link.txt", falsifierExpected: "zero" }), 0, {
+			workdir,
+		});
+		expect(result.status).toBe("blocked");
+		expect(result.reason).toContain("symlink");
+	});
+
+	it("truncates output for an allowed read-only command", () => {
+		const result = verifyFinding(createFinding({ falsifier: "cat large.txt", falsifierExpected: "zero" }), 0, {
+			workdir,
+			outputLimitBytes: 100,
+		});
 		expect(result.status).toBe("confirmed");
 		expect(result.audit.stdoutTail?.length ?? 0).toBeLessThanOrEqual(100);
 	});
