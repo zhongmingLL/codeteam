@@ -6,7 +6,7 @@
   - `node packages/codeteam/src/cli.ts phase3-demo` runs the live Phase 3 demo.
   - `node packages/codeteam/src/cli.ts` prints usage and exits 1.
   - `npm run phase3-demo --workspace=@codeteam/core` is the package script equivalent.
-- CI: `.github/workflows/codeteam-ci.yml` runs `npm ci --ignore-scripts`, `npm run check`, and the codeteam tests on push/pull request to `codeteam`. The upstream `ci.yml` is left unchanged.
+- CI: `.github/workflows/codeteam-ci.yml` runs `npm ci --ignore-scripts`, `npm run hydrate:model-data`, `npm run check`, and the codeteam tests on push/pull request to `codeteam`. The upstream `ci.yml` is left unchanged.
 - Branch workflow: `docs/operations/branching.md`. Pushes are fast-forward to `origin/codeteam`; no force push.
 - Phase 3 hardening:
   - A coder/reviewer/verifier port exception now creates a typed blocker handoff with `code: "port_error"` and releases the run/handoff.
