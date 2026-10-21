@@ -1,0 +1,8 @@
+{
+  "name": "review-corpus-s05-lru-cache",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

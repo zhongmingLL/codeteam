@@ -67,15 +67,16 @@ function parseFinding(value: unknown): ReviewFinding {
 	const evidenceKind = readEnum(value, "evidenceKind", EVIDENCE_KINDS);
 	const falsifier = readOptionalString(value, "falsifier") ?? "";
 	const rawFalsifierExpected = readOptionalString(value, "falsifierExpected");
+	const normalizedFalsifierExpected = rawFalsifierExpected?.trim() === "" ? undefined : rawFalsifierExpected;
 	if (
-		rawFalsifierExpected !== undefined &&
-		!FALSIFIER_EXPECTATIONS.includes(rawFalsifierExpected as FalsifierExpected)
+		normalizedFalsifierExpected !== undefined &&
+		!FALSIFIER_EXPECTATIONS.includes(normalizedFalsifierExpected as FalsifierExpected)
 	) {
-		throw new ReviewParseError(`review field falsifierExpected has invalid value ${rawFalsifierExpected}`);
+		throw new ReviewParseError(`review field falsifierExpected has invalid value ${normalizedFalsifierExpected}`);
 	}
 	const defaultFalsifierExpected: FalsifierExpected | undefined =
 		evidenceKind === "red_test" || evidenceKind === "repro_command" ? "nonzero" : undefined;
-	const falsifierExpected = (rawFalsifierExpected as FalsifierExpected | undefined) ?? defaultFalsifierExpected;
+	const falsifierExpected = (normalizedFalsifierExpected as FalsifierExpected | undefined) ?? defaultFalsifierExpected;
 	const executable =
 		(evidenceKind === "red_test" || evidenceKind === "repro_command" || evidenceKind === "static_check") &&
 		falsifier.trim().length > 0 &&

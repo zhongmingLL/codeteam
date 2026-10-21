@@ -2,6 +2,7 @@ export * from "./adapters/pi-session.ts";
 export * from "./clock.ts";
 export * from "./control-plane.ts";
 export * from "./errors.ts";
+export * from "./eval/scoring.ts";
 export * from "./review/parser.ts";
 export * from "./review/prompt.ts";
 export * from "./review/types.ts";

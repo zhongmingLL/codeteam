@@ -1,0 +1,8 @@
+{
+  "name": "review-corpus-s03-date-inclusive",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

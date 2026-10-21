@@ -1,0 +1,8 @@
+{
+  "name": "review-corpus-s02-csv-quotes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

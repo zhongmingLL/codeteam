@@ -1,0 +1,8 @@
+{
+  "name": "review-corpus-s01-stats-mode",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

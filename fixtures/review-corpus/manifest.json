@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "registeredAt": "2026-10-21",
+  "thresholds": {
+    "cleanFpRateMax": 0.2,
+    "seededRecallMin": 0.6,
+    "findingSurvivalMin": 0.8
+  },
+  "samples": [
+    {
+      "id": "s01-stats-mode",
+      "title": "Add mode() to the stats module",
+      "base": "samples/s01-stats-mode/base",
+      "variants": {
+        "clean": "samples/s01-stats-mode/clean",
+        "bug": "samples/s01-stats-mode/bug"
+      },
+      "groundTruth": {
+        "file": "src/stats.js",
+        "keywords": ["mutat", "sort", "most frequent", "frequency", "tie", "largest", "maximum", "in place"],
+        "redTest": "samples/s01-stats-mode/red-test.mjs",
+        "bugSummary": "mode() sorts the caller's array in place and returns the largest value instead of the most frequent value; ties are wrong."
+      }
+    },
+    {
+      "id": "s02-csv-quotes",
+      "title": "Parse quoted CSV fields",
+      "base": "samples/s02-csv-quotes/base",
+      "variants": {
+        "clean": "samples/s02-csv-quotes/clean",
+        "bug": "samples/s02-csv-quotes/bug"
+      },
+      "groundTruth": {
+        "file": "src/csv.js",
+        "keywords": ["escaped", "double quote", "unescape", "quoted", "\"\""],
+        "redTest": "samples/s02-csv-quotes/red-test.mjs",
+        "bugSummary": "Every double quote toggles the quoted state, so an escaped quote (\"\") closes and reopens the field and the quote character is lost."
+      }
+    },
+    {
+      "id": "s03-date-inclusive",
+      "title": "Add eachDay() with an inclusive option",
+      "base": "samples/s03-date-inclusive/base",
+      "variants": {
+        "clean": "samples/s03-date-inclusive/clean",
+        "bug": "samples/s03-date-inclusive/bug"
+      },
+      "groundTruth": {
+        "file": "src/date.js",
+        "keywords": ["inclusive", "exclusive", "off-by-one", "extra day", "end date", "option"],
+        "redTest": "samples/s03-date-inclusive/red-test.mjs",
+        "bugSummary": "eachDay() ignores the inclusive option, so inclusive: false still returns the end date."
+      }
+    },
+    {
+      "id": "s04-retry-backoff",
+      "title": "Add capped exponential backoff",
+      "base": "samples/s04-retry-backoff/base",
+      "variants": {
+        "clean": "samples/s04-retry-backoff/clean",
+        "bug": "samples/s04-retry-backoff/bug"
+      },
+      "groundTruth": {
+        "file": "src/retry.js",
+        "keywords": ["cap", "backoff", "attempt", "exponential", "delay", "off-by-one"],
+        "redTest": "samples/s04-retry-backoff/red-test.mjs",
+        "bugSummary": "backoffMs() multiplies the capped base by 2 ** attempt, so the first delay is 200ms and the cap is bypassed for later attempts."
+      }
+    },
+    {
+      "id": "s05-lru-cache",
+      "title": "Add LRU eviction to the cache",
+      "base": "samples/s05-lru-cache/base",
+      "variants": {
+        "clean": "samples/s05-lru-cache/clean",
+        "bug": "samples/s05-lru-cache/bug"
+      },
+      "groundTruth": {
+        "file": "src/cache.js",
+        "keywords": ["recency", "overwrite", "evict", "least recently", "refresh", "insertion order"],
+        "redTest": "samples/s05-lru-cache/red-test.mjs",
+        "bugSummary": "set() does not refresh an existing key's recency, so overwriting a key leaves it at its old insertion position and the wrong key is evicted."
+      }
+    }
+  ]
+}

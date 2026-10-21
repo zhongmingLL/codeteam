@@ -1,6 +1,6 @@
 # F001: codeteam MVP - control plane, verifier, review gates
 
-Status: operator-approved; Phase 1 fixes applied, awaiting re-review
+Status: operator-approved; Phase 1 accepted; Phase 2 metrics passed, awaiting non-author review
 Owner: 宪宪 (architect/coder)
 Reviewers: 砚砚 (review/security), 烁烁 (kernel/runtime)
 Acceptance: co-creator
@@ -53,9 +53,13 @@ Acceptance:
 - DeepSeek, Kimi, and GLM each complete the fixture task; test file unchanged.
 - Kimi and GLM reviewers both approve a clean diff and reject a bad diff with blocking findings.
 
-### Phase 1 - verifier and permission wrapper (in review)
+### Phase 1 - verifier and permission wrapper (operator-accepted)
 
-Implementation: `packages/codeteam/src/verifier`. Review found 2 P1 and 4 P2; fixes applied, awaiting same-reviewer re-review.
+Implementation: `packages/codeteam/src/verifier`. Review found 2 P1 and 4 P2. Fixes in `659c6a6` were approved by the same non-author reviewer after 23 independent probes; 6/6 P1/P2 findings are closed.
+
+Backlog carried forward: P3-1 residual (oversized output still returns `blocked`), P3-3 parser fail-closed, per-executable flag allowlist upgrade, and hardlink residual. The last two are Phase 4 sandbox work.
+
+Operator accepted Phase 1 on 2026-10-21.
 
 Deliver:
 
@@ -72,7 +76,7 @@ Acceptance:
 - Verifier tool surface exposes no write primitives; strict mode executes no Node. Repro mode allows `node --test` only in a disposable worktree and is opt-in. Test code can still write/network; this is a known boundary until Phase 4 OS sandbox/low-privilege user, and the verifier must not be enabled on a real repo before that.
 - A finding is closed only by evidence.
 
-### Phase 2 - review reliability sample
+### Phase 2 - review reliability sample (metrics passed, awaiting non-author review)
 
 Deliver:
 
@@ -85,6 +89,8 @@ Acceptance:
 - Seeded-bug review recall >= 60%.
 - Finding survival >= 80%.
 - Thresholds are registered before the run, not adjusted after seeing results.
+
+Result (2026-10-21): 5 clean + 5 seeded samples, reviewer `kimi-coding/k3-256k`. Clean FP 0/5 = 0%, seeded recall 5/5 = 100%, finding survival 5/5 = 100%, 0 invalid verdicts, 10 review rounds, 19,435 input / 8,802 output tokens. Report: `docs/reports/2026-10-21-phase2-review-eval.md`.
 
 ### Phase 3 - SOP and A2A integration
 
@@ -121,14 +127,16 @@ Acceptance:
 - Phase review: author implements; a non-author reviewer reviews the phase diff and evidence. P1/P2 fixes are re-reviewed by the same reviewer. No self-merge.
 - Feature acceptance: operator runs the demo and checks the phase acceptance criteria. Local test-green alone is not acceptance.
 - Operator-only decisions: scope changes, remote history replacement, default branch changes, destructive operations, and auto-merge policy.
+- Review routing: serial handoffs use a line-start `@cat` on its own line; that is the wake. In this thread, Multi-Mention aggregation output arrived as an external message and did not wake the author, so `multi_mention` is reserved for parallel fan-out, not serial review dispatch.
 
 ## Current baseline
 
 - Remote: `zhongmingLL/codeteam`, default branch `codeteam`, root snapshot `fd8ba44`.
 - Local work branch: `codeteam-work` from `origin/codeteam`.
 - Local `codeteam` branch retains the pi v1.3.0 parent history at `def9bdc`.
-- Current checks: `npm run check`, 19 codeteam tests, 3/3 provider live smoke, Kimi/GLM review smoke.
-- Reports: `docs/reports/2026-10-21-gate-b-smoke.md`, `docs/reports/2026-10-21-review-smoke.md`.
+- Current checks: `npm run check`, 54 codeteam tests, 3/3 provider live smoke, Kimi/GLM review smoke.
+- Phase 2 corpus: `fixtures/review-corpus` (5 samples, clean + seeded variants) is implemented; the final run passed the registered thresholds.
+- Reports: `docs/reports/2026-10-21-gate-b-smoke.md`, `docs/reports/2026-10-21-review-smoke.md`, `docs/reports/2026-10-21-phase2-review-eval.md`.
 
 ## Risks and blockers
 

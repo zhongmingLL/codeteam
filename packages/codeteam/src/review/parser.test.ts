@@ -87,6 +87,25 @@ describe("review verdict parser", () => {
 		expect(verdict.findings[0]?.severity).toBe("P3");
 	});
 
+	it("treats an empty falsifierExpected as absent", () => {
+		const verdict = parseReviewVerdict(
+			JSON.stringify({
+				verdict: "changes_requested",
+				findings: [
+					{
+						severity: "P3",
+						claim: "a negative capacity can loop forever",
+						evidenceKind: "judgment",
+						falsifier: "",
+						falsifierExpected: "",
+						requiredAction: "validate the capacity",
+					},
+				],
+			}),
+		);
+		expect(verdict.findings[0]?.falsifierExpected).toBeUndefined();
+	});
+
 	it("parses JSON inside a markdown code fence", () => {
 		const verdict = parseReviewVerdict('```json\n{"verdict":"approve","findings":[]}\n```');
 		expect(verdict.verdict).toBe("approve");

@@ -1,0 +1,8 @@
+{
+  "name": "review-corpus-s04-retry-backoff",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
