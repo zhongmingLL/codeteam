@@ -21,7 +21,7 @@
 	},
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "phase3-demo": "node ./src/dev/phase3-demo.ts",
+    "phase3-demo": "node ./src/cli.ts phase3-demo",
     "test": "vitest --run"
   },
   "devDependencies": {

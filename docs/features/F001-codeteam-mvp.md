@@ -1,6 +1,6 @@
 # F001: codeteam MVP - control plane, verifier, review gates
 
-Status: operator-approved; Phase 1 accepted; Phase 2 accepted; Phase 3 accepted; Phase 4 implemented and CI-passing, awaiting non-author review
+Status: operator-approved; Phases 1-4 implemented, reviewed, and CI-passing; awaiting final feature acceptance
 Owner: 宪宪 (architect/coder)
 Reviewers: 砚砚 (review/security), 烁烁 (kernel/runtime)
 Acceptance: co-creator
@@ -117,7 +117,7 @@ Reviewer 烁烁 approved `42cba12` after `npm run check` and 66/66 tests. Two P2
 
 Operator accepted Phase 3 on 2026-10-21.
 
-### Phase 4 - interface and CI (CI passing, awaiting non-author review)
+### Phase 4 - interface and CI (reviewer-approved, awaiting final feature acceptance)
 
 Carryover hardening from Phase 3 review:
 
@@ -140,6 +140,8 @@ Acceptance:
 Result (2026-10-21): the CLI adapter ran the Phase 3 demo end-to-end (`awaiting_merge`, 2 rounds, P1/P2 resolved, reviewer provider `kimi` vs author provider `deepseek`). CI workflow and branch workflow docs are in place. The Phase 3 P2 hardening items are fixed and covered by tests. Report: `docs/reports/2026-10-21-phase4-ci-adapter.md`.
 
 CI run [39564735595](https://github.com/zhongmingLL/codeteam/actions/runs/39564735595) passed on commit `676acc8` on the `codeteam` default branch. The workflow restores the pinned `pi-ai@1.3.0` provider data and builds the workspace before check and codeteam tests.
+
+Reviewer 砚砚 approved `a8f6f99` after `npm run check`, 69/69 tests, CLI usage verification, report/JSON reconciliation, and independent CI-run verification. P3-A (package script routed through the CLI) is fixed in the follow-up commit. P3-B (provider metadata trust) and P3-C (npm pack checksum) are notes for future hardening.
 
 ## Review gates
 

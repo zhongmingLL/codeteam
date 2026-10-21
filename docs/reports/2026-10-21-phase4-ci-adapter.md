@@ -28,6 +28,8 @@ Command: `node packages/codeteam/src/cli.ts phase3-demo`
 
 Raw result: `docs/reports/2026-10-21-phase4-adapter-demo.json`.
 
+After the P3-A fix, `npm run phase3-demo --workspace=@codeteam/core` was exercised end-to-end. The package script now routes through `src/cli.ts` and produced another `awaiting_merge` result with the same handoff shape.
+
 ## Verification
 
 - `npm run check` passes.
@@ -39,3 +41,13 @@ Raw result: `docs/reports/2026-10-21-phase4-adapter-demo.json`.
 
 - CI does not call live model providers; the adapter demo remains a local acceptance run.
 - The workflow had to restore the published `pi-ai@1.3.0` provider data and build the workspace before the codeteam tests could resolve their workspace package entry points. The first two CI attempts failed on those prerequisites, not on codeteam code.
+
+## Review
+
+Non-author review by 砚砚 (GLM-5.3-Flash) on 2026-10-21: **approve** at `a8f6f99`. Review baseline: `npm run check`, 69/69 codeteam tests, CLI usage path, archived JSON/report reconciliation, and independent `gh` verification of both CI runs.
+
+P3 follow-ups:
+
+- P3-A (fixed in the next commit): the `phase3-demo` package script pointed at the demo module instead of the CLI adapter. It now routes through `src/cli.ts`.
+- P3-B (note): provider inequality relies on adapter-reported provider metadata. It is sufficient for the current single-process runs; a future cross-trust-boundary run needs a verifiable provider source.
+- P3-C (note): CI downloads `pi-ai@1.3.0` with `npm pack` without a checksum. The version pin is the current control; supply-chain hardening can add a checksum later.
