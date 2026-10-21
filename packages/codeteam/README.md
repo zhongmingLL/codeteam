@@ -9,6 +9,8 @@ codeteam 的控制面：SOP、typed handoff、单槽 CAS、one terminal、deadli
 - `ControlPlane`：task / run / handoff、单槽 CAS、one terminal、deadline、loop guard、startup recovery、stage 异常边。
 - `SqliteControlStore`：`node:sqlite` 持久化，支持重启后 hydrate。
 - `createCodeteamSession`：按 role 创建 pi `AgentSession`；coder 持久化，reviewer/verifier fresh context。
+- `Phase3Orchestrator`：typed handoff 串 `implement -> review -> verify`，非作者 review、falsifier closure、human merge gate。
+- `Phase 3 demo`：`node packages/codeteam/src/dev/phase3-demo.ts` 用 seeded bug 跑完整链路。
 
 ## 验证
 

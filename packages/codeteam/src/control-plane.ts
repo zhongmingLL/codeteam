@@ -256,6 +256,14 @@ export class ControlPlane {
 		return task;
 	}
 
+	markTaskBlocked(taskId: string): Task {
+		const task = this.getTask(taskId);
+		task.status = "blocked";
+		this.store?.saveTask(task);
+		this.wake();
+		return task;
+	}
+
 	requestStageChange(taskId: string, kind: StageChangeKind): Task {
 		const task = this.getTask(taskId);
 		const workflow = new Workflow(task.stage);
