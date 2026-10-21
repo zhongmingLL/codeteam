@@ -1,6 +1,6 @@
 # F001: codeteam MVP - control plane, verifier, review gates
 
-Status: operator-approved; Phase 1 accepted; Phase 2 accepted; Phase 3 implemented and live-demoed, awaiting non-author review
+Status: operator-approved; Phase 1 accepted; Phase 2 accepted; Phase 3 reviewer-approved (`42cba12`), awaiting operator acceptance
 Owner: 宪宪 (architect/coder)
 Reviewers: 砚砚 (review/security), 烁烁 (kernel/runtime)
 Acceptance: co-creator
@@ -96,7 +96,7 @@ Reviewer 砚砚 approved `83bdf20` after `npm run check`, 19/19 scoring/parser t
 
 Operator accepted Phase 2 on 2026-10-21.
 
-### Phase 3 - SOP and A2A integration (implemented, awaiting non-author review)
+### Phase 3 - SOP and A2A integration (reviewer-approved, awaiting operator acceptance)
 
 Deliver:
 
@@ -113,7 +113,15 @@ Acceptance:
 
 Result (2026-10-21): the `s01-stats-mode` seeded bug ran through 7 typed handoffs (`implement -> review -> verify -> implement -> review -> verify`), 2 review rounds. The reviewer instance differed from the author; P1/P2 were resolved by falsifiers; P3 findings were recorded as blocked/still-confirmed and are non-gating. The task stops at a pending human merge handoff. Report: `docs/reports/2026-10-21-phase3-orchestrator-demo.md`.
 
+Reviewer 烁烁 approved `42cba12` after `npm run check` and 66/66 tests. Two P2 hardening items moved to Phase 4: a port exception should create a typed blocker handoff, and coder/reviewer provider inequality should be enforced or validated.
+
 ### Phase 4 - interface and CI
+
+Carryover hardening from Phase 3 review:
+
+- On a coder/reviewer/verifier port exception, create a typed blocker handoff before rethrowing.
+- Enforce or validate that the reviewer provider differs from the coder provider.
+- Add orchestrator tests for port failure and test-file modification; fix blocker `fromRole`; degrade reviewer prompt errors to a blocked verdict.
 
 Deliver:
 

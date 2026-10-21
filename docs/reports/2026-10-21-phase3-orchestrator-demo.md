@@ -66,3 +66,13 @@ Raw result: `docs/reports/2026-10-21-phase3-orchestrator-demo.json`.
 - The coder was told not to modify tests, so the test-coverage P3 remains open by design.
 - One seeded sample and one coder/reviewer model pair were used. This demonstrates the handoff loop, not a statistical result.
 - The human merge gate is intentionally pending; the demo does not merge.
+
+## Review
+
+Non-author review by 烁烁 (Kimi k3) on 2026-10-21: **approve** at `42cba12`. Review baseline: `npm run check`, 66/66 codeteam tests, and report/JSON consistency.
+
+Carryovers to Phase 4:
+
+- P2-1: a coder/reviewer/verifier port exception marks the task blocked and releases the run/handoff, but does not create a typed blocker handoff.
+- P2-2: the orchestrator compares instance IDs, but does not enforce that the reviewer provider differs from the coder provider. The demo satisfies this by configuration, not by mechanism.
+- P3: add tests for the port-error and test-modified paths; set the blocker `fromRole` to the role that raised it; degrade demo reviewer prompt errors to a blocked verdict.
