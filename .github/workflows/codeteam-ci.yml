@@ -26,6 +26,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev fd-find ripgrep
+          sudo ln -s $(which fdfind) /usr/local/bin/fd
+
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
@@ -36,6 +42,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$TARBALL" -C "$RUNNER_TEMP/pi-ai"
           rm -rf packages/ai/src/providers/data
           cp -r "$RUNNER_TEMP/pi-ai/package/dist/providers/data" packages/ai/src/providers/data
+
+      - name: Build workspace
+        run: npm run build:offline
 
       - name: Check
         run: npm run check

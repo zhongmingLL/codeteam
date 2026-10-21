@@ -6,7 +6,7 @@
   - `node packages/codeteam/src/cli.ts phase3-demo` runs the live Phase 3 demo.
   - `node packages/codeteam/src/cli.ts` prints usage and exits 1.
   - `npm run phase3-demo --workspace=@codeteam/core` is the package script equivalent.
-- CI: `.github/workflows/codeteam-ci.yml` runs `npm ci --ignore-scripts`, restores the pinned `@earendil-works/pi-ai@1.3.0` provider data, runs `npm run check`, and runs the codeteam tests on push/pull request to `codeteam`. The upstream `ci.yml` is left unchanged. Restoring the published data is required because the repository does not commit generated provider data and the v1.3.0 tests are pinned to that catalog; regenerating the latest catalog breaks the test types.
+- CI: `.github/workflows/codeteam-ci.yml` runs `npm ci --ignore-scripts`, restores the pinned `@earendil-works/pi-ai@1.3.0` provider data, builds the workspace with `npm run build:offline`, runs `npm run check`, and runs the codeteam tests on push/pull request to `codeteam`. The upstream `ci.yml` is left unchanged. Restoring the published data is required because the repository does not commit generated provider data and the v1.3.0 tests are pinned to that catalog; regenerating the latest catalog breaks the test types. The build is required because the workspace packages resolve through their `dist` entry points.
 - Branch workflow: `docs/operations/branching.md`. Pushes are fast-forward to `origin/codeteam`; no force push.
 - Phase 3 hardening:
   - A coder/reviewer/verifier port exception now creates a typed blocker handoff with `code: "port_error"` and releases the run/handoff.
