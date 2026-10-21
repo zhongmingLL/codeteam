@@ -1,6 +1,6 @@
 import type { ControlPlane } from "./control-plane.ts";
 import type { ReviewFinding, ReviewVerdict } from "./review/types.ts";
-import type { Handoff, Task } from "./types.ts";
+import type { Handoff, Role, Task } from "./types.ts";
 import type { FindingClosure } from "./verifier/closure.ts";
 import { closeFindings } from "./verifier/closure.ts";
 import type { FindingVerification } from "./verifier/types.ts";
@@ -11,7 +11,9 @@ export type Phase3ErrorCode =
 	| "review_loop"
 	| "review_blocked"
 	| "verifier_blocked"
-	| "unclosed_finding";
+	| "unclosed_finding"
+	| "port_error"
+	| "reviewer_provider_mismatch";
 
 export class Phase3Error extends Error {
 	readonly code: Phase3ErrorCode;
@@ -36,6 +38,7 @@ export interface ImplementResult {
 	testReport: string;
 	testFileUnchanged: boolean;
 	agentInstanceId: string;
+	provider: string;
 }
 
 export interface ReviewRequest {
@@ -45,6 +48,7 @@ export interface ReviewRequest {
 	diff: string;
 	testReport: string;
 	authorInstanceId: string;
+	authorProvider: string;
 	authorRunId: string;
 	reviewerRunId: string;
 	previousFindings: ReviewFinding[];
@@ -53,6 +57,7 @@ export interface ReviewRequest {
 export interface ReviewResult {
 	verdict: ReviewVerdict;
 	agentInstanceId: string;
+	provider: string;
 }
 
 export interface VerifyRequest {
@@ -96,6 +101,8 @@ export interface Phase3Result {
 	blockerHandoff?: Handoff;
 	authorInstanceId: string;
 	reviewerInstanceId: string;
+	authorProvider: string;
+	reviewerProvider: string;
 }
 
 const DEFAULT_MAX_REVIEW_ROUNDS = 2;
@@ -130,6 +137,8 @@ export class Phase3Orchestrator {
 	private initialVerifications: FindingVerification[] = [];
 	private authorInstanceId = "";
 	private reviewerInstanceId = "";
+	private authorProvider = "";
+	private reviewerProvider = "";
 	private diff = "";
 	private testReport = "";
 	private round = 1;
@@ -172,6 +181,7 @@ export class Phase3Orchestrator {
 		});
 		this.requireUnchangedTests(initial);
 		this.authorInstanceId = initial.agentInstanceId;
+		this.authorProvider = initial.provider;
 		this.lastAuthorRunId = coderRun.id;
 		this.diff = initial.diff;
 		this.testReport = initial.testReport;
@@ -180,7 +190,7 @@ export class Phase3Orchestrator {
 		for (;;) {
 			const review = await this.reviewRound();
 			if (review.verdict.verdict === "blocked") {
-				return this.block("review_blocked", review.verdict.findings);
+				return this.block("review_blocked", review.verdict.findings, [], [], "reviewer");
 			}
 			this.allFindings.push(...review.verdict.findings);
 			const blocking = review.verdict.findings.filter(isBlocking);
@@ -198,7 +208,7 @@ export class Phase3Orchestrator {
 				const index = this.allFindings.indexOf(finding);
 				return statusFor(initialVerification, index) === "blocked";
 			});
-			if (blocked.length > 0) return this.block("verifier_blocked", blocked);
+			if (blocked.length > 0) return this.block("verifier_blocked", blocked, [], [], "verifier");
 
 			const confirmed = blocking.filter((finding) => {
 				const index = this.allFindings.indexOf(finding);
@@ -208,7 +218,9 @@ export class Phase3Orchestrator {
 				const closures = closeFindings(this.allFindings, this.initialVerifications, initialVerification);
 				return this.awaitMerge(closures, initialVerification);
 			}
-			if (this.round >= this.options.maxReviewRounds) return this.block("review_loop", confirmed);
+			if (this.round >= this.options.maxReviewRounds) {
+				return this.block("review_loop", confirmed, [], [], "reviewer");
+			}
 
 			this.plane.advanceTask(taskId, "implement");
 			await this.fixRound(confirmed);
@@ -229,6 +241,7 @@ export class Phase3Orchestrator {
 				unresolved.map((closure) => closure.finding),
 				closures,
 				finalVerification,
+				"verifier",
 			);
 		}
 		return this.awaitMerge(closures, finalVerification);
@@ -262,6 +275,7 @@ export class Phase3Orchestrator {
 				diff: this.diff,
 				testReport: this.testReport,
 				authorInstanceId: this.authorInstanceId,
+				authorProvider: this.authorProvider,
 				authorRunId: this.lastAuthorRunId,
 				reviewerRunId: reviewerRun.id,
 				previousFindings: this.allFindings,
@@ -269,13 +283,29 @@ export class Phase3Orchestrator {
 		);
 		if (review.agentInstanceId === this.authorInstanceId) {
 			this.plane.complete(handoff.id, reviewerRun.id, { error: "author_self_review" });
-			this.block("author_self_review", review.verdict.findings);
+			this.block("author_self_review", review.verdict.findings, [], [], "reviewer");
 			throw new Phase3Error(
 				"author_self_review",
 				`reviewer instance ${review.agentInstanceId} is the author instance; self-review is not allowed`,
 			);
 		}
+		if (review.provider === this.authorProvider) {
+			this.plane.complete(handoff.id, reviewerRun.id, { error: "reviewer_provider_mismatch" });
+			this.block(
+				"reviewer_provider_mismatch",
+				review.verdict.findings,
+				[],
+				[],
+				"reviewer",
+				`reviewer provider ${review.provider} matches author provider`,
+			);
+			throw new Phase3Error(
+				"reviewer_provider_mismatch",
+				`reviewer provider ${review.provider} matches author provider ${this.authorProvider}`,
+			);
+		}
 		this.reviewerInstanceId = review.agentInstanceId;
+		this.reviewerProvider = review.provider;
 		this.plane.complete(handoff.id, reviewerRun.id, { verdict: review.verdict });
 		return review;
 	}
@@ -310,6 +340,7 @@ export class Phase3Orchestrator {
 		});
 		this.requireUnchangedTests(fix);
 		this.authorInstanceId = fix.agentInstanceId;
+		this.authorProvider = fix.provider;
 		this.lastAuthorRunId = fixRun.id;
 		this.diff = fix.diff;
 		this.testReport = fix.testReport;
@@ -342,7 +373,7 @@ export class Phase3Orchestrator {
 
 	private requireUnchangedTests(result: ImplementResult): void {
 		if (result.testFileUnchanged) return;
-		this.block("test_modified", []);
+		this.block("test_modified", [], [], [], "coder", "the implementation modified a test file");
 		throw new Phase3Error("test_modified", "the implementation modified a test file");
 	}
 
@@ -350,8 +381,9 @@ export class Phase3Orchestrator {
 		try {
 			return await operation();
 		} catch (error) {
+			const run = this.plane.getRun(runId);
 			this.plane.finishRun(runId, "interrupted");
-			this.plane.markTaskBlocked(this.options.taskId);
+			this.block("port_error", [], [], [], run.role, error instanceof Error ? error.message : String(error));
 			throw error;
 		}
 	}
@@ -384,6 +416,8 @@ export class Phase3Orchestrator {
 			mergeHandoff: handoff,
 			authorInstanceId: this.authorInstanceId,
 			reviewerInstanceId: this.reviewerInstanceId,
+			authorProvider: this.authorProvider,
+			reviewerProvider: this.reviewerProvider,
 		};
 	}
 
@@ -392,18 +426,20 @@ export class Phase3Orchestrator {
 		findings: ReviewFinding[],
 		closures: FindingClosure[] = [],
 		finalVerification: FindingVerification[] = [],
+		fromRole: Role = "verifier",
+		reason?: string,
 	): Phase3Result {
 		const { taskId } = this.options;
 		this.plane.markTaskBlocked(taskId);
 		const handoff = this.plane.createHandoff({
 			taskId,
 			kind: "blocker",
-			fromRole: "verifier",
+			fromRole,
 			toRole: "human",
 			subject: `blocker-${taskId}-${code}`,
-			actionPair: "verifier->human:blocker",
+			actionPair: `${fromRole}->human:blocker`,
 			expectedArtifact: "human decision",
-			payload: { code, findings, closures },
+			payload: { code, reason, findings, closures },
 		});
 		return {
 			outcome: "blocked",
@@ -416,6 +452,8 @@ export class Phase3Orchestrator {
 			blockerHandoff: handoff,
 			authorInstanceId: this.authorInstanceId,
 			reviewerInstanceId: this.reviewerInstanceId,
+			authorProvider: this.authorProvider,
+			reviewerProvider: this.reviewerProvider,
 		};
 	}
 }

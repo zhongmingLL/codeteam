@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { type AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createCodeteamSession } from "../adapters/pi-session.ts";
@@ -151,6 +151,7 @@ async function runCoderFix(
 		testReport: `${test.outputTail}\nmodel=${models.coderModel.label}`,
 		testFileUnchanged,
 		agentInstanceId: `coder:${models.coderProvider}:${randomUUID()}`,
+		provider: models.coderProvider,
 	};
 }
 
@@ -194,11 +195,16 @@ async function runReviewer(models: DemoModels, request: ReviewRequest): Promise<
 	}
 	const rawText = session.getLastAssistantText() ?? "";
 	const modelError = session.agent.state.errorMessage ?? "";
+	const failed = promptError.length > 0 || modelError.length > 0;
 	let verdict: ReviewVerdict;
-	try {
-		verdict = parseReviewVerdict(rawText);
-	} catch {
+	if (failed) {
 		verdict = { verdict: "blocked", findings: [] };
+	} else {
+		try {
+			verdict = parseReviewVerdict(rawText);
+		} catch {
+			verdict = { verdict: "blocked", findings: [] };
+		}
 	}
 	session.dispose();
 	console.log(
@@ -210,10 +216,11 @@ async function runReviewer(models: DemoModels, request: ReviewRequest): Promise<
 	return {
 		verdict,
 		agentInstanceId: `reviewer:${models.reviewerProvider}:${randomUUID()}`,
+		provider: models.reviewerProvider,
 	};
 }
 
-async function main(): Promise<void> {
+export async function runPhase3Demo(): Promise<void> {
 	const repoRoot = resolve(fileURLToPath(new URL("../../../..", import.meta.url)));
 	const sample = join(repoRoot, "fixtures/review-corpus/samples/s01-stats-mode");
 	const baseDir = join(sample, "base");
@@ -235,6 +242,7 @@ async function main(): Promise<void> {
 					testReport: `${initialTest.outputTail}\nseeded bug: s01-stats-mode`,
 					testFileUnchanged: true,
 					agentInstanceId: "seed:author",
+					provider: "seed",
 				};
 			}
 			console.log(`[phase3] coder fix iteration ${request.iteration}`);
@@ -292,6 +300,8 @@ async function main(): Promise<void> {
 		blockerHandoff: result.blockerHandoff?.id,
 		authorInstanceId: result.authorInstanceId,
 		reviewerInstanceId: result.reviewerInstanceId,
+		authorProvider: result.authorProvider,
+		reviewerProvider: result.reviewerProvider,
 		workdirs: { initialWorkdir, workdir },
 		resultPath,
 	};
@@ -305,4 +315,6 @@ async function main(): Promise<void> {
 	}
 }
 
-await main();
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+	await runPhase3Demo();
+}

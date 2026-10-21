@@ -60,11 +60,13 @@ function makePorts(options: FakeOptions = {}): Phase3Ports {
 				testReport: "green",
 				testFileUnchanged: true,
 				agentInstanceId: `coder-${request.iteration + 1}`,
+				provider: "coder-provider",
 			},
 		review: async (request) =>
 			options.review?.(request) ?? {
 				verdict: { verdict: "approve", findings: [] },
 				agentInstanceId: `reviewer-${request.iteration}`,
+				provider: "reviewer-provider",
 			},
 		verify: async (request) =>
 			options.verify?.(request) ?? {
@@ -94,12 +96,14 @@ describe("phase 3 orchestrator", () => {
 				testReport: "green",
 				testFileUnchanged: true,
 				agentInstanceId: `coder-${request.iteration + 1}`,
+				provider: "coder-provider",
 			}),
 			review: (request) => {
 				reviewCalls += 1;
 				return {
 					verdict: reviewCalls === 1 ? verdictOf("changes_requested", [finding]) : verdictOf("approve", []),
 					agentInstanceId: `reviewer-${request.iteration}`,
+					provider: "reviewer-provider",
 				};
 			},
 			verify: (request) => ({
@@ -126,6 +130,8 @@ describe("phase 3 orchestrator", () => {
 		expect(result.mergeHandoff?.toRole).toBe("human");
 		expect(result.authorInstanceId).toBe("coder-2");
 		expect(result.reviewerInstanceId).toBe("reviewer-2");
+		expect(result.authorProvider).toBe("coder-provider");
+		expect(result.reviewerProvider).toBe("reviewer-provider");
 		expect(plane.getTask("task-1").stage).toBe("verify");
 		expect(plane.getTask("task-1").status).toBe("running");
 		expect(plane.listHandoffs("task-1")).toHaveLength(7);
@@ -136,6 +142,7 @@ describe("phase 3 orchestrator", () => {
 			review: () => ({
 				verdict: verdictOf("changes_requested", [finding]),
 				agentInstanceId: "coder-1",
+				provider: "reviewer-provider",
 			}),
 		});
 		const { plane } = setup(ports);
@@ -156,7 +163,11 @@ describe("phase 3 orchestrator", () => {
 
 	it("blocks when the verifier cannot execute a blocking finding", async () => {
 		const ports = makePorts({
-			review: () => ({ verdict: verdictOf("changes_requested", [finding]), agentInstanceId: "reviewer-1" }),
+			review: () => ({
+				verdict: verdictOf("changes_requested", [finding]),
+				agentInstanceId: "reviewer-1",
+				provider: "reviewer-provider",
+			}),
 			verify: (request) => ({
 				verifications: request.findings.map((subject, index) => verification(index, "blocked", subject)),
 			}),
@@ -184,6 +195,7 @@ describe("phase 3 orchestrator", () => {
 				return {
 					verdict: reviewCalls === 1 ? verdictOf("changes_requested", [finding]) : verdictOf("approve", []),
 					agentInstanceId: `reviewer-${request.iteration}`,
+					provider: "reviewer-provider",
 				};
 			},
 			verify: (request) => ({
@@ -215,11 +227,13 @@ describe("phase 3 orchestrator", () => {
 					testReport: "green",
 					testFileUnchanged: true,
 					agentInstanceId: `coder-${implementCalls}`,
+					provider: "coder-provider",
 				};
 			},
 			review: (request) => ({
 				verdict: verdictOf("changes_requested", [finding]),
 				agentInstanceId: `reviewer-${request.iteration}`,
+				provider: "reviewer-provider",
 			}),
 		});
 		const { plane } = setup(ports);
@@ -240,7 +254,11 @@ describe("phase 3 orchestrator", () => {
 
 	it("goes straight to the merge gate when the first review approves", async () => {
 		const ports = makePorts({
-			review: () => ({ verdict: verdictOf("approve", []), agentInstanceId: "reviewer-1" }),
+			review: () => ({
+				verdict: verdictOf("approve", []),
+				agentInstanceId: "reviewer-1",
+				provider: "reviewer-provider",
+			}),
 		});
 		const { plane } = setup(ports);
 		const result = await runPhase3({
@@ -266,7 +284,11 @@ describe("phase 3 orchestrator", () => {
 			falsifier: "",
 		};
 		const ports = makePorts({
-			review: () => ({ verdict: verdictOf("approve", [p3]), agentInstanceId: "reviewer-1" }),
+			review: () => ({
+				verdict: verdictOf("approve", [p3]),
+				agentInstanceId: "reviewer-1",
+				provider: "reviewer-provider",
+			}),
 			verify: (request) => ({
 				verifications: request.findings.map((subject, index) => verification(index, "blocked", subject)),
 			}),
@@ -285,5 +307,86 @@ describe("phase 3 orchestrator", () => {
 		expect(result.closures[0]?.initialStatus).toBe("blocked");
 		expect(result.closures[0]?.finalStatus).toBe("blocked");
 		expect(result.closures[0]?.status).toBe("blocked");
+	});
+
+	it("rejects a reviewer from the same provider as the author", async () => {
+		const ports = makePorts({
+			review: () => ({
+				verdict: verdictOf("approve", []),
+				agentInstanceId: "reviewer-1",
+				provider: "coder-provider",
+			}),
+		});
+		const { plane } = setup(ports);
+
+		await expect(
+			runPhase3({
+				taskId: "task-1",
+				objective: "fix the seeded bug",
+				initialWorkdir: "/tmp/initial",
+				workdir: "/tmp/work",
+				plane,
+				ports,
+			}),
+		).rejects.toMatchObject({ code: "reviewer_provider_mismatch" } satisfies Partial<Phase3Error>);
+		expect(plane.getTask("task-1").status).toBe("blocked");
+		const blocker = plane.listHandoffs("task-1").find((handoff) => handoff.kind === "blocker");
+		expect(blocker?.payload.code).toBe("reviewer_provider_mismatch");
+		expect(blocker?.fromRole).toBe("reviewer");
+	});
+
+	it("creates a typed blocker handoff and releases the run when a port throws", async () => {
+		const ports = makePorts({
+			implement: () => {
+				throw new Error("coder exploded");
+			},
+		});
+		const { plane } = setup(ports);
+
+		await expect(
+			runPhase3({
+				taskId: "task-1",
+				objective: "fix the seeded bug",
+				initialWorkdir: "/tmp/initial",
+				workdir: "/tmp/work",
+				plane,
+				ports,
+			}),
+		).rejects.toThrow("coder exploded");
+		expect(plane.getTask("task-1").status).toBe("blocked");
+		const handoffs = plane.listHandoffs("task-1");
+		const blocker = handoffs.find((handoff) => handoff.kind === "blocker");
+		expect(blocker?.payload.code).toBe("port_error");
+		expect(blocker?.fromRole).toBe("coder");
+		expect(handoffs.find((handoff) => handoff.kind === "handoff")?.status).toBe("pending");
+		expect(plane.getRun("coder-task-1-0").status).toBe("interrupted");
+	});
+
+	it("blocks and records evidence when the implementation modifies a test file", async () => {
+		const ports = makePorts({
+			implement: () => ({
+				diff: "diff-1",
+				testReport: "green",
+				testFileUnchanged: false,
+				agentInstanceId: "coder-1",
+				provider: "coder-provider",
+			}),
+		});
+		const { plane } = setup(ports);
+
+		await expect(
+			runPhase3({
+				taskId: "task-1",
+				objective: "fix the seeded bug",
+				initialWorkdir: "/tmp/initial",
+				workdir: "/tmp/work",
+				plane,
+				ports,
+			}),
+		).rejects.toMatchObject({ code: "test_modified" } satisfies Partial<Phase3Error>);
+		expect(plane.getTask("task-1").status).toBe("blocked");
+		const blocker = plane.listHandoffs("task-1").find((handoff) => handoff.kind === "blocker");
+		expect(blocker?.payload.code).toBe("test_modified");
+		expect(blocker?.fromRole).toBe("coder");
 	});
 });

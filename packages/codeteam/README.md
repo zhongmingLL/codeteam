@@ -11,6 +11,7 @@ codeteam 的控制面：SOP、typed handoff、单槽 CAS、one terminal、deadli
 - `createCodeteamSession`：按 role 创建 pi `AgentSession`；coder 持久化，reviewer/verifier fresh context。
 - `Phase3Orchestrator`：typed handoff 串 `implement -> review -> verify`，非作者 review、falsifier closure、human merge gate。
 - `Phase 3 demo`：`node packages/codeteam/src/dev/phase3-demo.ts` 用 seeded bug 跑完整链路。
+- CLI：`node packages/codeteam/src/cli.ts phase3-demo`（或 `npm run phase3-demo --workspace=@codeteam/core`）。
 
 ## 验证
 

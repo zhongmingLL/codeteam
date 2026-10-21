@@ -1,6 +1,6 @@
 # F001: codeteam MVP - control plane, verifier, review gates
 
-Status: operator-approved; Phase 1 accepted; Phase 2 accepted; Phase 3 reviewer-approved (`42cba12`), awaiting operator acceptance
+Status: operator-approved; Phase 1 accepted; Phase 2 accepted; Phase 3 accepted; Phase 4 implemented, awaiting CI/review
 Owner: 宪宪 (architect/coder)
 Reviewers: 砚砚 (review/security), 烁烁 (kernel/runtime)
 Acceptance: co-creator
@@ -96,7 +96,7 @@ Reviewer 砚砚 approved `83bdf20` after `npm run check`, 19/19 scoring/parser t
 
 Operator accepted Phase 2 on 2026-10-21.
 
-### Phase 3 - SOP and A2A integration (reviewer-approved, awaiting operator acceptance)
+### Phase 3 - SOP and A2A integration (operator-accepted)
 
 Deliver:
 
@@ -115,7 +115,9 @@ Result (2026-10-21): the `s01-stats-mode` seeded bug ran through 7 typed handoff
 
 Reviewer 烁烁 approved `42cba12` after `npm run check` and 66/66 tests. Two P2 hardening items moved to Phase 4: a port exception should create a typed blocker handoff, and coder/reviewer provider inequality should be enforced or validated.
 
-### Phase 4 - interface and CI
+Operator accepted Phase 3 on 2026-10-21.
+
+### Phase 4 - interface and CI (implemented, awaiting CI/review)
 
 Carryover hardening from Phase 3 review:
 
@@ -135,6 +137,8 @@ Acceptance:
 - A new commit is pushed without history replacement.
 - The adapter can run the Phase 3 demo.
 
+Result (2026-10-21): the CLI adapter ran the Phase 3 demo end-to-end (`awaiting_merge`, 2 rounds, P1/P2 resolved, reviewer provider `kimi` vs author provider `deepseek`). CI workflow and branch workflow docs are in place. The Phase 3 P2 hardening items are fixed and covered by tests. Report: `docs/reports/2026-10-21-phase4-ci-adapter.md`.
+
 ## Review gates
 
 - Design gate: this document plus the architecture plan require operator sign-off before Phase 1 starts.
@@ -148,9 +152,9 @@ Acceptance:
 - Remote: `zhongmingLL/codeteam`, default branch `codeteam`, root snapshot `fd8ba44`.
 - Local work branch: `codeteam-work` from `origin/codeteam`.
 - Local `codeteam` branch retains the pi v1.3.0 parent history at `def9bdc`.
-- Current checks: `npm run check`, 66 codeteam tests, 3/3 provider live smoke, Kimi/GLM review smoke.
+- Current checks: `npm run check`, 69 codeteam tests, 3/3 provider live smoke, Kimi/GLM review smoke.
 - Phase 2 corpus: `fixtures/review-corpus` (5 samples, clean + seeded variants) is implemented; the final run passed the registered thresholds.
-- Reports: `docs/reports/2026-10-21-gate-b-smoke.md`, `docs/reports/2026-10-21-review-smoke.md`, `docs/reports/2026-10-21-phase2-review-eval.md`, `docs/reports/2026-10-21-phase2-review-eval.json`, `docs/reports/2026-10-21-phase3-orchestrator-demo.md`, `docs/reports/2026-10-21-phase3-orchestrator-demo.json`.
+- Reports: `docs/reports/2026-10-21-gate-b-smoke.md`, `docs/reports/2026-10-21-review-smoke.md`, `docs/reports/2026-10-21-phase2-review-eval.md`, `docs/reports/2026-10-21-phase2-review-eval.json`, `docs/reports/2026-10-21-phase3-orchestrator-demo.md`, `docs/reports/2026-10-21-phase3-orchestrator-demo.json`, `docs/reports/2026-10-21-phase4-ci-adapter.md`, `docs/reports/2026-10-21-phase4-adapter-demo.json`.
 
 ## Risks and blockers
 
