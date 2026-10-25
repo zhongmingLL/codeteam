@@ -45,9 +45,13 @@ The kernel is read-only by default. `packages/codeteam-*`, extensions, MCP serve
 ## Baseline verification
 
 ```bash
-npm install --ignore-scripts
-npm run build:offline
-./test.sh
+NODE_ENV=development npm install --ignore-scripts
+NODE_ENV=development npm run build:offline
+NODE_ENV=development ./test.sh
 ```
 
 These checks prove the upstream build and tests. They do **not** prove the W0a acceptance items: L0 compaction preservation, session export/resume, and the Hub compatibility spike must be verified separately.
+
+## Downstream divergences
+
+- Root `AGENTS.md`: codeteam project instructions. The pi `v1.4.0` `AGENTS.md` is preserved at `docs/upstream/pi-development-rules.md` and applies to pi package work. Reason: F302 treats an existing root `AGENTS.md` as the canonical project guide and skips generation; keeping pi rules at root would leave codeteam-specific agent instructions unmaterialized.

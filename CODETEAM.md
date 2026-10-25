@@ -9,6 +9,8 @@ codeteam is a repo-native, headless-first code agent team runtime built on a pin
 - Architecture contract: [`docs/features/F001-architecture-v1.md`](docs/features/F001-architecture-v1.md) and [`docs/architecture/0001-codeteam-architecture-v1.md`](docs/architecture/0001-codeteam-architecture-v1.md)
 - Upstream pin: [`UPSTREAM.md`](UPSTREAM.md)
 - Kernel patch policy: [`KERNEL_GAPS.md`](KERNEL_GAPS.md)
+- Agent instructions: [`AGENTS.md`](AGENTS.md)
+- Upstream pi rules: [`docs/upstream/pi-development-rules.md`](docs/upstream/pi-development-rules.md)
 
 ## Branch model
 
