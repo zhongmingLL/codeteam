@@ -111,6 +111,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | impl Phase 1 (partial) | L0 compiler v0 + native resource-loader helper; compaction/session spike pending |
 | 2026-10-27 | impl Phase 1 core | L0/session evidence complete: 10/10 adapter tests, manual/auto compaction, cross-process resume; P2 test-strength fix, approved after re-cover |
 | 2026-10-27 | Phase 1 merged | PR #2, squash `bee299a96`; review approved at `9e9022b4e`; AC-6–AC-11 satisfied |
+| 2026-10-27 | impl Phase 2 | Curated skill catalog + allowlist injection; review P2 (in-skill symlink escape) and P3 (SKILL.md scan bypass) fixed; fork/import merge deferred to W4 |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -186,6 +187,10 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 
 ### Phase 2 — Curated skill surface spike
 
+> Phase 2 implementation status (2026-10-27): catalog, allowlist injection, containment, secret
+> scan, and empty/dangling behavior are implemented and tested. AC-12 stays open for the
+> fork/import multi-file merge, which is deferred to W4 with a named revisit trigger.
+
 **目标**：验证 role curated skills 能按 allowlist 注入，且不恢复 pi 自动发现/HOME mount。
 
 1. 建 catalog：`packages/codeteam-skills/manifest.yaml`（按 `packages/codeteam-*` 约定；
@@ -210,7 +215,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
    - 悬空 skill id = warning；
    - `nextSkill` 经 repo read，被 allowlist 拒绝时可见 skip 原因。
 
-**Exit evidence**：`docs/reports/2026-10-26-skill-surface-spike.md` + loader 测试。
+**Exit evidence**：`docs/reports/2026-10-27-f002-phase2-skill-surface.md` + loader 测试。
 
 ### Phase 3 — W0a 预检
 
@@ -284,7 +289,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - [x] **AC-9 Manual compaction 保留 L0**：手动 `session.compact()` 后同样逐字保留；有独立证据。
 - [x] **AC-10 Cache/hash 证据**：section 稳定时 system hash 稳定；cache 指标不可观测时明确记录 `cache_observability=unavailable`，不伪造命中。
 - [x] **AC-11 Session export/resume 结论**：跨进程 export → import → continue 成功，或有精确失败记录 + W5 fresh+capsule fallback 回写。
-- [ ] **AC-12 Curated skill surface**：manifest schema、index/body、allowlist 空=不加载、悬空 id warning、path containment、secret scan、多文件合并均有测试/证据；无自动发现/HOME mount。
+- [ ] **AC-12 Curated skill surface**：manifest schema、index/body、allowlist 空=不加载、悬空 id warning、path containment、secret scan、多文件合并均有测试/证据；无自动发现/HOME mount。（catalog 合并与注入已测；fork/import 多文件合并未实现，owner W4，见 Phase 2 报告）
 - [ ] **AC-13 bwrap 预检**：WSL2/受支持 Linux 的 unprivileged userns 结论明确；不可用时 D3 已重开并写清降级。
 - [ ] **AC-14 低权 worktree 预检**：worker 可写、reviewer/verifier 只读、evidence 隔离；没有 chmod 777。
 - [ ] **AC-15 Hub 承载结论**：外部 thread + 消息 + approval 卡可展示，或给出 clowder 侧改动清单；没有未授权的 clowder-ai 改动。
@@ -299,7 +304,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - `docs/features/F002-w0a-foundation-gate.md`（本文件）
 - `docs/reports/2026-10-26-w0a-gate.md`
 - `docs/reports/2026-10-27-f002-phase1-l0-compiler.md`
-- `docs/reports/2026-10-26-skill-surface-spike.md`
+- `docs/reports/2026-10-27-f002-phase2-skill-surface.md`
 - `docs/reports/2026-10-26-w0a-preflight.md`
 - `docs/reports/2026-10-26-baseline-reuse-map.md`
 - `packages/codeteam-pi-adapter/`：L0 compiler、pi session adapter、session runtime 薄封装、测试
@@ -468,6 +473,30 @@ AC-1–AC-5 evidence (verified 2026-10-27 on `bee299a96`):
 | AC-3 | PR #2 ran CI on `codeteam-work`; required checks = `build-check-test`, `supply-chain`, `mcp-conformance`; adapter tests executed inside `build-check-test` |
 | AC-4 | `gh api .../branches/{main,codeteam-work}/protection`: 3 required checks, `strict=true`, force-push and deletion disabled |
 | AC-5 | `supply-chain` runs `npm ci --ignore-scripts`, `npm-audit.mjs`, and `npm audit signatures`; no secrets in repo |
+
+### Phase 2 commit (2026-10-27)
+
+```text
+package.json
+package-lock.json
+tsconfig.json
+UPSTREAM.md
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-phase2-skill-surface.md
+packages/codeteam-pi-adapter/src/session/resource-loader.ts
+packages/codeteam-pi-adapter/src/session/session.ts
+packages/codeteam-pi-adapter/test/skills-surface.test.ts
+packages/codeteam-skills/README.md
+packages/codeteam-skills/manifest.yaml
+packages/codeteam-skills/package.json
+packages/codeteam-skills/tsconfig.build.json
+packages/codeteam-skills/skills/codeteam-review/SKILL.md
+packages/codeteam-skills/skills/codeteam-verify/SKILL.md
+packages/codeteam-skills/src/catalog.ts
+packages/codeteam-skills/src/index.ts
+packages/codeteam-skills/src/manifest.ts
+packages/codeteam-skills/test/catalog.test.ts
+```
 
 ## Phase 0 Review Delta
 

@@ -5,6 +5,8 @@ export interface CreateL0ResourceLoaderOptions {
 	cwd: string;
 	agentDir: string;
 	compiledL0: CompiledL0;
+	/** Explicit curated skill directories; no discovery or HOME mount happens. */
+	additionalSkillPaths?: string[];
 }
 
 export interface L0ResourceLoader {
@@ -18,6 +20,7 @@ export async function createL0ResourceLoader(options: CreateL0ResourceLoaderOpti
 		agentDir: options.agentDir,
 		noExtensions: true,
 		noSkills: true,
+		additionalSkillPaths: options.additionalSkillPaths ?? [],
 		noPromptTemplates: true,
 		noThemes: true,
 		noContextFiles: true,

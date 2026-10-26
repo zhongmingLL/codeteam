@@ -1,0 +1,22 @@
+version: 1
+skills:
+  - skillId: codeteam-verify
+    path: skills/codeteam-verify
+    sourceKind: repo-local
+    category: delivery
+    not_for:
+      - docs-only changes with no behavior impact
+      - unrelated bug fixing
+    output: "verification commands and their observed results"
+    next: codeteam-review
+    sop_step: quality-gate
+  - skillId: codeteam-review
+    path: skills/codeteam-review
+    sourceKind: repo-local
+    category: review
+    not_for:
+      - author self-approval
+      - vision-level decisions
+    output: "finding list with severity and stance"
+    next: null
+    sop_step: request-review
