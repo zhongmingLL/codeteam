@@ -107,6 +107,8 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | kickoff | baseline docs/plans commit `8fab3265b`; Phase 0 worktree opened |
 | 2026-10-27 | impl Phase 0 | docs/plans + CI + protection + supply-chain evidence (`7b213ba49`); zod exception pending security review |
 | 2026-10-27 | review fix | P1 catalog pin/CI hydrate + empty job deferral; P2 AGENTS rule; P3 report path hygiene |
+| 2026-10-27 | Phase 0 merged | PR #1, squash `6a198a526`; Phase 1 worktree opened |
+| 2026-10-27 | impl Phase 1 (partial) | L0 compiler v0 + native resource-loader helper; compaction/session spike pending |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -387,6 +389,27 @@ UPSTREAM.md
 docs/features/F002-w0a-foundation-gate.md
 docs/reports/2026-10-27-f002-phase0-baseline.md
 nix/model-catalog.json
+```
+
+### Phase 1 commit (2026-10-27)
+
+```text
+package.json
+package-lock.json
+UPSTREAM.md
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-phase1-l0-compiler.md
+packages/codeteam-pi-adapter/README.md
+packages/codeteam-pi-adapter/package.json
+packages/codeteam-pi-adapter/tsconfig.build.json
+packages/codeteam-pi-adapter/src/index.ts
+packages/codeteam-pi-adapter/src/l0/compiler.ts
+packages/codeteam-pi-adapter/src/l0/templates/coder.md
+packages/codeteam-pi-adapter/src/l0/templates/reviewer.md
+packages/codeteam-pi-adapter/src/l0/templates/verifier.md
+packages/codeteam-pi-adapter/src/session/resource-loader.ts
+packages/codeteam-pi-adapter/test/l0-compiler.test.ts
+packages/codeteam-pi-adapter/test/resource-loader.test.ts
 ```
 
 ## Phase 0 Review Delta
