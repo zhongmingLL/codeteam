@@ -308,10 +308,10 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - [x] **AC-14 低权 worktree 预检**：worker 可写、reviewer/verifier 只读、evidence 隔离；没有 chmod 777。（worker rw / reviewer ro 由 mount namespace 内核强制，evidence 独立；verifier 复用 reviewer 只读路径未单独起进程；独立 OS 用户验证留给 W2/CI）
 - [x] **AC-15 Hub 承载结论**：外部 thread + 消息 + approval 卡可展示，或给出 clowder 侧改动清单；没有未授权的 clowder-ai 改动。（thread + 消息 + rich card 实证；approval 生产者为 W4/W7 codeteam 侧；clouder 侧清单已记录）
 - [x] **AC-16 Baseline reuse map**：control plane/store/adapter/verifier/eval/CLI 六类资产都有源、能力、reuse/adapt/discard、理由；W1 计划引用；无来源时明确 fresh baseline。（六类资产矩阵已产出；旧代码全盘不存在，声明 fresh baseline；W1 计划已引用）
-- [ ] **AC-17 Zero unrecorded kernel patch**：没有未记录的 kernel 改动；任何 patch 都有可复现失败、测试、upstreamability、rollback。
+- [x] **AC-17 Zero unrecorded kernel patch**：没有未记录的 kernel 改动；任何 patch 都有可复现失败、测试、upstreamability、rollback。（`git diff 4a080252f..HEAD --diff-filter=M --name-only -- packages/` 只有 `coding-agent/package.json` + `install-lock/package-lock.json`，已记 `UPSTREAM.md`；零删除、零 kernel source 改动）
 - [x] **AC-18 独立 review**：非作者 reviewer 覆盖最终 evidence pack；P1/P2 已修复并由提出者覆盖；没有 self-approve。（烁烁 approve `79ae95ac5`；Phase 1 P2、Phase 2 P2/P3 均由提出者覆盖）
 - [x] **AC-19 Gate 决定**：`w0a-gate` 报告给出 PASS/CONDITIONAL/FAIL；W1 入场决定和 fallback 已记录。（CONDITIONAL PASS：schema 可开始，runtime 启动等 W0c；见 gate 报告 §6）
-- [ ] **AC-20 数据安全**：所有测试使用隔离目录/合成 fixture；没有生产用户数据、没有仓内 secret、没有不可逆操作。
+- [x] **AC-20 数据安全**：所有测试使用隔离目录/合成 fixture；没有生产用户数据、没有仓内 secret、没有不可逆操作。（测试全部 `mkdtemp` 隔离；无生产数据；仓内无 secret——假 key fixture 运行时拼接；无不可逆操作）
 
 ## Deliverables
 
