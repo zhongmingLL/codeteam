@@ -114,6 +114,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | impl Phase 2 | Curated skill catalog + allowlist injection; review P2 (in-skill symlink escape) and P3 (SKILL.md scan bypass) fixed; fork/import merge deferred to W4 |
 | 2026-10-27 | impl Phase 3 | W0a preflight: bwrap/PID/net isolation available; worker rw / reviewer ro / evidence separate; Hub thread + card live; approvals aggregate 503 noted |
 | 2026-10-27 | impl Phase 4 | Baseline reuse map: no old code found; fresh baseline for 6 assets; W1 inputs recorded |
+| 2026-10-27 | impl Phase 5 | Gate pack: CONDITIONAL PASS; AC-18 review pending; W0c remains outside F002 |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -267,7 +268,10 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 
 ### Phase 5 — Gate evidence 与独立 review
 
-1. 写 `docs/reports/2026-10-26-w0a-gate.md`：
+> Phase 5 implementation status (2026-10-27): gate pack written with a **CONDITIONAL PASS**
+> decision; AC-18/AC-19 stay unchecked until the non-author review returns.
+
+1. 写 `docs/reports/2026-10-27-f002-w0a-gate.md`：
    - AC 逐条证据；
    - 每个 spike 的 pass/conditional/fail；
    - fallback、未解决缺口、owner；
@@ -311,7 +315,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 ## Deliverables
 
 - `docs/features/F002-w0a-foundation-gate.md`（本文件）
-- `docs/reports/2026-10-26-w0a-gate.md`
+- `docs/reports/2026-10-27-f002-w0a-gate.md`
 - `docs/reports/2026-10-27-f002-phase1-l0-compiler.md`
 - `docs/reports/2026-10-27-f002-phase2-skill-surface.md`
 - `docs/reports/2026-10-27-f002-w0a-preflight.md`
@@ -520,6 +524,20 @@ docs/reports/2026-10-27-f002-w0a-preflight.md
 docs/features/F002-w0a-foundation-gate.md
 docs/reports/2026-10-27-f002-baseline-reuse-map.md
 docs/plans/0002-w0-w2-foundation.md
+```
+
+### Phase 5 commit (2026-10-27)
+
+```text
+BACKLOG.md
+KERNEL_GAPS.md
+UPSTREAM.md
+docs/architecture/0002-pi-runtime-integration.md
+docs/features/F002-w0a-foundation-gate.md
+docs/plans/0002-w0-w2-foundation.md
+docs/plans/README.md
+docs/reports/2026-10-27-f002-w0a-gate.md
+packages/codeteam-skills/test/catalog.test.ts
 ```
 
 ## Phase 0 Review Delta

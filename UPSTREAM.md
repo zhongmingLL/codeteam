@@ -61,3 +61,15 @@ These checks prove the upstream build and tests. They do **not** prove the W0a a
 - `scripts/npm-audit.mjs`: accepted `GHSA-mrhx-c7xc-m3w5` for `zod@3.25.76`, which is directly required only by the unpublished sandbox example (`@anthropic-ai/sandbox-runtime`). This exception needs independent security review before merge and must be revisited before W2 sandbox work or when the example upgrades to zod >= 4.6.6.
 - `nix/model-catalog.json`: moved the pinned catalog from `sha256-7fe1b41f...` (v1.4.0 release pin) to `sha256-7604547f...` because the release pin lacks the System One classifier fixtures added in `7f225f25d` (`clef-omni`, `jev-1.14.0`, classifier compat). The new pin hash was verified against the immutable catalog body; targeted `packages/ai` tests pass after hydration. Reason: keep CI deterministic without a live catalog fetch while matching the v1.4.0 generator/tests.
 - `package.json`: root `build` / `build:offline` now also build `packages/codeteam-pi-adapter` and `packages/codeteam-skills` after the pi coding-agent package; root `tsconfig.json` maps `@codeteam/*` to package sources for type-checking. Reason: codeteam-specific runtime adapters and the curated skill catalog live under `packages/codeteam-*` and must participate in the normal build and type graph.
+
+## W0a verification status (2026-10-27)
+
+- L0 native injection, manual/threshold compaction, and cross-process JSONL resume were verified on
+  v1.4.0 with fake-provider evidence; the v1.3.0 fallback was not needed. See
+  `docs/reports/2026-10-27-f002-phase1-l0-compiler.md`.
+- Curated skills were injected through `DefaultResourceLoader.additionalSkillPaths` with
+  `noSkills: true`; no automatic discovery or HOME mount. See
+  `docs/reports/2026-10-27-f002-phase2-skill-surface.md`.
+- Kernel package sources remain untouched; the only coding-agent changes are the `undici` pin and the
+  regenerated install lock recorded above.
+
