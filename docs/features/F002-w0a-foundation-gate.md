@@ -109,7 +109,8 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | review fix | P1 catalog pin/CI hydrate + empty job deferral; P2 AGENTS rule; P3 report path hygiene |
 | 2026-10-27 | Phase 0 merged | PR #1, squash `6a198a526`; Phase 1 worktree opened |
 | 2026-10-27 | impl Phase 1 (partial) | L0 compiler v0 + native resource-loader helper; compaction/session spike pending |
-| 2026-10-27 | impl Phase 1 core | L0/session evidence complete: 10/10 adapter tests, manual/auto compaction, cross-process resume; P2 test-strength fix, re-review pending |
+| 2026-10-27 | impl Phase 1 core | L0/session evidence complete: 10/10 adapter tests, manual/auto compaction, cross-process resume; P2 test-strength fix, approved after re-cover |
+| 2026-10-27 | Phase 1 merged | PR #2, squash `bee299a96`; review approved at `9e9022b4e`; AC-6–AC-11 satisfied |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -144,7 +145,9 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 
 ### Phase 1 — L0 compiler v0 + compaction/cache spike
 
-> Phase 1 implementation status (2026-10-27): core evidence complete; independent review pending.
+> Phase 1 implementation status (2026-10-27): core evidence complete and merged (PR #2, squash
+> `bee299a96`); independent review approved at `9e9022b4e` after the P2 assertion fix. AC-6–AC-11
+> are satisfied. AC-18 stays open until the Phase 5 gate pack is reviewed as a whole.
 
 **目标**：把 D9“L0 放 native system prompt，压缩免疫”从 target 变成可复现事实，或明确失败。
 
@@ -152,8 +155,8 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
    - `src/l0/compiler.ts`：role 模板 + 治理段 → `{ text, revision }`；
    - `revision` = 对规范化 bytes 做 SHA-256；输入只允许稳定内容，不放时间、随机数、host path；
    - `src/l0/templates/{coder,reviewer,verifier}.md`：最小角色模板，后续再由 W1/W4 扩展；
-   - `src/adapters/pi-session.ts`：`DefaultResourceLoader` + `createAgentSession`；
-   - `src/adapters/session-runtime.ts`：export/resume 的薄封装，不把 pi session 类型泄漏给控制面。
+   - `src/session/resource-loader.ts`：`DefaultResourceLoader` + `createAgentSession`；
+   - `src/session/session.ts`：export/resume 的薄封装，不把 pi session 类型泄漏给控制面。
 2. L0 注入：
    - `systemPromptOverride: () => compiledL0.text`；
    - `noContextFiles: true`；
@@ -179,7 +182,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
    - 仍失败则记录 D9 降级/替代方案，不把未验证 claim 写成“已证明”；
    - 只有可复现失败 + 最小测试 + upstreamability/rollback 才允许 kernel patch。
 
-**Exit evidence**：`docs/reports/2026-10-26-l0-session-spike.md` + 单测/集成测试。
+**Exit evidence**：`docs/reports/2026-10-27-f002-phase1-l0-compiler.md` + 单测/集成测试。
 
 ### Phase 2 — Curated skill surface spike
 
@@ -270,11 +273,11 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 计划真相源入仓**：`git ls-files docs/plans` 包含 `README.md` 和 0001–0007；干净 clone 能看到这些文件；`git check-ignore docs/plans/README.md` 不再命中。
-- [ ] **AC-2 干净 checkout 可复现**：按 `UPSTREAM.md` 的 install/catalog/build/test 命令在干净 checkout 跑通；WSL2/host 特例有记录，CI 使用受支持 runner。
-- [ ] **AC-3 CI 覆盖开发分支**：`codeteam-work` 的 PR 会触发 CI；Phase 0 required checks 至少包含 upstream 测试、lockfile 完整性、生产依赖 audit；codeteam 包测试 job 在 Phase 1 首个包落地时加入。
-- [ ] **AC-4 分支保护可查**：`main` 与 `codeteam-work` 都要求 PR + required checks，禁 force push/删除；`gh api` 输出存档。
-- [ ] **AC-5 供应链最小项**：`npm ci --ignore-scripts` 校验 lockfile；audit 失败会阻断 PR；`--ignore-scripts` 理由在 `UPSTREAM.md`；仓内无 secret。
+- [x] **AC-1 计划真相源入仓**：`git ls-files docs/plans` 包含 `README.md` 和 0001–0007；干净 clone 能看到这些文件；`git check-ignore docs/plans/README.md` 不再命中。
+- [x] **AC-2 干净 checkout 可复现**：按 `UPSTREAM.md` 的 install/catalog/build/test 命令在干净 checkout 跑通；WSL2/host 特例有记录，CI 使用受支持 runner。
+- [x] **AC-3 CI 覆盖开发分支**：`codeteam-work` 的 PR 会触发 CI；Phase 0 required checks 至少包含 upstream 测试、lockfile 完整性、生产依赖 audit；Phase 1 首个 codeteam 包落地后确认 root `npm test --workspaces` 已在 `build-check-test` 中执行 adapter 测试，因此不再新增重复的 `codeteam-package-tests` job。
+- [x] **AC-4 分支保护可查**：`main` 与 `codeteam-work` 都要求 PR + required checks，禁 force push/删除；`gh api` 输出存档。
+- [x] **AC-5 供应链最小项**：`npm ci --ignore-scripts` 校验 lockfile；audit 失败会阻断 PR；`--ignore-scripts` 理由在 `UPSTREAM.md`；仓内无 secret。
 - [x] **AC-6 L0 编译确定性**：同一 role/治理输入得到同一 `l0_revision`；无时间、随机数、host path；单测覆盖。
 - [x] **AC-7 L0 native 注入**：L0 作为连续片段出现在 `session.systemPrompt`；`noContextFiles` 生效；`appendSystemPromptOverride` 为空；没有 AGENTS/CLAUDE 双重注入。
 - [x] **AC-8 Auto compaction 保留 L0**：auto compaction 后首个出站 request 的 system 逐字包含 L0；有 request 捕获和断言日志。
@@ -295,7 +298,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 
 - `docs/features/F002-w0a-foundation-gate.md`（本文件）
 - `docs/reports/2026-10-26-w0a-gate.md`
-- `docs/reports/2026-10-26-l0-session-spike.md`
+- `docs/reports/2026-10-27-f002-phase1-l0-compiler.md`
 - `docs/reports/2026-10-26-skill-surface-spike.md`
 - `docs/reports/2026-10-26-w0a-preflight.md`
 - `docs/reports/2026-10-26-baseline-reuse-map.md`
@@ -437,6 +440,34 @@ docs/reports/2026-10-27-f002-phase1-l0-compiler.md
 packages/codeteam-pi-adapter/test/fixtures/resume-session.mjs
 packages/codeteam-pi-adapter/test/session-compaction.test.ts
 ```
+
+### Phase 1 closeout (2026-10-27)
+
+| Item | Evidence |
+|---|---|
+| Independent review | 烁烁 (non-author) approved `9e9022b4e`; P2 (`messageCount > 0` proving nothing) fixed and re-covered by the same reviewer |
+| Required checks | `build-check-test` pass 8m6s, `supply-chain` pass 24s, `mcp-conformance` pass 1m1s on `9e9022b4e` |
+| Adapter tests in CI | `@codeteam/pi-adapter` 3 files / 10 tests pass inside `build-check-test` (`npm test --workspaces`), including the cross-process resume case |
+| Non-required failure | `generate` fails on the fork because the `v1.4.0` tag is absent; documented in PR #2, not part of branch protection |
+| Merge | PR #2 squash `bee299a96` into `codeteam-work` |
+
+Implementation divergences from the Phase 1 spec draft (semantics unchanged):
+
+- Session files live in `src/session/*` instead of the draft's `src/adapters/*` paths.
+- Resume uses `SessionManager.open()` plus `createAgentSessionWithL0`, not
+  `AgentSessionRuntime.importFromJsonl()`; the cross-process, no-silent-amnesia conclusion is the same.
+- No dedicated `codeteam-package-tests` job: root `npm test --workspaces` already runs the adapter
+  tests inside `build-check-test`, proven by the CI log.
+
+AC-1–AC-5 evidence (verified 2026-10-27 on `bee299a96`):
+
+| AC | Fresh check |
+|---|---|
+| AC-1 | `git ls-files docs/plans` = 8 files; `git check-ignore docs/plans/README.md` no match |
+| AC-2 | PR #2 `build-check-test` green on a clean GitHub runner; WSL2 deviations recorded in the Phase 0 report |
+| AC-3 | PR #2 ran CI on `codeteam-work`; required checks = `build-check-test`, `supply-chain`, `mcp-conformance`; adapter tests executed inside `build-check-test` |
+| AC-4 | `gh api .../branches/{main,codeteam-work}/protection`: 3 required checks, `strict=true`, force-push and deletion disabled |
+| AC-5 | `supply-chain` runs `npm ci --ignore-scripts`, `npm-audit.mjs`, and `npm audit signatures`; no secrets in repo |
 
 ## Phase 0 Review Delta
 
