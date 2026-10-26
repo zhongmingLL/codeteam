@@ -112,6 +112,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | impl Phase 1 core | L0/session evidence complete: 10/10 adapter tests, manual/auto compaction, cross-process resume; P2 test-strength fix, approved after re-cover |
 | 2026-10-27 | Phase 1 merged | PR #2, squash `bee299a96`; review approved at `9e9022b4e`; AC-6–AC-11 satisfied |
 | 2026-10-27 | impl Phase 2 | Curated skill catalog + allowlist injection; review P2 (in-skill symlink escape) and P3 (SKILL.md scan bypass) fixed; fork/import merge deferred to W4 |
+| 2026-10-27 | impl Phase 3 | W0a preflight: bwrap/PID/net isolation available; worker rw / reviewer ro / evidence separate; Hub thread + card live; approvals aggregate 503 noted |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -219,6 +220,10 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 
 ### Phase 3 — W0a 预检
 
+> Phase 3 implementation status (2026-10-27): preflight complete. bwrap userns isolation works on
+> this WSL2 host; the low-privilege mount model is kernel-enforced; the Hub hosts this thread and a
+> rich card. Distinct-uid reviewer validation and the approval producer are W2/W4 entry checks.
+
 **目标**：给 W2 的 sandbox 和 W7 的 Hub 承载提供真实 go/no-go，而不是假设。
 
 1. bwrap：
@@ -235,7 +240,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
    - 输出“clowder 侧所需改动清单”（可为空）；
    - 需要 clowder-ai 改动时只作为独立 operator 授权项，不混进 codeteam 产品代码。
 
-**Exit evidence**：`docs/reports/2026-10-26-w0a-preflight.md`。
+**Exit evidence**：`docs/reports/2026-10-27-f002-w0a-preflight.md`。
 
 ### Phase 4 — Baseline reuse map
 
@@ -290,9 +295,9 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - [x] **AC-10 Cache/hash 证据**：section 稳定时 system hash 稳定；cache 指标不可观测时明确记录 `cache_observability=unavailable`，不伪造命中。
 - [x] **AC-11 Session export/resume 结论**：跨进程 export → import → continue 成功，或有精确失败记录 + W5 fresh+capsule fallback 回写。
 - [ ] **AC-12 Curated skill surface**：manifest schema、index/body、allowlist 空=不加载、悬空 id warning、path containment、secret scan、多文件合并均有测试/证据；无自动发现/HOME mount。（catalog 合并与注入已测；fork/import 多文件合并未实现，owner W4，见 Phase 2 报告）
-- [ ] **AC-13 bwrap 预检**：WSL2/受支持 Linux 的 unprivileged userns 结论明确；不可用时 D3 已重开并写清降级。
-- [ ] **AC-14 低权 worktree 预检**：worker 可写、reviewer/verifier 只读、evidence 隔离；没有 chmod 777。
-- [ ] **AC-15 Hub 承载结论**：外部 thread + 消息 + approval 卡可展示，或给出 clowder 侧改动清单；没有未授权的 clowder-ai 改动。
+- [x] **AC-13 bwrap 预检**：WSL2/受支持 Linux 的 unprivileged userns 结论明确；不可用时 D3 已重开并写清降级。（本机 userns + bwrap mount/PID/net 均可用；D3 未重开，宿主缺 userns 时按报告 fallback 触发）
+- [x] **AC-14 低权 worktree 预检**：worker 可写、reviewer/verifier 只读、evidence 隔离；没有 chmod 777。（worker rw / reviewer ro 由 mount namespace 内核强制，evidence 独立；verifier 复用 reviewer 只读路径未单独起进程；独立 OS 用户验证留给 W2/CI）
+- [x] **AC-15 Hub 承载结论**：外部 thread + 消息 + approval 卡可展示，或给出 clowder 侧改动清单；没有未授权的 clowder-ai 改动。（thread + 消息 + rich card 实证；approval 生产者为 W4/W7 codeteam 侧；clouder 侧清单已记录）
 - [ ] **AC-16 Baseline reuse map**：control plane/store/adapter/verifier/eval/CLI 六类资产都有源、能力、reuse/adapt/discard、理由；W1 计划引用；无来源时明确 fresh baseline。
 - [ ] **AC-17 Zero unrecorded kernel patch**：没有未记录的 kernel 改动；任何 patch 都有可复现失败、测试、upstreamability、rollback。
 - [ ] **AC-18 独立 review**：非作者 reviewer 覆盖最终 evidence pack；P1/P2 已修复并由提出者覆盖；没有 self-approve。
@@ -305,7 +310,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - `docs/reports/2026-10-26-w0a-gate.md`
 - `docs/reports/2026-10-27-f002-phase1-l0-compiler.md`
 - `docs/reports/2026-10-27-f002-phase2-skill-surface.md`
-- `docs/reports/2026-10-26-w0a-preflight.md`
+- `docs/reports/2026-10-27-f002-w0a-preflight.md`
 - `docs/reports/2026-10-26-baseline-reuse-map.md`
 - `packages/codeteam-pi-adapter/`：L0 compiler、pi session adapter、session runtime 薄封装、测试
 - `packages/codeteam-skills/manifest.yaml` + 最小 curated skill 样本
@@ -496,6 +501,13 @@ packages/codeteam-skills/src/catalog.ts
 packages/codeteam-skills/src/index.ts
 packages/codeteam-skills/src/manifest.ts
 packages/codeteam-skills/test/catalog.test.ts
+```
+
+### Phase 3 commit (2026-10-27)
+
+```text
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-w0a-preflight.md
 ```
 
 ## Phase 0 Review Delta
