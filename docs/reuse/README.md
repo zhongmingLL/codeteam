@@ -41,6 +41,17 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 | 10 | `runtime-deployment` | R1 | P0 | W0/W5 | [`runtime-deployment.md`](runtime-deployment.md) | [x] 已签 |
 | 11 | `sop-bulletin`（P0 slice） | R0 | P0 | W1/W4 | [`sop-bulletin.md`](sop-bulletin.md) | [x] 已签 |
 
+## 使用方式（开发前）
+
+1. 先在 `REUSE-MATRIX.md` 找到对应 cell 和 decision（R0 / R1 / R2 / N1 / N2）。
+2. 读对应 `docs/reuse/<cell>.md` 的 `Current truth`、`代码面`、`codeteam mapping`、`风险与回滚`。
+3. 到 Clowder AI 源码里读 `代码面` 列出的文件，把它当**参考实现**，不复制运行时依赖。
+4. 只搬契约、语义和状态机；storage、transport、auth、execution wiring 按 codeteam 适配。
+5. 在 PR 里记录 divergence；若改变复用决策，回写 cell 卡和 `REUSE-MATRIX.md`。
+
+> 本地参考源码由 `CLOWDER_AI_SOURCE` 环境变量提供（只读）。
+> 这是本机路径，不要写进产品代码、文档正文、CI 或生成物。
+
 ## 三猫 review 结论（2026-10-24）
 
 - **烁烁**：P0 10 可签；dispatch 的 `queue_entries` 同步、ball-custody complete 三段式、callback-auth SQLite 适配、bubble P0 范围已修。transport / signal-intake / local-host-recovery 建议 Drop；补审 `sop-bulletin` accept。

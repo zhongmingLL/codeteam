@@ -18,6 +18,7 @@ updated: 2026-10-26
 
 | 文档 | 内容 |
 |---|---|
+| [`SOP.md`](SOP.md) | 通用开发 SOP（Clowder AI 精简基线；项目特定事实见 `AGENTS.md` / `docs/plans/`） |
 | [`architecture/0001-codeteam-architecture-v1.md`](architecture/0001-codeteam-architecture-v1.md) | codeteam 总架构：定位、原则、分层、领域模型、状态机、A2A、SOP、角色、存储、安全、eval、部署、路线图 |
 | [`architecture/0002-pi-runtime-integration.md`](architecture/0002-pi-runtime-integration.md) | pi 运行时接入：SDK/RPC/extension/MCP/durable、L0 system prompt、context 注入、tool 策略、fork 边界 |
 | [`architecture/0003-review-resolutions.md`](architecture/0003-review-resolutions.md) | 三猫评审决议：P1/P2/P3 处置、独立 review、AgentSession、Console M0、W0/W8 |
@@ -27,6 +28,7 @@ updated: 2026-10-26
 | [`plans/0003-w3-w4-review-sop.md`](plans/0003-w3-w4-review-sop.md) | W3 独立 review、W4 SOP 复用/Design Gate |
 | [`plans/0004-w5-w8-scale-product.md`](plans/0004-w5-w8-scale-product.md) | W5 调度/RPC、W6 memory/observability/eval、W7 Console、W8 GitHub |
 | [`features/F001-architecture-v1.md`](features/F001-architecture-v1.md) | 本次架构讨论的交付契约、验收标准和非目标 |
+| [`features/F002-w0a-foundation-gate.md`](features/F002-w0a-foundation-gate.md) | W0a 下游基线与运行时能力验证：L0/session、skill surface、沙箱/Hub 预检、CI/供应链与 W1 入场门禁 |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |

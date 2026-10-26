@@ -20,11 +20,16 @@ packages/ai/src/providers/.model-generation-*/
 .zed/
 .idea/
 .claude/
+.cat-cafe/
+.codex/
+.gemini/
+.kimi-code/
 *.swp
 *.swo
 *~
 
 # Package specific
+.playwright-mcp/
 .npm/
 coverage/
 .nyc_output/
@@ -40,7 +45,8 @@ packages/coding-agent/binaries/
 packages/env/bin/
 packages/env/daemon/target/
 todo.md
-plans/
+# Root-level scratch plans are ignored; docs/plans is project truth.
+/plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 .pi/settings.json

@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, codeteam-work]
   pull_request:
-    branches: [main]
+    branches: [main, codeteam-work]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -32,8 +35,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      - name: Hydrate pinned model catalog
+        run: |
+          pin="$(node -p "require('./nix/model-catalog.json').revision")"
+          curl -fsSL "https://pi.dev/api/models/revisions/${pin}?types=chat,image,classifier" -o "$RUNNER_TEMP/pi-catalog.json"
+          node packages/ai/scripts/hydrate-model-catalog.ts "$RUNNER_TEMP/pi-catalog.json"
+
       - name: Build
-        run: npm run build
+        run: npm run build:offline
 
       - name: Check
         run: npm run check
@@ -43,6 +52,27 @@ jobs:
 
       - name: Test
         run: npm test
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Audit production vulnerabilities
+        run: node scripts/npm-audit.mjs
+
+      - name: Verify registry signatures
+        run: npm audit signatures --omit=dev
 
   mcp-conformance:
     runs-on: ubuntu-latest
