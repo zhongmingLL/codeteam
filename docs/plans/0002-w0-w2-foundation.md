@@ -106,7 +106,7 @@ reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 
 - [ ] `git remote -v` 有 upstream；pin 的 tag/commit 写入 `UPSTREAM.md`。
 - [ ] 外部仓 `docs/` 结构镜像；旧目录 README 已转为只读快照指针；外部仓有自己的 `plans/README.md`。
-- [ ] 基线对码报告已产出，明确 reuse vs fresh，并被 W1 引用。
+- [x] 基线对码报告已产出，明确 reuse vs fresh，并被 W1 引用（`docs/reports/2026-10-27-f002-baseline-reuse-map.md`）。
 - [ ] main 分支保护、required checks、禁 force push 有可查证据；CI secrets 不在仓内。
 - [ ] 上游测试 + codeteam 测试有可复现命令和结果。
 - [ ] L0 在 compaction 后逐字保留；否则 D9 降级并记 KERNEL_GAPS。
@@ -145,6 +145,9 @@ reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 ### Goal
 
 把当前 `task/run/handoff` 扩成完整控制面，并给 Console M0 提供真实 thread 数据源。
+
+> 基线对码输入：`docs/reports/2026-10-27-f002-baseline-reuse-map.md`。旧实现不可得，按 fresh
+> baseline 处理：W1 用合成 fixture，无 backfill；不继承任何未经验证的“已落地”资产。
 
 ### Target tables
 

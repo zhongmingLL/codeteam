@@ -113,6 +113,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | Phase 1 merged | PR #2, squash `bee299a96`; review approved at `9e9022b4e`; AC-6–AC-11 satisfied |
 | 2026-10-27 | impl Phase 2 | Curated skill catalog + allowlist injection; review P2 (in-skill symlink escape) and P3 (SKILL.md scan bypass) fixed; fork/import merge deferred to W4 |
 | 2026-10-27 | impl Phase 3 | W0a preflight: bwrap/PID/net isolation available; worker rw / reviewer ro / evidence separate; Hub thread + card live; approvals aggregate 503 noted |
+| 2026-10-27 | impl Phase 4 | Baseline reuse map: no old code found; fresh baseline for 6 assets; W1 inputs recorded |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -244,6 +245,9 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 
 ### Phase 4 — Baseline reuse map
 
+> Phase 4 implementation status (2026-10-27): no runnable codeteam code exists on this host.
+> The six-asset matrix records a fresh baseline; W1 uses synthetic fixtures and no backfill.
+
 **目标**：给 W1 一个明确的“复用还是 fresh”输入，避免迁移策略建立在猜测上。
 
 1. 定位旧 codeteam 实现来源仓/路径/commit。当前本机 `clowder-ai/codeteam/` 只有文档，
@@ -259,7 +263,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 4. 如果旧实现不可获得，明确声明 **fresh baseline**：W1 用合成 fixture，不走旧库 backfill；
    不伪造“已落地”资产。
 
-**Exit evidence**：`docs/reports/2026-10-26-baseline-reuse-map.md`，并在 W1 计划中引用。
+**Exit evidence**：`docs/reports/2026-10-27-f002-baseline-reuse-map.md`，并在 W1 计划中引用。
 
 ### Phase 5 — Gate evidence 与独立 review
 
@@ -298,7 +302,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - [x] **AC-13 bwrap 预检**：WSL2/受支持 Linux 的 unprivileged userns 结论明确；不可用时 D3 已重开并写清降级。（本机 userns + bwrap mount/PID/net 均可用；D3 未重开，宿主缺 userns 时按报告 fallback 触发）
 - [x] **AC-14 低权 worktree 预检**：worker 可写、reviewer/verifier 只读、evidence 隔离；没有 chmod 777。（worker rw / reviewer ro 由 mount namespace 内核强制，evidence 独立；verifier 复用 reviewer 只读路径未单独起进程；独立 OS 用户验证留给 W2/CI）
 - [x] **AC-15 Hub 承载结论**：外部 thread + 消息 + approval 卡可展示，或给出 clowder 侧改动清单；没有未授权的 clowder-ai 改动。（thread + 消息 + rich card 实证；approval 生产者为 W4/W7 codeteam 侧；clouder 侧清单已记录）
-- [ ] **AC-16 Baseline reuse map**：control plane/store/adapter/verifier/eval/CLI 六类资产都有源、能力、reuse/adapt/discard、理由；W1 计划引用；无来源时明确 fresh baseline。
+- [x] **AC-16 Baseline reuse map**：control plane/store/adapter/verifier/eval/CLI 六类资产都有源、能力、reuse/adapt/discard、理由；W1 计划引用；无来源时明确 fresh baseline。（六类资产矩阵已产出；旧代码全盘不存在，声明 fresh baseline；W1 计划已引用）
 - [ ] **AC-17 Zero unrecorded kernel patch**：没有未记录的 kernel 改动；任何 patch 都有可复现失败、测试、upstreamability、rollback。
 - [ ] **AC-18 独立 review**：非作者 reviewer 覆盖最终 evidence pack；P1/P2 已修复并由提出者覆盖；没有 self-approve。
 - [ ] **AC-19 Gate 决定**：`w0a-gate` 报告给出 PASS/CONDITIONAL/FAIL；W1 入场决定和 fallback 已记录。
@@ -311,7 +315,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - `docs/reports/2026-10-27-f002-phase1-l0-compiler.md`
 - `docs/reports/2026-10-27-f002-phase2-skill-surface.md`
 - `docs/reports/2026-10-27-f002-w0a-preflight.md`
-- `docs/reports/2026-10-26-baseline-reuse-map.md`
+- `docs/reports/2026-10-27-f002-baseline-reuse-map.md`
 - `packages/codeteam-pi-adapter/`：L0 compiler、pi session adapter、session runtime 薄封装、测试
 - `packages/codeteam-skills/manifest.yaml` + 最小 curated skill 样本
 - CI/workflow 与 branch protection 变更
@@ -508,6 +512,14 @@ packages/codeteam-skills/test/catalog.test.ts
 ```text
 docs/features/F002-w0a-foundation-gate.md
 docs/reports/2026-10-27-f002-w0a-preflight.md
+```
+
+### Phase 4 commit (2026-10-27)
+
+```text
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-baseline-reuse-map.md
+docs/plans/0002-w0-w2-foundation.md
 ```
 
 ## Phase 0 Review Delta
