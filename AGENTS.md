@@ -62,4 +62,4 @@
 - Stage explicit paths. Do not use `git add -A` or `git add .`.
 - Do not commit unless the task authorizes it. Do not bypass hooks.
 - Every review finding must state severity and stance.
-- Docs changes may go direct to `codeteam-work` when reversible. Code changes need risk-matched verification and non-author review.
+- Docs changes may go direct to `codeteam-work` when reversible and branch protection permits. Once W0a protection is active, use a short-lived PR unless the operator explicitly authorizes a direct docs push. Code changes need risk-matched verification and non-author review.

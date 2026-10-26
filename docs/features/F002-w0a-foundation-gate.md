@@ -106,6 +106,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-26 | spec | F002 created; operator confirmed F002 = whole W0a gate |
 | 2026-10-27 | kickoff | baseline docs/plans commit `8fab3265b`; Phase 0 worktree opened |
 | 2026-10-27 | impl Phase 0 | docs/plans + CI + protection + supply-chain evidence (`7b213ba49`); zod exception pending security review |
+| 2026-10-27 | review fix | P1 catalog pin/CI hydrate + empty job deferral; P2 AGENTS rule; P3 report path hygiene |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -124,7 +125,9 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
    - 记录 WSL2/host 差异，CI 使用受支持的 Linux runner，不在 WSL2 上宣称全绿。
 3. CI 最小门禁：
    - 触发条件覆盖 `main` 和 `codeteam-work` 的 push/PR；
-   - 必跑：upstream 测试（`./test.sh`）、codeteam 包测试、lockfile 完整性、生产依赖 audit；
+   - Phase 0 必跑：upstream 测试、lockfile 完整性、生产依赖 audit；
+   - codeteam 包测试 job 延后到 Phase 1，首个 `packages/codeteam-*` 包出现时再加入；Phase 0 不保留空的同名 job；
+   - CI 先从 `nix/model-catalog.json` hydrate pinned catalog，再跑 `build:offline` 和测试，避免 live catalog 漂移；
    - audit 复用仓库已有 `scripts/npm-audit.mjs`，不新建第二套审计；
    - 失败阻断，不把 audit 只放在每日 schedule。
 4. 分支保护：
@@ -264,7 +267,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 
 - [ ] **AC-1 计划真相源入仓**：`git ls-files docs/plans` 包含 `README.md` 和 0001–0007；干净 clone 能看到这些文件；`git check-ignore docs/plans/README.md` 不再命中。
 - [ ] **AC-2 干净 checkout 可复现**：按 `UPSTREAM.md` 的 install/catalog/build/test 命令在干净 checkout 跑通；WSL2/host 特例有记录，CI 使用受支持 runner。
-- [ ] **AC-3 CI 覆盖开发分支**：`codeteam-work` 的 PR 会触发 CI；required checks 至少包含 upstream 测试、codeteam 测试、lockfile 完整性、生产依赖 audit。
+- [ ] **AC-3 CI 覆盖开发分支**：`codeteam-work` 的 PR 会触发 CI；Phase 0 required checks 至少包含 upstream 测试、lockfile 完整性、生产依赖 audit；codeteam 包测试 job 在 Phase 1 首个包落地时加入。
 - [ ] **AC-4 分支保护可查**：`main` 与 `codeteam-work` 都要求 PR + required checks，禁 force push/删除；`gh api` 输出存档。
 - [ ] **AC-5 供应链最小项**：`npm ci --ignore-scripts` 校验 lockfile；audit 失败会阻断 PR；`--ignore-scripts` 理由在 `UPSTREAM.md`；仓内无 secret。
 - [ ] **AC-6 L0 编译确定性**：同一 role/治理输入得到同一 `l0_revision`；无时间、随机数、host path；单测覆盖。
@@ -374,6 +377,26 @@ scripts/npm-audit.mjs
 BACKLOG.md
 docs/features/F002-w0a-foundation-gate.md
 ```
+
+### Phase 0 review delta commit (2026-10-27)
+
+```text
+.github/workflows/ci.yml
+AGENTS.md
+UPSTREAM.md
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-phase0-baseline.md
+nix/model-catalog.json
+```
+
+## Phase 0 Review Delta
+
+| Finding | Disposition |
+|---|---|
+| P1 `codeteam-package-tests` red by construction / duplicate / missing build | Deferred the empty job to Phase 1; `build-check-test` now hydrates the pinned catalog and uses `build:offline`; required checks reduced accordingly. |
+| P1 7 `packages/ai` failures | Fixed by moving the catalog pin to `sha256-7604547f...`; targeted `classifier-models` + `cloudflare-workers-ai-system-one` tests pass (22/22). |
+| P2 AGENTS.md docs-direct-push conflict | Updated: direct docs push only when protection permits; otherwise short-lived PR unless operator explicitly authorizes. |
+| P3 absolute local path in Phase 0 report | Replaced with `$CODETEAM_WORKTREE`-style reference. |
 
 ## Review Plan
 
