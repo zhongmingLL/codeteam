@@ -1,0 +1,37 @@
+{
+	"name": "@codeteam/pi-adapter",
+	"version": "0.0.0",
+	"private": true,
+	"description": "codeteam pi runtime adapter: L0 compilation and session wiring",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsc -p tsconfig.build.json && shx cp -r src/l0/templates dist/l0/templates",
+		"pretest": "npm run build",
+		"test": "vitest --run"
+	},
+	"dependencies": {
+		"@earendil-works/pi-coding-agent": "1.4.0"
+	},
+	"devDependencies": {
+		"@types/node": "22.19.19",
+		"@earendil-works/pi-ai": "1.4.0",
+		"shx": "0.3.4",
+		"vitest": "4.1.11"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}

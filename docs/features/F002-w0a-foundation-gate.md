@@ -107,6 +107,9 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | kickoff | baseline docs/plans commit `8fab3265b`; Phase 0 worktree opened |
 | 2026-10-27 | impl Phase 0 | docs/plans + CI + protection + supply-chain evidence (`7b213ba49`); zod exception pending security review |
 | 2026-10-27 | review fix | P1 catalog pin/CI hydrate + empty job deferral; P2 AGENTS rule; P3 report path hygiene |
+| 2026-10-27 | Phase 0 merged | PR #1, squash `6a198a526`; Phase 1 worktree opened |
+| 2026-10-27 | impl Phase 1 (partial) | L0 compiler v0 + native resource-loader helper; compaction/session spike pending |
+| 2026-10-27 | impl Phase 1 core | L0/session evidence complete: 10/10 adapter tests, manual/auto compaction, cross-process resume; P2 test-strength fix, re-review pending |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -140,6 +143,8 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 **Exit evidence**：干净 clone 日志、CI run、`gh api` protection JSON、`git ls-files docs/plans`。
 
 ### Phase 1 — L0 compiler v0 + compaction/cache spike
+
+> Phase 1 implementation status (2026-10-27): core evidence complete; independent review pending.
 
 **目标**：把 D9“L0 放 native system prompt，压缩免疫”从 target 变成可复现事实，或明确失败。
 
@@ -270,12 +275,12 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - [ ] **AC-3 CI 覆盖开发分支**：`codeteam-work` 的 PR 会触发 CI；Phase 0 required checks 至少包含 upstream 测试、lockfile 完整性、生产依赖 audit；codeteam 包测试 job 在 Phase 1 首个包落地时加入。
 - [ ] **AC-4 分支保护可查**：`main` 与 `codeteam-work` 都要求 PR + required checks，禁 force push/删除；`gh api` 输出存档。
 - [ ] **AC-5 供应链最小项**：`npm ci --ignore-scripts` 校验 lockfile；audit 失败会阻断 PR；`--ignore-scripts` 理由在 `UPSTREAM.md`；仓内无 secret。
-- [ ] **AC-6 L0 编译确定性**：同一 role/治理输入得到同一 `l0_revision`；无时间、随机数、host path；单测覆盖。
-- [ ] **AC-7 L0 native 注入**：L0 作为连续片段出现在 `session.systemPrompt`；`noContextFiles` 生效；`appendSystemPromptOverride` 为空；没有 AGENTS/CLAUDE 双重注入。
-- [ ] **AC-8 Auto compaction 保留 L0**：auto compaction 后首个出站 request 的 system 逐字包含 L0；有 request 捕获和断言日志。
-- [ ] **AC-9 Manual compaction 保留 L0**：手动 `session.compact()` 后同样逐字保留；有独立证据。
-- [ ] **AC-10 Cache/hash 证据**：section 稳定时 system hash 稳定；cache 指标不可观测时明确记录 `cache_observability=unavailable`，不伪造命中。
-- [ ] **AC-11 Session export/resume 结论**：跨进程 export → import → continue 成功，或有精确失败记录 + W5 fresh+capsule fallback 回写。
+- [x] **AC-6 L0 编译确定性**：同一 role/治理输入得到同一 `l0_revision`；无时间、随机数、host path；单测覆盖。
+- [x] **AC-7 L0 native 注入**：L0 作为连续片段出现在 `session.systemPrompt`；`noContextFiles` 生效；`appendSystemPromptOverride` 为空；没有 AGENTS/CLAUDE 双重注入。
+- [x] **AC-8 Auto compaction 保留 L0**：auto compaction 后首个出站 request 的 system 逐字包含 L0；有 request 捕获和断言日志。
+- [x] **AC-9 Manual compaction 保留 L0**：手动 `session.compact()` 后同样逐字保留；有独立证据。
+- [x] **AC-10 Cache/hash 证据**：section 稳定时 system hash 稳定；cache 指标不可观测时明确记录 `cache_observability=unavailable`，不伪造命中。
+- [x] **AC-11 Session export/resume 结论**：跨进程 export → import → continue 成功，或有精确失败记录 + W5 fresh+capsule fallback 回写。
 - [ ] **AC-12 Curated skill surface**：manifest schema、index/body、allowlist 空=不加载、悬空 id warning、path containment、secret scan、多文件合并均有测试/证据；无自动发现/HOME mount。
 - [ ] **AC-13 bwrap 预检**：WSL2/受支持 Linux 的 unprivileged userns 结论明确；不可用时 D3 已重开并写清降级。
 - [ ] **AC-14 低权 worktree 预检**：worker 可写、reviewer/verifier 只读、evidence 隔离；没有 chmod 777。
@@ -387,6 +392,50 @@ UPSTREAM.md
 docs/features/F002-w0a-foundation-gate.md
 docs/reports/2026-10-27-f002-phase0-baseline.md
 nix/model-catalog.json
+```
+
+### Phase 1 commit (2026-10-27)
+
+```text
+package.json
+package-lock.json
+UPSTREAM.md
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-phase1-l0-compiler.md
+packages/codeteam-pi-adapter/README.md
+packages/codeteam-pi-adapter/package.json
+packages/codeteam-pi-adapter/tsconfig.build.json
+packages/codeteam-pi-adapter/src/index.ts
+packages/codeteam-pi-adapter/src/l0/compiler.ts
+packages/codeteam-pi-adapter/src/l0/templates/coder.md
+packages/codeteam-pi-adapter/src/l0/templates/reviewer.md
+packages/codeteam-pi-adapter/src/l0/templates/verifier.md
+packages/codeteam-pi-adapter/src/session/resource-loader.ts
+packages/codeteam-pi-adapter/test/l0-compiler.test.ts
+packages/codeteam-pi-adapter/test/resource-loader.test.ts
+```
+
+### Phase 1 session/compaction commit (2026-10-27)
+
+```text
+package-lock.json
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-phase1-l0-compiler.md
+packages/codeteam-pi-adapter/README.md
+packages/codeteam-pi-adapter/package.json
+packages/codeteam-pi-adapter/src/index.ts
+packages/codeteam-pi-adapter/src/session/session.ts
+packages/codeteam-pi-adapter/test/fixtures/resume-session.mjs
+packages/codeteam-pi-adapter/test/session-compaction.test.ts
+```
+
+### Phase 1 P2 fix commit (2026-10-27)
+
+```text
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-phase1-l0-compiler.md
+packages/codeteam-pi-adapter/test/fixtures/resume-session.mjs
+packages/codeteam-pi-adapter/test/session-compaction.test.ts
 ```
 
 ## Phase 0 Review Delta
