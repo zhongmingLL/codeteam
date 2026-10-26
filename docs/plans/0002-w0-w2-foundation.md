@@ -117,11 +117,11 @@ reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 - [x] 没有未说明的 kernel patch。
 - [x] lockfile 完整性 + dependency audit 在 CI 中阻断失败；`--ignore-scripts` 有记录理由。
 - [x] 任何人按文档能在干净 checkout 复现构建与测试。
-- [ ] W0c：daemon 启动写 boot 记录、ready 前不对外承诺、stale/running 判定有测试；最小 lifecycle 记录能安全停在 `stopped/failed`。
-- [ ] W0c：`CODETEAM_DATA_DIR` 为唯一数据根；boot ledger/daemon state 落在仓外 0700/0600。
+- [x] W0c：daemon 启动写 boot 记录、ready 前不对外承诺、stale/running 判定有测试；最小 lifecycle 记录能安全停在 `stopped/failed`。
+- [x] W0c：`CODETEAM_DATA_DIR` 为唯一数据根；boot ledger/daemon state 落在仓外 0700/0600。
 
-> W0c 的两项不属于 F002；W1 runtime 启动仍以 W0c 完成为前置，见
-> `docs/reports/2026-10-27-f002-w0a-gate.md`。
+> W0c 的两项不属于 F002，已由 F003（`docs/features/F003-w0c-daemon-lifecycle.md`）完成；W1 runtime 启动前置已满足，证据见
+> 该 feature 的 Evidence 段。
 
 ### Risks
 
