@@ -1,5 +1,5 @@
 ---
-title: "F002 Phase 1 L0 compiler slice"
+title: "F002 Phase 1 L0/session slice"
 doc_kind: report
 status: current
 created: 2026-10-27
@@ -9,9 +9,9 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 
 # F002 Phase 1 L0 compiler slice
 
-> Scope: the first Phase 1 slice only. It implements the L0 compiler v0 and the native
-> system-prompt resource-loader helper. It does not yet prove compaction preservation, prompt
-> cache behavior, or cross-process session export/resume.
+> Scope: the Phase 1 core slice. It implements L0 compilation, native system-prompt injection,
+> fake-provider compaction evidence, and cross-process JSONL resume. It does not prove live
+> provider prompt-cache hits or RPC worker behavior (W5).
 
 ## What changed
 
@@ -23,6 +23,10 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
   - `noContextFiles: true`;
   - `appendSystemPromptOverride: () => []`;
   - no extensions, skills, prompt templates, or themes.
+- `src/session/session.ts`: `createAgentSessionWithL0` wrapper around the public SDK session factory.
+- `test/session-compaction.test.ts`: fake-provider session evidence for manual/threshold compaction,
+  system-hash stability, and cross-process resume.
+- `test/fixtures/resume-session.mjs`: child-process JSONL resume fixture.
 - Root `build` / `build:offline` now build the adapter after the pi coding-agent package.
 
 ## Verification
@@ -30,18 +34,25 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 | Check | Command | Result |
 |---|---|---|
 | Build | `NODE_ENV=development npm run build:offline` | exit 0; adapter dist + templates generated |
-| Adapter tests | `NODE_ENV=development npm test --workspace @codeteam/pi-adapter` | 2 files, 6 tests pass |
+| Adapter tests | `NODE_ENV=development npm test --workspace @codeteam/pi-adapter` | 3 files, 10 tests pass |
 | Root check | `NODE_ENV=development npm run check` | exit 0 |
 | Audit | `node scripts/npm-audit.mjs` | exit 0 |
 
-The loader test writes an `AGENTS.md` containing a sentinel string, then verifies the compiled
-L0 is the effective system prompt, append prompts are empty, and the sentinel is not loaded.
+The tests verify:
 
-## Not yet verified
+- deterministic L0 revision (role/section order/line-ending normalization);
+- `AGENTS.md` sentinel not loaded, append prompts empty, effective system prompt == compiled L0;
+- manual `session.compact()` preserves L0 in the first post-compaction request;
+- threshold auto-compaction preserves L0 in the next normal request;
+- system hash is stable across normal requests;
+- a child process opens the exported JSONL, restores messages/model/thinking, keeps the same L0
+  revision, and successfully continues with another prompt.
 
-- auto/manual compaction preserves L0 in the first post-compaction request;
-- prompt-cache evidence when the L0 section is stable;
-- session export/resume across processes;
-- the real `createAgentSession` integration with a recording provider.
+`cache_observability=unavailable` for the fake provider. The stable system hash is the cache
+evidence available at this layer; no live prompt-cache hit is claimed.
 
-These remain Phase 1 acceptance work; this slice must not be reported as the Phase 1 gate.
+## Remaining boundaries
+
+- Live provider prompt-cache metrics are not observed; the adapter records stable system hashes only.
+- RPC worker migration and re-attach semantics remain W5.
+- Independent review of this Phase 1 slice is still required before the Phase 1 gate is closed.

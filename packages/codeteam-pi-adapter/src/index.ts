@@ -12,3 +12,8 @@ export {
 	createL0ResourceLoader,
 	type L0ResourceLoader,
 } from "./session/resource-loader.ts";
+export {
+	type CreateAgentSessionWithL0Options,
+	type CreateAgentSessionWithL0Result,
+	createAgentSessionWithL0,
+} from "./session/session.ts";
