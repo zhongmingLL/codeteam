@@ -1,0 +1,33 @@
+{
+	"name": "@codeteam/daemon",
+	"version": "0.0.0",
+	"private": true,
+	"description": "codeteam daemon state, boot ledger, readiness, and minimal lifecycle",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsc -p tsconfig.build.json",
+		"pretest": "npm run build",
+		"test": "vitest --run"
+	},
+	"devDependencies": {
+		"@types/node": "22.19.19",
+		"shx": "0.3.4",
+		"vitest": "4.1.11"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}
