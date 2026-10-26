@@ -12,4 +12,4 @@ created: 2026-10-25
 | ID | Name | Status | Owner | Link |
 |----|------|--------|-------|------|
 | F001 | codeteam 架构 v1 | review | 宪宪 | [F001](docs/features/F001-architecture-v1.md) |
-| F002 | W0a 下游基线与运行时能力验证 | review | 宪宪 | [F002](docs/features/F002-w0a-foundation-gate.md) |
+| F002 | W0a 下游基线与运行时能力验证 | done (conditional) | 宪宪 | [F002](docs/features/F002-w0a-foundation-gate.md) |

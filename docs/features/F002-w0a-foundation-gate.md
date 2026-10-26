@@ -115,6 +115,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | impl Phase 3 | W0a preflight: bwrap/PID/net isolation available; worker rw / reviewer ro / evidence separate; Hub thread + card live; approvals aggregate 503 noted |
 | 2026-10-27 | impl Phase 4 | Baseline reuse map: no old code found; fresh baseline for 6 assets; W1 inputs recorded |
 | 2026-10-27 | impl Phase 5 | Gate pack: CONDITIONAL PASS; AC-18 review pending; W0c remains outside F002 |
+| 2026-10-27 | Phase 5 review | Gate pack approved by 烁烁 at `79ae95ac5`; 2 P3 folded; AC-18/AC-19 ticked |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -308,8 +309,8 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - [x] **AC-15 Hub 承载结论**：外部 thread + 消息 + approval 卡可展示，或给出 clowder 侧改动清单；没有未授权的 clowder-ai 改动。（thread + 消息 + rich card 实证；approval 生产者为 W4/W7 codeteam 侧；clouder 侧清单已记录）
 - [x] **AC-16 Baseline reuse map**：control plane/store/adapter/verifier/eval/CLI 六类资产都有源、能力、reuse/adapt/discard、理由；W1 计划引用；无来源时明确 fresh baseline。（六类资产矩阵已产出；旧代码全盘不存在，声明 fresh baseline；W1 计划已引用）
 - [ ] **AC-17 Zero unrecorded kernel patch**：没有未记录的 kernel 改动；任何 patch 都有可复现失败、测试、upstreamability、rollback。
-- [ ] **AC-18 独立 review**：非作者 reviewer 覆盖最终 evidence pack；P1/P2 已修复并由提出者覆盖；没有 self-approve。
-- [ ] **AC-19 Gate 决定**：`w0a-gate` 报告给出 PASS/CONDITIONAL/FAIL；W1 入场决定和 fallback 已记录。
+- [x] **AC-18 独立 review**：非作者 reviewer 覆盖最终 evidence pack；P1/P2 已修复并由提出者覆盖；没有 self-approve。（烁烁 approve `79ae95ac5`；Phase 1 P2、Phase 2 P2/P3 均由提出者覆盖）
+- [x] **AC-19 Gate 决定**：`w0a-gate` 报告给出 PASS/CONDITIONAL/FAIL；W1 入场决定和 fallback 已记录。（CONDITIONAL PASS：schema 可开始，runtime 启动等 W0c；见 gate 报告 §6）
 - [ ] **AC-20 数据安全**：所有测试使用隔离目录/合成 fixture；没有生产用户数据、没有仓内 secret、没有不可逆操作。
 
 ## Deliverables
