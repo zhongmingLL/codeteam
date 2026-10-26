@@ -45,6 +45,9 @@ try {
 		return stream;
 	};
 	await session.prompt("continue after resume");
+	const historyContainsParent = session.messages.some(
+		(message) => message.role === "user" && JSON.stringify(message.content).includes("remember this session"),
+	);
 	console.log(
 		JSON.stringify({
 			messageCount: session.messages.length,
@@ -53,6 +56,7 @@ try {
 			model: session.model?.id,
 			thinkingLevel: session.thinkingLevel,
 			continued: session.getLastAssistantText() === "resumed",
+			historyContainsParent,
 		}),
 	);
 } finally {

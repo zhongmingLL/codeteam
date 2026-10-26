@@ -109,7 +109,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | review fix | P1 catalog pin/CI hydrate + empty job deferral; P2 AGENTS rule; P3 report path hygiene |
 | 2026-10-27 | Phase 0 merged | PR #1, squash `6a198a526`; Phase 1 worktree opened |
 | 2026-10-27 | impl Phase 1 (partial) | L0 compiler v0 + native resource-loader helper; compaction/session spike pending |
-| 2026-10-27 | impl Phase 1 core | L0/session evidence complete: 10/10 adapter tests, manual/auto compaction, cross-process resume; review pending |
+| 2026-10-27 | impl Phase 1 core | L0/session evidence complete: 10/10 adapter tests, manual/auto compaction, cross-process resume; P2 test-strength fix, re-review pending |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -425,6 +425,15 @@ packages/codeteam-pi-adapter/README.md
 packages/codeteam-pi-adapter/package.json
 packages/codeteam-pi-adapter/src/index.ts
 packages/codeteam-pi-adapter/src/session/session.ts
+packages/codeteam-pi-adapter/test/fixtures/resume-session.mjs
+packages/codeteam-pi-adapter/test/session-compaction.test.ts
+```
+
+### Phase 1 P2 fix commit (2026-10-27)
+
+```text
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-phase1-l0-compiler.md
 packages/codeteam-pi-adapter/test/fixtures/resume-session.mjs
 packages/codeteam-pi-adapter/test/session-compaction.test.ts
 ```

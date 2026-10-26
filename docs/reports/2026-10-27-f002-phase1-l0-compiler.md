@@ -45,8 +45,10 @@ The tests verify:
 - manual `session.compact()` preserves L0 in the first post-compaction request;
 - threshold auto-compaction preserves L0 in the next normal request;
 - system hash is stable across normal requests;
-- a child process opens the exported JSONL, restores messages/model/thinking, keeps the same L0
-  revision, and successfully continues with another prompt.
+- a child process opens the exported JSONL, restores the parent message content (asserted by exact
+  `parentCount + 2` after continue), keeps the same L0 revision, and successfully continues with
+  another prompt. Model/thinking values are configured defaults in this fixture, not continuity
+  evidence.
 
 `cache_observability=unavailable` for the fake provider. The stable system hash is the cache
 evidence available at this layer; no live prompt-cache hit is claimed.

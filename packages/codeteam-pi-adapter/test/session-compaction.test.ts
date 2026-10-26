@@ -166,7 +166,7 @@ describe("L0 session compaction", () => {
 			await session.prompt("remember this session");
 			const sessionFile = sessionManager.getSessionFile();
 			if (!sessionFile) throw new Error("session file was not created");
-			const expectedThinkingLevel = session.thinkingLevel;
+			const parentMessageCount = session.messages.length;
 
 			const l0Path = join(root, "l0.json");
 			writeFileSync(
@@ -184,13 +184,13 @@ describe("L0 session compaction", () => {
 				model: string | undefined;
 				thinkingLevel: string;
 				continued: boolean;
+				historyContainsParent: boolean;
 			};
 
-			expect(resumed.messageCount).toBeGreaterThan(0);
+			expect(resumed.messageCount).toBe(parentMessageCount + 2);
+			expect(resumed.historyContainsParent).toBe(true);
 			expect(resumed.systemPromptIncludesL0).toBe(true);
 			expect(resumed.l0Revision).toBe(compiled.revision);
-			expect(resumed.model).toBe("claude-sonnet-4-5");
-			expect(resumed.thinkingLevel).toBe(expectedThinkingLevel);
 			expect(resumed.continued).toBe(true);
 		} finally {
 			session.dispose();
