@@ -105,7 +105,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 |---|---|---|
 | 2026-10-26 | spec | F002 created; operator confirmed F002 = whole W0a gate |
 | 2026-10-27 | kickoff | baseline docs/plans commit `8fab3265b`; Phase 0 worktree opened |
-| 2026-10-27 | impl Phase 0 | docs/plans + CI + protection + supply-chain evidence; zod exception pending security review |
+| 2026-10-27 | impl Phase 0 | docs/plans + CI + protection + supply-chain evidence (`7b213ba49`); zod exception pending security review |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -366,6 +366,13 @@ package-lock.json
 packages/coding-agent/package.json
 packages/coding-agent/install-lock/package-lock.json
 scripts/npm-audit.mjs
+```
+
+### Phase 0 status commit (2026-10-27)
+
+```text
+BACKLOG.md
+docs/features/F002-w0a-foundation-gate.md
 ```
 
 ## Review Plan
