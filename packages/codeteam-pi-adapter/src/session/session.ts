@@ -10,6 +10,8 @@ export type CreateAgentSessionWithL0Options = Omit<CreateAgentSessionOptions, "c
 	cwd: string;
 	agentDir: string;
 	compiledL0: CompiledL0;
+	/** Curated skill directories resolved from the codeteam allowlist. */
+	curatedSkillPaths?: string[];
 };
 
 export type CreateAgentSessionWithL0Result = CreateAgentSessionResult & {
@@ -23,6 +25,7 @@ export async function createAgentSessionWithL0(
 		cwd: options.cwd,
 		agentDir: options.agentDir,
 		compiledL0: options.compiledL0,
+		additionalSkillPaths: options.curatedSkillPaths,
 	});
 	const result = await createAgentSession({
 		...options,
