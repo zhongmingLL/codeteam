@@ -53,8 +53,21 @@ The tests verify:
 `cache_observability=unavailable` for the fake provider. The stable system hash is the cache
 evidence available at this layer; no live prompt-cache hit is claimed.
 
+## Review and merge
+
+- Non-author review by 烁烁 (kimi-k3) approved `9e9022b4e`.
+- P2 finding: `messageCount > 0` could not prove hydration. Fixed by asserting
+  `parentMessageCount + 2` and a parent-content anchor; the reviewer re-covered the delta.
+- Required checks on `9e9022b4e`: `build-check-test` 8m6s pass, `supply-chain` 24s pass,
+  `mcp-conformance` 1m1s pass. The non-required `generate` job fails on the fork because the
+  `v1.4.0` tag is absent; it is not part of branch protection.
+- The CI `build-check-test` job ran `@codeteam/pi-adapter` tests through `npm test --workspaces`
+  (3 files / 10 tests), so the deferred `codeteam-package-tests` job is unnecessary.
+- Merged as PR #2 squash `bee299a96` into `codeteam-work`.
+
 ## Remaining boundaries
 
 - Live provider prompt-cache metrics are not observed; the adapter records stable system hashes only.
 - RPC worker migration and re-attach semantics remain W5.
-- Independent review of this Phase 1 slice is still required before the Phase 1 gate is closed.
+- AC-18 stays open until the Phase 5 W0a gate pack is reviewed as a whole; this slice's review is
+  closed.
