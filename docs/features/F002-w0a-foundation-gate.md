@@ -104,7 +104,8 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | Date | Stage | Result |
 |---|---|---|
 | 2026-10-26 | spec | F002 created; operator confirmed F002 = whole W0a gate |
-| 2026-10-27 | kickoff | baseline docs/plans commit; Phase 0 worktree opened |
+| 2026-10-27 | kickoff | baseline docs/plans commit `8fab3265b`; Phase 0 worktree opened |
+| 2026-10-27 | impl Phase 0 | docs/plans + CI + protection + supply-chain evidence; zod exception pending security review |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -322,6 +323,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 2. **旧 codeteam 实现在哪里？** 需要来源仓/路径/commit；本机 `clowder-ai/codeteam/` 只有文档。
    若没有，确认按 fresh baseline 进入 W1。
 3. **Hub spike 是否授权 clowder-ai 改动？** 默认不授权：F002 只输出改动清单；需要改动时单独找 operator。
+4. **zod advisory 例外需要独立 security review**：`GHSA-mrhx-c7xc-m3w5` 当前只在未发布 sandbox example 的 `@anthropic-ai/sandbox-runtime` 路径上触发；合并前需要砚砚复核，W2 sandbox 前必须重审。
 
 ## Committed Files
 
@@ -350,6 +352,20 @@ docs/plans/0006-clowder-reuse-plan.md
 docs/plans/0007-architecture-plan-coverage.md
 docs/plans/README.md
 docs/reuse/README.md
+```
+
+### Phase 0 commit (2026-10-27)
+
+```text
+.github/workflows/ci.yml
+UPSTREAM.md
+docs/features/F002-w0a-foundation-gate.md
+docs/reports/2026-10-27-f002-phase0-baseline.md
+package.json
+package-lock.json
+packages/coding-agent/package.json
+packages/coding-agent/install-lock/package-lock.json
+scripts/npm-audit.mjs
 ```
 
 ## Review Plan

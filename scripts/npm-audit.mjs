@@ -18,6 +18,14 @@ const acceptedAdvisories = {
 			"unpublished gondolin example extension. Gondolin only verifies leaf certificates against its own locally " +
 			"generated CA (public exponent 65537), so the low-exponent signature forgery does not apply.",
 	},
+	"GHSA-mrhx-c7xc-m3w5": {
+		package: "zod",
+		reason:
+			"The only direct constraint requiring zod 3.x is @anthropic-ai/sandbox-runtime in the unpublished sandbox " +
+			"example extension. The runtime SDK peer ranges also accept zod 4; the hoisted 3.25.76 is otherwise selected " +
+			"for that example. Codeteam runtime does not currently pass attacker-controlled zod schemas. Revisit before " +
+			"W2 sandbox work, or when the example upgrades to zod >=4.6.6.",
+	},
 };
 
 const result = spawnSync("npm", ["audit", "--omit=dev", "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
