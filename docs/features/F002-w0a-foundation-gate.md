@@ -111,7 +111,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | impl Phase 1 (partial) | L0 compiler v0 + native resource-loader helper; compaction/session spike pending |
 | 2026-10-27 | impl Phase 1 core | L0/session evidence complete: 10/10 adapter tests, manual/auto compaction, cross-process resume; P2 test-strength fix, approved after re-cover |
 | 2026-10-27 | Phase 1 merged | PR #2, squash `bee299a96`; review approved at `9e9022b4e`; AC-6–AC-11 satisfied |
-| 2026-10-27 | impl Phase 2 | Curated skill catalog + allowlist injection; skills 11/11, adapter 14/14; fork/import merge deferred to W4 |
+| 2026-10-27 | impl Phase 2 | Curated skill catalog + allowlist injection; review P2 (in-skill symlink escape) and P3 (SKILL.md scan bypass) fixed; fork/import merge deferred to W4 |
 
 ### Phase 0 — 真相源与工程基线
 

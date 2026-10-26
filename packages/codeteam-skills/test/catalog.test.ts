@@ -148,6 +148,77 @@ describe("curated skill catalog", () => {
 		);
 	});
 
+	it("rejects a symlink inside the skill directory that escapes it", () => {
+		const catalogRoot = newRoot();
+		const outside = join(catalogRoot, "..", `outside-file-${Date.now()}`);
+		writeFileSync(outside, "external payload");
+		const skillDir = writeSkill(catalogRoot, "skills/alpha", "alpha", "Alpha skill.");
+		symlinkSync(outside, join(skillDir, "leak.txt"), "file");
+		writeManifest(catalogRoot, [entry("alpha", "skills/alpha")]);
+
+		const catalog = loadCuratedCatalog({ catalogRoot });
+
+		expect(catalog.skills).toEqual([]);
+		expect(catalog.diagnostics).toContainEqual(
+			expect.objectContaining({ severity: "error", code: "path_escape", skillId: "alpha" }),
+		);
+		rmSync(outside, { force: true });
+	});
+
+	it("rejects a symlinked directory inside the skill directory that escapes it", () => {
+		const catalogRoot = newRoot();
+		const outside = join(catalogRoot, "..", `outside-dir-${Date.now()}`);
+		writeSkill(outside, "payload", "payload", "payload");
+		const skillDir = writeSkill(catalogRoot, "skills/alpha", "alpha", "Alpha skill.");
+		symlinkSync(join(outside, "payload"), join(skillDir, "external"), "dir");
+		writeManifest(catalogRoot, [entry("alpha", "skills/alpha")]);
+
+		const catalog = loadCuratedCatalog({ catalogRoot });
+
+		expect(catalog.skills).toEqual([]);
+		expect(catalog.diagnostics).toContainEqual(
+			expect.objectContaining({ severity: "error", code: "path_escape", skillId: "alpha" }),
+		);
+		rmSync(outside, { recursive: true, force: true });
+	});
+
+	it("scans SKILL.md even when it exceeds the general scan size limit", () => {
+		const catalogRoot = newRoot();
+		const skillDir = join(catalogRoot, "skills/alpha");
+		mkdirSync(skillDir, { recursive: true });
+		const padding = "a".repeat(650 * 1024);
+		writeFileSync(
+			join(skillDir, "SKILL.md"),
+			`---\nname: alpha\ndescription: Alpha skill.\ntriggers: ["first"]\n---\n\n${padding}\nAKIAIOSFODNN7EXAMPLE\n`,
+		);
+		writeManifest(catalogRoot, [entry("alpha", "skills/alpha")]);
+
+		const catalog = loadCuratedCatalog({ catalogRoot });
+
+		expect(catalog.skills).toEqual([]);
+		expect(catalog.diagnostics).toContainEqual(
+			expect.objectContaining({ severity: "error", code: "secret_detected", skillId: "alpha" }),
+		);
+	});
+
+	it("rejects an oversized SKILL.md instead of skipping the scan", () => {
+		const catalogRoot = newRoot();
+		const skillDir = join(catalogRoot, "skills/alpha");
+		mkdirSync(skillDir, { recursive: true });
+		writeFileSync(
+			join(skillDir, "SKILL.md"),
+			`---\nname: alpha\ndescription: Alpha skill.\ntriggers: ["first"]\n---\n\n${"a".repeat(3 * 1024 * 1024)}\n`,
+		);
+		writeManifest(catalogRoot, [entry("alpha", "skills/alpha")]);
+
+		const catalog = loadCuratedCatalog({ catalogRoot });
+
+		expect(catalog.skills).toEqual([]);
+		expect(catalog.diagnostics).toContainEqual(
+			expect.objectContaining({ severity: "error", code: "skill_too_large", skillId: "alpha" }),
+		);
+	});
+
 	it("rejects a frontmatter name that differs from skillId", () => {
 		const catalogRoot = newRoot();
 		writeSkill(catalogRoot, "skills/alpha", "beta", "Alpha skill.");

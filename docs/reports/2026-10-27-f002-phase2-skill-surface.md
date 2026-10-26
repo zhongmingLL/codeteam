@@ -37,8 +37,11 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 | Absolute path | `path_absolute` error, skill excluded |
 | `..` segment | `path_escape` error, skill excluded |
 | Symlink escaping the catalog root | `path_escape` error after `realpath`, skill excluded |
+| Symlink inside the skill directory pointing outside it | `path_escape` error, skill excluded |
+| Unresolvable symlink inside the skill directory | `path_escape` error, skill excluded |
 | Frontmatter name differs from `skillId` | `name_mismatch` error, skill excluded |
 | Secret-shaped content in the skill directory | `secret_detected` error, skill excluded |
+| `SKILL.md` larger than 2 MiB | `skill_too_large` error, skill excluded |
 | `next` pointing outside the resolved set | `dangling_next` warning, skill still loads |
 | Unknown manifest key such as `description` | `manifest_invalid` error (metadata lives in `SKILL.md`) |
 
@@ -51,7 +54,7 @@ model loads the body through the normal read tool.
 | Check | Command | Result |
 |---|---|---|
 | Build | `NODE_ENV=development npm run build:offline` | exit 0; adapter and skills packages emit `dist` |
-| Skills tests | `NODE_ENV=development npm test --workspace @codeteam/skills` | 1 file, 11 tests pass |
+| Skills tests | `NODE_ENV=development npm test --workspace @codeteam/skills` | 1 file, 15 tests pass |
 | Adapter tests | `NODE_ENV=development npx vitest run --root packages/codeteam-pi-adapter` | 4 files, 14 tests pass (including 4 skill-surface tests) |
 | Root check | `NODE_ENV=development npm run check` | exit 0 |
 | Production audit | `node scripts/npm-audit.mjs` | exit 0; no unaccepted advisories |
@@ -64,6 +67,8 @@ Skill-surface tests prove:
 - the prompt index points at `SKILL.md` and does not inline the body;
 - the tool surface is identical with and without curated skills (`read` only);
 - a missing allowlist path surfaces a loader diagnostic instead of silently loading nothing.
+- symlinks inside a skill directory cannot escape it, and `SKILL.md` is scanned regardless of the
+  general 512 KiB file-scan limit (2 MiB hard cap).
 
 ## AC-12 mapping
 
@@ -75,9 +80,19 @@ Skill-surface tests prove:
 | Dangling id warning | `dangling_next` test | satisfied |
 | Path containment | absolute, `..`, symlink-escape tests | satisfied |
 | Secret scan | `secret_detected` test | satisfied |
+| In-skill symlink containment | file and directory symlink escape tests | satisfied |
 | Multi-skill merge | two-directory manifest-order test | satisfied for catalog merging |
 | No auto-discovery / HOME mount | decoy `agentDir/skills` and `cwd/.pi/skills` tests | satisfied |
 | Multi-file skill merged into one file at fork/import | not implemented | **open, owner W4** |
 
 AC-12 stays open until the fork/import multi-file merge exists or the W0a gate records it as a
 conditional gap with that owner and a revisit trigger (first skill fork/import path).
+
+## Review fixes
+
+Reviewer probes at `280fd4a9b` found two gaps, both fixed on the same branch:
+
+- P2: symlinks inside a skill directory were skipped by the scanner and could point outside the
+  skill; resolution now rejects any escaping or unresolvable symlink (`path_escape`).
+- P3: the 512 KiB scan limit exempted `SKILL.md`, so an oversized main file could hide a secret;
+  `SKILL.md` is now always scanned and rejected above a 2 MiB hard cap (`skill_too_large`).

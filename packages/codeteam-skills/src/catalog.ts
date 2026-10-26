@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { parse } from "yaml";
 import { type CatalogDiagnostic, type CuratedSkillEntry, parseManifest, type SourceKind } from "./manifest.ts";
 
@@ -32,6 +32,7 @@ interface Frontmatter {
 
 const MAX_SCANNED_FILES = 200;
 const MAX_SCANNED_FILE_BYTES = 512 * 1024;
+const MAX_SKILL_FILE_BYTES = 2 * 1024 * 1024;
 
 const SECRET_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
 	{ label: "private-key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
@@ -87,6 +88,44 @@ function looksBinary(buffer: Buffer): boolean {
 	return sample.includes(0);
 }
 
+function findUnsafeSymlinks(skillDir: string): string[] {
+	const unsafe: string[] = [];
+
+	const walk = (dir: string, depth: number): void => {
+		if (depth > 8) return;
+		let entries: import("node:fs").Dirent[];
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			const fullPath = join(dir, entry.name);
+			let stat: import("node:fs").Stats;
+			try {
+				stat = lstatSync(fullPath);
+			} catch {
+				continue;
+			}
+			if (stat.isSymbolicLink()) {
+				let target: string;
+				try {
+					target = realpathSync(fullPath);
+				} catch {
+					unsafe.push(relative(skillDir, fullPath));
+					continue;
+				}
+				if (!isInside(skillDir, target)) unsafe.push(relative(skillDir, fullPath));
+				continue;
+			}
+			if (stat.isDirectory()) walk(fullPath, depth + 1);
+		}
+	};
+
+	walk(skillDir, 0);
+	return unsafe;
+}
+
 function scanDirectoryForSecrets(skillDir: string): string[] {
 	const hits: string[] = [];
 	let scanned = 0;
@@ -114,7 +153,7 @@ function scanDirectoryForSecrets(skillDir: string): string[] {
 			} catch {
 				continue;
 			}
-			if (stat.size > MAX_SCANNED_FILE_BYTES) continue;
+			if (stat.size > MAX_SCANNED_FILE_BYTES && basename(fullPath) !== "SKILL.md") continue;
 			let buffer: Buffer;
 			try {
 				buffer = readFileSync(fullPath);
@@ -188,6 +227,18 @@ function resolveSkill(
 		return null;
 	}
 
+	const unsafeSymlinks = findUnsafeSymlinks(realDir);
+	if (unsafeSymlinks.length > 0) {
+		diagnostics.push({
+			severity: "error",
+			code: "path_escape",
+			skillId: entry.skillId,
+			path: realDir,
+			message: `skill "${entry.skillId}" has symlinks that escape or cannot resolve: ${unsafeSymlinks.join(", ")}`,
+		});
+		return null;
+	}
+
 	const realFile = realpathSync(skillFile);
 	if (!isInside(realRoot, realFile) || !isInside(realDir, realFile)) {
 		diagnostics.push({
@@ -196,6 +247,17 @@ function resolveSkill(
 			skillId: entry.skillId,
 			path: skillFile,
 			message: `skill "${entry.skillId}" SKILL.md resolves outside its directory`,
+		});
+		return null;
+	}
+
+	if (statSync(realFile).size > MAX_SKILL_FILE_BYTES) {
+		diagnostics.push({
+			severity: "error",
+			code: "skill_too_large",
+			skillId: entry.skillId,
+			path: realFile,
+			message: `skill "${entry.skillId}" SKILL.md exceeds ${MAX_SKILL_FILE_BYTES} bytes and cannot be scanned reliably`,
 		});
 		return null;
 	}

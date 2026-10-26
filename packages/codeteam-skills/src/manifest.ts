@@ -27,6 +27,7 @@ export type CatalogDiagnosticCode =
 	| "frontmatter_invalid"
 	| "name_mismatch"
 	| "secret_detected"
+	| "skill_too_large"
 	| "dangling_next";
 
 export interface CatalogDiagnostic {
