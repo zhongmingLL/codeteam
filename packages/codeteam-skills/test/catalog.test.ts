@@ -7,6 +7,8 @@ import { loadCuratedCatalog } from "../src/index.ts";
 
 const packageRoot = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
+const FAKE_AWS_KEY = ["AKIA", "IOSFODNN7EXAMPLE"].join("");
+
 function writeSkill(root: string, relDir: string, name: string, description: string, body = ""): string {
 	const dir = join(root, relDir);
 	mkdirSync(dir, { recursive: true });
@@ -137,7 +139,7 @@ describe("curated skill catalog", () => {
 
 	it("rejects a skill file that contains a secret", () => {
 		const catalogRoot = newRoot();
-		writeSkill(catalogRoot, "skills/alpha", "alpha", "Alpha skill.", "token AKIAIOSFODNN7EXAMPLE");
+		writeSkill(catalogRoot, "skills/alpha", "alpha", "Alpha skill.", "token " + FAKE_AWS_KEY);
 		writeManifest(catalogRoot, [entry("alpha", "skills/alpha")]);
 
 		const catalog = loadCuratedCatalog({ catalogRoot });
@@ -189,7 +191,7 @@ describe("curated skill catalog", () => {
 		const padding = "a".repeat(650 * 1024);
 		writeFileSync(
 			join(skillDir, "SKILL.md"),
-			`---\nname: alpha\ndescription: Alpha skill.\ntriggers: ["first"]\n---\n\n${padding}\nAKIAIOSFODNN7EXAMPLE\n`,
+			`---\nname: alpha\ndescription: Alpha skill.\ntriggers: ["first"]\n---\n\n${padding}\n${FAKE_AWS_KEY}\n`,
 		);
 		writeManifest(catalogRoot, [entry("alpha", "skills/alpha")]);
 

@@ -104,21 +104,24 @@ reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 
 ### Acceptance
 
-- [ ] `git remote -v` 有 upstream；pin 的 tag/commit 写入 `UPSTREAM.md`。
-- [ ] 外部仓 `docs/` 结构镜像；旧目录 README 已转为只读快照指针；外部仓有自己的 `plans/README.md`。
+- [x] `git remote -v` 有 upstream；pin 的 tag/commit 写入 `UPSTREAM.md`。
+- [x] 外部仓 `docs/` 结构镜像；旧目录 README 已转为只读快照指针；外部仓有自己的 `plans/README.md`。
 - [x] 基线对码报告已产出，明确 reuse vs fresh，并被 W1 引用（`docs/reports/2026-10-27-f002-baseline-reuse-map.md`）。
-- [ ] main 分支保护、required checks、禁 force push 有可查证据；CI secrets 不在仓内。
-- [ ] 上游测试 + codeteam 测试有可复现命令和结果。
-- [ ] L0 在 compaction 后逐字保留；否则 D9 降级并记 KERNEL_GAPS。
-- [ ] Curated skill surface：index/body 两级可加载；allowlist 空=不加载、悬空 id 有 warning；`nextSkill` 经 repo read 且 skip 可见；无自动发现/HOME mount。
-- [ ] W0 只验证 role loader/allowlist 与 unknown-role fail closed；`eval`/`compress` 的 seed 与 AgentProfile 在 W1 落，不在 W0 硬编码。
-- [ ] bwrap / 低权 worktree 属主预检有结论；不可用则 D3 已重开。
-- [ ] Hub 承载 spike 有结论：外部 thread + 消息 + 审批卡可展示，或列出 clowder 侧改动清单。
-- [ ] 没有未说明的 kernel patch。
-- [ ] lockfile 完整性 + dependency audit 在 CI 中阻断失败；`--ignore-scripts` 有记录理由。
-- [ ] 任何人按文档能在干净 checkout 复现构建与测试。
+- [x] main 分支保护、required checks、禁 force push 有可查证据；CI secrets 不在仓内。
+- [x] 上游测试 + codeteam 测试有可复现命令和结果。
+- [x] L0 在 compaction 后逐字保留；否则 D9 降级并记 KERNEL_GAPS。
+- [x] Curated skill surface：index/body 两级可加载；allowlist 空=不加载、悬空 id 有 warning；`nextSkill` 经 repo read 且 skip 可见；无自动发现/HOME mount。
+- [x] W0 只验证 role loader/allowlist 与 unknown-role fail closed；`eval`/`compress` 的 seed 与 AgentProfile 在 W1 落，不在 W0 硬编码。
+- [x] bwrap / 低权 worktree 属主预检有结论；不可用则 D3 已重开。
+- [x] Hub 承载 spike 有结论：外部 thread + 消息 + 审批卡可展示，或列出 clowder 侧改动清单。
+- [x] 没有未说明的 kernel patch。
+- [x] lockfile 完整性 + dependency audit 在 CI 中阻断失败；`--ignore-scripts` 有记录理由。
+- [x] 任何人按文档能在干净 checkout 复现构建与测试。
 - [ ] W0c：daemon 启动写 boot 记录、ready 前不对外承诺、stale/running 判定有测试；最小 lifecycle 记录能安全停在 `stopped/failed`。
 - [ ] W0c：`CODETEAM_DATA_DIR` 为唯一数据根；boot ledger/daemon state 落在仓外 0700/0600。
+
+> W0c 的两项不属于 F002；W1 runtime 启动仍以 W0c 完成为前置，见
+> `docs/reports/2026-10-27-f002-w0a-gate.md`。
 
 ### Risks
 

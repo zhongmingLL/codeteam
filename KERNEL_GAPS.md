@@ -16,12 +16,20 @@ A kernel patch is admitted only when all of the following exist:
 
 None confirmed as of bootstrap (2026-10-26).
 
-## W0a spikes (not patches yet)
+## W0a spikes (2026-10-27)
 
-- L0 compiled system prompt is preserved verbatim through auto and manual compaction.
-- Session export/resume works across process restarts.
-- Hub compatibility subset can display external thread, message, and approval data.
-- WSL2 `bwrap` availability and low-privilege worker/reviewer worktree permissions.
-- Reproducible install/build on Node `>=22.19.0` with the pinned lockfile.
+All W0a spikes passed without a kernel patch:
+
+- L0 compiled system prompt is preserved verbatim through auto and manual compaction
+  (`docs/reports/2026-10-27-f002-phase1-l0-compiler.md`).
+- Session export/resume works across process restarts (same report; `parentCount + 2` assertion).
+- Curated skills load only through an explicit allowlist; no discovery or HOME mount
+  (`docs/reports/2026-10-27-f002-phase2-skill-surface.md`).
+- WSL2 `bwrap`/unprivileged userns works on this host; low-privilege worker/reviewer worktrees are
+  enforced with read-only binds (`docs/reports/2026-10-27-f002-w0a-preflight.md`).
+- Hub hosts external threads, messages, and rich cards; the approval-card producer is W4/W7 scope
+  (same report).
+
+The fork/import multi-file skill merge is a W4 product gap, not a kernel gap.
 
 If a spike fails, record the command, observed behavior, expected behavior, and affected upstream files here before proposing a kernel patch.

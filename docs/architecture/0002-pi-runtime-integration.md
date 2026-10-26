@@ -602,4 +602,23 @@ Adapter 负责：
 
 ---
 
+
+
+---
+
+## 13. W0a 实测结论（2026-10-27）
+
+- **L0**：`DefaultResourceLoader.systemPromptOverride` + `noContextFiles` 让编译后的 L0 成为完整
+  system prompt；manual/threshold compaction 后的首个出站 request 仍逐字包含 L0。live
+  prompt-cache 命中不可观测，只记录 system hash 稳定性。
+- **Session resume**：子进程 `SessionManager.open()` 恢复父 JSONL，消息数精确为 `父 + 2`，父消息
+  原文仍在，并可继续 prompt；不需要 v1.3.0 回退。
+- **Curated skills**：`noSkills: true` + `additionalSkillPaths` 只加载白名单；无自动发现/HOME
+  mount；path containment 与 secret scan 有测试。
+- **结论**：v1.4.0 的 SDK/extension surface 足够支撑 W0a，零 kernel patch。未验证的部分是 live
+  cache 命中与 W5 的 RPC/worker 行为。
+
+报告：`docs/reports/2026-10-27-f002-phase1-l0-compiler.md`、
+`docs/reports/2026-10-27-f002-phase2-skill-surface.md`、`docs/reports/2026-10-27-f002-w0a-gate.md`。
+
 [宪宪/deepseek-flash🐾]

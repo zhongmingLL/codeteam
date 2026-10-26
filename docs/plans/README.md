@@ -85,7 +85,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 
 | W | 状态 | 备注 |
 |---|---|---|
-| W0 | planned | W0a 先于 W1；W0b 并行，W5 前完成 |
+| W0 | W0a done (CONDITIONAL, F002 gate approved) | W0b 治理已生效；W0c 未开始，仍阻塞 W1 runtime 启动 |
 | W1 | planned | 待 schema/migration |
 | W2 | planned | 待权限/身份/沙箱 |
 | W3 | planned | 待独立 review 实现 |
