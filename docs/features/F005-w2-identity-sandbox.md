@@ -26,11 +26,11 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 
 | Slice | 范围 | 依赖 |
 |---|---|---|
-| **F005a** 身份与 callback auth | per-run token 铸造/绑定/撤销；MCP server token→binding 查表；header-only（body/query 401）；liveness 两段式（run_events + worker 进程 + exact runId fence）；interrupted/terminal 立即撤销；token 目录前缀硬 deny | W1 `invocation_credentials` |
-| **F005b** 工具策略 | coder/reviewer/verifier wrapper：命令 deny-by-default + 只读 allowlist、shell 操作符禁止、`node -e` 禁止、timeout/output cap/minimal env；路径 canonicalize + realpath，拒绝 `..`/symlink/hardlink；读路径 deny（`.env*`、密钥、credentials、`.git` 内部对象）；coder git policy（add/commit/status/diff）+ commit wrapper 写 `head_sha` audit；handoff `(fromRole,toRole,kind)` 白名单 + fromRole 从 token 派生 | F005a |
+| **F005a** 身份与 callback auth | per-run token 铸造/绑定/撤销；MCP server token→binding 查表；header-only（body/query 401）；liveness 两段式（run_events + worker 进程 + exact runId fence）；interrupted/terminal 立即撤销；token 目录前缀硬 deny；**additive migration 补 `callback_allowlist` 列**（plan A1-2 点名、W1 未建）；terminal tombstone 30d 清理 job 归 F005a（随启动 sweep） | W1 `invocation_credentials` |
+| **F005b** 工具策略 | coder/reviewer/verifier wrapper：命令 deny-by-default + 只读 allowlist、shell 操作符禁止、`node -e` 禁止、timeout/output cap/minimal env；路径 canonicalize + realpath，拒绝 `..`/symlink/hardlink；读 deny 显式枚举（`.env*`、`*.pem`、`id_rsa*`、`.ssh/`、credentials、`.git` 内部对象、`/run/codeteam/tokens/`）**加 daemon 数据面整体**（`CODETEAM_DATA_DIR/credentials/`、`control.db`、`artifacts/`）；写路径策略覆盖 acceptance 7（review/verify 只写隔离 evidence worktree，被审 worktree 只读）；coder git policy（add/commit/status/diff）+ commit wrapper 写 `head_sha` audit；handoff `(fromRole,toRole,kind)` 白名单 + fromRole 从 token 派生 | F005a |
 | **F005c** operator 与 service 凭据 | `codeteam auth init` 本地 operator.key（0600，rotation 即撤销）；approval decide 只接受 operator principal（run token/agent-key 403）；routine merge 由 `service:merge-owner` + per-merge short-TTL credential 执行 | F005a |
-| **F005d** sandbox 与 dogfood 边界 | 低权 OS user + bwrap profile，只挂 task worktree；网络边界按 D3=A 记录为已知威胁（agent 进程网络开放，不声称 allowlist）；daemon 数据/artifact/token 固定仓外目录，worktree root 独立；真实 repo first-run 记录 | F005b |
-| **F005e** 威胁测试与 audit | 危险命令/路径逃逸/symlink/hardlink/secret dump/跨 run 冒用/读自身 token/interrupted token 复用/伪造 approval rich block；audit append-only + full args/cwd/exit/duration/tails + `producingReviewId`；威胁测试报告落 `docs/reports/` | F005a–d 同步 |
+| **F005d** sandbox 与 dogfood 边界 | 低权 OS user + bwrap profile，只挂 task worktree；review/verify 以只读方式挂被审 worktree + 独立 evidence worktree（acceptance 7，同 task 峰值 ≤2 份计入 W5 pool）；网络边界按 D3=A 记录为已知威胁（agent 进程网络开放，不声称 allowlist）；daemon 数据/artifact/token 固定仓外目录，worktree root 独立；真实 repo first-run 记录 | F005b |
+| **F005e** 威胁测试与 audit | 危险命令/路径逃逸/symlink/hardlink/secret dump/跨 run 冒用/读自身 token/interrupted token 复用/伪造 approval rich block（**强制已在 W1 messages 双触发器落地，本切片只补威胁测试**）；audit append-only + full args/cwd/exit/duration/tails + `producingReviewId`；威胁测试报告落 `docs/reports/` | F005a–d 同步 |
 
 顺序：**F005a → F005b →（F005c ∥ F005d）→ F005e 收口**。a/b 是真实 repo 的
 硬前置；c/d 可并行；e 每个 slice 边做边加，最后出一份矩阵报告。
@@ -44,6 +44,7 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 - [ ] callback credential 只接受 header；body/query 401 `invalid_token`。
 - [ ] stale lease/heartbeat 只产生 liveness candidate，无独立证据不吊销。
 - [ ] coder 只能 `git add/commit/status/diff`，commit sha 从 audit 回溯并写入 `reviews.head_sha`。
+- [ ] review/verify 不能写被审 worktree；取证写只限隔离 evidence worktree；同 task 峰值 ≤2 份（计入 W5 pool）。
 - [ ] agent 进程零 secret；daemon 数据与 worktree 都在仓外；dogfood 分支不 push。
 - [ ] audit 不可 UPDATE/DELETE；能还原完整命令。
 - [ ] 威胁测试矩阵全绿 + 报告落盘。
