@@ -41,7 +41,8 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
 - [x] 五处关键差异已钉死：TaskStatus、Task.ownerCatId、Run vs
   ActiveRun、Handoff vs action lease/custody、Artifact vs ThreadArtifactDTO。
 - [x] 明确列出不继承的 clowder 字段/能力与 revisit trigger。
-- [ ] 矩阵经非作者 review；未过 review 不建表。
+- [x] 矩阵经非作者 review；未过 review 不建表。烁烁 approve @ `e2f98cb`，
+  P2/P3 已折；PR #20 已合入 `codeteam-work`（`3d15a3f57`）。
 
 ## Scope
 
@@ -60,12 +61,19 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
 
 ## 当前进展
 
-- 2026-10-28：建立线程内任务；完成 `architecture/0001 §4.4.2` 字段继承
-  矩阵初稿，等待非作者 review。尚未建表。
+- 2026-10-28：矩阵经烁烁 review 后折掉 P2/P3，PR #20 已合入；开始 W1
+  schema/migration。`packages/codeteam-daemon/src/control/` 已落 3 个
+  forward-only migration（core / work-SOP / governance），共 34 张控制面表
+  + `schema_migrations`；WAL、foreign keys、5000ms busy timeout、append-only
+  trigger 与关键 partial unique index 已在包内测试覆盖。
 
 ## Evidence
 
-- TBD：矩阵 review verdict；schema/migration 测试输出；空库/旧库/部分迁移/
-  crash 重跑结果。
+- 矩阵 review：烁烁 approve @ `e2f98cb`；P2/P3 处置见 PR #20。
+- `npm --prefix packages/codeteam-daemon test`：2 个测试文件、29/29 通过；
+  覆盖空库迁移、重开幂等、失败迁移回滚、缺失表 fail closed、FK、
+  append-only、消息序/回复、run 单写者、SOP verified 拦截、wait 单
+  active、handoff/approval 唯一性、review session 独立性。
+- 旧库/backfill 与 crash 重跑测试仍待补；W1 尚未完成。
 
 [宪宪/deepseek-flash🐾]

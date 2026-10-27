@@ -908,7 +908,8 @@ W1 必须在继承矩阵里钉死的差异：
 |---|---|---|---|
 | `handoffs.id` | `ActionSuccessorLease.leaseId` | reused | 一个 handoff 对应一个 action lease；`waits.owner_fence.leaseId` 指向它 |
 | `task_id` / `stage_id` | 无 lease 字段 | code-delivery-specific | 代码交付 handoff 绑 task/stage；stage 只是快照 |
-| `kind` | `actionFamily` | reused | review/merge/investigate/implement/verify/vision_guard |
+| `kind` | codeteam `Handoff.kind`（§4.2） | code-delivery-specific | `handoff / review_request / verdict / blocker / spec_change / plan_revision / question`；typed envelope kind，不是 clowder actionFamily |
+| `action_family` | `ActionSuccessorMetadata.actionFamily` | reused | review/merge/investigate/implement/verify/vision_guard；与 `kind` 分开存，不互换 |
 | `from_role` / `to_role` | 无 lease 字段；clowder 用 holderCatIds | code-delivery-specific | SOP actionPair 需要 role 方向白名单；holder 身份仍用 profile |
 | `status` | `ActionSuccessorLeaseStatus` + custody events + wait outcome | reused（映射） | `pending / claimed / consumed / withdrawn / expired` 是对 lease 状态 + claim + terminal + wait 的 typed 投影；不新增 custody 账本 |
 | `subject` | 无同名字段；显示标签 | code-delivery-specific | 人类可读 subject；`subject_ref` 才是身份 |
@@ -975,7 +976,7 @@ append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
 |---|---|---|---|
 | `id` | 无 clowder artifact 账本 | code-delivery-specific | 内容不可变；新版本新 id |
 | `task_id` / `run_id` | 无 clowder artifact 账本 | code-delivery-specific | 证据归属 task/run |
-| `kind` | `ThreadArtifactType` 仅作投影提示 | code-delivery-specific | `spec / plan / diff / test-report / review / verification / merge-receipt`；不是 ThreadArtifactType 子集 |
+| `kind` | `ThreadArtifactType` 仅作投影提示 | code-delivery-specific | `spec / plan / diff / test-report / review / verification / merge-receipt / log`；不是 ThreadArtifactType 子集 |
 | `sha256` / `path` / `media_type` / `bytes` | 无 clowder artifact 账本 | code-delivery-specific | 内容 hash + 临时文件 + fsync + rename；证据可重放 |
 | `provenance_json` | `ThreadArtifactDTO.sourceMessageId` 等 | code-delivery-specific | 至少含 `sourceMessageId`；可含 actor/profile/run/command；不复制正文 |
 | `approval_id` | F246 1:1 effect receipt | reused | `approvals.effect_reservation_ref` 1:1；succeeded 必须有 effect_ref |
@@ -1075,9 +1076,9 @@ append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
 | `agent_profiles.tool_policy_profile` | 无 CatConfig 同名字段 | code-delivery-specific | 工具策略 profile 名；由 W2 解析 |
 | `agent_profiles.clowder_cat_id` | clowder catId | reused（provenance） | 可重复、不唯一、不参与授权 |
 | `agent_profiles.created_at` / `updated_at` | 无 CatConfig 行时间 | code-delivery-specific | registry 审计 |
-| `agent_sessions.id` / `thread_id` / `seq` / `status` / `cli_session_id` / `native_session_binding_json` / `context_health_json` / `capacity_pin_json` / `seal_reason` / `compression_count` / `continuity_capsule_json` / `chain_key` / `latest_resume_session_id` / `created_at` / `updated_at` / `sealed_at` | `SessionRecord`（`session.ts:56`） | reused | 全字段复用；结构化字段用 JSON 列承载；`scopedInvocation`/`externalImport` 显式不继承 |
+| `agent_sessions.id` / `thread_id` / `seq` / `status` / `pi_session_id` / `native_session_binding_json` / `context_health_json` / `capacity_pin_json` / `seal_reason` / `compression_count` / `continuity_capsule_json` / `chain_key` / `latest_resume_session_id` / `created_at` / `updated_at` / `sealed_at` | `SessionRecord`（`session.ts:56`） | reused | 全字段复用；`pi_session_id` 是 `cliSessionId` 的 codeteam 列名；结构化字段用 JSON 列承载；`scopedInvocation`/`externalImport` 显式不继承 |
 | `agent_sessions.cat_handoff_note_json` / `last_usage_json` / `message_count` / `working_directory` / `workspace_fingerprint` / `user_id` | `SessionRecord.catHandoffNote/lastUsage/messageCount/workingDirectory/workspaceFingerprint/userId` | reused | `catHandoffNote` 是 F225 typed 五件套，必须单独落 JSON，不并进 `continuityCapsule`；`lastUsage` 是展示快照；其余四列原样落列，不静默丢 |
-| `agent_sessions.task_id` / `stage_id` / `profile_id` / `role` / `effective_tool_policy` / `pi_session_id` / `provider` / `model` / `model_family` | SessionRecord 扩展 | code-delivery-specific / adapted | `pi_session_id` 映射 `cliSessionId`；session role 可不同于 profile primary role；effective policy 落快照 |
+| `agent_sessions.task_id` / `stage_id` / `profile_id` / `role` / `effective_tool_policy` / `provider` / `model` / `model_family` | codeteam 执行身份扩展 | code-delivery-specific | task/stage/profile/role/effective policy/provider/model/family 是代码交付扩展；session role 可不同于 profile primary role；`pi_session_id` 已在上一行落列 |
 | `invocation_credentials.id` / `token_hash` / `token_salt` / `run_id` / `task_id` / `role` / `agent_session_id` / `agent_profile_id` / `thread_id` / `user_id` / `owner_auth_provenance` / `parent_run_id` / `tool_policy_json` / `state` / `disposition` / `last_refresh_at` / `expires_at` / `created_at` / `updated_at` | F174 `InvocationRecord` | reused | SQLite 实现；active 无短 TTL，terminal tombstone 30d；`owner_auth_provenance ∈ strict/compat/unknown`（clowder `compatibility_fallback` → `compat`，只改名不改语义），managed-work bind 只 strict |
 
 **D. Run / event / stage**
@@ -1103,7 +1104,7 @@ append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
 | codeteam 字段 | clowder 源 | 处置 | 差异 / 理由 |
 |---|---|---|---|
 | `reviews.id` / `task_id` / `run_id` / `head_sha` / `author_session_id` / `author_model` / `author_model_family` / `reviewer_session_id` / `reviewer_model` / `reviewer_model_family` / `review_mode` / `verdict` / `findings_json` / `created_at` | harness-eval review verdict envelope | code-delivery-specific 存储 | `head_sha` 硬绑定；`review_mode ∈ cross_family / same_family_fresh`；代码默认 cross_family |
-| `findings.id` / `review_id` / `index` / `severity` / `file` / `line` / `claim` / `evidence_kind` / `falsifier` / `falsifier_expected` / `required_action` | harness-eval finding | reused | P1/P2 必须有可执行 falsifier；否则降 P3 |
+| `findings.id` / `review_id` / `finding_index` / `severity` / `file` / `line` / `claim` / `evidence_kind` / `falsifier` / `falsifier_expected` / `required_action` | harness-eval finding | reused | `finding_index` 映射 §12.2 的 `index`，避免 SQL keyword；P1/P2 必须有可执行 falsifier，否则降 P3 |
 | `verifications.id` / `finding_id` / `head_sha` / `producing_review_id` / `status` / `reason` / `command` / `cwd` / `exit_code` / `duration_ms` / `stdout_tail` / `stderr_tail` / `created_at` | verifier/falsifier 语义 | reused | 证据关闭 finding；`producing_review_id` 追溯 |
 | `merges.id` / `task_id` / `base_sha` / `head_sha` / `merge_sha` / `policy` / `approved_by` / `receipt_ref` / `approval_id` / `created_at` | merge policy/receipt | code-delivery-specific 存储 | 复用 merge gate 语义；routine merge 由 daemon merge-owner 执行 |
 | `budgets.id` / `task_id` / `tokens_limit` / `tokens_used` / `cost_limit` / `cost_used` / `wall_time_limit_ms` / `wall_time_used_ms` | per-task/provider budget | code-delivery-specific | 代码交付资源边界 |
@@ -1151,17 +1152,19 @@ append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
 5. `messages.status` 不持久化；W7 只从 `runs.status` / `run_events` 投影
    streaming/terminal，不从 message 行猜。
 6. `artifacts.kind` → `ThreadArtifactType` 默认映射 `file`/`code`；新增
-   Hub 枚举需 operator 定，不由 W1 自创。
+   Hub 枚举需 operator 定，不由 W1 自创；`log` 默认映射 `file`。
 7. `owner_profile_id` 是唯一 owner 字段；不存在 `owner_role` /
    `owner_session`；换 role/session 不改变 owner。
 8. `custody_events` 与 `handoffs` 重放对账；偏差告警，不反向裁决；wait
    canonical 终止只在 `wait_terminations`。
 9. `§12.2` 的 `agent_sessions` DDL 是摘要；迁移时必须按 `SessionRecord`
    全字段展开（或明确 JSON 列），不能把摘要当完整列清单。`seq` /
-   `cli_session_id` / `context_health_json` / `seal_reason` /
+   `pi_session_id` / `context_health_json` / `seal_reason` /
    `compression_count` / `continuity_capsule_json` / `sealed_at` 等必须有
    落点；`cat_handoff_note_json` 必须单独落列，不得并进
    `continuity_capsule_json`。
+10. `handoffs.kind` 是 codeteam typed envelope kind；`handoffs.action_family`
+    是 clowder action family；两者不互换、不合并、不互相推导。
 
 ---
 
