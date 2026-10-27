@@ -32,6 +32,7 @@ updated: 2026-10-26
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |
+| [`lessons/README.md`](lessons/README.md) | 已交付工作的耐久教训：现象/根因/guardrail 索引 |
 | [`architecture/0004-reuse-architecture-review-plan.md`](architecture/0004-reuse-architecture-review-plan.md) | 复用架构梳理计划：Wave A 10 项（A1×4 + A2×3 + A3×3）、Wave B 11 项（4 项已提前 approved，余 7 项待 W4 dogfood）、统一模板、变量口径、批次依赖 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
 | [`plans/0007-architecture-plan-coverage.md`](plans/0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵与缺口修复记录；三猫 accept，冻结为 DP→plans 唯一对账索引 |
