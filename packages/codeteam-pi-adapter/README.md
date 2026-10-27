@@ -17,3 +17,10 @@ const { session } = await createAgentSessionWithL0({ cwd, agentDir, compiledL0 }
 
 Tests cover deterministic L0, no-context-file injection, manual and threshold compaction, stable
 system hashes, and cross-process JSONL resume with continued prompting.
+
+## Live provider E2E (opt-in)
+
+`test/provider-live.e2e.test.ts` makes a real vendor call and is skipped unless
+`CODETEAM_LIVE_PROVIDER=1` and `CODETEAM_LIVE_BASE_URL`, `CODETEAM_LIVE_MODEL`,
+`CODETEAM_LIVE_API_KEY` are set. The key is written only to a temp `auth.json` and is never committed.
+

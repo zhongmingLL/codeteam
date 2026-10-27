@@ -79,4 +79,7 @@ HTTP. `packages/codeteam-pi-adapter/test/provider-http-e2e.test.ts` now runs the
 against a local Anthropic-shaped SSE server: the captured request `system` contains L0, the streamed
 reply becomes the assistant message, and `stream: true` is set. A live vendor call remains out of
 scope (`cache_observability=unavailable`).
+A manual live-provider run on 2026-10-27 (GLM's Anthropic-compatible endpoint, `glm-5.3-flash`)
+confirmed the same assertions against a real vendor: L0 in the outbound system, `stream: true`, and a
+real streamed reply. It is opt-in and skipped by default. Credentials are never stored in the repo.
 
