@@ -350,6 +350,10 @@ v1：**agent 进程零 secret**。
 - 资源限制：CPU / memory / disk / wall time / output bytes。
 - 真实 repo first-run 用低权 user/sandbox；最坏只损失 worktree。
 
+> 交付边界（2026-10-28）：MVP 实现为既有非 root uid 1000 + bwrap；专用低权
+> OS user 未 provisioning。bwrap-only 下双失效残面 = 宿主 uid 1000 可达文件，
+> 由零 secret 限制损失；显式 operator 确认见 F005 umbrella close 条件。
+
 ### Dogfood target boundary
 
 - daemon 数据（SQLite / artifact / token）固定在仓外目录（如 `~/.local/state/codeteam/`），绝不放目标仓内。
@@ -401,20 +405,25 @@ v1：**agent 进程零 secret**。
 
 ### Acceptance
 
-- [ ] 同 worker 内两个 run 的 MCP token 不能互相冒用。
-- [ ] 危险命令、路径逃逸、symlink/hardlink、secret 路径全部拒绝。
-- [ ] agent 读取自身 token 文件被拒绝；interrupted run 的 token 不能完成 handoff。
-- [ ] 缺/伪造 operator 凭据调 approval decide / hard-gate merge 返回 403；run token/agent-key 调 approval decide / merge:execute 同样 403；routine merge 只由 daemon `service:merge-owner` 执行。
-- [ ] callback credential 只接受 header；body/query 返回 401 `invalid_token`。
-- [ ] stale lease/heartbeat 只产生 liveness candidate；无独立证据时 token 保持 active。
-- [ ] review/verify 不能写被审 worktree、不能 merge/approve/push/production-write/secret-read；取证写仅限 evidence worktree；coder 不能 push/merge。
-- [ ] `messages.rich_blocks_json` 不产生 approval 项；伪造审批卡被拒绝。
-- [ ] coder 只能 `git add/commit/status/diff`；commit sha 可从 audit 回溯并写入 `reviews.head_sha`。
-- [ ] agent 进程无 secret；凭证操作只走 human/CI。
-- [ ] MVP 网络边界已记录为“agent 进程网络开放”的已知威胁模型；不得声称 bwrap 已实现 allowlist；container 目标态再补 allowlist。
-- [ ] daemon 数据在仓外目录；dogfood worktree 在外部目录；分支不 push；结束后 cleanup。
-- [ ] audit 不可 UPDATE/DELETE；能还原完整命令。
-- [ ] 真实 repo first-run 在 sandbox/低权用户下完成并记录。
+> 收口状态（2026-10-28）：14 条均有 slice AC / 测试 / review / first-run 证据；
+> 逐条勾选指向 F005 umbrella。最后一条的低权 user 为 MVP 边界（既有非 root
+> uid 1000 + bwrap；专用低权 OS user 待 operator 显式确认，sudo-capable
+> runner 复验挂 W5）。
+
+- [x] 同 worker 内两个 run 的 MCP token 不能互相冒用。
+- [x] 危险命令、路径逃逸、symlink/hardlink、secret 路径全部拒绝。
+- [x] agent 读取自身 token 文件被拒绝；interrupted run 的 token 不能完成 handoff。
+- [x] 缺/伪造 operator 凭据调 approval decide / hard-gate merge 返回 403；run token/agent-key 调 approval decide / merge:execute 同样 403；routine merge 只由 daemon `service:merge-owner` 执行。
+- [x] callback credential 只接受 header；body/query 返回 401 `invalid_token`。
+- [x] stale lease/heartbeat 只产生 liveness candidate；无独立证据时 token 保持 active。
+- [x] review/verify 不能写被审 worktree、不能 merge/approve/push/production-write/secret-read；取证写仅限 evidence worktree；coder 不能 push/merge。
+- [x] `messages.rich_blocks_json` 不产生 approval 项；伪造审批卡被拒绝。
+- [x] coder 只能 `git add/commit/status/diff`；commit sha 可从 audit 回溯并写入 `reviews.head_sha`。
+- [x] agent 进程无 secret；凭证操作只走 human/CI。
+- [x] MVP 网络边界已记录为“agent 进程网络开放”的已知威胁模型；不得声称 bwrap 已实现 allowlist；container 目标态再补 allowlist。
+- [x] daemon 数据在仓外目录；dogfood worktree 在外部目录；分支不 push；结束后 cleanup。
+- [x] audit 不可 UPDATE/DELETE；能还原完整命令。
+- [x] 真实 repo first-run 在 sandbox/低权用户下完成并记录（MVP 边界：既有非 root uid 1000 + bwrap；专用低权 user 待 operator 确认；证据：F005 umbrella / first-run report）。
 
 ### Risks
 
