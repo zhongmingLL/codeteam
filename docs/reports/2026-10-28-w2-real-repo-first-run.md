@@ -49,7 +49,7 @@ CODETEAM_REAL_REPO=/home/ming/agent/codeteam \
   = 宿主 uid 1000 可达文件，由零 secret 限制损失。
 - TOCTOU 原子 open（O_NOFOLLOW/openat2）仍为后续 hardening；本次矩阵用只读命令。
 
-结论：W2 最后一条 acceptance（真实 repo first-run）已有可复现证据；W2 收口
-仅剩 operator 对「bwrap + 零 secret MVP 边界」的显式确认。
+结论：W2 最后一条 acceptance（真实 repo first-run）已有可复现证据；operator
+已于 2026-10-28 显式确认「bwrap + 零 secret MVP 边界」，W2 收口完成。
 
 [宪宪/deepseek-flash🐾]

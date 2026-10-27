@@ -352,7 +352,8 @@ v1：**agent 进程零 secret**。
 
 > 交付边界（2026-10-28）：MVP 实现为既有非 root uid 1000 + bwrap；专用低权
 > OS user 未 provisioning。bwrap-only 下双失效残面 = 宿主 uid 1000 可达文件，
-> 由零 secret 限制损失；显式 operator 确认见 F005 umbrella close 条件。
+> 由零 secret 限制损失；operator 已于 2026-10-28 显式确认（见 F005 umbrella
+> close 条件）。
 
 ### Dogfood target boundary
 
@@ -407,8 +408,8 @@ v1：**agent 进程零 secret**。
 
 > 收口状态（2026-10-28）：14 条均有 slice AC / 测试 / review / first-run 证据；
 > 逐条勾选指向 F005 umbrella。最后一条的低权 user 为 MVP 边界（既有非 root
-> uid 1000 + bwrap；专用低权 OS user 待 operator 显式确认，sudo-capable
-> runner 复验挂 W5）。
+> uid 1000 + bwrap；operator 已于 2026-10-28 显式确认，sudo-capable runner
+> 复验挂 W5）。
 
 - [x] 同 worker 内两个 run 的 MCP token 不能互相冒用。
 - [x] 危险命令、路径逃逸、symlink/hardlink、secret 路径全部拒绝。
@@ -423,7 +424,7 @@ v1：**agent 进程零 secret**。
 - [x] MVP 网络边界已记录为“agent 进程网络开放”的已知威胁模型；不得声称 bwrap 已实现 allowlist；container 目标态再补 allowlist。
 - [x] daemon 数据在仓外目录；dogfood worktree 在外部目录；分支不 push；结束后 cleanup。
 - [x] audit 不可 UPDATE/DELETE；能还原完整命令。
-- [x] 真实 repo first-run 在 sandbox/低权用户下完成并记录（MVP 边界：既有非 root uid 1000 + bwrap；专用低权 user 待 operator 确认；证据：F005 umbrella / first-run report）。
+- [x] 真实 repo first-run 在 sandbox/低权用户下完成并记录（MVP 边界：既有非 root uid 1000 + bwrap；operator 已于 2026-10-28 确认；证据：F005 umbrella / first-run report）。
 
 ### Risks
 
