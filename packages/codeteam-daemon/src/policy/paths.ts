@@ -1,5 +1,5 @@
 import { lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ControlError } from "../control/errors.ts";
 import type { ToolPolicy } from "./types.ts";
 
@@ -22,6 +22,19 @@ export function assertWritablePath(policy: ToolPolicy, path: string, cwd = polic
 	assertInsideRoots(policy.writeRoots, canonical, "write");
 	assertNotDenied(policy, canonical);
 	assertSafeWriteTarget(path, cwd);
+	return canonical;
+}
+
+export function assertAllowedCwd(policy: ToolPolicy, cwd: string): string {
+	let canonical: string;
+	try {
+		canonical = realpathSync.native(resolve(cwd));
+	} catch {
+		throw forbidden(`cwd does not exist: ${cwd}`);
+	}
+	if (!policy.readRoots.some((root) => isInside(root, canonical))) {
+		throw forbidden(`cwd outside allowed roots: ${cwd}`);
+	}
 	return canonical;
 }
 

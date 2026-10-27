@@ -1,17 +1,18 @@
 import { ControlError } from "../control/errors.ts";
-import { assertReadablePath, assertWritablePath } from "./paths.ts";
+import { assertAllowedCwd, assertReadablePath, assertWritablePath } from "./paths.ts";
 import type { ToolPolicy } from "./types.ts";
 
 export const DEFAULT_COMMAND_ALLOWLIST: readonly string[] = ["git", "ls", "cat", "head", "tail", "wc", "grep", "node"];
 
 const SHELL_META = /[;|&<>`$\n\r#]/;
 const SHELL_META_WITHOUT_HASH = /[;|&<>`$\n\r]/;
-const GIT_ALLOWED_SUBCOMMANDS = new Set(["add", "commit", "status", "diff"]);
+const GIT_ALLOWED_SUBCOMMANDS = new Set(["add", "commit", "status", "diff", "rev-parse", "show"]);
 const GIT_DENIED_FLAGS = new Set([
 	"--no-index",
 	"--git-dir",
 	"--work-tree",
 	"--exec-path",
+	"--amend",
 	"--upload-pack",
 	"--receive-pack",
 	"-C",
@@ -57,9 +58,9 @@ export function evaluateCommand(policy: ToolPolicy, request: CommandRequest): Co
 		if (pattern.test(arg)) throw forbidden(`shell metacharacters not allowed: ${arg}`);
 	}
 	if (!policy.allowedCommands.includes(command)) throw forbidden(`command not allowed: ${command}`);
-	if (command === "git") validateGit(argv);
+	if (command === "git") validateGit(policy.role, argv);
 	if (command === "node") validateNode(argv);
-	const cwd = request.cwd ?? policy.cwd;
+	const cwd = assertAllowedCwd(policy, request.cwd ?? policy.cwd);
 	validatePathArguments(policy, command, argv, cwd);
 	return {
 		argv,
@@ -70,11 +71,17 @@ export function evaluateCommand(policy: ToolPolicy, request: CommandRequest): Co
 	};
 }
 
-function validateGit(argv: readonly string[]): void {
+function validateGit(role: string, argv: readonly string[]): void {
 	const subcommand = argv[1];
 	if (!subcommand || subcommand.startsWith("-")) throw forbidden("git requires a subcommand without global flags");
 	if (!GIT_ALLOWED_SUBCOMMANDS.has(subcommand)) {
 		throw forbidden(`git subcommand not allowed: ${subcommand}`);
+	}
+	if (role !== "coder" && (subcommand === "add" || subcommand === "commit")) {
+		throw forbidden(`git ${subcommand} is only allowed for coder runs`);
+	}
+	if (subcommand === "show" && !argv.slice(2).some((arg) => arg === "-s" || arg === "--no-patch")) {
+		throw forbidden("git show requires -s or --no-patch");
 	}
 	for (const arg of argv.slice(2)) {
 		if (GIT_DENIED_FLAGS.has(arg)) throw forbidden(`git flag not allowed: ${arg}`);
