@@ -42,6 +42,11 @@ export interface CommandExecution {
 	readonly maxOutputBytes: number;
 }
 
+export interface PathTarget {
+	readonly arg: string;
+	readonly mode: "read" | "write";
+}
+
 export function evaluateCommand(policy: ToolPolicy, request: CommandRequest): CommandExecution {
 	const argv = request.argv.map((arg) => String(arg));
 	const command = argv[0];
@@ -106,12 +111,13 @@ function validateNode(argv: readonly string[]): void {
 	}
 }
 
-function validatePathArguments(policy: ToolPolicy, command: string, argv: readonly string[], cwd: string): void {
+export function collectPathTargets(command: string, argv: readonly string[]): PathTarget[] {
+	const targets: PathTarget[] = [];
 	if (command === "git") {
 		if (argv[1] === "add") {
 			for (const arg of argv.slice(2)) {
 				if (arg.startsWith("-")) continue;
-				assertWritablePath(policy, arg, cwd);
+				targets.push({ arg, mode: "write" });
 			}
 		}
 		if (argv[1] === "commit") {
@@ -119,27 +125,27 @@ function validatePathArguments(policy: ToolPolicy, command: string, argv: readon
 				const arg = argv[index];
 				if (arg === "-F" || arg === "--file") {
 					const target = argv[index + 1];
-					if (target) assertReadablePath(policy, target, cwd);
+					if (target) targets.push({ arg: target, mode: "read" });
 					index += 1;
 					continue;
 				}
 				if (arg?.startsWith("--file=")) {
-					assertReadablePath(policy, arg.slice("--file=".length), cwd);
+					targets.push({ arg: arg.slice("--file=".length), mode: "read" });
 					continue;
 				}
 				if (arg?.startsWith("-F") && arg.length > 2) {
-					assertReadablePath(policy, arg.slice(2), cwd);
+					targets.push({ arg: arg.slice(2), mode: "read" });
 				}
 			}
 		}
-		return;
+		return targets;
 	}
 	if (READ_PATH_COMMANDS.has(command)) {
 		for (const arg of argv.slice(1)) {
 			if (arg.startsWith("-")) continue;
-			assertReadablePath(policy, arg, cwd);
+			targets.push({ arg, mode: "read" });
 		}
-		return;
+		return targets;
 	}
 	if (command === "grep") {
 		let skippedPattern = false;
@@ -149,8 +155,16 @@ function validatePathArguments(policy: ToolPolicy, command: string, argv: readon
 				skippedPattern = true;
 				continue;
 			}
-			assertReadablePath(policy, arg, cwd);
+			targets.push({ arg, mode: "read" });
 		}
+	}
+	return targets;
+}
+
+function validatePathArguments(policy: ToolPolicy, command: string, argv: readonly string[], cwd: string): void {
+	for (const target of collectPathTargets(command, argv)) {
+		if (target.mode === "read") assertReadablePath(policy, target.arg, cwd);
+		else assertWritablePath(policy, target.arg, cwd);
 	}
 }
 

@@ -5,6 +5,7 @@ import { DEFAULT_COMMAND_ALLOWLIST } from "./commands.ts";
 import type { CreateToolPolicyOptions, ToolPolicy } from "./types.ts";
 
 export { type CommandExecution, type CommandRequest, DEFAULT_COMMAND_ALLOWLIST, evaluateCommand } from "./commands.ts";
+export { type CommandResult, type RunCommandOptions, runCommand } from "./exec.ts";
 export { assertReadablePath, assertWritablePath } from "./paths.ts";
 export type { CreateToolPolicyOptions, ToolPolicy, ToolRole } from "./types.ts";
 
