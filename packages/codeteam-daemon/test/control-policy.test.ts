@@ -102,10 +102,18 @@ describe("codeteam tool policy", () => {
 			["git", "diff", "-o/tmp/x"],
 			["git", "diff", "--pathspec-from-file=/tmp/x"],
 			["git", "diff", "--pathspec-file-nul"],
+			["git", "diff", "--exec-path=/tmp"],
 		]) {
 			expect(() => evaluateCommand(policy, { argv })).toThrow(ControlError);
 		}
 		expect(() => evaluateCommand(policy, { argv: ["git", "commit", "-F", ".env"] })).toThrow(ControlError);
+		expect(() => evaluateCommand(policy, { argv: ["git", "commit", "--file=.env"] })).toThrow(ControlError);
+		expect(() => evaluateCommand(policy, { argv: ["git", "commit", "-F.env"] })).toThrow(ControlError);
+		expect(evaluateCommand(policy, { argv: ["git", "commit", "--file=src/a.ts"] }).argv).toEqual([
+			"git",
+			"commit",
+			"--file=src/a.ts",
+		]);
 		expect(evaluateCommand(policy, { argv: ["git", "commit", "-F", "src/a.ts"] }).argv).toEqual([
 			"git",
 			"commit",

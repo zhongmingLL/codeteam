@@ -58,6 +58,8 @@ daemon 数据面不可读、review/verify 不能写被审 worktree。
 - [x] 命令 envelope 带 timeout/output cap / 最小 env。
 - [x] review 收口：`git diff --output/-o/--pathspec-*` 任意写原语拒绝；`git commit -F`
   路径按读策略校验。
+- [x] review 收口：`git commit --file=` / `-F<path>` attached 形态同样走读策略；
+  `--exec-path=` 进入前缀 deny。
 - [x] review 收口：写路径 lstat——悬空 symlink / hardlink 目标拒绝。
 - [x] review 收口：`credentials.json` / `credentials.yaml` 等 basename 拒绝。
 - [x] review 收口：commit message 的 `#` 消息位豁免，其余 shell 元字符照旧拒绝。

@@ -21,6 +21,7 @@ const GIT_DENIED_PREFIXES: readonly string[] = [
 	"--output",
 	"--pathspec-from-file",
 	"--pathspec-file-nul",
+	"--exec-path",
 	"-o",
 	"-c",
 	"-C",
@@ -124,6 +125,10 @@ function validatePathArguments(policy: ToolPolicy, command: string, argv: readon
 				}
 				if (arg?.startsWith("--file=")) {
 					assertReadablePath(policy, arg.slice("--file=".length), cwd);
+					continue;
+				}
+				if (arg?.startsWith("-F") && arg.length > 2) {
+					assertReadablePath(policy, arg.slice(2), cwd);
 				}
 			}
 		}
