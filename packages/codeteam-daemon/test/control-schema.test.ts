@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	applyControlMigrations,
+	CONTROL_MIGRATIONS,
 	CONTROL_TABLE_NAMES,
 	ControlError,
 	type ControlMigration,
@@ -156,7 +157,7 @@ describe("codeteam control schema", () => {
 		try {
 			expect(statSync(dataDir).mode & 0o777).toBe(0o700);
 			expect(statSync(control.path).mode & 0o777).toBe(0o600);
-			expect(control.schemaVersion).toBe(5);
+			expect(control.schemaVersion).toBe(CONTROL_MIGRATIONS.at(-1)?.version);
 			expect((control.database.prepare("PRAGMA journal_mode").get() as { journal_mode?: string }).journal_mode).toBe(
 				"wal",
 			);
@@ -180,11 +181,11 @@ describe("codeteam control schema", () => {
 		openControlDatabase({ dataDir }).close();
 		const control = openControlDatabase({ dataDir });
 		try {
-			expect(getControlSchemaVersion(control.database)).toBe(5);
+			expect(getControlSchemaVersion(control.database)).toBe(CONTROL_MIGRATIONS.at(-1)?.version);
 			expect(
 				(control.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get() as { count: number })
 					.count,
-			).toBe(5);
+			).toBe(CONTROL_MIGRATIONS.length);
 		} finally {
 			control.close();
 		}
@@ -230,8 +231,13 @@ describe("codeteam control schema", () => {
 
 	it("rejects a schema that is ahead of the known migration set", () => {
 		const db = createDb();
-		db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(6, "future", NOW);
-		expect(() => applyControlMigrations(db)).toThrow(/schema contains migration 6/);
+		const futureVersion = (CONTROL_MIGRATIONS.at(-1)?.version ?? 0) + 1;
+		db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(
+			futureVersion,
+			"future",
+			NOW,
+		);
+		expect(() => applyControlMigrations(db)).toThrow(new RegExp(`schema contains migration ${futureVersion}`));
 		db.close();
 	});
 

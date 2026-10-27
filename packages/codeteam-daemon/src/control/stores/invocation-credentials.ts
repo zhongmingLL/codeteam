@@ -1,7 +1,18 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { ControlError } from "../errors.ts";
 import type { ControlTransaction } from "../transaction.ts";
-import { type Clock, changesOf, jsonObject, mapStoreError, newId, nonEmpty, parseJsonObject } from "./helpers.ts";
+import {
+	type Clock,
+	changesOf,
+	jsonArray,
+	jsonObject,
+	mapStoreError,
+	newId,
+	nonEmpty,
+	parseJsonArray,
+	parseJsonObject,
+} from "./helpers.ts";
 import type {
 	CreateInvocationCredentialInput,
 	CredentialDisposition,
@@ -22,6 +33,7 @@ interface CredentialRow {
 	owner_auth_provenance: OwnerAuthProvenance;
 	parent_run_id: string | null;
 	tool_policy_json: string;
+	callback_allowlist_json: string | null;
 	state: CredentialState;
 	disposition: CredentialDisposition | null;
 	last_refresh_at: number;
@@ -43,6 +55,7 @@ function mapCredential(row: CredentialRow): InvocationCredential {
 		ownerAuthProvenance: row.owner_auth_provenance,
 		parentRunId: row.parent_run_id,
 		toolPolicy: parseJsonObject(row.tool_policy_json),
+		callbackAllowlist: row.callback_allowlist_json ? (parseJsonArray(row.callback_allowlist_json) as string[]) : null,
 		state: row.state,
 		disposition: row.disposition,
 		lastRefreshAt: row.last_refresh_at,
@@ -128,7 +141,7 @@ export class InvocationCredentialStore {
 			}
 			this.database
 				.prepare(
-					"INSERT INTO invocation_credentials (id, token_hash, token_salt, run_id, task_id, role, agent_session_id, agent_profile_id, thread_id, user_id, owner_auth_provenance, parent_run_id, tool_policy_json, state, disposition, last_refresh_at, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, ?, ?)",
+					"INSERT INTO invocation_credentials (id, token_hash, token_salt, run_id, task_id, role, agent_session_id, agent_profile_id, thread_id, user_id, owner_auth_provenance, parent_run_id, tool_policy_json, callback_allowlist_json, state, disposition, last_refresh_at, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, ?, ?)",
 				)
 				.run(
 					id,
@@ -144,6 +157,7 @@ export class InvocationCredentialStore {
 					input.ownerAuthProvenance,
 					input.parentRunId ?? null,
 					jsonObject(input.toolPolicy, "toolPolicy"),
+					input.callbackAllowlist ? jsonArray(input.callbackAllowlist, "callbackAllowlist") : null,
 					input.lastRefreshAt ?? now,
 					input.expiresAt ?? null,
 					now,
@@ -176,5 +190,22 @@ export class InvocationCredentialStore {
 		} catch (error) {
 			throw mapStoreError(error);
 		}
+	}
+
+	verifyTokenSecret(id: string, secret: string): boolean {
+		const row = this.database
+			.prepare("SELECT token_hash, token_salt FROM invocation_credentials WHERE id = ?")
+			.get(id) as { token_hash: string; token_salt: string } | undefined;
+		if (!row) return false;
+		const expected = Buffer.from(row.token_hash, "hex");
+		const actual = Buffer.from(createHash("sha256").update(`${row.token_salt}:${secret}`).digest("hex"), "hex");
+		return expected.length === actual.length && timingSafeEqual(expected, actual);
+	}
+
+	deleteTerminalBefore(cutoff: number): number {
+		const result = this.database
+			.prepare("DELETE FROM invocation_credentials WHERE state = 'terminal' AND updated_at < ?")
+			.run(cutoff);
+		return changesOf(result);
 	}
 }

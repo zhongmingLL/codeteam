@@ -35,6 +35,12 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 顺序：**F005a → F005b →（F005c ∥ F005d）→ F005e 收口**。a/b 是真实 repo 的
 硬前置；c/d 可并行；e 每个 slice 边做边加，最后出一份矩阵报告。
 
+## 进展
+
+- 2026-10-28：F005a 实现完成，进入安全 review：
+  [`F005a-per-run-token.md`](F005a-per-run-token.md)（migration 006 + mint/verify/
+  resolver + header-only + liveness + tombstone sweep，包内 93/93）。
+
 ## Slice-specific 验收（W2 全量见 plan）
 
 - [ ] 同 worker 内两个 run 的 MCP token 不能互相冒用；tool args 身份字段一律忽略。
