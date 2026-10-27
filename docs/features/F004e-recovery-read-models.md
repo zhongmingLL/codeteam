@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F004e]
 related_features: [codeteam/F004]
 title: "F004e: W1 startup recovery + migration matrix + Console M0 read models"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -57,7 +57,8 @@ running run 永远停在 running、死进程的 handoff claim 永远占着 holde
 - [x] Console M0 只读：thread 摘要、timeline、task evidence 均有 store 级测试。
 - [x] `npm --prefix packages/codeteam-daemon test` 82/82、根级 `tsc --noEmit`、
   Biome 通过。
-- [ ] 非作者 review 与 merge。
+- [x] 非作者 review（砚砚 approve @ `ba044fe5`，84/84 独立复跑；含
+  `738579b9→ba044fe5` test-only delta 覆盖）与 merge（PR #26，`c0a9b675`）。
 
 ## Out of scope
 
@@ -76,7 +77,9 @@ running run 永远停在 running、死进程的 handoff claim 永远占着 holde
   （新增 18：recovery 11 + migration 4 + read models 3）。
 - `npx tsc --noEmit -p tsconfig.json`：通过。
 - `npx biome check packages/codeteam-daemon`：clean。
-- PR 与 review 记录在合入后回写。
+- Review：砚砚 approve @ `ba044fe5`（final head 覆盖；本地独立复跑 84/84）。
+- Merge：PR #26 合入 `codeteam-work`（`c0a9b675`），CI 全绿
+  （`build-check-test` 1m06s）。
 
 ## Risk
 
