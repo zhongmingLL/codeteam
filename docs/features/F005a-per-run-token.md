@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F005a]
 related_features: [codeteam/F005]
 title: "F005a: per-run token 铸造、绑定与撤销"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -56,7 +56,8 @@ W1 已落 `invocation_credentials` 账本（token hash+salt、run/task/role/sess
 - [x] run terminal 撤销凭据且幂等；30d tombstone sweep 只删 terminal。
 - [x] `npm --prefix packages/codeteam-daemon test` 93/93（10 files；新增 9）；
   包 build 与 Biome 通过。
-- [ ] 非作者安全 review（砚砚）与 merge。
+- [x] 非作者安全 review（砚砚 approve @ `dece1c1d`，93/93 独立复跑）与 merge
+  （PR #29，`4c30a94f`）。
 
 ## Out of scope
 
@@ -70,6 +71,12 @@ W1 已落 `invocation_credentials` 账本（token hash+salt、run/task/role/sess
 - 测试：`packages/codeteam-daemon/test/control-auth.test.ts`（9 条：mint/文件权限/
   resolver 五类拒绝/header-only/跨 run 隔离/liveness 矩阵/撤销幂等/tombstone/
   non-running 拒绝）。
+- Review：砚砚 approve @ `dece1c1d`（migration 006、CSPRNG/常量时间、跨 run
+  结构隔离、header-only 全绿；timing dummy hash 不要求，属可选 P3）。
+- Merge：PR #29 合入 `codeteam-work`（`4c30a94f`），CI 5/5 绿。
+- Review 转出的跟进：F005b deny 枚举补 `$CODETEAM_DATA_DIR/tokens/`（token 实际
+  落点）与「空 allowlist = deny-all」契约，已写入 F005 文档；`userId` 哨兵值
+  记为 v1 已知项。
 - 根级 `tsc --noEmit` 在本次宿主机因内存不足被系统终止（swap 已满）；改用
   daemon 包 build（src）+ 含 test 的 scoped tsc：仅命中 `daemon.test.ts` 一条
   既有 unknown 类型问题，本切片文件零错误。此限制在 PR 中如实披露。
