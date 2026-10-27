@@ -14,44 +14,119 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-check-test:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.scope.outputs.mode }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Test scope classifier
+        run: node --test scripts/classify-ci-scope.test.mjs
+
+      - name: Classify change scope
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+          files="$(git diff --name-only --no-renames "$base" "$head" || true)"
+          mode=upstream
+          if printf '%s\n' "$files" | grep -qE '^(\.github/|scripts/classify-ci-scope\.mjs$)'; then
+            mode=upstream
+          elif git cat-file -e "$base:scripts/classify-ci-scope.mjs" 2>/dev/null; then
+            git show "$base:scripts/classify-ci-scope.mjs" > "$RUNNER_TEMP/classify-ci-scope.mjs"
+            mode="$(printf '%s\n' "$files" | node "$RUNNER_TEMP/classify-ci-scope.mjs")"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          printf 'mode=%s\nchanged files:\n%s\n' "$mode" "$files"
+
+  build-check-test:
+    needs: changes
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require scope classification
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.mode == '' }}
+        run: |
+          echo "::error::scope classification did not succeed; failing closed"
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Docs whitespace check
+        if: needs.changes.outputs.mode == 'docs'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          git diff --check "$base" HEAD
+
+      - name: Setup Node.js
+        if: needs.changes.outputs.mode != 'docs'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
 
       - name: Install system dependencies
+        if: needs.changes.outputs.mode == 'upstream'
         run: |
           sudo apt-get update
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev fd-find ripgrep
           sudo ln -s $(which fdfind) /usr/local/bin/fd
 
       - name: Install dependencies
+        if: needs.changes.outputs.mode != 'docs'
         run: npm ci --ignore-scripts
 
       - name: Hydrate pinned model catalog
+        if: needs.changes.outputs.mode != 'docs'
         run: |
           pin="$(node -p "require('./nix/model-catalog.json').revision")"
           curl -fsSL "https://pi.dev/api/models/revisions/${pin}?types=chat,image,classifier" -o "$RUNNER_TEMP/pi-catalog.json"
           node packages/ai/scripts/hydrate-model-catalog.ts "$RUNNER_TEMP/pi-catalog.json"
 
       - name: Build
+        if: needs.changes.outputs.mode != 'docs'
         run: npm run build:offline
 
       - name: Check
+        if: needs.changes.outputs.mode != 'docs'
         run: npm run check
 
       - name: Build the pi-env daemon
+        if: needs.changes.outputs.mode == 'upstream'
         run: npm run build:daemon --workspace packages/env
 
-      - name: Test
+      - name: Test (full suite)
+        if: needs.changes.outputs.mode == 'upstream'
         run: npm test
+
+      - name: Test (codeteam packages)
+        if: needs.changes.outputs.mode == 'codeteam'
+        run: npm test --workspace @codeteam/pi-adapter --workspace @codeteam/skills --workspace @codeteam/daemon
 
   supply-chain:
     runs-on: ubuntu-latest
