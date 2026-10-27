@@ -33,7 +33,8 @@ updated: 2026-10-28
 - [x] 包内 130/130、包 build、Biome 通过。
 - [x] 非作者 review（砚砚 approve @ `271757f83`，131/131 独立复跑）与 merge
   （PR #38，`8c399c934`）。
-- [ ] 真实 repo first-run（需 operator 提供 dogfood repo/授权）。
+- [x] 真实 repo first-run：codeteam 仓，只读矩阵与拒绝矩阵通过（证据：
+  `docs/reports/2026-10-28-w2-real-repo-first-run.md`）。
 
 ## Out of scope
 
