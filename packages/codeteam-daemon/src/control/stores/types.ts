@@ -735,6 +735,7 @@ export interface InvocationCredential {
 	ownerAuthProvenance: OwnerAuthProvenance;
 	parentRunId: string | null;
 	toolPolicy: Record<string, unknown>;
+	callbackAllowlist: string[] | null;
 	state: CredentialState;
 	disposition: CredentialDisposition | null;
 	lastRefreshAt: number;
@@ -757,6 +758,7 @@ export interface CreateInvocationCredentialInput {
 	ownerAuthProvenance: OwnerAuthProvenance;
 	parentRunId?: string | null;
 	toolPolicy: Record<string, unknown>;
+	callbackAllowlist?: string[] | null;
 	lastRefreshAt?: number;
 	expiresAt?: number | null;
 }
