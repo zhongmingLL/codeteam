@@ -20,6 +20,13 @@ export {
 	type HandoffDirectionRequest,
 } from "./handoffs.ts";
 export { assertAllowedCwd, assertReadablePath, assertWritablePath } from "./paths.ts";
+export {
+	buildSandboxArgv,
+	resolveBwrapPath,
+	SANDBOX_ETC_FILES,
+	SANDBOX_SYSTEM_ROOTS,
+	type SandboxConfig,
+} from "./sandbox.ts";
 export type { CreateToolPolicyOptions, ToolPolicy, ToolRole } from "./types.ts";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
