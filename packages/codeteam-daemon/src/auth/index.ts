@@ -11,10 +11,42 @@ export {
 	type InvocationLivenessEvidence,
 } from "./liveness.ts";
 export {
+	type IssueMergeCredentialOptions,
+	issueMergeServiceCredential,
+	MAX_MERGE_CREDENTIAL_TTL_MS,
+	MERGE_SERVICE_ACTOR,
+	type MergeCredentialBinding,
+	type MergeServiceCredential,
+	type MergeServicePayload,
+	verifyMergeServiceCredential,
+} from "./merge-credential.ts";
+export {
 	type MintedInvocationCredential,
 	type MintInvocationCredentialInput,
 	mintInvocationCredential,
 } from "./mint.ts";
+export {
+	fingerprintOfPublicKey,
+	type InitOperatorCredentialOptions,
+	initOperatorCredential,
+	loadOperatorPrivateKey,
+	loadOperatorPublicKey,
+	type OperatorCredentialPaths,
+	operatorCredentialPaths,
+	resolveOperatorCredentialsDir,
+	signOperatorPayload,
+	verifyOperatorSignature,
+} from "./operator.ts";
+export {
+	assertApprovalDecisionPrincipal,
+	assertMergeExecutionPrincipal,
+	type OperatorProof,
+	type Principal,
+	type PrincipalKind,
+	principalFromOperatorProof,
+	principalFromRunId,
+	principalFromVerifiedMergeCredential,
+} from "./principals.ts";
 export {
 	type InvocationBinding,
 	type ResolveInvocationOptions,

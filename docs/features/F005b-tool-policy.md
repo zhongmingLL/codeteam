@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F005b]
 related_features: [codeteam/F005]
 title: "F005b: 工具策略（命令/路径 deny-by-default）"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -85,7 +85,8 @@ daemon 数据面不可读、review/verify 不能写被审 worktree。
 - [x] review 收口：`credentials.json` / `credentials.yaml` 等 basename 拒绝。
 - [x] review 收口：commit message 的 `#` 消息位豁免，其余 shell 元字符照旧拒绝。
 - [x] 包内 116/116、包 build、Biome 通过。
-- [ ] 非作者安全 review（砚砚）与 merge。
+- [x] 非作者安全 review（砚砚 approve @ `a3998f60`，116/116 独立复跑）与 merge
+  （PR #34，`527758e1c`）。
 
 ## Out of scope
 
