@@ -5,7 +5,7 @@ topics: [w0a, bootstrap, l0, pi-session, skill-surface, sandbox-preflight, hub-s
 doc_kind: spec
 status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: ["烁烁 (Kimi K3)", "砚砚 (GLM 5.3 Flash)"]
 created: 2026-10-26
 updated: 2026-10-27
 ---
@@ -119,7 +119,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | audit correction | Skill catalog N1/N2 rows added to the migration matrix; fresh repo-local catalog deviation recorded |
 | 2026-10-27 | verification addendum | Provider HTTP E2E added: local Anthropic-shaped SSE server + real session loop; L0 observed in the outbound request |
 | 2026-10-27 | live provider E2E | Opt-in real vendor call (GLM Anthropic-compatible, `glm-5.3-flash`): L0 over the wire, streamed `LIVE_OK`; no key in repo |
-| 2026-10-27 | feature closed | Operator cvo_signoff accepted the two W4 deferrals; vision guard condition satisfied; status → done |
+| 2026-10-27 | feature closed | Operator cvo_signoff accepted the W4 skill-content migration and fork/import merge deferrals; vision guard condition satisfied; status → done |
 
 ### Phase 0 — 真相源与工程基线
 
