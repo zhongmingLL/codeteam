@@ -45,10 +45,11 @@ CODETEAM_REAL_REPO=/home/ming/agent/codeteam \
 ## 已知边界（不变）
 
 - 网络开放（`--share-net`，D3=A），不是 allowlist；container 目标态再补。
-- 无专用低权 OS user（现有非 root + bwrap namespaces）。
+- 无专用低权 OS user（现有非 root + bwrap namespaces）；bwrap-only 双失效残面
+  = 宿主 uid 1000 可达文件，由零 secret 限制损失。
 - TOCTOU 原子 open（O_NOFOLLOW/openat2）仍为后续 hardening；本次矩阵用只读命令。
 
 结论：W2 最后一条 acceptance（真实 repo first-run）已有可复现证据；W2 收口
-仅剩 operator 确认。
+仅剩 operator 对「bwrap + 零 secret MVP 边界」的显式确认。
 
 [宪宪/deepseek-flash🐾]

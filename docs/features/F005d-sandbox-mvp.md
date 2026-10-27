@@ -11,7 +11,7 @@ updated: 2026-10-28
 
 # F005d: sandbox MVP（bwrap profile）
 
-> operator 已拍板走 MVP（低权 user + bwrap）；container 为目标态。验收以
+> operator 已拍板走 MVP（bwrap；专用低权 OS user 未做，见已知边界）；container 为目标态。验收以
 > `docs/plans/0002` §W2 为准，本文件只记本批交付与已知边界。
 
 ## Why
@@ -53,10 +53,12 @@ SSH、daemon 数据面。
   这个决定的实现。container 目标态再做真 allowlist。
 - **低权 OS user**：当前以既有非 root 用户（uid 1000）运行，隔离靠 bwrap
   user/pid/net namespace；**没有**创建专用低权 OS 用户（需要 root 预置）。
-- **真实 repo first-run**：尚未跑（需要 operator 的 dogfood repo/授权）；
-  本批只证明 fixture 内沙箱可运行。
-- TOCTOU 完全原子关闭仍需 sandbox 内的 O_NOFOLLOW/openat2（随真实 repo 首跑
-  一起验证）。
+  bwrap-only 下双失效残面 = 宿主 uid 1000 可达文件，由零 secret 限制损失。
+- **真实 repo first-run**：已完成（codeteam 仓，operator 授权；证据：
+  `docs/reports/2026-10-28-w2-real-repo-first-run.md`）。本切片当时只证明
+  fixture 内沙箱可运行。
+- TOCTOU 完全原子关闭仍需 sandbox 内的 O_NOFOLLOW/openat2；首跑矩阵只读，
+  未触发 openat2 面，仍挂 umbrella ledger #6（executor hardening）。
 - `--die-with-parent` 行为测试与 `--new-session` 在 F005e 收口（本切片 review
   转出项）。
 

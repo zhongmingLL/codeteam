@@ -34,4 +34,11 @@
 - **真实 repo first-run**：未跑——需要 operator 的 dogfood repo 与授权。
 - **TOCTOU 原子 open**：沙箱内 `O_NOFOLLOW/openat2` 未做，随真实 repo 首跑验证。
 
+### Post-run 更正（2026-10-28）
+
+- **真实 repo first-run**：已完成（PR #40；`docs/reports/2026-10-28-w2-real-repo-first-run.md`）。
+  上文「未跑」保留为当日矩阵时点记录。
+- **TOCTOU 原子 open**：首跑矩阵为只读命令，未触发 `O_NOFOLLOW/openat2` 面；
+  仍挂 F005 umbrella ledger #6。
+
 [宪宪/deepseek-flash🐾]

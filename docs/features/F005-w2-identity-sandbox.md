@@ -29,7 +29,7 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 | **F005a** 身份与 callback auth | per-run token 铸造/绑定/撤销；token→binding resolver + header-only 校验中间件（**MCP server 本体随 W7a 落地**，W7a 接线复用本 resolver；plan 0002 的「改造 MCP server」按可执行顺序解释为「先落 resolver」）；header-only（body/query 401）；liveness 两段式（run_events + worker 进程 + exact runId fence）；interrupted/terminal 立即撤销；token 目录前缀硬 deny；**additive migration 补 `callback_allowlist` 列**（plan A1-2 点名、W1 未建）；terminal tombstone 30d 清理 job 归 F005a（随启动 sweep） | W1 `invocation_credentials` |
 | **F005b** 工具策略 | coder/reviewer/verifier wrapper：命令 deny-by-default + 只读 allowlist、shell 操作符禁止、`node -e` 禁止、timeout/output cap/minimal env；路径 canonicalize + realpath，拒绝 `..`/symlink/hardlink；读 deny 显式枚举（`.env*`、`*.pem`、`id_rsa*`、`.ssh/`、credentials、`.git` 内部对象、`/run/codeteam/tokens/`、**`$CODETEAM_DATA_DIR/tokens/`（F005a token 实际落点）**）**加 daemon 数据面整体**（`CODETEAM_DATA_DIR/credentials/`、`control.db`、`artifacts/`）；写路径策略覆盖 acceptance 7（review/verify 只写隔离 evidence worktree，被审 worktree 只读）；coder git policy（add/commit/status/diff）+ commit wrapper 写 `head_sha` audit；handoff `(fromRole,toRole,kind)` 白名单 + fromRole 从 token 派生 | F005a |
 | **F005c** operator 与 service 凭据 | `codeteam auth init` 本地 operator.key（0600，rotation 即撤销）；approval decide 只接受 operator principal（run token/agent-key 403）；routine merge 由 `service:merge-owner` + per-merge short-TTL credential 执行 | F005a |
-| **F005d** sandbox 与 dogfood 边界 | 低权 OS user + bwrap profile，只挂 task worktree；review/verify 以只读方式挂被审 worktree + 独立 evidence worktree（acceptance 7，同 task 峰值 ≤2 份计入 W5 pool）；网络边界按 D3=A 记录为已知威胁（agent 进程网络开放，不声称 allowlist）；daemon 数据/artifact/token 固定仓外目录，worktree root 独立；真实 repo first-run 记录 | F005b |
+| **F005d** sandbox 与 dogfood 边界 | bwrap profile（既有非 root uid 1000；专用低权 OS user 未做，见 F005d 已知边界），只挂 task worktree；review/verify 以只读方式挂被审 worktree + 独立 evidence worktree（acceptance 7，同 task 峰值 ≤2 份计入 W5 pool）；网络边界按 D3=A 记录为已知威胁（agent 进程网络开放，不声称 allowlist）；daemon 数据/artifact/token 固定仓外目录，worktree root 独立；真实 repo first-run 记录 | F005b |
 | **F005e** 威胁测试与 audit | 危险命令/路径逃逸/symlink/hardlink/secret dump/跨 run 冒用/读自身 token/interrupted token 复用/伪造 approval rich block（**强制已在 W1 messages 双触发器落地，本切片只补威胁测试**）；audit append-only + full args/cwd/exit/duration/tails + `producingReviewId`；威胁测试报告落 `docs/reports/` | F005a–d 同步 |
 
 顺序：**F005a → F005b →（F005c ∥ F005d）→ F005e 收口**。a/b 是真实 repo 的
@@ -85,13 +85,15 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 
 - F005a–e 五片全部合入并过非作者 review（砚砚安全侧 15 条 typed verdict、
   烁烁 SDK/RPC 侧）；包内 131/131。
-- operator 已拍板 sandbox 走 MVP（bwrap）；container 为目标态，网络 allowlist
-  不在本阶段实现（`--share-net` 是 D3=A 的已知边界）。
+- operator 已拍板 sandbox 走 MVP（bwrap；专用低权 OS user 未做）；container 为
+  目标态，网络 allowlist 不在本阶段实现（`--share-net` 是 D3=A 的已知边界）。
 - **已完成**：per-run token、工具策略（命令/路径/git/commit wrapper/handoff 方向）、
   operator/service 凭据与权限门、bwrap sandbox MVP、命令 audit。
 - **真实 repo first-run 已完成**（codeteam 仓，HEAD `042695f5d`，bwrap 0.6.1，
   只读矩阵 exit 0 / 拒绝矩阵 typed forbidden）——证据见
   `docs/reports/2026-10-28-w2-real-repo-first-run.md`。
+- **独立愿景守护**（墨墨，非作者非 reviewer）：有条件放行——W2 愿景实质达成、
+  披露诚实、无冒充；条件已折入下方 close 条件与 ledger。
 
 ### Follow-up ledger
 
@@ -103,11 +105,14 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 | 4 | audit wrapper 成功/拒绝语义 | ✅ PR #38 已修 |
 | 5 | 真实 repo first-run | ✅ PR #40（证据：`docs/reports/2026-10-28-w2-real-repo-first-run.md`） |
 | 6 | TOCTOU 原子 open（O_NOFOLLOW/openat2） | executor hardening；首跑矩阵只读未触发 openat2 面 |
+| 7 | distinct-uid + CPU/mem/disk 配额的 sudo-capable/CI runner 复验 | W5 |
 
 ### close 条件
 
 - [x] 真实 repo first-run 证据记录（codeteam 仓，2026-10-28）。
-- [ ] operator 对 W2 收口确认。
+- [ ] operator 对 W2 收口显式确认：bwrap + 零 secret 的 MVP 满足 W2 真实 repo
+  首跑验收；专用低权 OS user 未做，待 sudo-capable runner 复验。风险表述：
+  bwrap-only 双失效残面 = 宿主 uid 1000 可达文件，由零 secret 限制损失。
 
 ## Out of scope
 
