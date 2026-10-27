@@ -7,13 +7,24 @@ import { AuditStore } from "./stores/audit.ts";
 import { BacklogStore } from "./stores/backlog.ts";
 import type { Clock } from "./stores/helpers.ts";
 import { InboxStore } from "./stores/inbox.ts";
+import { InvocationCredentialStore } from "./stores/invocation-credentials.ts";
 import { MessageStore } from "./stores/messages.ts";
 import { AgentProfileStore } from "./stores/profiles.ts";
 import { QueueStore } from "./stores/queue.ts";
 import { RoleStore } from "./stores/roles.ts";
+import { RunStore } from "./stores/runs.ts";
 import { AgentSessionStore } from "./stores/sessions.ts";
+import { StageStore } from "./stores/stages.ts";
+import { TaskStore } from "./stores/tasks.ts";
+import { ThreadEventStore } from "./stores/thread-events.ts";
 import { ThreadStore } from "./stores/threads.ts";
-import type { DispatchBacklogInput, DispatchBacklogResult, ProfileSeed } from "./stores/types.ts";
+import type {
+	CutoverQueueEntryInput,
+	CutoverQueueEntryResult,
+	DispatchBacklogInput,
+	DispatchBacklogResult,
+	ProfileSeed,
+} from "./stores/types.ts";
 import { WorkAdmissionStore } from "./stores/work-admissions.ts";
 import { WorkflowSopStore } from "./stores/workflow-sops.ts";
 import { ControlTransaction } from "./transaction.ts";
@@ -36,6 +47,11 @@ export class ControlStore {
 	readonly threads: ThreadStore;
 	readonly messages: MessageStore;
 	readonly queue: QueueStore;
+	readonly tasks: TaskStore;
+	readonly stages: StageStore;
+	readonly runs: RunStore;
+	readonly threadEvents: ThreadEventStore;
+	readonly credentials: InvocationCredentialStore;
 	readonly audit: AuditStore;
 	readonly backlog: BacklogStore;
 	readonly sops: WorkflowSopStore;
@@ -54,6 +70,11 @@ export class ControlStore {
 		this.threads = new ThreadStore(control.database, this.transaction, clock);
 		this.messages = new MessageStore(control.database, this.transaction, clock);
 		this.queue = new QueueStore(control.database, this.transaction, clock);
+		this.tasks = new TaskStore(control.database, this.transaction, clock);
+		this.stages = new StageStore(control.database, this.transaction, clock);
+		this.runs = new RunStore(control.database, this.transaction, clock);
+		this.threadEvents = new ThreadEventStore(control.database, this.transaction, clock);
+		this.credentials = new InvocationCredentialStore(control.database, this.transaction, clock);
 		this.audit = new AuditStore(control.database, clock);
 		this.backlog = new BacklogStore(control.database, this.transaction, clock, this.audit);
 		this.sops = new WorkflowSopStore(control.database, this.transaction, clock, this.audit);
@@ -170,6 +191,103 @@ export class ControlStore {
 				},
 			});
 			return { backlog: updated, thread, message, queueEntry, audit };
+		});
+	}
+
+	cutoverQueueEntry(input: CutoverQueueEntryInput): CutoverQueueEntryResult {
+		return this.transaction.run(() => {
+			const entry = this.queue.get(input.queueEntryId);
+			if (!entry) throw new ControlError("not_found", `queue entry ${input.queueEntryId} not found`);
+			if (entry.status !== "claimed" || entry.claimId !== input.claimId) {
+				throw new ControlError(
+					"claim_conflict",
+					`queue entry ${input.queueEntryId} is not claimed by ${input.claimId}`,
+				);
+			}
+			if (!entry.targets.includes(input.targetProfileId)) {
+				throw new ControlError("invalid_input", `target ${input.targetProfileId} is not queued`);
+			}
+			const task = this.tasks.get(input.taskId);
+			if (!task) throw new ControlError("not_found", `task ${input.taskId} not found`);
+			const thread = this.threads.get(task.threadId);
+			if (!thread) throw new ControlError("schema_incomplete", `task ${task.id} has no thread`);
+			if (!this.profiles.get(input.targetProfileId)) {
+				throw new ControlError("not_found", `agent profile ${input.targetProfileId} not found`);
+			}
+			const session = this.sessions.get(input.agentSessionId);
+			if (!session) throw new ControlError("not_found", `agent session ${input.agentSessionId} not found`);
+			if (
+				session.taskId !== task.id ||
+				session.threadId !== thread.id ||
+				session.profileId !== input.targetProfileId
+			) {
+				throw new ControlError("invalid_input", "agent session is not bound to the cutover task/thread/profile");
+			}
+			const responseMessage = this.messages.append({
+				threadId: thread.id,
+				taskId: task.id,
+				authorKind: "agent",
+				authorId: input.targetProfileId,
+				kind: "agent_response",
+				bodyMd: input.responseBody ?? "",
+			});
+			const run = this.runs.create({
+				taskId: task.id,
+				queueEntryId: entry.id,
+				stageId: input.stageId ?? null,
+				attempt: input.attempt ?? 1,
+				role: input.role,
+				agentSessionId: input.agentSessionId,
+				parentRunId: input.parentRunId ?? null,
+				sourceId: entry.sourceId,
+				recipientProfileId: input.targetProfileId,
+				chainMetadata: input.chainMetadata,
+				provider: input.provider,
+				model: input.model,
+				modelFamily: input.modelFamily,
+				l0Revision: input.l0Revision ?? null,
+				responseMessageId: responseMessage.id,
+				executionKind: input.executionKind ?? "ordinary",
+				handoffId: input.handoffId ?? null,
+				approvalId: input.approvalId ?? null,
+			});
+			const runEvent = this.runs.appendEvent(run.id, "message", { messageId: responseMessage.id });
+			this.messages.appendDispatchRef(entry.sourceId, {
+				targetId: input.targetProfileId,
+				phase: "dispatched",
+				statusMessageId: responseMessage.id,
+				dispatchedAt: this.clock(),
+			});
+			if (task.kind === "work" && input.role === "coder" && task.backlogItemId) {
+				const backlog = this.backlog.get(task.backlogItemId);
+				if (backlog) {
+					const identity = this.sops.workIdentity(backlog.id, backlog.userId);
+					const admission = this.work.getAdmission(identity.workId);
+					if (admission) {
+						const attempt = this.work.getAttempt(admission.initialAttemptId);
+						if (attempt) {
+							if (attempt.executorProfileId !== null && attempt.executorProfileId !== input.targetProfileId) {
+								throw new ControlError("conflict", "work attempt is bound to another executor");
+							}
+							if (attempt.executorProfileId === null) {
+								this.work.bindAttempt(admission.initialAttemptId, input.targetProfileId);
+							}
+						}
+						this.work.bindRun({
+							runId: run.id,
+							workId: identity.workId,
+							attemptId: admission.initialAttemptId,
+						});
+					}
+				}
+			}
+			const cutover = this.queue.cutoverTarget(entry.id, input.claimId, input.targetProfileId);
+			return {
+				run: this.runs.get(run.id)!,
+				responseMessage,
+				queueEntry: cutover.entry,
+				runEvent,
+			};
 		});
 	}
 

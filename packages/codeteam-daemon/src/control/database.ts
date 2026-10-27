@@ -109,10 +109,21 @@ export function applyControlMigrations(
 
 	for (const migration of migrations.slice(rows.length)) {
 		let inTransaction = false;
+		const foreignKeysOff = migration.foreignKeysOff === true;
 		try {
+			if (foreignKeysOff) database.exec("PRAGMA foreign_keys = OFF");
 			database.exec("BEGIN IMMEDIATE");
 			inTransaction = true;
 			for (const statement of migration.statements) database.exec(statement);
+			if (foreignKeysOff) {
+				const violations = database.prepare("PRAGMA foreign_key_check").all() as unknown as unknown[];
+				if (violations.length > 0) {
+					throw new ControlError(
+						"migration_failed",
+						`control migration ${migration.version}:${migration.name} left foreign key violations`,
+					);
+				}
+			}
 			const appliedAt = Date.now();
 			database
 				.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)")
@@ -137,6 +148,8 @@ export function applyControlMigrations(
 				`control migration ${migration.version}:${migration.name} failed: ${String(error)}`,
 				{ cause: error },
 			);
+		} finally {
+			if (foreignKeysOff) database.exec("PRAGMA foreign_keys = ON");
 		}
 	}
 

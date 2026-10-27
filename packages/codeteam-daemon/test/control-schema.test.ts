@@ -156,7 +156,7 @@ describe("codeteam control schema", () => {
 		try {
 			expect(statSync(dataDir).mode & 0o777).toBe(0o700);
 			expect(statSync(control.path).mode & 0o777).toBe(0o600);
-			expect(control.schemaVersion).toBe(4);
+			expect(control.schemaVersion).toBe(5);
 			expect((control.database.prepare("PRAGMA journal_mode").get() as { journal_mode?: string }).journal_mode).toBe(
 				"wal",
 			);
@@ -180,11 +180,11 @@ describe("codeteam control schema", () => {
 		openControlDatabase({ dataDir }).close();
 		const control = openControlDatabase({ dataDir });
 		try {
-			expect(getControlSchemaVersion(control.database)).toBe(4);
+			expect(getControlSchemaVersion(control.database)).toBe(5);
 			expect(
 				(control.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get() as { count: number })
 					.count,
-			).toBe(4);
+			).toBe(5);
 		} finally {
 			control.close();
 		}
@@ -230,8 +230,8 @@ describe("codeteam control schema", () => {
 
 	it("rejects a schema that is ahead of the known migration set", () => {
 		const db = createDb();
-		db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(5, "future", NOW);
-		expect(() => applyControlMigrations(db)).toThrow(/schema contains migration 5/);
+		db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(6, "future", NOW);
+		expect(() => applyControlMigrations(db)).toThrow(/schema contains migration 6/);
 		db.close();
 	});
 
@@ -331,6 +331,45 @@ describe("codeteam control schema", () => {
 					"normal",
 					"a2a",
 					"2",
+					NOW,
+					NOW,
+				),
+		).toThrow(/UNIQUE constraint failed/);
+		db.close();
+	});
+
+	it("sets a run queue reference to null when its queue entry is deleted", () => {
+		const db = createDb();
+		seedCore(db);
+		db.prepare("DELETE FROM queue_entries WHERE id = 'queue-1'").run();
+		const row = db.prepare("SELECT queue_entry_id FROM runs WHERE id = 'run-1'").get() as
+			| { queue_entry_id?: string | null }
+			| undefined;
+		expect(row?.queue_entry_id).toBeNull();
+		db.close();
+	});
+
+	it("allows one run response per message", () => {
+		const db = createDb();
+		seedCore(db);
+		db.prepare("UPDATE runs SET response_message_id = 'message-1' WHERE id = 'run-1'").run();
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO runs (id, task_id, queue_entry_id, role, agent_session_id, source_id, recipient_profile_id, provider, model, model_family, status, response_message_id, started_at, terminal_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)",
+				)
+				.run(
+					"run-2",
+					"task-1",
+					"queue-1",
+					"coder",
+					"session-1",
+					"message-1",
+					"profile-1",
+					"test",
+					"model",
+					"family",
+					"message-1",
 					NOW,
 					NOW,
 				),

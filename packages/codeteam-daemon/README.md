@@ -25,6 +25,8 @@ is missing or an undeclared one is reported. W5's authorization/reverification c
 `0700` data directory, enables WAL, foreign keys, and a 5000 ms busy timeout, then applies
 forward-only migrations. The control store owns threads, messages, queue entries, tasks, runs,
 handoffs, approvals, reviews, and the rest of the W1 schema; it is not the pi transcript.
+`ControlStore` exposes the identity/thread/chat/queue and work/SOP/artifact/inbox stores, plus the
+transactional `dispatchBacklog` and `cutoverQueueEntry` services.
 
 ```ts
 import { openControlDatabase } from "@codeteam/daemon";

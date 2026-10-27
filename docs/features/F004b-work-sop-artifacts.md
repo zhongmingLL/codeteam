@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F004b]
 related_features: [codeteam/F004]
 title: "F004b: W1 work / SOP / managed-work / artifacts / inbox"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -59,7 +59,7 @@ SQLite 事务。没有这一层，W4 CLI 和 W5 dispatch 只能各自拼写状�
 - [x] inbox pending→consumed/expired；重复 consume fail closed。
 - [x] `npm --prefix packages/codeteam-daemon test`、根级 `tsc --noEmit`、
   Biome 通过。
-- [ ] 非作者 review（砚砚）与 merge。
+- [x] 非作者 review（砚砚 approve @ `9235cbb8`）与 merge（PR #23，`889628c7`）。
 
 ## Out of scope
 
@@ -75,12 +75,20 @@ SQLite 事务。没有这一层，W4 CLI 和 W5 dispatch 只能各自拼写状�
 - `npm --prefix packages/codeteam-daemon test`：4 个测试文件、50/50 通过。
 - `npx tsc --noEmit -p tsconfig.json`：通过。
 - `npx biome check --write packages/codeteam-daemon/src/control ...`：clean。
-- PR：当前 thread 路由与 review 记录；合入后回写。
+- PR #23：https://github.com/zhongmingLL/codeteam/pull/23（review `9235cbb8`，merge `889628c7`）。
 
 ## Risk
 
 数据/契约面。dispatch 事务确保 backlog/thread/message/queue/audit 原子；
 artifact 文件先落盘再写 metadata，metadata 失败可能留下 hash-addressed
 orphan 文件（可复用，不损坏账本）。无生产数据迁移。
+
+## Post-merge review follow-ups (2026-10-28)
+
+- **Artifact GC sweep**：content-addressed orphan 文件可接受；后续 hardening
+  加一个目录对账 DB 的 sweep（删除无 metadata 引用的 hash 文件），不在写入
+  路径做“败者删除”，避免并发竞态。
+- backlog/SOP 状态迁移合法性仍在 store 层；与 schema/F004a review 同口径
+  non-blocking，随状态机 slice 继续收敛。
 
 [宪宪/deepseek-flash🐾]
