@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { lstatSync } from "node:fs";
 import { ControlError } from "../control/errors.ts";
+import type { ControlStore } from "../control/store.ts";
 import { type CommandRequest, collectPathTargets, evaluateCommand } from "./commands.ts";
 import { assertReadablePath, assertWritablePath } from "./paths.ts";
 import { buildSandboxArgv, resolveBwrapPath, type SandboxConfig } from "./sandbox.ts";
@@ -19,6 +20,16 @@ export interface CommandResult {
 export interface RunCommandOptions {
 	readonly timeoutMs?: number;
 	readonly sandbox?: SandboxConfig | boolean;
+	readonly audit?: CommandAuditContext;
+}
+
+export interface CommandAuditContext {
+	readonly store: ControlStore;
+	readonly actorRef: string;
+	readonly runId?: string;
+	readonly taskId?: string;
+	readonly handoffId?: string;
+	readonly agentSessionId?: string;
 }
 
 interface PathSnapshot {
@@ -33,6 +44,23 @@ export async function runCommand(
 	policy: ToolPolicy,
 	request: CommandRequest,
 	options: RunCommandOptions = {},
+): Promise<CommandResult> {
+	const audit = options.audit;
+	if (!audit) return runCommandInner(policy, request, options);
+	try {
+		const result = await runCommandInner(policy, request, options);
+		appendCommandAudit(audit, request, policy, result, null);
+		return result;
+	} catch (error) {
+		appendCommandAudit(audit, request, policy, null, error);
+		throw error;
+	}
+}
+
+async function runCommandInner(
+	policy: ToolPolicy,
+	request: CommandRequest,
+	options: RunCommandOptions,
 ): Promise<CommandResult> {
 	const execution = evaluateCommand(policy, request);
 	const snapshots = snapshotPaths(policy, execution.argv, execution.cwd);
@@ -51,6 +79,42 @@ export async function runCommand(
 		},
 		timeoutMs,
 	);
+}
+
+function appendCommandAudit(
+	context: CommandAuditContext,
+	request: CommandRequest,
+	policy: ToolPolicy,
+	result: CommandResult | null,
+	error: unknown,
+): void {
+	const args: Record<string, unknown> = {
+		argv: request.argv.map(String),
+		cwd: request.cwd ?? policy.cwd,
+	};
+	if (result) {
+		args.exitCode = result.exitCode;
+		args.signal = result.signal;
+		args.durationMs = result.durationMs;
+		args.truncated = result.truncated;
+		args.timedOut = result.timedOut;
+		args.stdoutTail = result.stdout.slice(-2000);
+		args.stderrTail = result.stderr.slice(-2000);
+	} else if (error instanceof ControlError) {
+		args.errorCode = error.code;
+		args.errorMessage = error.message;
+	} else {
+		args.errorMessage = String(error);
+	}
+	if (context.taskId) args.taskId = context.taskId;
+	if (context.handoffId) args.handoffId = context.handoffId;
+	if (context.agentSessionId) args.agentSessionId = context.agentSessionId;
+	context.store.audit.append({
+		actor: context.actorRef,
+		action: error ? "tool_command_denied" : "tool_command",
+		subject: context.runId ? `run:${context.runId}` : `tool:${request.argv[0] ?? "unknown"}`,
+		args,
+	});
 }
 
 function snapshotPaths(policy: ToolPolicy, argv: readonly string[], cwd: string): PathSnapshot[] {

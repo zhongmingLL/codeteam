@@ -6,6 +6,7 @@ import {
 	ControlError,
 	createToolPolicy,
 	DEFAULT_COMMAND_ALLOWLIST,
+	openControlStore,
 	runCommand,
 	type ToolPolicy,
 } from "../src/index.ts";
@@ -86,5 +87,52 @@ describe("codeteam command executor", () => {
 		await expect(runCommand(policy, { argv: ["rm", "src/a.ts"] })).rejects.toBeInstanceOf(ControlError);
 		await expect(runCommand(policy, { argv: ["cat", ".env"] })).rejects.toBeInstanceOf(ControlError);
 		await expect(runCommand(policy, { argv: ["cat", "src/a.ts"] })).resolves.toMatchObject({ exitCode: 0 });
+	});
+
+	it("records command audit entries with args, outcome, and tails", async () => {
+		const store = openControlStore({ dataDir: join(root, "data") });
+		try {
+			await runCommand(
+				policy,
+				{ argv: ["ls", "src"] },
+				{
+					audit: {
+						store,
+						actorRef: "run:run-1",
+						runId: "run-1",
+						taskId: "task-1",
+						agentSessionId: "session-1",
+					},
+				},
+			);
+			const entry = store.audit.latest("run:run-1", "tool_command");
+			expect(entry?.args).toMatchObject({
+				argv: ["ls", "src"],
+				exitCode: 0,
+				taskId: "task-1",
+				agentSessionId: "session-1",
+			});
+			expect(typeof entry?.args.durationMs).toBe("number");
+			expect(typeof entry?.args.stdoutTail).toBe("string");
+		} finally {
+			store.close();
+		}
+	});
+
+	it("audits denied commands with the typed error", async () => {
+		const store = openControlStore({ dataDir: join(root, "data") });
+		try {
+			await expect(
+				runCommand(
+					policy,
+					{ argv: ["rm", "src/a.ts"] },
+					{ audit: { store, actorRef: "run:run-2", runId: "run-2" } },
+				),
+			).rejects.toBeInstanceOf(ControlError);
+			const entry = store.audit.latest("run:run-2", "tool_command_denied");
+			expect(entry?.args).toMatchObject({ argv: ["rm", "src/a.ts"], errorCode: "forbidden" });
+		} finally {
+			store.close();
+		}
 	});
 });

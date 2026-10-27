@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F005d]
 related_features: [codeteam/F005]
 title: "F005d: sandbox MVP（bwrap profile）"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -44,7 +44,8 @@ SSH、daemon 数据面。
 - [x] 真实 bwrap 冒烟：`ls src` 与 `git status` 在沙箱内可运行（本机 bwrap 可用）。
 - [x] bwrap 不可用时测试自动 skip；CI 仍跑 builder 单测。
 - [x] 包内 127/127、包 build、Biome 通过。
-- [ ] 非作者安全 review（砚砚）与 merge。
+- [x] 非作者安全 review（砚砚 approve @ `ea2068258`，127/127 独立复跑）与 merge
+  （PR #37，`a503d4aa5`）。
 
 ## 已知边界（如实披露）
 
@@ -56,6 +57,8 @@ SSH、daemon 数据面。
   本批只证明 fixture 内沙箱可运行。
 - TOCTOU 完全原子关闭仍需 sandbox 内的 O_NOFOLLOW/openat2（随真实 repo 首跑
   一起验证）。
+- `--die-with-parent` 行为测试与 `--new-session` 在 F005e 收口（本切片 review
+  转出项）。
 
 ## Out of scope
 

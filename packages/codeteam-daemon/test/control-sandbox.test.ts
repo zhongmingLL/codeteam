@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -94,5 +94,22 @@ describe.skipIf(!hasBwrap)("codeteam sandbox execution", () => {
 		execFileSync("git", ["init", "-q"], { cwd: worktree });
 		const result = await runCommand(coder, { argv: ["git", "status"] }, { sandbox: true });
 		expect(result.exitCode).toBe(0);
+	});
+
+	it("kills the sandboxed process tree on timeout", async () => {
+		const marker = join(worktree, "orphan-marker");
+		writeFileSync(
+			join(worktree, "orphan.test.cjs"),
+			`const fs = require("node:fs"); const end = Date.now() + 10000; while (Date.now() < end) fs.appendFileSync(${JSON.stringify(marker)}, "x");\n`,
+		);
+		const result = await runCommand(
+			coder,
+			{ argv: ["node", "--test", "orphan.test.cjs"] },
+			{ sandbox: true, timeoutMs: 1500 },
+		);
+		expect(result.timedOut).toBe(true);
+		const sizeAfterKill = statSync(marker).size;
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		expect(statSync(marker).size).toBe(sizeAfterKill);
 	});
 });
