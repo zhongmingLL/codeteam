@@ -103,6 +103,7 @@ export {
 	assertReadablePath,
 	assertWritablePath,
 	buildSandboxArgv,
+	type CommandAuditContext,
 	type CommandExecution,
 	type CommandRequest,
 	type CommandResult,

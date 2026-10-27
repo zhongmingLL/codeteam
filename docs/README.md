@@ -41,6 +41,7 @@ updated: 2026-10-28
 | [`features/F005b-tool-policy.md`](features/F005b-tool-policy.md) | F005b：工具策略（命令/路径 deny-by-default、git policy、资源 envelope） |
 | [`features/F005c-operator-credentials.md`](features/F005c-operator-credentials.md) | F005c：operator 签名凭据、approval/merge 权限门、per-merge service credential、`codeteam auth init` |
 | [`features/F005d-sandbox-mvp.md`](features/F005d-sandbox-mvp.md) | F005d：sandbox MVP（bwrap profile、只挂 worktree、网络边界披露） |
+| [`features/F005e-threat-matrix.md`](features/F005e-threat-matrix.md) | F005e：命令 audit 接线、die-with-parent 行为测试、W2 威胁矩阵收口 |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |

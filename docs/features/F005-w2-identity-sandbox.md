@@ -56,6 +56,9 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 - 2026-10-28：F005c 合入（PR #35，`657e7a36`）；operator 拍板 sandbox 走 MVP；
   F005d MVP（bwrap profile + 执行器沙箱开关）完成，进入 review：
   [`F005d-sandbox-mvp.md`](F005d-sandbox-mvp.md)（包内 127/127）。
+- 2026-10-28：F005d 合入（PR #37，`a503d4aa5`）；F005e（audit 接线 +
+  die-with-parent 行为测试 + 威胁矩阵）完成，进入 review：
+  [`F005e-threat-matrix.md`](F005e-threat-matrix.md)（包内 130/130）。
 
 ## Slice-specific 验收（W2 全量见 plan）
 
