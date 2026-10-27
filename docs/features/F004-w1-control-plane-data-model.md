@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F004]
 title: "F004: W1 控制面 umbrella（schema foundation + delivery slices）"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
@@ -117,11 +117,12 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
 - W1 收口见下节；umbrella 状态等 operator 确认 scope 与 vision check 后改
   done。
 
-## W1 收口状态（待 operator 确认）
+## W1 收口状态（已关闭）
 
 ### 全量自检（2026-10-28）
 
-- `npm --prefix packages/codeteam-daemon test`：**9 files / 84 tests pass**
+- W1 收口时（PR #26）：`npm --prefix packages/codeteam-daemon test` **9 files / 84 tests pass**；
+  当前 tip（含 W2 的 F005a–c）：14 files / 122 tests pass
 - 根级 `npx tsc --noEmit -p tsconfig.json`：pass
 - `npx biome check packages/codeteam-daemon`：clean
 - CI：PR #26 全绿（`changes` 16s、`supply-chain` 28s、`mcp-conformance` 44s、
@@ -164,9 +165,13 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
 
 ### close 条件
 
-- [ ] operator 确认上述 scope split：W1 数据模型 done，执行链/DTO 项转
-  W5/W2/W7 门禁（这是一次范围判定，不改变已交付内容）。
-- [ ] vision/scope check：请墨墨确认 F004 的用户可见结果与计划一致。
-- [ ] 上述确认后把 umbrella `status` 改 done，并同步 `docs/plans/README.md`。
+- [x] operator 确认上述 scope split（2026-10-28："1）确认"）：W1 数据模型 done，
+  执行链/DTO 项转 W5/W2/W7 门禁。
+- [x] vision/scope check：墨墨核过收口节与 W1 Acceptance，条件已撤销
+  （唯一缺口 `backlog_not_imported` 已由 PR #30 闭合）。
+- [x] umbrella `status` 改 done，并同步 `docs/plans/README.md`。
+
+关闭记录：F004 五片 + schema foundation + 入场矩阵全部合入并通过非作者
+review；W1 数据模型交付关闭，后续执行链/DTO 项按挂牌 phase 推进。
 
 [宪宪/deepseek-flash🐾]

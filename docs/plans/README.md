@@ -88,7 +88,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W | 状态 | 备注 |
 |---|---|---|
 | W0 | W0a closed (F002, operator signoff) + W0c done (F003) | W0b 治理已生效；W1 runtime 启动前置已满足 |
-| W1 | in progress → close pending operator | schema + F004a–e all merged (`c0a9b675`)；84/84 + CI green；收口清单见 F004 umbrella |
+| W1 | closed (F004, operator confirmed) | schema + F004a–e all merged；84/84 at close（current tip 122/122）；收口清单见 F004 umbrella |
 | W2 | kickoff (F005 design review) | 权限/身份/沙箱切片与顺序见 F005 |
 | W3 | planned | 待独立 review 实现 |
 | W4 | planned | clowder SOP 复用 + point gates + approval CLI + 最小 thread CLI；merge D / skill migration 契约已冻结 |
