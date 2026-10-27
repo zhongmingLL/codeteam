@@ -141,6 +141,9 @@ export class TaskStore {
 		if (kind !== "work" && (!subjectKey || subjectKey.trim() === "")) {
 			throw new ControlError("invalid_input", "tracking tasks require subjectKey");
 		}
+		if (kind === "work" && (!input.backlogItemId || input.backlogItemId.trim() === "")) {
+			throw new ControlError("backlog_not_imported", "work tasks require an existing backlog item");
+		}
 		const now = this.clock();
 		try {
 			return this.transaction.run(() => {

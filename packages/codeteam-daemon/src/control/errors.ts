@@ -11,7 +11,8 @@ export type ControlErrorCode =
 	| "invalid_input"
 	| "invalid_state"
 	| "version_conflict"
-	| "claim_conflict";
+	| "claim_conflict"
+	| "backlog_not_imported";
 
 export class ControlError extends Error {
 	readonly code: ControlErrorCode;

@@ -147,7 +147,9 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
   部分迁移续跑、crash 重跑、迁移/恢复矩阵、read models、SOP verified 双层
   拦截、dispatch 单事务无 orphan、cutover bind-once、queue 唯一 source、
   唯一 pending-wake、append-only 审计、WAL/FK/busy timeout——均有测试与
-  PR 证据。
+  PR 证据。vision check 抓到的一处缺口已闭合：`task create` 缺
+  `backlog_item_id` 现在显式抛 typed `backlog_not_imported`（此前只靠 schema
+  CHECK 抛 `invalid_input`），有测试锚点。
 - **`eval`/`compress` 运行时分派解析**：profile 与 role seed 已落；分派解析
   属运行时接线（W2/W5）。
 - **`tags_json` operator-only 与 feature 多匹配 422**：store 侧已落
