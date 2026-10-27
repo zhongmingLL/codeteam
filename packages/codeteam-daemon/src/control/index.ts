@@ -18,6 +18,22 @@ export {
 	type ControlMigration,
 } from "./migrations/index.ts";
 export {
+	ControlReadModels,
+	type TaskEvidence,
+	type ThreadSummary,
+	type ThreadSummaryOptions,
+	type ThreadTimeline,
+	type ThreadTimelineOptions,
+} from "./read-models.ts";
+export {
+	type RecoverControlPlaneOptions,
+	type RecoveryClaimReleaseReason,
+	type RecoveryInterruptedRun,
+	type RecoveryReleasedClaim,
+	type RecoveryReport,
+	recoverControlPlane,
+} from "./recovery.ts";
+export {
 	ControlStore,
 	type ControlStoreOptions,
 	openControlStore,
