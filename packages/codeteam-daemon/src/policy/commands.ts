@@ -12,6 +12,7 @@ const GIT_DENIED_FLAGS = new Set([
 	"--git-dir",
 	"--work-tree",
 	"--exec-path",
+	"--amend",
 	"--upload-pack",
 	"--receive-pack",
 	"-C",
@@ -57,7 +58,7 @@ export function evaluateCommand(policy: ToolPolicy, request: CommandRequest): Co
 		if (pattern.test(arg)) throw forbidden(`shell metacharacters not allowed: ${arg}`);
 	}
 	if (!policy.allowedCommands.includes(command)) throw forbidden(`command not allowed: ${command}`);
-	if (command === "git") validateGit(argv);
+	if (command === "git") validateGit(policy.role, argv);
 	if (command === "node") validateNode(argv);
 	const cwd = assertAllowedCwd(policy, request.cwd ?? policy.cwd);
 	validatePathArguments(policy, command, argv, cwd);
@@ -70,11 +71,14 @@ export function evaluateCommand(policy: ToolPolicy, request: CommandRequest): Co
 	};
 }
 
-function validateGit(argv: readonly string[]): void {
+function validateGit(role: string, argv: readonly string[]): void {
 	const subcommand = argv[1];
 	if (!subcommand || subcommand.startsWith("-")) throw forbidden("git requires a subcommand without global flags");
 	if (!GIT_ALLOWED_SUBCOMMANDS.has(subcommand)) {
 		throw forbidden(`git subcommand not allowed: ${subcommand}`);
+	}
+	if (role !== "coder" && (subcommand === "add" || subcommand === "commit")) {
+		throw forbidden(`git ${subcommand} is only allowed for coder runs`);
 	}
 	if (subcommand === "show" && !argv.slice(2).some((arg) => arg === "-s" || arg === "--no-patch")) {
 		throw forbidden("git show requires -s or --no-patch");

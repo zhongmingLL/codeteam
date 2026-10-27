@@ -88,6 +88,10 @@ describe("codeteam commit wrapper and handoff direction", () => {
 			fromRole: "coder",
 			actionPair: "coder->human:blocker",
 		});
+		expect(assertHandoffDirection(reviewer, { toRole: "human", kind: "verdict" })).toEqual({
+			fromRole: "reviewer",
+			actionPair: "reviewer->human:verdict",
+		});
 		expect(() => assertHandoffDirection(coder, { toRole: "reviewer", kind: "verdict" })).toThrow(ControlError);
 		expect(() => assertHandoffDirection(reviewer, { toRole: "reviewer", kind: "review_request" })).toThrow(
 			ControlError,
@@ -110,5 +114,29 @@ describe("codeteam commit wrapper and handoff direction", () => {
 	it("rejects cwd outside the allowed roots", () => {
 		expect(() => evaluateCommand(policy, { argv: ["git", "status"], cwd: root })).toThrow(ControlError);
 		expect(evaluateCommand(policy, { argv: ["git", "status"] }).cwd).toBe(worktree);
+	});
+
+	it("keeps git write commands coder-only and denies amend", () => {
+		const evidence = join(root, "evidence");
+		mkdirSync(evidence, { recursive: true });
+		const reviewer = createToolPolicy({
+			role: "reviewer",
+			dataDir,
+			worktreeRoot: worktree,
+			evidenceRoot: evidence,
+		});
+		for (const argv of [
+			["git", "commit", "-m", "x"],
+			["git", "add", "a.txt"],
+		]) {
+			expect(() => evaluateCommand(reviewer, { argv })).toThrow(ControlError);
+		}
+		expect(evaluateCommand(reviewer, { argv: ["git", "status"] }).argv).toEqual(["git", "status"]);
+		expect(evaluateCommand(reviewer, { argv: ["git", "rev-parse", "HEAD"] }).argv).toEqual([
+			"git",
+			"rev-parse",
+			"HEAD",
+		]);
+		expect(() => evaluateCommand(policy, { argv: ["git", "commit", "--amend", "-m", "x"] })).toThrow(ControlError);
 	});
 });

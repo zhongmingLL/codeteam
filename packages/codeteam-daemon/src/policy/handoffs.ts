@@ -23,6 +23,7 @@ export interface HandoffDirectionOptions {
 export const DEFAULT_ACTION_PAIRS: readonly string[] = [
 	"coder->reviewer:review",
 	"reviewer->coder:verdict",
+	"reviewer->human:verdict",
 	"coder->verifier:handoff",
 	"verifier->coder:verdict",
 	"*->human:blocker",
