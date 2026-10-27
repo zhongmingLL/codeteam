@@ -284,6 +284,29 @@ describe("codeteam control plane recovery", () => {
 		expect(second.releasedClaims).toHaveLength(0);
 	});
 
+	it("requeues queue entries claimed by interrupted runs", () => {
+		const base = baseRun();
+		store.queue.claim(base.queue.id, { claimId: "claim-1", ownerRunId: base.run.id, ttlMs: 600_000 });
+
+		const report = recoverControlPlane(store, { now });
+
+		expect(report.requeuedQueueEntries).toEqual([base.queue.id]);
+		expect(store.queue.get(base.queue.id)?.status).toBe("queued");
+		expect(report.pendingQueueEntries).toBe(1);
+		expect(report.drainRequested).toBe(true);
+	});
+
+	it("keeps queue claims owned by active runs even when the claim has expired", () => {
+		const base = baseRun();
+		store.queue.claim(base.queue.id, { claimId: "claim-1", ownerRunId: base.run.id, ttlMs: 1_000 });
+		now += 5_000;
+
+		const report = recoverControlPlane(store, { now, activeRunIds: [base.run.id] });
+
+		expect(report.requeuedQueueEntries).toHaveLength(0);
+		expect(store.queue.get(base.queue.id)?.status).toBe("claimed");
+	});
+
 	it("reports loop guard attempts and live handoffs per canonical action key", () => {
 		const base = baseRun();
 		const handoff = store.handoffs.create(handoffInput(base));

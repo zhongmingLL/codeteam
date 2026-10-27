@@ -24,6 +24,7 @@ export interface RecoveryReport {
 	readonly interruptedRuns: readonly RecoveryInterruptedRun[];
 	readonly expiredHandoffs: readonly string[];
 	readonly releasedClaims: readonly RecoveryReleasedClaim[];
+	readonly requeuedQueueEntries: readonly string[];
 	readonly loopGuard: readonly LoopGuardSnapshotEntry[];
 	readonly pendingQueueEntries: number;
 	readonly drainRequested: boolean;
@@ -36,6 +37,7 @@ export function recoverControlPlane(store: ControlStore, options: RecoverControl
 		const interruptedRuns: RecoveryInterruptedRun[] = [];
 		const expiredHandoffs: string[] = [];
 		const releasedClaims: RecoveryReleasedClaim[] = [];
+		const requeuedQueueEntries: string[] = [];
 		const staleClaims = store.handoffs.listStaleClaims(now);
 
 		for (const run of store.runs.list({ status: "running" })) {
@@ -76,11 +78,23 @@ export function recoverControlPlane(store: ControlStore, options: RecoverControl
 			releaseClaimIfLive(store, claim, "lease_expired", releasedClaims);
 		}
 
+		for (const entry of store.queue.listClaimed()) {
+			const ownerRunId = entry.claimOwnerRunId;
+			if (ownerRunId !== null && activeRunIds.has(ownerRunId)) continue;
+			const expired = entry.claimExpiresAt !== null && entry.claimExpiresAt <= now;
+			const ownerInterrupted = ownerRunId !== null && interruptedRunIds.has(ownerRunId);
+			if (!expired && !ownerInterrupted) continue;
+			if (!entry.claimId) continue;
+			store.queue.release(entry.id, entry.claimId);
+			requeuedQueueEntries.push(entry.id);
+		}
+
 		const pendingQueueEntries = store.queue.pendingCount();
 		return {
 			interruptedRuns,
 			expiredHandoffs,
 			releasedClaims,
+			requeuedQueueEntries,
 			loopGuard: store.handoffs.loopGuardSnapshot(),
 			pendingQueueEntries,
 			drainRequested: pendingQueueEntries > 0,

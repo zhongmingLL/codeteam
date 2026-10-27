@@ -104,6 +104,13 @@ export class QueueStore {
 		return row?.count ?? 0;
 	}
 
+	listClaimed(): QueueEntry[] {
+		const rows = this.database
+			.prepare("SELECT * FROM queue_entries WHERE status = 'claimed' ORDER BY enqueued_at, id")
+			.all() as unknown as QueueEntryRow[];
+		return rows.map(mapQueueEntry);
+	}
+
 	admit(input: AdmitQueueEntryInput): QueueEntry {
 		if (!Array.isArray(input.targets)) {
 			throw new ControlError("invalid_input", "queue targets must be a non-empty string array");

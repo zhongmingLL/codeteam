@@ -31,6 +31,8 @@ running run 永远停在 running、死进程的 handoff claim 永远占着 holde
   - 被中断 run 的 active claim → `released(run_interrupted)`，handoff 回
     `pending`（同 generation）。
   - 其他 stale claim（lease 过期且 run 非活跃）→ `released(lease_expired)`。
+  - 被中断 run 或已过期 claim 占住的 `queue_entries` → 回 `queued`，恢复
+    dirty-bit drain 不因死 run 断流。
   - loop guard 快照：canonical action key 的 attempts / live 计数（从
     `handoffs` 派生，不建表）。
   - dirty-bit：queued 队列条目计数 + `drainRequested`。
@@ -50,6 +52,7 @@ running run 永远停在 running、死进程的 handoff claim 永远占着 holde
 - [x] interrupted run 的 token/claim 不能 complete 任何 handoff。
 - [x] parallel 一个 holder 被中断不影响其他 holder。
 - [x] 重复 sweep 幂等；loop guard 与 dirty-bit 报告正确。
+- [x] 死 run 的 queue claim 回 queued；活跃 run 的 claim（即使 TTL 已过）不动。
 - [x] 空库 / v3 旧库 / 部分迁移 / crash 后重跑四条迁移测试通过，旧数据不丢。
 - [x] Console M0 只读：thread 摘要、timeline、task evidence 均有 store 级测试。
 - [x] `npm --prefix packages/codeteam-daemon test` 82/82、根级 `tsc --noEmit`、
@@ -69,8 +72,8 @@ running run 永远停在 running、死进程的 handoff claim 永远占着 holde
 
 ## Evidence
 
-- `npm --prefix packages/codeteam-daemon test`：9 个测试文件、82/82 通过
-  （新增 16：recovery 9 + migration 4 + read models 3）。
+- `npm --prefix packages/codeteam-daemon test`：9 个测试文件、84/84 通过
+  （新增 18：recovery 11 + migration 4 + read models 3）。
 - `npx tsc --noEmit -p tsconfig.json`：通过。
 - `npx biome check packages/codeteam-daemon`：clean。
 - PR 与 review 记录在合入后回写。
