@@ -3,7 +3,7 @@ feature_ids: [F002]
 related_features: [F001]
 topics: [w0a, bootstrap, l0, pi-session, skill-surface, sandbox-preflight, hub-spike, supply-chain]
 doc_kind: spec
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: []
 created: 2026-10-26
@@ -119,6 +119,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | audit correction | Skill catalog N1/N2 rows added to the migration matrix; fresh repo-local catalog deviation recorded |
 | 2026-10-27 | verification addendum | Provider HTTP E2E added: local Anthropic-shaped SSE server + real session loop; L0 observed in the outbound request |
 | 2026-10-27 | live provider E2E | Opt-in real vendor call (GLM Anthropic-compatible, `glm-5.3-flash`): L0 over the wire, streamed `LIVE_OK`; no key in repo |
+| 2026-10-27 | feature closed | Operator cvo_signoff accepted the two W4 deferrals; vision guard condition satisfied; status → done |
 
 ### Phase 0 — 真相源与工程基线
 
@@ -306,7 +307,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - [x] **AC-9 Manual compaction 保留 L0**：手动 `session.compact()` 后同样逐字保留；有独立证据。
 - [x] **AC-10 Cache/hash 证据**：section 稳定时 system hash 稳定；cache 指标不可观测时明确记录 `cache_observability=unavailable`，不伪造命中。
 - [x] **AC-11 Session export/resume 结论**：跨进程 export → import → continue 成功，或有精确失败记录 + W5 fresh+capsule fallback 回写。
-- [ ] **AC-12 Curated skill surface**：manifest schema、index/body、allowlist 空=不加载、悬空 id warning、path containment、secret scan、多文件合并均有测试/证据；无自动发现/HOME mount。（catalog 合并与注入已测；fork/import 多文件合并未实现，owner W4，见 Phase 2 报告）
+- [ ] **AC-12 Curated skill surface**：manifest schema、index/body、allowlist 空=不加载、悬空 id warning、path containment、secret scan、多文件合并均有测试/证据；无自动发现/HOME mount。（catalog 合并与注入已测；fork/import 多文件合并未实现，owner W4，见 Phase 2 报告；operator 已 cvo_signoff 接受该 W4 deferral，2026-10-27）
 - [x] **AC-13 bwrap 预检**：WSL2/受支持 Linux 的 unprivileged userns 结论明确；不可用时 D3 已重开并写清降级。（本机 userns + bwrap mount/PID/net 均可用；D3 未重开，宿主缺 userns 时按报告 fallback 触发）
 - [x] **AC-14 低权 worktree 预检**：worker 可写、reviewer/verifier 只读、evidence 隔离；没有 chmod 777。（worker rw / reviewer ro 由 mount namespace 内核强制，evidence 独立；verifier 复用 reviewer 只读路径未单独起进程；独立 OS 用户验证留给 W2/CI）
 - [x] **AC-15 Hub 承载结论**：外部 thread + 消息 + approval 卡可展示，或给出 clowder 侧改动清单；没有未授权的 clowder-ai 改动。（thread + 消息 + rich card 实证；approval 生产者为 W4/W7 codeteam 侧；clouder 侧清单已记录）
@@ -353,10 +354,9 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 ## Open Questions
 
 1. ~~**F002 是否就是整个 W0a gate？**~~ 已确认（2026-10-26）：F002 = 整个 W0a gate；实现按 Phase 拆 PR。
-2. **旧 codeteam 实现在哪里？** 需要来源仓/路径/commit；本机 `clowder-ai/codeteam/` 只有文档。
-   若没有，确认按 fresh baseline 进入 W1。
+2. ~~**旧 codeteam 实现在哪里？**~~ 已确认（2026-10-27）：本机无可执行实现，按 fresh baseline 进入 W1（见 Phase 4 报告）。
 3. **Hub spike 是否授权 clowder-ai 改动？** 默认不授权：F002 只输出改动清单；需要改动时单独找 operator。
-4. **zod advisory 例外需要独立 security review**：`GHSA-mrhx-c7xc-m3w5` 当前只在未发布 sandbox example 的 `@anthropic-ai/sandbox-runtime` 路径上触发；合并前需要砚砚复核，W2 sandbox 前必须重审。
+4. ~~**zod advisory 例外需要独立 security review**~~ 已完成：砚砚在 Phase 0 review 中独立复核并接受（见 `2026-10-27-f002-phase0-baseline.md`）；W2 sandbox 前或 example 升级到 zod >= 4.6.6 时必须重审。
 
 ## Committed Files
 
@@ -543,6 +543,23 @@ docs/plans/README.md
 docs/reports/2026-10-27-f002-w0a-gate.md
 packages/codeteam-skills/test/catalog.test.ts
 ```
+
+
+## Close signoff (cvo_signoff, 2026-10-27)
+
+| Field | Value |
+|---|---|
+| proposal_message_id | `0001793074298401-001784-e55c4b4c` |
+| cvo_message_id | `0001793112789127-001813-1e3bb395` |
+| cvo_quote | "2）可以签" |
+| accepted_scope | skill 内容迁移与多文件 fork/import 合并不在 F002 交付；W4 首个 fork/import 路径必须复验 |
+
+Vision guard: 墨墨 (qwen, non-author and non-reviewer) returned a conditional close
+(`0001793074055439-001780-f5797baf`); the signoff above satisfies that condition.
+
+Review routing correction (operator, 2026-10-27): code, security, and test-coverage review defaults
+to 砚砚; 烁烁 remains the specialist for L0/session/fork-specific checks; the vision guard must be
+neither the author nor a reviewer.
 
 ## Phase 0 Review Delta
 
