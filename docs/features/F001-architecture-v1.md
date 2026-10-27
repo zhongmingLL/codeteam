@@ -143,7 +143,7 @@ codeteam 已经有一个能跑的控制面、pi SDK adapter、review/verifier/ev
 | D6 | finding 由证据关闭 | review 不是表演 |
 | D7 | v1 merge owner execution（`DP-MERGE-1=D`）；operator 守硬门 | routine merge 不由 operator 逐次执行；A 仅零-secret 临时偏差；C 类自动 merge 不做 |
 | D8 | full fork（仓库形态）+ SDK/extension-first（默认实现） | 保留深改权利，但 kernel 默认只读 |
-| D9 | L0 放 native system prompt | 压缩免疫；需 W0 spike 实证 |
+| D9 | L0 放 native system prompt | 压缩免疫已实证（F002, 2026-10-27）；prompt-cache 命中未观测，cache 收益归 W6 |
 | D10 | 先做单 task 闭环，再做多 task/console | 防止平台先行 |
 | D11 | Web Console M0 = 看 + 聊 + 批；M1 = 建 + 配 + 控 | operator 需要 thread 视图、聊天和审批入口 |
 | D12 | GitHub/GitLab 是 Forge connector，不是 IM 网关 | 工作入口 + 代码证据 + 交付出口 |

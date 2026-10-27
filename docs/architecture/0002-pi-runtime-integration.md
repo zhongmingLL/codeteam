@@ -378,7 +378,7 @@ pi 的 `CompactionEntry` 保存 `systemMessage` checkpoint：
 
 所以 L0 放在 native system prompt 后，不会因为 compaction 丢失。这正是 clowder F203 想要的效果。
 
-> 这条是 pi 源码/文档层面的 claim，仍需要 W0/W1 spike 实证：长 session 压到 compaction 阈值，断言 L0 逐字出现在 compaction 后首个 request 的 system 里；顺手验证 section 稳定时 cache 命中。未验证前，D9 只能算 target，不算已证明。
+> W0a 已实证（2026-10-27）：长 session 压到 compaction 阈值后，L0 逐字出现在首个 request 的 system 里；provider HTTP 与 live 调用也验证了 L0 在出站 system。**cache 命中仍未观测**（短 system 可能低于 provider 缓存阈值），所以 D9 的 cache 收益保持 target，归 W6；压缩免疫这部分已证明。
 
 ### 6.4 双重注入
 
