@@ -62,7 +62,8 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 
 ## Slice-specific 验收（W2 全量见 plan）
 
-- [x] 同 worker 内两个 run 的 token 不能互相冒用（resolver 结构性隔离；MCP 接线 W7a）。
+- [x] 同 worker 内两个 run 的 token 不能互相冒用（resolver 结构性隔离；MCP 接线
+  W7a）；**tool args 身份字段一律忽略**（服务端从 token 派生身份，随 W7a MCP 接线）。
 - [x] 危险命令、路径逃逸、symlink/hardlink、secret 路径全部拒绝；拒绝有 typed error + audit。
 - [x] agent 读自身 token 文件被拒；interrupted run 的 token 不能完成 handoff。
 - [x] approval decide 对 run token/agent-key 返回 403；merge 执行仅 `service:merge-owner`
@@ -73,7 +74,8 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
   （写入 `reviews.head_sha` 在 W3 接线）。
 - [x] review/verify 不能写被审 worktree；取证写只限隔离 evidence worktree
   （同 task 峰值计数随 W5 pool）。
-- [x] agent 进程零 secret；daemon 数据与 worktree 都在仓外。
+- [x] agent 进程零 secret；daemon 数据与 worktree 都在仓外；dogfood 分支不 push
+  （随首跑授权执行）。
 - [x] audit 不可 UPDATE/DELETE；命令 audit 可还原完整命令（argv/cwd/exit/tails）。
 - [x] 威胁测试矩阵 21 条全有锚点 + 报告落盘（真实 repo first-run 另列）。
 - [ ] 真实 repo first-run：需 operator 提供 dogfood repo/授权。
