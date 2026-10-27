@@ -40,6 +40,9 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 - 2026-10-28：F005a 实现完成，进入安全 review：
   [`F005a-per-run-token.md`](F005a-per-run-token.md)（migration 006 + mint/verify/
   resolver + header-only + liveness + tombstone sweep，包内 93/93）。
+- 2026-10-28：F005a 合入（PR #29，`4c30a94f`）；F005b 第一批（工具策略
+  决策层）完成，进入 review：[`F005b-tool-policy.md`](F005b-tool-policy.md)
+  （命令/路径 deny-by-default，包内 102/102）。
 
 ## Slice-specific 验收（W2 全量见 plan）
 

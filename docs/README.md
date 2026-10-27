@@ -38,6 +38,7 @@ updated: 2026-10-28
 | [`features/F004e-recovery-read-models.md`](features/F004e-recovery-read-models.md) | F004e：startup recovery、迁移矩阵测试、Console M0 只读 read models |
 | [`features/F005-w2-identity-sandbox.md`](features/F005-w2-identity-sandbox.md) | F005：W2 权限/身份/沙箱 kickoff（切片、顺序、待确认项） |
 | [`features/F005a-per-run-token.md`](features/F005a-per-run-token.md) | F005a：per-run token 铸造/绑定/撤销、migration 006、header-only、liveness、tombstone sweep |
+| [`features/F005b-tool-policy.md`](features/F005b-tool-policy.md) | F005b：工具策略（命令/路径 deny-by-default、git policy、资源 envelope） |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |

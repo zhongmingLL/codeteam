@@ -71,4 +71,16 @@ export { DaemonError, type DaemonErrorCode } from "./errors.ts";
 export { acquireFence, type FenceRecord, isProcessAlive, readFence, releaseFence } from "./fence.ts";
 export { type InstallationIdentity, resolveInstallation } from "./installation.ts";
 export { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
+export {
+	assertReadablePath,
+	assertWritablePath,
+	type CommandExecution,
+	type CommandRequest,
+	type CreateToolPolicyOptions,
+	createToolPolicy,
+	DEFAULT_COMMAND_ALLOWLIST,
+	evaluateCommand,
+	type ToolPolicy,
+	type ToolRole,
+} from "./policy/index.ts";
 export { type DaemonState, type DaemonStateFile, readStateFile, writeStateFile } from "./state.ts";
