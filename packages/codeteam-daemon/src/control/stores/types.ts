@@ -285,3 +285,248 @@ export interface ClaimQueueEntryInput {
 	ownerRunId?: string | null;
 	ttlMs?: number;
 }
+
+export type BacklogPriority = "p0" | "p1" | "p2" | "p3";
+export type BacklogStatus = "open" | "suggested" | "approved" | "dispatched" | "done";
+export type BacklogCreatedByKind = "cat" | "user" | "system";
+export type BacklogSuggestionStatus = "pending" | "approved" | "rejected";
+
+export interface BacklogSuggestion {
+	catId: string;
+	why: string;
+	plan: string;
+	requestedPhase: ThreadPhase;
+	status: BacklogSuggestionStatus;
+	suggestedAt: number;
+	decidedAt?: number;
+	decidedBy?: string;
+	note?: string;
+}
+
+export interface BacklogItem {
+	id: string;
+	userId: string;
+	projectId: string | null;
+	title: string;
+	summary: string;
+	priority: BacklogPriority;
+	tags: string[];
+	status: BacklogStatus;
+	createdByKind: BacklogCreatedByKind;
+	createdById: string;
+	suggestion: BacklogSuggestion | null;
+	lease: Record<string, unknown> | null;
+	dependencies: Record<string, unknown> | null;
+	dispatchedThreadId: string | null;
+	dispatchedThreadPhase: ThreadPhase | null;
+	dispatchAttemptId: string | null;
+	pendingThreadId: string | null;
+	kickoffMessageId: string | null;
+	approvedAt: number | null;
+	dispatchedAt: number | null;
+	doneAt: number | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface CreateBacklogItemInput {
+	id?: string;
+	userId: string;
+	projectId?: string | null;
+	title: string;
+	summary: string;
+	priority: BacklogPriority;
+	tags: string[];
+	createdByKind: BacklogCreatedByKind;
+	createdById: string;
+	dependencies?: Record<string, unknown> | null;
+	initialStatus?: BacklogStatus;
+}
+
+export interface SuggestBacklogInput {
+	catId: string;
+	why: string;
+	plan: string;
+	requestedPhase: ThreadPhase;
+}
+
+export interface DecideBacklogSuggestionInput {
+	decision: "approve" | "reject";
+	decidedBy: string;
+	note?: string;
+}
+
+export interface BacklogListFilter {
+	status?: BacklogStatus;
+	priority?: BacklogPriority;
+	projectId?: string;
+}
+
+export interface MarkBacklogDispatchedInput {
+	threadId: string;
+	phase: ThreadPhase;
+	dispatchAttemptId: string;
+	kickoffMessageId: string;
+}
+
+export interface DispatchBacklogInput {
+	backlogItemId: string;
+	targets: string[];
+	threadPhase: ThreadPhase;
+	dispatchAttemptId?: string;
+	title?: string;
+	repo?: string | null;
+	kickoffBody?: string;
+}
+
+export interface DispatchBacklogResult {
+	backlog: BacklogItem;
+	thread: Thread;
+	message: Message;
+	queueEntry: QueueEntry;
+	audit: AuditEntry | null;
+}
+
+export type SopStage = "kickoff" | "impl" | "quality_gate" | "fresh_context" | "review" | "merge" | "completion";
+export type SopCheckStatus = "attested" | "unknown";
+
+export interface SopChecks {
+	remoteMainSynced: SopCheckStatus;
+	qualityGatePassed: SopCheckStatus;
+	reviewApproved: SopCheckStatus;
+	visionGuardDone: SopCheckStatus;
+}
+
+export interface ResumeCapsule {
+	goal: string;
+	done: string[];
+	currentFocus: string;
+}
+
+export interface WorkflowSop {
+	backlogItemId: string;
+	featureId: string;
+	sopDefinitionId: string;
+	stage: SopStage;
+	batonHolder: string;
+	nextSkill: string | null;
+	resumeCapsule: ResumeCapsule;
+	checks: SopChecks;
+	version: number;
+	updatedAt: number;
+	updatedBy: string;
+}
+
+export interface UpsertWorkflowSopInput {
+	backlogItemId: string;
+	featureId: string;
+	sopDefinitionId?: string;
+	stage: SopStage;
+	batonHolder: string;
+	nextSkill?: string | null;
+	resumeCapsule: ResumeCapsule;
+	checks: SopChecks;
+	expectedVersion?: number;
+	updatedBy: string;
+}
+
+export interface WorkAdmission {
+	workId: string;
+	ownerUserId: string;
+	producerKind: string;
+	producerRef: string;
+	initialAttemptId: string;
+	admittedAt: number;
+}
+
+export interface WorkAttempt {
+	attemptId: string;
+	workId: string;
+	attemptNumber: number;
+	executorProfileId: string | null;
+	createdAt: number;
+	executorBoundAt: number | null;
+}
+
+export type ArtifactKind =
+	| "spec"
+	| "plan"
+	| "diff"
+	| "test-report"
+	| "review"
+	| "verification"
+	| "merge-receipt"
+	| "log";
+
+export interface Artifact {
+	id: string;
+	taskId: string;
+	runId: string | null;
+	kind: ArtifactKind;
+	sha256: string;
+	path: string;
+	mediaType: string;
+	bytes: number;
+	provenance: Record<string, unknown>;
+	approvalId: string | null;
+	createdAt: number;
+}
+
+export interface PutArtifactInput {
+	id?: string;
+	taskId: string;
+	runId?: string | null;
+	kind: ArtifactKind;
+	content: Buffer;
+	mediaType: string;
+	provenance: Record<string, unknown>;
+	approvalId?: string | null;
+	createdAt?: number;
+}
+
+export type InboxKind = "steer" | "followUp" | "humanGuidance";
+export type InboxStatus = "pending" | "consumed" | "expired";
+
+export interface InboxItem {
+	id: string;
+	taskId: string;
+	runId: string | null;
+	kind: InboxKind;
+	payload: Record<string, unknown>;
+	status: InboxStatus;
+	createdAt: number;
+	consumedAt: number | null;
+}
+
+export interface CreateInboxInput {
+	id?: string;
+	taskId: string;
+	runId?: string | null;
+	kind: InboxKind;
+	payload?: Record<string, unknown>;
+}
+
+export interface InboxListFilter {
+	taskId?: string;
+	status?: InboxStatus;
+}
+
+export interface AuditEntry {
+	id: string;
+	actor: string;
+	action: string;
+	subject: string;
+	args: Record<string, unknown>;
+	result: string;
+	ts: number;
+}
+
+export interface AppendAuditInput {
+	id?: string;
+	actor: string;
+	action: string;
+	subject: string;
+	args?: Record<string, unknown>;
+	result?: string;
+	ts?: number;
+}

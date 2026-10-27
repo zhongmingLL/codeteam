@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F004a]
 related_features: [codeteam/F004]
 title: "F004a: W1 identity / thread / chat / queue store"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -45,7 +45,7 @@ W1 schema foundation 已合入。下一步必须让控制面真正可写：身�
   complete；claim conflict；urgent 优先。
 - [x] `npm --prefix packages/codeteam-daemon test`、根级 `tsc --noEmit`、Biome
   通过。
-- [ ] 非作者 review（砚砚）与 merge。
+- [x] 非作者 review（砚砚 approve @ `d4c00f04`）与 merge（PR #22，`7d7f2b0c`）。
 
 ## Out of scope
 
@@ -58,11 +58,23 @@ W1 schema foundation 已合入。下一步必须让控制面真正可写：身�
 - `npm --prefix packages/codeteam-daemon test`：3 个测试文件、40/40 通过。
 - `npx tsc --noEmit -p tsconfig.json`：通过。
 - `npx biome check --write packages/codeteam-daemon/src/control ...`：clean。
-- PR：由当前 thread 路由与 PR 记录。
+- PR #22：https://github.com/zhongmingLL/codeteam/pull/22（review `d4c00f04`，merge `7d7f2b0c`）。
 
 ## Risk
 
 数据/契约面。additive migration 004 只新增唯一索引，不改已有列；无生产数据迁移。
 queue source 唯一性在数据库层保证，store 的确定性 id + by-source 回退保证幂等。
+
+## Post-merge review follow-ups (2026-10-28)
+
+- **P3-1 并发 admit UX**：同一 source 不同 id 的并发 admit，输家拿 typed
+  conflict 而不是胜者条目。顺序幂等已成立，并发 fail-closed 可接受；若
+  operator/Cli 需要无感重试，再在调用层重读 by-source。
+- **P3-2 threads CAS 版本 token**：threads 用 `updated_at` 做 CAS；同毫秒双写
+  理论上可穿过。queue 已用 `revision = revision + 1`，建议在 F004e hardening
+  或 W7 前给 threads 加单调 revision。
+- **P3-3 CHECK 错误翻译**：`mapStoreError` 目前把 CHECK 一律译成
+  `invalid_input`；状态机类 CHECK 可在 F004c/d 细化成 `conflict` /
+  `invalid_state`。不影响当前正确性。
 
 [宪宪/deepseek-flash🐾]
