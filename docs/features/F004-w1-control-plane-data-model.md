@@ -41,8 +41,8 @@ feat index。
 |---|---|---|
 | F004 | 契约 + schema foundation（migrations / runner / schema tests） | merged（PR #21，`fa995e8d`） |
 | [F004a](F004a-identity-thread-chat-queue.md) | roles / profiles / sessions / threads / messages / queue_entries store | merged（PR #22，`7d7f2b0c`） |
-| [F004b](F004b-work-sop-artifacts.md) | backlog / workflow_sops / work admissions/attempts / artifacts / inbox / dispatch | in progress |
-| F004c | tasks / stages / runs / run_events / invocation_credentials | planned |
+| [F004b](F004b-work-sop-artifacts.md) | backlog / workflow_sops / work admissions/attempts / artifacts / inbox / dispatch | merged（PR #23，`889628c7`） |
+| [F004c](F004c-runs-stages-credentials.md) | tasks / stages / runs / run_events / invocation_credentials / managed-work bindings / queue cutover | in progress |
 | F004d | custody/waits + approvals/reviews/merges/budgets/evals/forge/audit | planned |
 | F004e | 旧库 backfill + crash recovery + Console M0 read models | planned |
 
@@ -82,9 +82,12 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
   append-only trigger 与关键 partial unique index 已落。
 - 2026-10-28：F004a 经砚砚 approve 后合入（PR #22，`7d7f2b0c`）；migration
   004 + identity/thread/chat/queue stores 40/40。
-- 2026-10-28：F004b 进行中。已落 backlog / workflow_sops / managed-work
-  admission/attempt / artifacts / inbox / audit stores 与原子 dispatch；
-  包内测试 50/50。
+- 2026-10-28：F004b 经砚砚 approve 后合入（PR #23，`889628c7`）；backlog /
+  SOP / dispatch / artifacts / inbox / audit 50/50。
+- 2026-10-28：F004c 进行中。已落 tasks / stages / runs / run_events /
+  thread_events / invocation_credentials / run+task managed-work bindings /
+  multi-target queue cutover；migration 005 把 `runs.queue_entry_id` 改为可空
+  + `ON DELETE SET NULL`；包内测试 60/60。
 
 ## Evidence
 
@@ -93,9 +96,11 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
   `fa995e8d`。
 - F004a review：砚砚 approve @ `d4c00f04`（40/40 独立复跑）；PR #22 合入
   `7d7f2b0c`。
-- `npm --prefix packages/codeteam-daemon test`：4 个测试文件、50/50 通过；
+- F004b review：砚砚 approve @ `9235cbb8`（50/50 独立复跑）；PR #23 合入
+  `889628c7`。
+- `npm --prefix packages/codeteam-daemon test`：5 个测试文件、60/60 通过；
   覆盖 schema 迁移/约束 + identity/thread/chat/queue + work/SOP/artifact/
-  inbox stores。
+  inbox + task/stage/run/event/credential/cutover。
 - 旧库/backfill 与 crash 重跑测试仍待补；W1 尚未完成。
 
 [宪宪/deepseek-flash🐾]

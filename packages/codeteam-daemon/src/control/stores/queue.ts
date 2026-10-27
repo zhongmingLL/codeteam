@@ -237,4 +237,46 @@ export class QueueStore {
 			throw mapStoreError(error);
 		}
 	}
+
+	cutoverTarget(
+		id: string,
+		claimId: string,
+		targetProfileId: string,
+	): { entry: QueueEntry | null; removedTarget: string } {
+		const claim = nonEmpty(claimId, "claimId");
+		const target = nonEmpty(targetProfileId, "targetProfileId");
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `queue entry ${id} not found`);
+				if (current.status !== "claimed" || current.claimId !== claim) {
+					throw new ControlError("claim_conflict", `queue entry ${id} is not claimed by ${claim}`);
+				}
+				const index = current.targets.indexOf(target);
+				if (index < 0) throw new ControlError("invalid_input", `target ${target} is not queued`);
+				const remaining = current.targets.filter((_, currentIndex) => currentIndex !== index);
+				const now = this.clock();
+				if (remaining.length === 0) {
+					const result = this.database
+						.prepare("DELETE FROM queue_entries WHERE id = ? AND status = 'claimed' AND claim_id = ?")
+						.run(id, claim);
+					if (changesOf(result) === 0) {
+						throw new ControlError("claim_conflict", `queue entry ${id} changed during cutover`);
+					}
+					return { entry: null, removedTarget: target };
+				}
+				const result = this.database
+					.prepare(
+						"UPDATE queue_entries SET targets_json = ?, status = 'queued', claim_id = NULL, claim_owner_run_id = NULL, claim_expires_at = NULL, revision = revision + 1, updated_at = ? WHERE id = ? AND status = 'claimed' AND claim_id = ?",
+					)
+					.run(jsonArray(remaining, "targets"), now, id, claim);
+				if (changesOf(result) === 0) {
+					throw new ControlError("claim_conflict", `queue entry ${id} changed during cutover`);
+				}
+				return { entry: this.get(id), removedTarget: target };
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
 }

@@ -2,11 +2,13 @@ import { CORE_SCHEMA_STATEMENTS } from "./001-core.ts";
 import { WORK_SCHEMA_STATEMENTS } from "./002-work.ts";
 import { GOVERNANCE_SCHEMA_STATEMENTS } from "./003-governance.ts";
 import { QUEUE_SOURCE_STATEMENTS } from "./004-queue-source.ts";
+import { RUNS_QUEUE_REF_STATEMENTS } from "./005-runs-queue-ref.ts";
 
 export interface ControlMigration {
 	readonly version: number;
 	readonly name: string;
 	readonly statements: readonly string[];
+	readonly foreignKeysOff?: boolean;
 }
 
 export const CONTROL_MIGRATIONS: readonly ControlMigration[] = [
@@ -14,6 +16,7 @@ export const CONTROL_MIGRATIONS: readonly ControlMigration[] = [
 	{ version: 2, name: "work-sop-artifacts", statements: WORK_SCHEMA_STATEMENTS },
 	{ version: 3, name: "custody-approval-review", statements: GOVERNANCE_SCHEMA_STATEMENTS },
 	{ version: 4, name: "queue-source-uniqueness", statements: QUEUE_SOURCE_STATEMENTS },
+	{ version: 5, name: "runs-queue-ref-set-null", statements: RUNS_QUEUE_REF_STATEMENTS, foreignKeysOff: true },
 ];
 
 export const CONTROL_TABLE_NAMES: readonly string[] = [

@@ -530,3 +530,275 @@ export interface AppendAuditInput {
 	result?: string;
 	ts?: number;
 }
+
+export type TaskKind = "work" | "pr_tracking" | "issue_tracking";
+export type TaskStatus = "todo" | "doing" | "blocked" | "done";
+export type TaskDisposition = "canceled" | "abandoned";
+export type StageLane = "impl" | "quality_gate" | "fresh_context" | "review" | "merge";
+
+export interface Task {
+	id: string;
+	kind: TaskKind;
+	threadId: string;
+	subjectKey: string | null;
+	title: string;
+	why: string;
+	ownerProfileId: string | null;
+	status: TaskStatus;
+	createdBy: string;
+	userId: string | null;
+	sourceMessageId: string | null;
+	sourceSummaryId: string | null;
+	relatedFeatureId: string | null;
+	detectedFeatureIds: unknown[];
+	dispatchGate: Record<string, unknown> | null;
+	probe: Record<string, unknown> | null;
+	resolveMode: string | null;
+	entrustedWork: Record<string, unknown> | null;
+	deploymentWait: Record<string, unknown> | null;
+	automationState: Record<string, unknown> | null;
+	backlogItemId: string | null;
+	repo: string | null;
+	baseRef: string | null;
+	baseSha: string | null;
+	worktree: string | null;
+	branch: string | null;
+	risk: string | null;
+	riskAxes: unknown[];
+	disposition: TaskDisposition | null;
+	lane: StageLane | null;
+	budget: Record<string, unknown> | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface CreateTaskInput {
+	id?: string;
+	kind: TaskKind;
+	threadId: string;
+	subjectKey?: string | null;
+	title: string;
+	why: string;
+	ownerProfileId?: string | null;
+	status?: TaskStatus;
+	createdBy: string;
+	userId?: string | null;
+	sourceMessageId?: string | null;
+	sourceSummaryId?: string | null;
+	relatedFeatureId?: string | null;
+	detectedFeatureIds?: unknown[];
+	backlogItemId?: string | null;
+	repo?: string | null;
+	baseRef?: string | null;
+	baseSha?: string | null;
+	worktree?: string | null;
+	branch?: string | null;
+	risk?: string | null;
+	riskAxes?: unknown[];
+	lane?: StageLane | null;
+	budget?: Record<string, unknown> | null;
+}
+
+export interface TaskListFilter {
+	threadId?: string;
+	ownerProfileId?: string;
+	status?: TaskStatus;
+	kind?: TaskKind;
+}
+
+export type StageStatus = "active" | "passed";
+
+export interface Stage {
+	id: string;
+	taskId: string;
+	lane: StageLane;
+	status: StageStatus;
+	startedAt: number;
+	endedAt: number | null;
+}
+
+export interface CreateStageInput {
+	id?: string;
+	taskId: string;
+	lane: StageLane;
+}
+
+export type RunStatus = "running" | "completed" | "canceled" | "interrupted" | "failed";
+export type RunExecutionKind = "ordinary" | "routing_guard";
+
+export interface Run {
+	id: string;
+	taskId: string;
+	queueEntryId: string | null;
+	stageId: string | null;
+	attempt: number;
+	role: string;
+	agentSessionId: string;
+	parentRunId: string | null;
+	sourceId: string;
+	recipientProfileId: string;
+	chainMetadata: Record<string, unknown>;
+	provider: string;
+	model: string;
+	modelFamily: string;
+	l0Revision: string | null;
+	status: RunStatus;
+	responseMessageId: string | null;
+	executionKind: RunExecutionKind;
+	handoffId: string | null;
+	approvalId: string | null;
+	startedAt: number;
+	terminalAt: number | null;
+	usage: Record<string, unknown> | null;
+}
+
+export interface CreateRunInput {
+	id?: string;
+	taskId: string;
+	queueEntryId?: string | null;
+	stageId?: string | null;
+	attempt?: number;
+	role: string;
+	agentSessionId: string;
+	parentRunId?: string | null;
+	sourceId: string;
+	recipientProfileId: string;
+	chainMetadata?: Record<string, unknown>;
+	provider: string;
+	model: string;
+	modelFamily: string;
+	l0Revision?: string | null;
+	responseMessageId?: string | null;
+	executionKind?: RunExecutionKind;
+	handoffId?: string | null;
+	approvalId?: string | null;
+	startedAt?: number;
+	usage?: Record<string, unknown> | null;
+}
+
+export interface TerminalRunInput {
+	status: Exclude<RunStatus, "running">;
+	terminalAt?: number;
+	usage?: Record<string, unknown> | null;
+}
+
+export interface RunListFilter {
+	taskId?: string;
+	agentSessionId?: string;
+	recipientProfileId?: string;
+	status?: RunStatus;
+}
+
+export type RunEventKind =
+	| "message"
+	| "tool_call"
+	| "tool_result"
+	| "gate"
+	| "handoff"
+	| "review"
+	| "verification"
+	| "error";
+
+export interface RunEvent {
+	id: string;
+	runId: string;
+	seq: number;
+	kind: RunEventKind;
+	payload: unknown;
+	ts: number;
+}
+
+export type ThreadEventKind = "backlog_item_dispatched" | "backlog_item_done" | "workflow_sop_updated";
+
+export interface ThreadEvent {
+	id: string;
+	threadId: string;
+	seq: number;
+	kind: ThreadEventKind;
+	payload: unknown;
+	ts: number;
+}
+
+export type CredentialState = "active" | "terminal";
+export type CredentialDisposition = "completed" | "failed" | "canceled" | "interrupted" | "revoked";
+export type OwnerAuthProvenance = "strict" | "compat" | "unknown";
+
+export interface InvocationCredential {
+	id: string;
+	runId: string;
+	taskId: string;
+	role: string;
+	agentSessionId: string;
+	agentProfileId: string;
+	threadId: string;
+	userId: string;
+	ownerAuthProvenance: OwnerAuthProvenance;
+	parentRunId: string | null;
+	toolPolicy: Record<string, unknown>;
+	state: CredentialState;
+	disposition: CredentialDisposition | null;
+	lastRefreshAt: number;
+	expiresAt: number | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface CreateInvocationCredentialInput {
+	id?: string;
+	tokenHash: string;
+	tokenSalt: string;
+	runId: string;
+	taskId: string;
+	role: string;
+	agentSessionId: string;
+	agentProfileId: string;
+	threadId: string;
+	userId: string;
+	ownerAuthProvenance: OwnerAuthProvenance;
+	parentRunId?: string | null;
+	toolPolicy: Record<string, unknown>;
+	lastRefreshAt?: number;
+	expiresAt?: number | null;
+}
+
+export interface CutoverQueueEntryInput {
+	queueEntryId: string;
+	claimId: string;
+	targetProfileId: string;
+	taskId: string;
+	stageId?: string | null;
+	role: string;
+	agentSessionId: string;
+	provider: string;
+	model: string;
+	modelFamily: string;
+	l0Revision?: string | null;
+	executionKind?: RunExecutionKind;
+	handoffId?: string | null;
+	approvalId?: string | null;
+	attempt?: number;
+	parentRunId?: string | null;
+	chainMetadata?: Record<string, unknown>;
+	responseBody?: string;
+}
+
+export interface CutoverQueueEntryResult {
+	run: Run;
+	responseMessage: Message;
+	queueEntry: QueueEntry | null;
+	runEvent: RunEvent;
+}
+
+export interface WorkRunBinding {
+	runId: string;
+	workId: string;
+	attemptId: string;
+	boundAt: number;
+}
+
+export interface WorkTaskBinding {
+	taskId: string;
+	workId: string;
+	attemptId: string;
+	boundAt: number;
+}
