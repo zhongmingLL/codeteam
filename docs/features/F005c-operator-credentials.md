@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F005c]
 related_features: [codeteam/F005]
 title: "F005c: operator / service 凭据与权限门"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -49,12 +49,18 @@ per-merge short-TTL credential。
   merge payload parse 后做字段类型守卫；CLI 支持 `--data-dir=` 等号形式；
   Principal 改为 branded + 工厂产出，字面量构造在类型层被禁止。
 - [x] 包内 122/122、包 build、Biome 通过。
-- [ ] 非作者安全 review（砚砚）与 merge。
+- [x] 非作者安全 review（砚砚 approve @ `d4a6e7753`，122/122 独立复跑）与 merge
+  （PR #35，`657e7a36`）。
 
 ## Out of scope
 
 - `auth console-link`（loopback-only 短时效 session token）随 W7a。
 - merge executor adapter（local git / W8 GitHub）与 E1–E5 前置核验的运行时接线。
 - approval decide 的实际 HTTP/MCP 入口（W7a 鉴权矩阵）。
+
+## Follow-up
+
+- verified merge payload 二级 brand（verify 返回 branded 类型、principal 工厂只收
+  branded）——砚砚 P3 残留，随 F005e 或 W7a 接线前收口。
 
 [宪宪/deepseek-flash🐾]
