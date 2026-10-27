@@ -8,8 +8,8 @@ export interface CommitWithAuditInput {
 	readonly paths?: readonly string[];
 	readonly actorRef: string;
 	readonly env?: Record<string, string>;
-	readonly taskId?: string;
-	readonly runId?: string;
+	readonly taskId: string;
+	readonly runId: string;
 }
 
 export interface CommitWithAuditResult {
@@ -23,6 +23,9 @@ export async function commitWithAudit(
 	policy: ToolPolicy,
 	input: CommitWithAuditInput,
 ): Promise<CommitWithAuditResult> {
+	if (input.taskId.trim() === "" || input.runId.trim() === "") {
+		throw new ControlError("invalid_input", "commit audit requires taskId and runId");
+	}
 	const previousHead = await resolveHead(policy, input.env);
 	if (input.paths && input.paths.length > 0) {
 		const add = await runCommand(policy, { argv: ["git", "add", ...input.paths], env: input.env });
@@ -62,8 +65,8 @@ export async function commitWithAudit(
 			headSha: commitSha,
 			paths: input.paths ?? [],
 			cwd: policy.cwd,
-			taskId: input.taskId ?? null,
-			runId: input.runId ?? null,
+			taskId: input.taskId,
+			runId: input.runId,
 		},
 	});
 	return { previousHead, commitSha, auditId: audit.id };

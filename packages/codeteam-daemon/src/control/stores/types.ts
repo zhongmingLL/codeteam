@@ -1163,6 +1163,11 @@ export interface Review {
 	riskClass: ReviewRisk;
 	reviewMode: ReviewMode;
 	verdict: ReviewVerdict;
+	round: number;
+	stage: string;
+	previousReviewId: string | null;
+	envelope: Record<string, unknown>;
+	decision: Record<string, unknown>;
 	policy: Record<string, unknown>;
 	findings: Finding[];
 	createdAt: number;
@@ -1185,6 +1190,11 @@ export interface CreateReviewInput {
 	riskClass: ReviewRisk;
 	reviewMode: ReviewMode;
 	verdict: ReviewVerdict;
+	round?: number;
+	stage?: string;
+	previousReviewId?: string | null;
+	envelope?: unknown;
+	decision?: unknown;
 	policy?: Record<string, unknown>;
 	findings: CreateFindingInput[];
 	createdAt?: number;
@@ -1203,6 +1213,7 @@ export interface Verification {
 	durationMs: number | null;
 	stdoutTail: string | null;
 	stderrTail: string | null;
+	blockedExpiresAt: number | null;
 	createdAt: number;
 }
 
@@ -1218,6 +1229,7 @@ export interface CreateVerificationInput {
 	durationMs?: number | null;
 	stdoutTail?: string | null;
 	stderrTail?: string | null;
+	blockedExpiresAt?: number | null;
 }
 
 export interface Merge {

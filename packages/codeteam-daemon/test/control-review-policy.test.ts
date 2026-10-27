@@ -135,18 +135,20 @@ describe("W3 review policy", () => {
 			context({ reviewer: { ...reviewer, model: "mystery-model", modelFamily: "mystery" } }),
 		);
 		expect(unknown.status).toBe("blocked");
-		expect(unknown.violations.join(" ")).toMatch(/model family/i);
+		expect(unknown.violations.join(" ")).toMatch(/invalid_model_family/);
 
 		const mismatch = evaluateReviewPolicy(
 			context({ reviewer: { ...reviewer, model: "glm-5.3-flash", modelFamily: "qwen" } }),
 		);
 		expect(mismatch.status).toBe("blocked");
-		expect(mismatch.violations.join(" ")).toMatch(/belongs to|does not match|glm/i);
+		expect(mismatch.violations.join(" ")).toMatch(/invalid_model_family/);
 	});
 
 	it("classifies docs, code, and sensitive changes without letting a caller self-downgrade", () => {
 		expect(classifyReviewRisk({ changedFiles: ["docs/plans/0008.md", "README.md"] })).toBe("low_risk_docs");
 		expect(classifyReviewRisk({ changedFiles: ["docs/plans/0008.md", "src/a.ts"] })).toBe("code");
+		expect(classifyReviewRisk({ changedFiles: ["src/auth/session.ts"] })).toBe("high_risk");
+		expect(classifyReviewRisk({ changedFiles: ["src/migrations/001.ts"] })).toBe("high_risk");
 		expect(classifyReviewRisk({ changedFiles: ["src/a.ts"], securitySensitive: true })).toBe("high_risk");
 		expect(classifyReviewRisk({ changedFiles: ["src/a.ts"], dataSensitive: true })).toBe("high_risk");
 	});

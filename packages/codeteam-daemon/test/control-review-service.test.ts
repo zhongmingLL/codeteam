@@ -16,6 +16,8 @@ let worktree: string;
 let store: ControlStore;
 let service: ReviewService;
 let context: ReturnType<typeof setup>;
+let currentHead: string;
+let verifierPolicy: ToolPolicy;
 
 function setup() {
 	store.seedIdentity({
@@ -119,7 +121,7 @@ function setup() {
 		subject: `commit:${HEAD}`,
 		args: { headSha: HEAD, taskId: task.id },
 	});
-	return { task, authorSession, reviewerSession, run };
+	return { task, authorSession, reviewerSession, run, source };
 }
 
 function reviewInput(overrides: Partial<RecordReviewInput> = {}): RecordReviewInput {
@@ -154,7 +156,6 @@ function reviewInput(overrides: Partial<RecordReviewInput> = {}): RecordReviewIn
 			modelFamily: "glm",
 		},
 		reviewerContext: { fresh: true, blind: true, transcriptExcluded: true },
-		risk: "code",
 		verdict: "changes_requested",
 		findings: [
 			{
@@ -191,13 +192,31 @@ beforeEach(() => {
 	writeFileSync(join(worktree, "src", "bug.ts"), "// BUG: wrong value\n");
 	store = openControlStore({ dataDir });
 	context = setup();
-	const verifierPolicy: ToolPolicy = createToolPolicy({
+	currentHead = HEAD;
+	store.artifacts.put({
+		id: "artifact-diff",
+		taskId: context.task.id,
+		runId: context.run.id,
+		kind: "diff",
+		content: Buffer.from(
+			"diff --git a/src/bug.ts b/src/bug.ts\n--- a/src/bug.ts\n+++ b/src/bug.ts\n@@ -1 +1 @@\n-// clean\n+// BUG: wrong value\n",
+		),
+		mediaType: "text/x-diff",
+		provenance: { sourceMessageId: context.source.id },
+	});
+	verifierPolicy = createToolPolicy({
 		role: "verifier",
 		dataDir,
 		worktreeRoot: worktree,
 		evidenceRoot: evidence,
 	});
-	service = new ReviewService({ store, verifierPolicy, worktreeRoot: worktree });
+	service = new ReviewService({
+		store,
+		verifierPolicy,
+		worktreeRoot: worktree,
+		sandbox: false,
+		headResolver: async () => currentHead,
+	});
 });
 
 afterEach(() => {
@@ -221,11 +240,26 @@ describe("W3 review service", () => {
 		expect(audit?.args.downgrades).toEqual([expect.objectContaining({ from: "P1", to: "P3" })]);
 	});
 
+	it("derives risk from the diff artifact and rejects impact-surface mismatches", () => {
+		const result = service.recordReview(reviewInput());
+		expect(result.review.riskClass).toBe("code");
+		expect(result.envelope.policy.risk).toBe("code");
+		expect(() =>
+			service.recordReview(
+				reviewInput({
+					id: "review-impact-mismatch",
+					impactSurface: { ...reviewInput().impactSurface, changedFiles: ["src/other.ts"] },
+				}),
+			),
+		).toThrow(/impactSurface/i);
+	});
+
 	it("verifies a finding through the real verifier policy and binds producing review + exact head", async () => {
 		const result = service.recordReview(reviewInput());
 		const finding = result.review.findings[1]!;
 		const verified = await service.verifyFinding({ findingId: finding.id });
-		expect(verified.execution.status).toBe("confirmed");
+		expect(verified.disposition).toBe("verified");
+		expect(verified.execution?.status).toBe("confirmed");
 		expect(verified.verification).toMatchObject({
 			findingId: finding.id,
 			producingReviewId: result.review.id,
@@ -236,6 +270,38 @@ describe("W3 review service", () => {
 		expect(store.reviews.listVerifications(finding.id)).toHaveLength(1);
 		const audit = store.audit.latest(`finding:${finding.id}`, "finding_verified");
 		expect(audit?.args).toMatchObject({ producingReviewId: result.review.id, headSha: HEAD, status: "confirmed" });
+	});
+
+	it("returns typed not_executable and not_current results instead of stamping wrong-tree evidence", async () => {
+		const result = service.recordReview(reviewInput());
+		const downgraded = result.review.findings[0]!;
+		const notExecutable = await service.verifyFinding({ findingId: downgraded.id });
+		expect(notExecutable.disposition).toBe("not_executable");
+		expect(notExecutable.verification).toBeNull();
+		expect(store.reviews.listVerifications(downgraded.id)).toHaveLength(0);
+
+		const finding = result.review.findings[1]!;
+		currentHead = NEXT_HEAD;
+		const notCurrent = await service.verifyFinding({ findingId: finding.id });
+		expect(notCurrent.disposition).toBe("not_current");
+		expect(notCurrent.verification).toBeNull();
+		expect(store.reviews.listVerifications(finding.id)).toHaveLength(0);
+	});
+
+	it("executes falsifiers through the sandbox wrapper by default", async () => {
+		const result = service.recordReview(reviewInput());
+		const finding = result.review.findings[1]!;
+		const sandboxedService = new ReviewService({
+			store,
+			verifierPolicy,
+			worktreeRoot: worktree,
+			sandbox: { bwrapPath: "/bin/echo" },
+			headResolver: async () => HEAD,
+		});
+		const verified = await sandboxedService.verifyFinding({ findingId: finding.id });
+		expect(verified.disposition).toBe("verified");
+		expect(verified.execution?.status).toBe("confirmed");
+		expect(verified.execution?.stdoutTail).toContain("--die-with-parent");
 	});
 
 	it("invalidates the review when head moves and rejects actor/session lies", () => {
@@ -262,5 +328,33 @@ describe("W3 review service", () => {
 		expect(() => service.recordReview(reviewInput({ id: "review-approve", verdict: "approve" }))).toThrow(
 			/open P1\/P2|approve verdict/i,
 		);
+	});
+
+	it("validates a fix round against the stored previous review findings", () => {
+		const first = service.recordReview(reviewInput({ id: "review-round-1" }));
+		store.audit.append({
+			actor: "profile:coder",
+			action: "commit_created",
+			subject: `commit:${NEXT_HEAD}`,
+			args: { headSha: NEXT_HEAD, taskId: context.task.id },
+		});
+		const second = service.recordReview(
+			reviewInput({
+				id: "review-round-2",
+				headSha: NEXT_HEAD,
+				round: 2,
+				previousReviewId: first.review.id,
+				verdict: "approve",
+				findings: [],
+			}),
+		);
+		expect(second.envelope.previousReviewId).toBe(first.review.id);
+		expect(second.envelope.previousFindings).toEqual([
+			expect.objectContaining({ id: first.review.findings[1]!.id, severity: "P2", claim: "seeded bug" }),
+		]);
+		expect(second.review.round).toBe(2);
+		expect(second.review.previousReviewId).toBe(first.review.id);
+		expect(second.review.envelope).toMatchObject({ round: 2, previousReviewId: first.review.id });
+		expect(second.review.decision).toMatchObject({ status: "allowed", mode: "cross_family" });
 	});
 });

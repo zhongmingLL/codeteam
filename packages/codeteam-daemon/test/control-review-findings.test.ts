@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ControlStore, ToolPolicy } from "../src/index.ts";
-import { ControlError, createToolPolicy, openControlStore } from "../src/index.ts";
+import { ControlError, createToolPolicy, evaluateCommand, openControlStore } from "../src/index.ts";
 import {
 	DEFAULT_BLOCKED_TTL_MS,
 	executeFalsifier,
@@ -68,6 +68,44 @@ describe("W3 finding and falsifier policy", () => {
 		]);
 		expect(() => parseFalsifierCommand('grep "unterminated')).toThrow(ControlError);
 		expect(() => parseFalsifierCommand("   ")).toThrow(ControlError);
+		expect(parseFalsifierCommand('grep -q "TODO\\." src/clean.ts')).toEqual([
+			"grep",
+			"-q",
+			"TODO\\.",
+			"src/clean.ts",
+		]);
+	});
+
+	it("rejects flag-attached paths and dangerous node flags while leaving benign P3 text inert", () => {
+		expect(normalize({ falsifier: "node --test --require=/abs/evil.js" }).findings[0]?.severity).toBe("P3");
+		expect(normalize({ falsifier: "node --test --import=../../evil.js" }).findings[0]?.severity).toBe("P3");
+		expect(() => evaluateCommand(policy, { argv: ["node", "--test", "--require=/abs/evil.js"] })).toThrow(
+			ControlError,
+		);
+		expect(() => evaluateCommand(policy, { argv: ["node", "--test", "/abs/evil.ts"] })).toThrow(ControlError);
+		expect(() => evaluateCommand(policy, { argv: ["node", "--test", "src/bug.ts"] })).not.toThrow();
+
+		const p3 = normalizeFindings(
+			[
+				{
+					severity: "P3",
+					claim: "docs wording",
+					evidenceKind: "judgment",
+					falsifier: 'grep -q "see /docs" src/bug.ts',
+					requiredAction: "consider",
+				},
+			],
+			{ verifierPolicy: policy, worktreeRoot: worktree },
+		);
+		expect(p3.findings[0]?.severity).toBe("P3");
+		expect(p3.findings[0]?.falsifier).toContain("see /docs");
+	});
+
+	it("does not treat regex patterns as filesystem paths", () => {
+		expect(normalize({ falsifier: "grep -q .. src/bug.ts" }).findings[0]?.severity).toBe("P2");
+		expect(normalize({ falsifier: "node --test --test-name-pattern=.. src/bug.ts" }).findings[0]?.severity).toBe(
+			"P2",
+		);
 	});
 
 	it("downgrades only the unverifiable P1/P2 finding and keeps executable findings", () => {
@@ -131,6 +169,7 @@ describe("W3 finding and falsifier policy", () => {
 			},
 			reviewId: "review-1",
 			policy,
+			sandbox: false,
 		});
 		expect(confirmed.status).toBe("confirmed");
 		expect(confirmed.exitCode).toBe(0);
@@ -145,6 +184,7 @@ describe("W3 finding and falsifier policy", () => {
 			},
 			reviewId: "review-1",
 			policy,
+			sandbox: false,
 		});
 		expect(rejected.status).toBe("rejected");
 
@@ -158,6 +198,7 @@ describe("W3 finding and falsifier policy", () => {
 			},
 			reviewId: "review-1",
 			policy,
+			sandbox: false,
 		});
 		expect(missing.status).toBe("rejected");
 		expect(missing.exitCode).toBe(1);
@@ -179,17 +220,41 @@ describe("W3 finding and falsifier policy", () => {
 			},
 			reviewId: "review-1",
 			policy: brokenPolicy,
+			sandbox: false,
 		});
 		expect(blocked.status).toBe("blocked");
 		expect(blocked.reason).toMatch(/infrastructure|spawn|command/i);
 		expect(blocked.blockedExpiresAt).toBeGreaterThan(Date.now());
 	});
 
+	it("routes falsifier execution through the sandbox wrapper by default", async () => {
+		const sandboxed = await executeFalsifier({
+			finding: {
+				id: "finding-1",
+				severity: "P2",
+				evidenceKind: "static_check",
+				falsifier: "grep -q BUG src/bug.ts",
+				falsifierExpected: "zero",
+			},
+			reviewId: "review-1",
+			policy,
+			sandbox: { bwrapPath: "/bin/echo" },
+		});
+		expect(sandboxed.status).toBe("confirmed");
+		expect(sandboxed.stdoutTail).toContain("--die-with-parent");
+	});
+
 	it("expires blocked verifications and escalates, never treating them as confirmed", () => {
-		const blocked = { status: "blocked" as const, createdAt: 1_000 };
+		const blocked = {
+			status: "blocked" as const,
+			createdAt: 1_000,
+			blockedExpiresAt: 1_000 + DEFAULT_BLOCKED_TTL_MS,
+		};
 		expect(isBlockedExpired(blocked, 1_000 + DEFAULT_BLOCKED_TTL_MS - 1)).toBe(false);
 		expect(isBlockedExpired(blocked, 1_000 + DEFAULT_BLOCKED_TTL_MS)).toBe(true);
-		expect(isBlockedExpired({ status: "confirmed", createdAt: 1_000 }, 99_999_999)).toBe(false);
+		expect(isBlockedExpired({ status: "confirmed", createdAt: 1_000, blockedExpiresAt: null }, 99_999_999)).toBe(
+			false,
+		);
 	});
 
 	it("records producingReviewId on the verifier command audit", async () => {
@@ -203,6 +268,7 @@ describe("W3 finding and falsifier policy", () => {
 			},
 			reviewId: "review-1",
 			policy,
+			sandbox: false,
 			audit: { store, actorRef: "review:review-1", producingReviewId: "review-1" },
 		});
 		const audit = store.audit.latest("tool:grep", "tool_command");

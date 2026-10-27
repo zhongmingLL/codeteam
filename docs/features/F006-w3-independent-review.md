@@ -49,8 +49,10 @@ model family）、拿到的上下文是否盲、finding 是否能被可执行证
 - 2026-10-28：实现完成，进入独立 review。新增 `src/review/`（model-family /
   policy / envelope / findings / falsifier / head / service / eval）、migration
   007、`reviews`/`verifications` 接线与 5 clean + 5 seeded corpus。
-- 包内 **159 passed / 1 skipped**；新增 W3 测试 28 条；Biome clean；
+- 包内 **171 passed / 1 skipped**；新增 W3 测试 40 条；Biome clean；
   `build:offline` 与根级 tsc 通过。
+- 首轮独立 review（砚砚）Changes Requested：15 findings；P1 #1–#3、P2
+  #4/#6/#8/#15 与 P3 #5/#7/#9–#14 已修订，待复验。
 - Eval smoke（fixture observation，非 live 模型结论）：glm FP 20% / recall
   100% / survival 100%；qwen FP 0% / recall 80% / survival 80%；overall
   FP 10% / recall 90% / survival 90.9%；预注册门槛通过。

@@ -87,7 +87,22 @@ export function classifyReviewRisk(input: {
 }): ReviewRisk {
 	if (input.securitySensitive || input.dataSensitive) return "high_risk";
 	if (input.changedFiles.length === 0) return "code";
+	if (input.changedFiles.some(isHighRiskFile)) return "high_risk";
 	return input.changedFiles.every(isDocsFile) ? "low_risk_docs" : "code";
+}
+
+const HIGH_RISK_PATH_PATTERNS: readonly RegExp[] = [
+	/(^|\/)(auth|security|secrets?|credentials?|permissions?|sandbox|policy)(\/|\.|$)/i,
+	/(^|\/)(migrations?|schema|database|db)(\/|\.|$)/i,
+	/(^|\/)\.env(\.|$)/i,
+	/\.(pem|key)$/i,
+	/(^|\/)id_rsa/i,
+	/(^|\/)tokens?(\/|\.|$)/i,
+];
+
+function isHighRiskFile(path: string): boolean {
+	const normalized = path.replaceAll("\\", "/");
+	return HIGH_RISK_PATH_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 function isDocsFile(path: string): boolean {
@@ -109,9 +124,13 @@ export function evaluateReviewPolicy(context: ReviewPolicyContext): ReviewPolicy
 	let reviewerFamily = context.reviewer.modelFamily;
 	try {
 		authorFamily = assertModelFamilyClaim(context.author.model, context.author.modelFamily);
+	} catch {
+		violations.push("invalid_model_family:author");
+	}
+	try {
 		reviewerFamily = assertModelFamilyClaim(context.reviewer.model, context.reviewer.modelFamily);
-	} catch (error) {
-		violations.push(`invalid_model_family:${error instanceof Error ? error.message : String(error)}`);
+	} catch {
+		violations.push("invalid_model_family:reviewer");
 	}
 
 	const sameFamily = authorFamily === reviewerFamily;

@@ -79,8 +79,8 @@ function request(overrides: Partial<ReviewRequestInput> = {}): ReviewRequestInpu
 		testEvidence: [{ kind: "test_report", ref: "npm --prefix packages/codeteam-daemon test", summary: "green" }],
 		acceptanceCriteria: ["reviewer is independent", "headSha is traceable"],
 		impactSurface: {
-			changedFiles: ["packages/codeteam-daemon/src/review/policy.ts"],
-			changedSymbols: ["evaluateReviewPolicy"],
+			changedFiles: ["src/module.ts"],
+			changedSymbols: ["moduleValue"],
 			callers: ["recordReview"],
 			affectedTests: ["test/control-review-policy.test.ts"],
 		},
@@ -88,9 +88,6 @@ function request(overrides: Partial<ReviewRequestInput> = {}): ReviewRequestInpu
 		author,
 		reviewer,
 		reviewerContext,
-		risk: "code",
-		authorTranscript: "SECRET AUTHOR TRANSCRIPT",
-		authorSummary: "I already verified everything",
 		...overrides,
 	};
 }
@@ -132,7 +129,7 @@ describe("W3 blind review envelope", () => {
 		expect(envelope.diffArtifact.artifactId).toBe("artifact-diff");
 		expect(envelope.testEvidence).toHaveLength(1);
 		expect(envelope.acceptanceCriteria).toHaveLength(2);
-		expect(envelope.impactSurface.changedSymbols).toEqual(["evaluateReviewPolicy"]);
+		expect(envelope.impactSurface.changedSymbols).toEqual(["moduleValue"]);
 		expect(envelope.previousFindings).toEqual([]);
 
 		const serialized = JSON.stringify(envelope);
@@ -146,7 +143,7 @@ describe("W3 blind review envelope", () => {
 		expect(envelope).not.toHaveProperty("authorSessionId");
 	});
 
-	it("only carries previous findings on a fix round", () => {
+	it("only carries previous findings on a fix round with a stored previous review", () => {
 		expect(() =>
 			buildReviewRequest(
 				store,
@@ -156,20 +153,38 @@ describe("W3 blind review envelope", () => {
 			),
 		).toThrow(/previous findings/i);
 
-		const { envelope } = buildReviewRequest(
-			store,
-			request({
-				round: 2,
-				previousFindings: [{ id: "finding-1", severity: "P2", claim: "old bug", requiredAction: "fix it" }],
-			}),
-		);
-		expect(envelope.previousFindings).toEqual([
-			{ id: "finding-1", severity: "P2", claim: "old bug", requiredAction: "fix it" },
-		]);
+		expect(() => buildReviewRequest(store, request({ round: 2 }))).toThrow(/previousReviewId/i);
 	});
 
 	it("requires headSha to trace back to a coder commit audit", () => {
 		expect(() => buildReviewRequest(store, request({ headSha: "c".repeat(40) }))).toThrow(/commit audit|trace/i);
+	});
+
+	it("derives low-risk docs from changed files and marks same_family_fresh", () => {
+		const docs = buildReviewRequest(
+			store,
+			request({
+				impactSurface: { ...request().impactSurface, changedFiles: ["docs/plans/0008.md"] },
+				author: { ...author, model: "glm-5.3-flash", modelFamily: "glm" },
+				reviewer: { ...reviewer, model: "glm-5.3-flash", modelFamily: "glm" },
+				reviewerContext: { fresh: false, blind: true, transcriptExcluded: true },
+			}),
+		);
+		expect(docs.envelope.policy.risk).toBe("low_risk_docs");
+		expect(docs.decision.status).toBe("allowed");
+		expect(docs.decision.mode).toBe("same_family_fresh");
+	});
+
+	it("rejects exact author identity in free-text evidence without substring false positives", () => {
+		expect(() =>
+			buildReviewRequest(store, request({ acceptanceCriteria: ["reviewer is independent", "deepseek-flash"] })),
+		).toThrow(/author identity/i);
+		expect(() =>
+			buildReviewRequest(
+				store,
+				request({ acceptanceCriteria: ["reviewer is independent", "deepseek-flash-extra"] }),
+			),
+		).not.toThrow();
 	});
 
 	it("returns blocked or human_required instead of silently downgrading independence", () => {
@@ -183,7 +198,10 @@ describe("W3 blind review envelope", () => {
 		const highRisk = buildReviewRequest(
 			store,
 			request({
-				risk: "high_risk",
+				impactSurface: {
+					...request().impactSurface,
+					changedFiles: ["src/auth/session.ts"],
+				},
 				reviewer: { ...reviewer, model: "deepseek-chat", modelFamily: "deepseek" },
 			}),
 		);

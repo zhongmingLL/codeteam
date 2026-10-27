@@ -56,6 +56,8 @@ describe("codeteam commit wrapper and handoff direction", () => {
 			message: "feat: add b",
 			paths: ["src/b.ts"],
 			actorRef: "profile:coder",
+			taskId: "task-1",
+			runId: "run-1",
 		});
 
 		expect(result.previousHead).toBe(initialHead);
@@ -63,12 +65,22 @@ describe("codeteam commit wrapper and handoff direction", () => {
 		expect(result.commitSha).not.toBe(initialHead);
 		const audit = store.audit.latest(`commit:${result.commitSha}`, "commit_created");
 		expect(audit).not.toBeNull();
-		expect(audit?.args).toMatchObject({ previousHead: initialHead, headSha: result.commitSha });
+		expect(audit?.args).toMatchObject({
+			previousHead: initialHead,
+			headSha: result.commitSha,
+			taskId: "task-1",
+			runId: "run-1",
+		});
 	});
 
 	it("fails with a typed error when git commit makes no commit", async () => {
 		await expect(
-			commitWithAudit(store, policy, { message: "empty", actorRef: "profile:coder" }),
+			commitWithAudit(store, policy, {
+				message: "empty",
+				actorRef: "profile:coder",
+				taskId: "task-1",
+				runId: "run-1",
+			}),
 		).rejects.toMatchObject({ code: "command_failed" });
 	});
 

@@ -1,8 +1,14 @@
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
-import type { AuditEntry, ReviewMode, ReviewRisk } from "../control/stores/types.ts";
+import type { ReviewMode, ReviewRisk } from "../control/stores/types.ts";
 import { assertHeadTraceable, validateSha } from "./head.ts";
-import { evaluateReviewPolicy, type ReviewActor, type ReviewerContext, type ReviewPolicyDecision } from "./policy.ts";
+import {
+	classifyReviewRisk,
+	evaluateReviewPolicy,
+	type ReviewActor,
+	type ReviewerContext,
+	type ReviewPolicyDecision,
+} from "./policy.ts";
 
 export interface ReviewArtifactRef {
 	readonly artifactId: string;
@@ -49,12 +55,14 @@ export interface ReviewRequestInput {
 	readonly impactSurface: ReviewImpactSurface;
 	readonly constraints: ReviewConstraints;
 	readonly previousFindings?: readonly ReviewPriorFinding[];
+	readonly previousReviewId?: string;
 	readonly author: ReviewActor;
 	readonly reviewer: ReviewActor;
 	readonly reviewerContext: ReviewerContext;
-	readonly risk: ReviewRisk;
-	readonly authorTranscript?: string;
-	readonly authorSummary?: string;
+	readonly sensitivity?: {
+		readonly security?: boolean;
+		readonly data?: boolean;
+	};
 }
 
 export interface ReviewRequestEnvelope {
@@ -70,6 +78,7 @@ export interface ReviewRequestEnvelope {
 	readonly impactSurface: ReviewImpactSurface;
 	readonly constraints: ReviewConstraints;
 	readonly previousFindings: readonly ReviewPriorFinding[];
+	readonly previousReviewId: string | null;
 	readonly policy: {
 		readonly risk: ReviewRisk;
 		readonly mode: ReviewMode | null;
@@ -82,7 +91,6 @@ export interface ReviewRequestEnvelope {
 export interface BuildReviewRequestResult {
 	readonly envelope: ReviewRequestEnvelope;
 	readonly decision: ReviewPolicyDecision;
-	readonly headAudit: AuditEntry;
 }
 
 const FORBIDDEN_ENVELOPE_KEYS = new Set([
@@ -108,10 +116,7 @@ export function buildReviewRequest(store: ControlStore, input: ReviewRequestInpu
 	if (!Number.isInteger(round) || round < 1) {
 		throw new ControlError("invalid_input", "review round must be a positive integer");
 	}
-	const previousFindings = input.previousFindings ?? [];
-	if (round === 1 && previousFindings.length > 0) {
-		throw new ControlError("invalid_input", "previous findings are only allowed on a fix round");
-	}
+	const previousFindings = resolvePreviousFindings(store, taskId, round, input);
 	nonEmpty(input.diffArtifact.artifactId, "diffArtifact.artifactId");
 	nonEmpty(input.diffArtifact.mediaType, "diffArtifact.mediaType");
 	if (input.acceptanceCriteria.length === 0 || input.acceptanceCriteria.some((item) => item.trim() === "")) {
@@ -120,9 +125,14 @@ export function buildReviewRequest(store: ControlStore, input: ReviewRequestInpu
 	if (input.testEvidence?.some((item) => item.ref.trim() === "")) {
 		throw new ControlError("invalid_input", "test evidence refs must not be empty");
 	}
-	const headAudit = assertHeadTraceable(store, headSha, taskId);
+	const risk = classifyReviewRisk({
+		changedFiles: input.impactSurface.changedFiles,
+		securitySensitive: input.sensitivity?.security,
+		dataSensitive: input.sensitivity?.data,
+	});
+	assertHeadTraceable(store, headSha, taskId);
 	const decision = evaluateReviewPolicy({
-		risk: input.risk,
+		risk,
 		author: input.author,
 		reviewer: input.reviewer,
 		reviewerContext: input.reviewerContext,
@@ -150,8 +160,9 @@ export function buildReviewRequest(store: ControlStore, input: ReviewRequestInpu
 			other: Object.freeze([...input.constraints.other]),
 		}),
 		previousFindings: Object.freeze([...previousFindings]),
+		previousReviewId: input.previousReviewId ?? null,
 		policy: Object.freeze({
-			risk: input.risk,
+			risk,
 			mode: decision.mode,
 			blind: true as const,
 			freshContext: input.reviewerContext.fresh,
@@ -159,7 +170,7 @@ export function buildReviewRequest(store: ControlStore, input: ReviewRequestInpu
 		}),
 	});
 	assertBlindEnvelope(envelope, input);
-	return { envelope, decision, headAudit };
+	return { envelope, decision };
 }
 
 function assertBlindEnvelope(envelope: ReviewRequestEnvelope, input: ReviewRequestInput): void {
@@ -167,16 +178,76 @@ function assertBlindEnvelope(envelope: ReviewRequestEnvelope, input: ReviewReque
 		input.author.sessionId,
 		input.author.profileId,
 		input.author.model,
-		input.authorTranscript,
-		input.authorSummary,
-	].filter((value): value is string => typeof value === "string" && value.trim().length >= 4);
-	const serialized = JSON.stringify(envelope);
+		input.author.modelFamily,
+	].filter((value): value is string => typeof value === "string" && value.trim() !== "");
+	const freeText = [
+		...envelope.acceptanceCriteria,
+		...envelope.testEvidence.flatMap((evidence) => [evidence.ref, evidence.summary ?? ""]),
+		...envelope.constraints.security,
+		...envelope.constraints.data,
+		...envelope.constraints.contract,
+		...envelope.constraints.other,
+		...envelope.previousFindings.flatMap((finding) => [finding.claim, finding.requiredAction]),
+	];
 	walkKeys(envelope, "");
 	for (const value of forbiddenValues) {
-		if (serialized.includes(value)) {
+		if (freeText.includes(value)) {
 			throw new ControlError("invalid_input", "blind review envelope contains author identity or transcript");
 		}
 	}
+}
+
+function resolvePreviousFindings(
+	store: ControlStore,
+	taskId: string,
+	round: number,
+	input: ReviewRequestInput,
+): readonly ReviewPriorFinding[] {
+	if (round === 1) {
+		if ((input.previousFindings?.length ?? 0) > 0 || input.previousReviewId) {
+			throw new ControlError("invalid_input", "previous findings are only allowed on a fix round");
+		}
+		return [];
+	}
+	if (!input.previousReviewId) {
+		throw new ControlError("invalid_input", "a fix round requires previousReviewId");
+	}
+	const previous = store.reviews.get(input.previousReviewId);
+	if (!previous || previous.taskId !== taskId) {
+		throw new ControlError("invalid_input", "previousReviewId must reference a review for the same task");
+	}
+	if (previous.round >= round) {
+		throw new ControlError("invalid_input", "previousReviewId must reference an earlier review round");
+	}
+	if (previous.verdict === "approve") {
+		throw new ControlError("invalid_input", "previousReviewId must reference a non-approved review");
+	}
+	const expected = previous.findings
+		.filter((finding) => finding.severity === "P1" || finding.severity === "P2")
+		.map((finding) => ({
+			id: finding.id,
+			severity: finding.severity,
+			claim: finding.claim,
+			requiredAction: finding.requiredAction,
+		}));
+	if (input.previousFindings && !sameFindings(input.previousFindings, expected)) {
+		throw new ControlError("invalid_input", "previousFindings must match the stored previous review findings");
+	}
+	return expected;
+}
+
+function sameFindings(left: readonly ReviewPriorFinding[], right: readonly ReviewPriorFinding[]): boolean {
+	if (left.length !== right.length) return false;
+	return left.every((finding, index) => {
+		const other = right[index];
+		return (
+			other !== undefined &&
+			finding.id === other.id &&
+			finding.severity === other.severity &&
+			finding.claim === other.claim &&
+			finding.requiredAction === other.requiredAction
+		);
+	});
 }
 
 function walkKeys(value: unknown, path: string): void {

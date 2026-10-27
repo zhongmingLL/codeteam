@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { assertHeadTraceable } from "../../review/head.ts";
 import { assertModelFamilyClaim } from "../../review/model-family.ts";
 import { ControlError } from "../errors.ts";
 import type { ControlTransaction } from "../transaction.ts";
@@ -33,6 +34,11 @@ interface ReviewRow {
 	risk_class: ReviewRisk;
 	review_mode: ReviewMode;
 	verdict: ReviewVerdict;
+	round: number;
+	stage: string;
+	previous_review_id: string | null;
+	envelope_json: string;
+	decision_json: string;
 	policy_json: string;
 	findings_json: string;
 	created_at: number;
@@ -65,6 +71,7 @@ interface VerificationRow {
 	duration_ms: number | null;
 	stdout_tail: string | null;
 	stderr_tail: string | null;
+	blocked_expires_at: number | null;
 	created_at: number;
 }
 
@@ -106,6 +113,7 @@ function mapVerification(row: VerificationRow): Verification {
 		durationMs: row.duration_ms,
 		stdoutTail: row.stdout_tail,
 		stderrTail: row.stderr_tail,
+		blockedExpiresAt: row.blocked_expires_at,
 		createdAt: row.created_at,
 	};
 }
@@ -192,8 +200,8 @@ export class ReviewStore {
 		currentBaseSha?: string | null,
 	): boolean {
 		if (review.headSha !== currentHeadSha) return false;
-		if (currentBaseSha === undefined) return true;
-		return review.baseSha === currentBaseSha;
+		if (currentBaseSha === undefined || currentBaseSha === null) return false;
+		return review.baseSha !== null && review.baseSha === currentBaseSha;
 	}
 
 	listCurrentByTask(taskId: string, currentHeadSha: string, currentBaseSha?: string | null): Review[] {
@@ -219,6 +227,14 @@ export class ReviewStore {
 		if (!riskClass || !isReviewRisk(riskClass)) {
 			throw new ControlError("invalid_input", "review risk class is required");
 		}
+		const round = input.round ?? 1;
+		if (!Number.isInteger(round) || round < 1) {
+			throw new ControlError("invalid_input", "review round must be a positive integer");
+		}
+		const stage = nonEmpty(input.stage ?? "review", "stage");
+		const previousReviewId = input.previousReviewId ?? null;
+		const envelopeJson = jsonObject(input.envelope ?? {}, "envelope");
+		const decisionJson = jsonObject(input.decision ?? {}, "decision");
 		const policyJson = jsonObject(input.policy ?? {}, "policy");
 		const id = input.id ?? newId();
 		const createdAt = input.createdAt ?? this.clock();
@@ -267,12 +283,22 @@ export class ReviewStore {
 						throw new ControlError("invalid_input", `${riskClass} review must use cross_family mode`);
 					}
 				}
-				if (!this.audit.latest(`commit:${headSha}`, "commit_created")) {
-					throw new ControlError("invalid_input", `headSha ${headSha} is not traceable to a coder commit audit`);
+				if (previousReviewId) {
+					const previous = this.database
+						.prepare("SELECT task_id FROM reviews WHERE id = ?")
+						.get(previousReviewId) as { task_id: string } | undefined;
+					if (!previous) throw new ControlError("not_found", `previous review ${previousReviewId} not found`);
+					if (previous.task_id !== taskId) {
+						throw new ControlError(
+							"invalid_input",
+							`previous review ${previousReviewId} belongs to another task`,
+						);
+					}
 				}
+				assertHeadTraceable({ audit: this.audit }, headSha, taskId);
 				this.database
 					.prepare(
-						"INSERT INTO reviews (id, task_id, run_id, head_sha, base_sha, author_session_id, author_model, author_model_family, reviewer_session_id, reviewer_model, reviewer_model_family, author_profile_id, reviewer_profile_id, risk_class, review_mode, verdict, policy_json, findings_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+						"INSERT INTO reviews (id, task_id, run_id, head_sha, base_sha, author_session_id, author_model, author_model_family, reviewer_session_id, reviewer_model, reviewer_model_family, author_profile_id, reviewer_profile_id, risk_class, review_mode, verdict, round, stage, previous_review_id, envelope_json, decision_json, policy_json, findings_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 					)
 					.run(
 						id,
@@ -291,6 +317,11 @@ export class ReviewStore {
 						riskClass,
 						input.reviewMode,
 						input.verdict,
+						round,
+						stage,
+						previousReviewId,
+						envelopeJson,
+						decisionJson,
 						policyJson,
 						JSON.stringify(findings),
 						createdAt,
@@ -328,6 +359,9 @@ export class ReviewStore {
 						riskClass,
 						authorProfileId,
 						reviewerProfileId,
+						round,
+						stage,
+						previousReviewId,
 					},
 				});
 				return this.get(id)!;
@@ -388,7 +422,7 @@ export class ReviewStore {
 				}
 				this.database
 					.prepare(
-						"INSERT INTO verifications (id, finding_id, head_sha, producing_review_id, status, reason, command, cwd, exit_code, duration_ms, stdout_tail, stderr_tail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+						"INSERT INTO verifications (id, finding_id, head_sha, producing_review_id, status, reason, command, cwd, exit_code, duration_ms, stdout_tail, stderr_tail, blocked_expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 					)
 					.run(
 						id,
@@ -403,6 +437,7 @@ export class ReviewStore {
 						input.durationMs ?? null,
 						input.stdoutTail ?? null,
 						input.stderrTail ?? null,
+						input.blockedExpiresAt ?? null,
 						createdAt,
 					);
 				this.audit.append({
@@ -415,6 +450,7 @@ export class ReviewStore {
 						producingReviewId: input.producingReviewId,
 						command: input.command ?? null,
 						exitCode: input.exitCode ?? null,
+						blockedExpiresAt: input.blockedExpiresAt ?? null,
 					},
 				});
 				return {
@@ -430,6 +466,7 @@ export class ReviewStore {
 					durationMs: input.durationMs ?? null,
 					stdoutTail: input.stdoutTail ?? null,
 					stderrTail: input.stderrTail ?? null,
+					blockedExpiresAt: input.blockedExpiresAt ?? null,
 					createdAt,
 				};
 			});
@@ -463,6 +500,11 @@ export class ReviewStore {
 			riskClass: row.risk_class,
 			reviewMode: row.review_mode,
 			verdict: row.verdict,
+			round: row.round,
+			stage: row.stage,
+			previousReviewId: row.previous_review_id,
+			envelope: parseJsonObject(row.envelope_json),
+			decision: parseJsonObject(row.decision_json),
 			policy: parseJsonObject(row.policy_json),
 			createdAt: row.created_at,
 		};

@@ -1,5 +1,5 @@
 import { ControlError } from "../control/errors.ts";
-import type { ControlStore } from "../control/store.ts";
+import type { AuditStore } from "../control/stores/audit.ts";
 import type { AuditEntry, Review } from "../control/stores/types.ts";
 
 export type ReviewFreshnessStatus =
@@ -26,6 +26,10 @@ export interface ReviewFreshnessInput {
 	readonly verificationHeadShas?: readonly string[];
 }
 
+export interface HeadAuditSource {
+	readonly audit: Pick<AuditStore, "latest">;
+}
+
 export function validateSha(value: string, label = "sha"): string {
 	const sha = value.trim();
 	if (!/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(sha)) {
@@ -34,7 +38,7 @@ export function validateSha(value: string, label = "sha"): string {
 	return sha;
 }
 
-export function assertHeadTraceable(store: ControlStore, headSha: string, taskId?: string): AuditEntry {
+export function assertHeadTraceable(store: HeadAuditSource, headSha: string, taskId?: string): AuditEntry {
 	const sha = validateSha(headSha, "headSha");
 	const audit = store.audit.latest(`commit:${sha}`, "commit_created");
 	if (!audit) {
@@ -45,8 +49,13 @@ export function assertHeadTraceable(store: ControlStore, headSha: string, taskId
 		throw new ControlError("invalid_input", `commit audit for ${sha} records a different headSha`);
 	}
 	const auditedTaskId = typeof audit.args.taskId === "string" ? audit.args.taskId : null;
-	if (taskId && auditedTaskId && auditedTaskId !== taskId) {
-		throw new ControlError("invalid_input", `commit audit for ${sha} belongs to task ${auditedTaskId}`);
+	if (taskId) {
+		if (!auditedTaskId) {
+			throw new ControlError("invalid_input", `commit audit for ${sha} is not bound to task ${taskId}`);
+		}
+		if (auditedTaskId !== taskId) {
+			throw new ControlError("invalid_input", `commit audit for ${sha} belongs to task ${auditedTaskId}`);
+		}
 	}
 	return audit;
 }

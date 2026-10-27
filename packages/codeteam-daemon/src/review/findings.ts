@@ -6,6 +6,15 @@ import { assertReadablePath } from "../policy/paths.ts";
 import type { ToolPolicy } from "../policy/types.ts";
 
 const EXECUTABLE_EVIDENCE_KINDS = new Set(["red_test", "repro_command", "static_check"]);
+const PATH_VALUE_FLAGS = new Set([
+	"--require",
+	"-r",
+	"--import",
+	"--loader",
+	"--experimental-loader",
+	"--test-reporter-destination",
+	"--test-file",
+]);
 
 export interface FindingPolicyContext {
 	readonly verifierPolicy?: ToolPolicy;
@@ -32,20 +41,34 @@ export function parseFalsifierCommand(falsifier: string): string[] {
 	const tokens: string[] = [];
 	let current = "";
 	let quote: '"' | "'" | null = null;
-	let escaped = false;
-	for (const char of falsifier) {
-		if (escaped) {
-			current += char;
-			escaped = false;
-			continue;
-		}
-		if (char === "\\" && quote !== "'") {
-			escaped = true;
-			continue;
-		}
-		if (quote) {
-			if (char === quote) quote = null;
+	for (let index = 0; index < falsifier.length; index += 1) {
+		const char = falsifier[index]!;
+		if (quote === "'") {
+			if (char === "'") quote = null;
 			else current += char;
+			continue;
+		}
+		if (quote === '"') {
+			if (char === '"') {
+				quote = null;
+				continue;
+			}
+			if (char === "\\") {
+				const next = falsifier[index + 1];
+				if (next === "\\" || next === '"' || next === "$" || next === "`" || next === "\n") {
+					current += next;
+					index += 1;
+					continue;
+				}
+			}
+			current += char;
+			continue;
+		}
+		if (char === "\\") {
+			const next = falsifier[index + 1];
+			if (next === undefined) throw new ControlError("invalid_input", "falsifier ends with an unfinished escape");
+			current += next;
+			index += 1;
 			continue;
 		}
 		if (char === '"' || char === "'") {
@@ -61,7 +84,6 @@ export function parseFalsifierCommand(falsifier: string): string[] {
 		}
 		current += char;
 	}
-	if (escaped) throw new ControlError("invalid_input", "falsifier ends with an unfinished escape");
 	if (quote) throw new ControlError("invalid_input", "falsifier has an unterminated quote");
 	if (current !== "") tokens.push(current);
 	if (tokens.length === 0) throw new ControlError("invalid_input", "falsifier is empty");
@@ -97,8 +119,6 @@ export function normalizeFinding(
 			severity = "P3";
 			downgrade = { index, from: originalSeverity, to: "P3", reason };
 		}
-	} else {
-		assertRawFalsifierPathSafety(input.falsifier);
 	}
 	return {
 		finding: {
@@ -143,26 +163,28 @@ export function validateExecutableFalsifier(falsifier: string, context: FindingP
 function assertFalsifierPathArguments(argv: readonly string[], context: FindingPolicyContext): void {
 	const command = argv[0] ?? "";
 	for (const arg of argv) {
-		if (arg.startsWith("-")) continue;
-		assertRelativePathReference(arg, "falsifier path");
+		if (!arg.startsWith("-")) continue;
+		const equals = arg.indexOf("=");
+		if (equals <= 0) continue;
+		const flag = arg.slice(0, equals);
+		const value = arg.slice(equals + 1);
+		if (PATH_VALUE_FLAGS.has(flag)) {
+			assertWorktreeRelativePath(value, `falsifier ${flag}`);
+		} else if (isAbsolute(value)) {
+			throw new ControlError("invalid_input", `falsifier flag value must be worktree-relative: ${flag}`);
+		} else {
+			continue;
+		}
+		if (context.verifierPolicy && context.worktreeRoot) {
+			const canonical = assertReadablePath(context.verifierPolicy, value, context.verifierPolicy.cwd);
+			assertInsideWorktree(canonical, context.worktreeRoot);
+		}
 	}
 
 	if (!context.verifierPolicy || !context.worktreeRoot) return;
 	const policy = context.verifierPolicy;
 	for (const target of collectPathTargets(command, argv)) {
 		assertInsideWorktree(assertReadablePath(policy, target.arg, policy.cwd), context.worktreeRoot);
-	}
-	if (command === "node") {
-		for (let index = 1; index < argv.length; index += 1) {
-			const arg = argv[index]!;
-			if (arg.startsWith("-")) {
-				if (arg === "--test-name-pattern" || arg === "--test-reporter") index += 1;
-				continue;
-			}
-			if (!arg.includes("/") && !/\.(?:ts|js|mjs|cjs)$/.test(arg)) continue;
-			assertRelativePathReference(arg, "node test path");
-			assertInsideWorktree(assertReadablePath(policy, arg, policy.cwd), context.worktreeRoot);
-		}
 	}
 }
 
@@ -174,23 +196,14 @@ function assertInsideWorktree(canonicalPath: string, worktreeRoot: string): void
 
 function assertSafeFileReference(file: string | null | undefined): void {
 	if (file === null || file === undefined) return;
-	assertRelativePathReference(file, "finding file");
+	assertWorktreeRelativePath(file, "finding file");
 }
 
-function assertRelativePathReference(value: string, label: string): void {
+export function assertWorktreeRelativePath(value: string, label: string): void {
 	const trimmed = value.trim();
 	if (trimmed === "") throw new ControlError("invalid_input", `${label} must not be empty`);
 	if (isAbsolute(trimmed)) throw new ControlError("invalid_input", `${label} must be worktree-relative: ${value}`);
 	if (trimmed.split(/[\\/]+/).includes("..")) {
 		throw new ControlError("invalid_input", `${label} must not traverse outside the worktree: ${value}`);
-	}
-}
-
-function assertRawFalsifierPathSafety(falsifier: string): void {
-	if (/(^|\s)\/[^\s]+/.test(falsifier)) {
-		throw new ControlError("invalid_input", "falsifier may only reference worktree-relative paths");
-	}
-	if (/(^|[\\/])\.\.([\\/]|$)/.test(falsifier)) {
-		throw new ControlError("invalid_input", "falsifier may not traverse outside the worktree");
 	}
 }

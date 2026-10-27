@@ -5,6 +5,7 @@ import { QUEUE_SOURCE_STATEMENTS } from "./004-queue-source.ts";
 import { RUNS_QUEUE_REF_STATEMENTS } from "./005-runs-queue-ref.ts";
 import { INVOCATION_ALLOWLIST_STATEMENTS } from "./006-invocation-allowlist.ts";
 import { REVIEW_EVIDENCE_STATEMENTS } from "./007-review-evidence.ts";
+import { REVIEW_ROUND_DECISION_STATEMENTS } from "./008-review-round-decision.ts";
 
 export interface ControlMigration {
 	readonly version: number;
@@ -21,6 +22,7 @@ export const CONTROL_MIGRATIONS: readonly ControlMigration[] = [
 	{ version: 5, name: "runs-queue-ref-set-null", statements: RUNS_QUEUE_REF_STATEMENTS, foreignKeysOff: true },
 	{ version: 6, name: "invocation-callback-allowlist", statements: INVOCATION_ALLOWLIST_STATEMENTS },
 	{ version: 7, name: "review-evidence-chain", statements: REVIEW_EVIDENCE_STATEMENTS },
+	{ version: 8, name: "review-round-decision", statements: REVIEW_ROUND_DECISION_STATEMENTS },
 ];
 
 export const CONTROL_TABLE_NAMES: readonly string[] = [

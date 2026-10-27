@@ -1,6 +1,7 @@
 import { ControlError } from "../control/errors.ts";
 import type { Finding, Verification, VerificationStatus } from "../control/stores/types.ts";
 import { type CommandAuditContext, type CommandResult, runCommand } from "../policy/exec.ts";
+import type { SandboxConfig } from "../policy/sandbox.ts";
 import type { ToolPolicy } from "../policy/types.ts";
 import { parseFalsifierCommand } from "./findings.ts";
 
@@ -21,6 +22,7 @@ export interface ExecuteFalsifierInput {
 	readonly audit?: CommandAuditContext;
 	readonly now?: () => number;
 	readonly blockedTtlMs?: number;
+	readonly sandbox?: SandboxConfig | boolean;
 }
 
 export interface FalsifierExecutionResult {
@@ -43,12 +45,12 @@ export function expectedExitForFinding(
 }
 
 export function isBlockedExpired(
-	verification: Pick<Verification, "status" | "createdAt">,
+	verification: Pick<Verification, "status" | "createdAt" | "blockedExpiresAt">,
 	now: number,
 	blockedTtlMs = DEFAULT_BLOCKED_TTL_MS,
 ): boolean {
 	if (verification.status !== "blocked") return false;
-	return now >= verification.createdAt + blockedTtlMs;
+	return now >= (verification.blockedExpiresAt ?? verification.createdAt + blockedTtlMs);
 }
 
 export async function executeFalsifier(input: ExecuteFalsifierInput): Promise<FalsifierExecutionResult> {
@@ -56,7 +58,11 @@ export async function executeFalsifier(input: ExecuteFalsifierInput): Promise<Fa
 	const command = input.finding.falsifier;
 	let result: CommandResult;
 	try {
-		result = await runCommand(input.policy, { argv, cwd: input.policy.cwd }, { audit: input.audit });
+		result = await runCommand(
+			input.policy,
+			{ argv, cwd: input.policy.cwd },
+			{ audit: input.audit, sandbox: input.sandbox ?? true },
+		);
 	} catch (error) {
 		if (error instanceof ControlError && error.code === "command_failed") {
 			return blockedResult(input, command, `infrastructure:${error.message}`, null);

@@ -163,9 +163,11 @@ interface Finding {
 
 - 实现计划与验收映射：`plans/0008-w3-review-implementation.md`。
 - 代码：`src/review/`（model-family / policy / envelope / findings / falsifier /
-  head / service / eval）+ migration 007 + `reviews`/`verifications` 接线。
-- 测试：包内 **159 passed / 1 skipped**；新增 W3 28 条；Biome clean；
+  head / service / eval）+ migration 007/008 + `reviews`/`verifications` 接线。
+- 测试：包内 **171 passed / 1 skipped**；新增 W3 40 条；Biome clean；
   `build:offline` 与根级 tsc 通过。
+- 首轮独立 review Changes Requested（15 findings）；P1 #1–#3、P2
+  #4/#6/#8/#15 与 P3 #5/#7/#9–#14 已在本修订处置，待复验。
 - Eval smoke：5 clean + 5 seeded、glm/qwen 两族 fixture observation；
   overall FP 10%、recall 90%、survival 90.9%，预注册门槛通过；n=10 cases
   只作 smoke，不作模型家族结论。

@@ -134,6 +134,7 @@ confirmed/rejected/blocked 三态由真实退出码和基础设施状态决定�
 改动位置：
 
 - `packages/codeteam-daemon/src/control/migrations/007-review-evidence.ts`
+- `packages/codeteam-daemon/src/control/migrations/008-review-round-decision.ts`
 - `packages/codeteam-daemon/src/control/migrations/index.ts`
 - `packages/codeteam-daemon/src/control/stores/types.ts`
 - `packages/codeteam-daemon/src/control/stores/reviews.ts`
@@ -205,14 +206,16 @@ NODE_ENV=development npx biome check packages/codeteam-daemon
 |---|---|
 | 盲评 envelope 不能自动证明 reviewer 没看过 author transcript | 记录 `reviewerContext.blind/fresh/transcriptExcluded` 声明 + envelope 值泄漏检查；运行时上下文隔离由 W5/W7 接线继续加强 |
 | fixture corpus 不是 live model 评测 | 报告标 smoke；harness 可直接接真实 reviewer 输出，n≥20 后再做 family 结论 |
-| migration 007 只 additive 加列，旧 reviews 的 base/profile 为空 | 新写入路径强制；旧数据按 legacy 读，不做回填猜测 |
+| migration 007/008 只 additive 加列，旧 reviews 的 base/profile/round/envelope 为空 | 新写入路径强制；旧数据按 legacy 读，不做回填猜测 |
 | blocked 到期升级 human 依赖 daemon 调度 | W3 提供 `isBlockedExpired` + 到期时间；定时扫描随 W5/W4 gate 接线 |
 | 高风险 human gate 是 policy 输出，不是审批执行器 | 返回 `human_required`；approval/merge 执行仍由 W4/W7 负责 |
 
 ## 状态
 
 - 2026-10-28：计划建立并完成 TDD 实现。
-- 2026-10-28：包内 **159 passed / 1 skipped**；新增 W3 测试 28 条；Biome clean；
+- 2026-10-28：首轮独立 review（砚砚）Changes Requested；修订处置 P1 #1–#3、
+  P2 #4/#6/#8/#15 与 P3 #5/#7/#9–#14。
+- 2026-10-28：包内 **171 passed / 1 skipped**；新增 W3 测试 40 条；Biome clean；
   `build:offline` 与根级 `tsc --noEmit` 通过。证据报告：
   [`docs/reports/2026-10-28-w3-review-evidence.md`](../reports/2026-10-28-w3-review-evidence.md)。
 - 待独立 review（砚砚代码/安全/falsifier；墨墨 eval/流程）覆盖 exact HEAD；未声明

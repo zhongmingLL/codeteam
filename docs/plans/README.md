@@ -91,7 +91,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W0 | W0a closed (F002, operator signoff) + W0c done (F003) | W0b 治理已生效；W1 runtime 启动前置已满足 |
 | W1 | closed (F004, operator confirmed) | schema + F004a–e all merged；84/84 at close（current tip 122/122）；收口清单见 F004 umbrella |
 | W2 | closed (F005, operator confirmed) | F005a–e 全合入（131/131）；真实 repo 首跑已记录；墨墨愿景守护有条件放行；operator 已显式确认 bwrap + 零 secret MVP 边界；residual 按 ledger 挂 W5/executor hardening |
-| W3 | implemented (review pending) | `0008` + F006；包内 159 passed / 1 skipped；eval smoke 门槛通过；待非作者 review/merge |
+| W3 | implemented (re-review pending) | `0008` + F006；包内 171 passed / 1 skipped；首轮 review Changes Requested 已处置；待复验/merge |
 | W4 | planned | clowder SOP 复用 + point gates + approval CLI + 最小 thread CLI；merge D / skill migration 契约已冻结 |
 | W5 | planned | 待 scheduler/RPC |
 | W6 | planned | memory/observability/harness-eval 契约已冻结；继承 + 代码 adapter |

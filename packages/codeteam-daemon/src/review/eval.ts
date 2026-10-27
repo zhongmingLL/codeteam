@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { ControlError } from "../control/errors.ts";
 import type { CreateFindingInput } from "../control/stores/types.ts";
 import type { ToolPolicy } from "../policy/types.ts";
@@ -118,6 +118,10 @@ function validateCorpus(corpus: ReviewCorpus): void {
 		throw new ControlError("invalid_input", "review corpus needs at least 5 clean and 5 seeded cases");
 	}
 	for (const entry of corpus.cases) {
+		if (!/^[a-z0-9][a-z0-9-]*$/.test(entry.id)) {
+			throw new ControlError("invalid_input", `invalid corpus case id: ${entry.id}`);
+		}
+		for (const path of Object.keys(entry.files)) assertSafeCorpusPath(path);
 		for (const observation of entry.observations) {
 			if (!corpus.families.includes(observation.modelFamily)) {
 				throw new ControlError("invalid_input", `unknown corpus family: ${observation.modelFamily}`);
@@ -176,6 +180,7 @@ export async function runReviewCorpus(options: RunReviewCorpusOptions): Promise<
 					},
 					reviewId: `corpus:${entry.id}:${observation.modelFamily}`,
 					policy,
+					sandbox: false,
 				});
 				if (result.status === "confirmed") {
 					metrics.confirmed += 1;
@@ -225,4 +230,12 @@ export async function runReviewCorpus(options: RunReviewCorpusOptions): Promise<
 		thresholdPass,
 		syntheticObservations: true,
 	};
+}
+
+function assertSafeCorpusPath(path: string): void {
+	if (path.trim() === "") throw new ControlError("invalid_input", "corpus file path must not be empty");
+	if (isAbsolute(path)) throw new ControlError("invalid_input", `corpus file path must be relative: ${path}`);
+	if (path.split(/[\\/]+/).includes("..")) {
+		throw new ControlError("invalid_input", `corpus file path must not traverse: ${path}`);
+	}
 }

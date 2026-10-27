@@ -57,4 +57,32 @@ describe("W3 review eval corpus", () => {
 		expect(metrics.families.qwen!.seededRecall).toBeCloseTo(0.8, 6);
 		expect(metrics.families.qwen!.survival).toBeCloseTo(0.8, 6);
 	});
+
+	it("rejects corpus ids and file keys that escape the fixture root", async () => {
+		const corpus = JSON.parse(
+			readFileSync(join(fixtureDir, "fixtures", "review-corpus", "cases.json"), "utf8"),
+		) as ReviewCorpus;
+		const rootDir = mkdtempSync(join(tmpdir(), "codeteam-review-corpus-bad-"));
+		dirs.push(rootDir);
+		const createPolicy = () => {
+			throw new Error("policy should not be created for an invalid corpus");
+		};
+		await expect(
+			runReviewCorpus({
+				corpus: { ...corpus, cases: [{ ...corpus.cases[0]!, id: "../../escape" }, ...corpus.cases.slice(1)] },
+				rootDir,
+				createPolicy,
+			}),
+		).rejects.toThrow(/invalid corpus case id/i);
+		await expect(
+			runReviewCorpus({
+				corpus: {
+					...corpus,
+					cases: [{ ...corpus.cases[0]!, files: { "../../escape": "x" } }, ...corpus.cases.slice(1)],
+				},
+				rootDir,
+				createPolicy,
+			}),
+		).rejects.toThrow(/traverse/i);
+	});
 });

@@ -30,6 +30,7 @@ export {
 	isBlockedExpired,
 } from "./falsifier.ts";
 export {
+	assertWorktreeRelativePath,
 	type FindingDowngrade,
 	type FindingPolicyContext,
 	type NormalizedFinding,
@@ -73,6 +74,7 @@ export {
 	type RecordReviewResult,
 	ReviewService,
 	type ReviewServiceOptions,
+	type VerifyFindingDisposition,
 	type VerifyFindingInput,
 	type VerifyFindingResult,
 } from "./service.ts";

@@ -250,6 +250,36 @@ describe("W3 head SHA binding and invalidation", () => {
 		).toBe("confirmed");
 	});
 
+	it("fails closed on missing base and persists blocked expiry", () => {
+		const review = createReview();
+		expect(store.reviews.isCurrent(review, HEAD, undefined)).toBe(false);
+		expect(store.reviews.isCurrent(review, HEAD, null)).toBe(false);
+		expect(store.reviews.isCurrent({ ...review, baseSha: null }, HEAD, BASE)).toBe(false);
+
+		const finding = review.findings[0]!;
+		const verification = store.reviews.verify({
+			findingId: finding.id,
+			headSha: HEAD,
+			producingReviewId: review.id,
+			status: "blocked",
+			reason: "timeout",
+			blockedExpiresAt: 12_345,
+		});
+		expect(verification.blockedExpiresAt).toBe(12_345);
+		expect(store.reviews.listVerifications(finding.id)[0]?.blockedExpiresAt).toBe(12_345);
+	});
+
+	it("requires task binding on commit audit evidence", () => {
+		expect(() => assertHeadTraceable(store, HEAD, "task-other")).toThrow(/belongs to task/i);
+		store.audit.append({
+			actor: "profile:coder",
+			action: "commit_created",
+			subject: `commit:${NEXT_HEAD}`,
+			args: { headSha: NEXT_HEAD },
+		});
+		expect(() => assertHeadTraceable(store, NEXT_HEAD, context.task.id)).toThrow(/not bound to task/i);
+	});
+
 	it("rejects profile/model lies and unknown family claims at the store boundary", () => {
 		expect(() => createReview({ authorProfileId: "profile-other" })).toThrow(
 			/profile does not match|author profile/i,

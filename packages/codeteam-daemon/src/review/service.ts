@@ -1,13 +1,22 @@
+import { readFileSync } from "node:fs";
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import type { AgentSession, CreateFindingInput, Review, ReviewVerdict, Verification } from "../control/stores/types.ts";
+import { runCommand } from "../policy/exec.ts";
+import type { SandboxConfig } from "../policy/sandbox.ts";
 import type { ToolPolicy } from "../policy/types.ts";
-import { type BuildReviewRequestResult, buildReviewRequest, type ReviewRequestInput } from "./envelope.ts";
+import {
+	type BuildReviewRequestResult,
+	buildReviewRequest,
+	type ReviewArtifactRef,
+	type ReviewRequestInput,
+} from "./envelope.ts";
 import { executeFalsifier, type FalsifierExecutionResult } from "./falsifier.ts";
-import type { FindingDowngrade } from "./findings.ts";
-import { normalizeFindings } from "./findings.ts";
+import { assertWorktreeRelativePath, type FindingDowngrade, normalizeFindings } from "./findings.ts";
 import { assertHeadTraceable, assessReviewFreshness, type ReviewFreshness } from "./head.ts";
 import type { ReviewActor } from "./policy.ts";
+
+const EXECUTABLE_EVIDENCE_KINDS = new Set(["red_test", "repro_command", "static_check"]);
 
 export interface ReviewServiceOptions {
 	readonly store: ControlStore;
@@ -15,6 +24,8 @@ export interface ReviewServiceOptions {
 	readonly worktreeRoot: string;
 	readonly clock?: () => number;
 	readonly blockedTtlMs?: number;
+	readonly sandbox?: SandboxConfig | boolean;
+	readonly headResolver?: (worktreeRoot: string) => Promise<string | null>;
 }
 
 export interface RecordReviewInput extends ReviewRequestInput {
@@ -36,9 +47,13 @@ export interface VerifyFindingInput {
 	readonly producingReviewId?: string;
 }
 
+export type VerifyFindingDisposition = "verified" | "not_executable" | "not_current";
+
 export interface VerifyFindingResult {
-	readonly verification: Verification;
-	readonly execution: FalsifierExecutionResult;
+	readonly disposition: VerifyFindingDisposition;
+	readonly verification: Verification | null;
+	readonly execution: FalsifierExecutionResult | null;
+	readonly reason: string;
 }
 
 export class ReviewService {
@@ -47,6 +62,8 @@ export class ReviewService {
 	private readonly worktreeRoot: string;
 	private readonly clock: () => number;
 	private readonly blockedTtlMs: number | undefined;
+	private readonly sandbox: SandboxConfig | boolean;
+	private readonly headResolver: ((worktreeRoot: string) => Promise<string | null>) | undefined;
 
 	constructor(options: ReviewServiceOptions) {
 		this.store = options.store;
@@ -54,6 +71,8 @@ export class ReviewService {
 		this.worktreeRoot = options.worktreeRoot;
 		this.clock = options.clock ?? Date.now;
 		this.blockedTtlMs = options.blockedTtlMs;
+		this.sandbox = options.sandbox ?? true;
+		this.headResolver = options.headResolver;
 	}
 
 	buildRequest(input: ReviewRequestInput): BuildReviewRequestResult {
@@ -72,6 +91,8 @@ export class ReviewService {
 		}
 		if (run.role !== "coder") throw new ControlError("invalid_input", `run ${run.id} is not a coder run`);
 
+		const diffFiles = this.readDiffChangedFiles(resolved.taskId, resolved.diffArtifact);
+		assertImpactSurfaceMatches(resolved.impactSurface.changedFiles, diffFiles);
 		const built = buildReviewRequest(this.store, resolved);
 		if (built.decision.status !== "allowed") {
 			throw new ControlError(
@@ -89,6 +110,7 @@ export class ReviewService {
 		) {
 			throw new ControlError("invalid_input", "an approve verdict cannot carry open P1/P2 findings");
 		}
+		const risk = built.envelope.policy.risk;
 		const review = this.store.reviews.create({
 			id: input.id,
 			taskId: resolved.taskId,
@@ -103,13 +125,26 @@ export class ReviewService {
 			reviewerModelFamily: resolved.reviewer.modelFamily,
 			authorProfileId: resolved.author.profileId,
 			reviewerProfileId: resolved.reviewer.profileId,
-			riskClass: resolved.risk,
+			riskClass: risk,
 			reviewMode: built.decision.mode!,
 			verdict: input.verdict,
 			findings: [...normalized.findings],
+			round: resolved.round ?? 1,
+			stage: resolved.stage,
+			previousReviewId: resolved.previousReviewId ?? null,
+			envelope: built.envelope,
+			decision: {
+				status: built.decision.status,
+				mode: built.decision.mode,
+				violations: built.decision.violations,
+				sameFamilyException: built.decision.sameFamilyException,
+				requiresHumanGate: built.decision.requiresHumanGate,
+				requiresVerifier: built.decision.requiresVerifier,
+				risk,
+			},
 			policy: {
 				...built.decision.policy,
-				risk: resolved.risk,
+				risk,
 				mode: built.decision.mode,
 				sameFamilyException: built.decision.sameFamilyException,
 				reviewerContext: resolved.reviewerContext,
@@ -135,19 +170,50 @@ export class ReviewService {
 			throw new ControlError("invalid_input", `finding ${finding.id} belongs to review ${review.id}`);
 		}
 		assertHeadTraceable(this.store, review.headSha, review.taskId);
-		const execution = await executeFalsifier({
-			finding,
-			reviewId: review.id,
-			policy: this.verifierPolicy,
-			audit: {
-				store: this.store,
-				actorRef: `review:${review.id}`,
-				producingReviewId: review.id,
-				taskId: review.taskId,
-			},
-			now: this.clock,
-			blockedTtlMs: this.blockedTtlMs,
-		});
+		if (!isExecutableFinding(finding)) {
+			return {
+				disposition: "not_executable",
+				verification: null,
+				execution: null,
+				reason: "finding is not an open P1/P2 with executable evidence and falsifier",
+			};
+		}
+		const currentHead = await this.resolveCurrentHead();
+		if (currentHead !== review.headSha) {
+			return {
+				disposition: "not_current",
+				verification: null,
+				execution: null,
+				reason: `worktree head ${currentHead ?? "unknown"} does not match review head ${review.headSha}`,
+			};
+		}
+		let execution: FalsifierExecutionResult;
+		try {
+			execution = await executeFalsifier({
+				finding,
+				reviewId: review.id,
+				policy: this.verifierPolicy,
+				audit: {
+					store: this.store,
+					actorRef: `review:${review.id}`,
+					producingReviewId: review.id,
+					taskId: review.taskId,
+				},
+				now: this.clock,
+				blockedTtlMs: this.blockedTtlMs,
+				sandbox: this.sandbox,
+			});
+		} catch (error) {
+			if (error instanceof ControlError && (error.code === "forbidden" || error.code === "invalid_input")) {
+				return {
+					disposition: "not_executable",
+					verification: null,
+					execution: null,
+					reason: error.message,
+				};
+			}
+			throw error;
+		}
 		const verification = this.store.reviews.verify({
 			findingId: finding.id,
 			headSha: review.headSha,
@@ -160,8 +226,9 @@ export class ReviewService {
 			durationMs: execution.durationMs,
 			stdoutTail: execution.stdoutTail,
 			stderrTail: execution.stderrTail,
+			blockedExpiresAt: execution.blockedExpiresAt,
 		});
-		return { verification, execution };
+		return { disposition: "verified", verification, execution, reason: execution.reason };
 	}
 
 	assessFreshness(reviewId: string, currentHeadSha: string, currentBaseSha: string | null): ReviewFreshness {
@@ -171,6 +238,38 @@ export class ReviewService {
 			this.store.reviews.listVerifications(finding.id).map((verification) => verification.headSha),
 		);
 		return assessReviewFreshness({ review, currentHeadSha, currentBaseSha, verificationHeadShas });
+	}
+
+	private readDiffChangedFiles(taskId: string, ref: ReviewArtifactRef): string[] {
+		const artifact = this.store.artifacts.get(ref.artifactId);
+		if (!artifact) throw new ControlError("not_found", `diff artifact ${ref.artifactId} not found`);
+		if (artifact.taskId !== taskId) {
+			throw new ControlError("invalid_input", `diff artifact ${ref.artifactId} belongs to another task`);
+		}
+		if (!artifact.mediaType.toLowerCase().includes("diff")) {
+			throw new ControlError("invalid_input", `artifact ${ref.artifactId} is not a diff`);
+		}
+		let diff: string;
+		try {
+			diff = readFileSync(artifact.path, "utf8");
+		} catch (error) {
+			throw new ControlError("not_found", `diff artifact ${ref.artifactId} is not readable`, { cause: error });
+		}
+		const files = parseDiffChangedFiles(diff);
+		if (files.length === 0) throw new ControlError("invalid_input", "diff artifact contains no changed files");
+		return files;
+	}
+
+	private async resolveCurrentHead(): Promise<string | null> {
+		if (this.headResolver) return this.headResolver(this.worktreeRoot);
+		const result = await runCommand(
+			this.verifierPolicy,
+			{ argv: ["git", "rev-parse", "HEAD"], cwd: this.verifierPolicy.cwd },
+			{ sandbox: false },
+		);
+		if (result.exitCode !== 0) return null;
+		const sha = result.stdout.trim();
+		return /^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(sha) ? sha : null;
 	}
 
 	private resolveInput(input: ReviewRequestInput): ReviewRequestInput {
@@ -193,6 +292,43 @@ export class ReviewService {
 			author: actorFromSession(authorSession),
 			reviewer: actorFromSession(reviewerSession),
 		};
+	}
+}
+
+function isExecutableFinding(finding: Review["findings"][number]): boolean {
+	return (
+		(finding.severity === "P1" || finding.severity === "P2") &&
+		EXECUTABLE_EVIDENCE_KINDS.has(finding.evidenceKind) &&
+		finding.falsifier.trim() !== ""
+	);
+}
+
+function parseDiffChangedFiles(diff: string): string[] {
+	const files = new Set<string>();
+	const gitLine = /^diff --git a\/(.+?) b\/(.+)$/;
+	const plusLine = /^\+\+\+ b\/(.+)$/;
+	for (const line of diff.split(/\r?\n/)) {
+		const gitMatch = gitLine.exec(line);
+		if (gitMatch) {
+			addDiffPath(files, gitMatch[2]!);
+			continue;
+		}
+		const plusMatch = plusLine.exec(line);
+		if (plusMatch) addDiffPath(files, plusMatch[1]!);
+	}
+	return [...files];
+}
+
+function addDiffPath(files: Set<string>, path: string): void {
+	assertWorktreeRelativePath(path, "diff path");
+	files.add(path);
+}
+
+function assertImpactSurfaceMatches(impactFiles: readonly string[], diffFiles: readonly string[]): void {
+	const impact = [...new Set(impactFiles)].sort();
+	const actual = [...new Set(diffFiles)].sort();
+	if (impact.length !== actual.length || impact.some((file, index) => file !== actual[index])) {
+		throw new ControlError("invalid_input", "impactSurface.changedFiles must match the diff artifact changed files");
 	}
 }
 
