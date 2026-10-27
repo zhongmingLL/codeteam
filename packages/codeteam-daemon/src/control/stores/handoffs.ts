@@ -23,6 +23,7 @@ import type {
 	HandoffHolderClaim,
 	HandoffListFilter,
 	HandoffStatus,
+	LoopGuardSnapshotEntry,
 } from "./types.ts";
 
 export const DEFAULT_HANDOFF_CLAIM_LEASE_MS = 5 * 60 * 1000;
@@ -557,6 +558,37 @@ export class HandoffStore {
 			.prepare("SELECT * FROM handoff_holder_claims WHERE handoff_id = ? ORDER BY profile_id")
 			.all(handoffId) as unknown as ClaimRow[];
 		return rows.map(mapClaim);
+	}
+
+	listActiveClaimsByRun(runId: string): HandoffHolderClaim[] {
+		const rows = this.database
+			.prepare(
+				"SELECT * FROM handoff_holder_claims WHERE run_id = ? AND status = 'active' ORDER BY handoff_id, profile_id",
+			)
+			.all(runId) as unknown as ClaimRow[];
+		return rows.map(mapClaim);
+	}
+
+	listStaleClaims(now: number): HandoffHolderClaim[] {
+		const rows = this.database
+			.prepare(
+				"SELECT * FROM handoff_holder_claims WHERE status = 'active' AND lease_until IS NOT NULL AND lease_until < ? ORDER BY handoff_id, profile_id",
+			)
+			.all(now) as unknown as ClaimRow[];
+		return rows.map(mapClaim);
+	}
+
+	loopGuardSnapshot(): LoopGuardSnapshotEntry[] {
+		const rows = this.database
+			.prepare(
+				"SELECT canonical_action_key, MAX(attempt) AS attempts, SUM(CASE WHEN status IN ('pending', 'claimed') THEN 1 ELSE 0 END) AS live FROM handoffs GROUP BY canonical_action_key ORDER BY canonical_action_key",
+			)
+			.all() as unknown as { canonical_action_key: string; attempts: number; live: number }[];
+		return rows.map((row) => ({
+			canonicalActionKey: row.canonical_action_key,
+			attempts: row.attempts,
+			live: row.live,
+		}));
 	}
 
 	custodyEvents(handoffId: string): CustodyEvent[] {

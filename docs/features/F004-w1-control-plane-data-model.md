@@ -43,8 +43,8 @@ feat index。
 | [F004a](F004a-identity-thread-chat-queue.md) | roles / profiles / sessions / threads / messages / queue_entries store | merged（PR #22，`7d7f2b0c`） |
 | [F004b](F004b-work-sop-artifacts.md) | backlog / workflow_sops / work admissions/attempts / artifacts / inbox / dispatch | merged（PR #23，`889628c7`） |
 | [F004c](F004c-runs-stages-credentials.md) | tasks / stages / runs / run_events / invocation_credentials / managed-work bindings / queue cutover | merged（PR #24，`4c4ca4f7`） |
-| [F004d](F004d-custody-approval-review.md) | custody/waits + approvals/reviews/merges/budgets/evals/forge/audit | in progress |
-| F004e | 旧库 backfill + crash recovery + Console M0 read models | planned |
+| [F004d](F004d-custody-approval-review.md) | custody/waits + approvals/reviews/merges/budgets/evals/forge/audit | merged（PR #25，`304f7504`） |
+| [F004e](F004e-recovery-read-models.md) | startup recovery + migration matrix + Console M0 read models | in progress |
 
 ## 验收标准
 
@@ -66,7 +66,7 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
 - F004：字段继承矩阵、SQLite schema + additive migration、migration runner、
   schema 约束测试。
 - F004a–d：按域拆分的 repository/store、CAS 状态更新与契约测试。
-- F004e：旧库 backfill、crash recovery、Console M0 只读查询。
+- F004e：startup recovery、迁移矩阵测试、Console M0 只读查询。
 
 **Out**
 
@@ -87,9 +87,12 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
 - 2026-10-28：F004c 经砚砚 approve 后合入（PR #24，`4c4ca4f7`）；tasks /
   stages / runs / run_events / thread_events / credentials / bindings /
   multi-target cutover 60/60；migration 005 已落。
-- 2026-10-28：F004d 进行中。已落 handoff/custody、waits、approval、
-  review/finding/verification、merge、budget/eval/forge delivery stores；
-  包内测试 66/66；F004c token-hash P3 已收口。
+- 2026-10-28：F004d 经砚砚 approve 后合入（PR #25，`304f7504`）；handoff /
+  custody、waits、approval、review/finding/verification、merge、
+  budget/eval/forge delivery stores 66/66；F004c token-hash P3 已收口。
+- 2026-10-28：F004e 进行中。startup recovery 扫掠器（interrupted run /
+  stale claim / expired handoff / loop guard / dirty-bit）、迁移矩阵测试、
+  Console M0 只读 read models 已实现；包内 82/82。
 
 ## Evidence
 
@@ -102,9 +105,13 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
   `889628c7`。
 - F004c review：砚砚 approve @ `72182f07`（60/60 独立复跑）；PR #24 合入
   `4c4ca4f7`。
-- `npm --prefix packages/codeteam-daemon test`：6 个测试文件、66/66 通过；
+- F004d review：砚砚 approve @ `80a6faf4`（66/66 独立复跑）；PR #25 合入
+  `304f7504`。
+- `npm --prefix packages/codeteam-daemon test`：9 个测试文件、82/82 通过；
   覆盖 schema 迁移/约束 + identity/thread/chat/queue + work/SOP/artifact/
-  inbox + task/stage/run/event/credential/cutover + governance stores。
-- 旧库/backfill 与 crash 重跑测试仍待补；W1 尚未完成。
+  inbox + task/stage/run/event/credential/cutover + governance stores +
+  recovery + 迁移矩阵 + read models。
+- W1 尚未 close：F004e 待 review/merge；W1 Acceptance 逐条证据在 close 时
+  统一回填。
 
 [宪宪/deepseek-flash🐾]

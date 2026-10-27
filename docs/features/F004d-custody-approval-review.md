@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F004d]
 related_features: [codeteam/F004]
 title: "F004d: W1 custody / waits / approval / review / merge"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -54,7 +54,8 @@ finding / verification、merge receipt，以及 budget/eval/forge delivery
 - [x] credential token hash 形状校验；F004c P3 收口。
 - [x] `npm --prefix packages/codeteam-daemon test`、根级 `tsc --noEmit`、
   Biome 通过。
-- [ ] 非作者 review（砚砚）与 merge。
+- [x] 非作者 review（砚砚 approve @ `80a6faf4`，66/66 独立复跑）与 merge
+  （PR #25，`304f7504`）。
 
 ## Out of scope
 
@@ -69,7 +70,10 @@ finding / verification、merge receipt，以及 budget/eval/forge delivery
 - `npm --prefix packages/codeteam-daemon test`：6 个测试文件、66/66 通过。
 - `npx tsc --noEmit -p tsconfig.json`：通过。
 - `npx biome check --write packages/codeteam-daemon/src/control ...`：clean。
-- PR：当前 thread 路由与 review 记录；合入后回写。
+- Review：砚砚 approve @ `80a6faf4`（typed verdict，本地独立复跑 66/66；
+  审查深度声明：目标性深读 + 全部 governance 测试映射核验）。
+- Merge：PR #25 合入 `codeteam-work`（`304f7504`），CI 5/5 绿
+  （`build-check-test` 1m49s，codeteam 车道）。
 
 ## Risk
 

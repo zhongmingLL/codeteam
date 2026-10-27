@@ -928,6 +928,12 @@ export interface HandoffHolderClaim {
 	releaseReason: string | null;
 }
 
+export interface LoopGuardSnapshotEntry {
+	canonicalActionKey: string;
+	attempts: number;
+	live: number;
+}
+
 export interface ClaimHandoffInput {
 	handoffId: string;
 	profileId: string;

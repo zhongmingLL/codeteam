@@ -97,6 +97,13 @@ export class QueueStore {
 		return rows.map(mapQueueEntry);
 	}
 
+	pendingCount(): number {
+		const row = this.database.prepare("SELECT COUNT(*) AS count FROM queue_entries WHERE status = 'queued'").get() as
+			| { count?: number }
+			| undefined;
+		return row?.count ?? 0;
+	}
+
 	admit(input: AdmitQueueEntryInput): QueueEntry {
 		if (!Array.isArray(input.targets)) {
 			throw new ControlError("invalid_input", "queue targets must be a non-empty string array");

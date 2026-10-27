@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { type ControlDatabase, type OpenControlDatabaseOptions, openControlDatabase } from "./database.ts";
 import { ControlError } from "./errors.ts";
+import { ControlReadModels } from "./read-models.ts";
 import { ApprovalStore } from "./stores/approvals.ts";
 import { ArtifactStore } from "./stores/artifacts.ts";
 import { AuditStore } from "./stores/audit.ts";
@@ -74,6 +75,7 @@ export class ControlStore {
 	readonly work: WorkAdmissionStore;
 	readonly artifacts: ArtifactStore;
 	readonly inbox: InboxStore;
+	readonly readModels: ControlReadModels;
 	private readonly clock: Clock;
 
 	constructor(control: ControlDatabase, clock: Clock = Date.now) {
@@ -110,6 +112,7 @@ export class ControlStore {
 			join(dirname(control.path), "artifacts"),
 		);
 		this.inbox = new InboxStore(control.database, this.transaction, clock);
+		this.readModels = new ControlReadModels(this);
 	}
 
 	get database(): DatabaseSync {
