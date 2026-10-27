@@ -28,12 +28,14 @@ per-merge short-TTL credential。
   sha256 前 16 hex。
 - **签名工具**：`signOperatorPayload` / `verifyOperatorSignature`（CLI 直接签名，
   daemon 用公钥验）。
-- **权限门**（`principals.ts`）：`assertApprovalDecisionPrincipal` 只接受
-  operator；`assertMergeExecutionPrincipal` 只接受 `service:merge-owner`。
+- **权限门**（`principals.ts`）：`Principal` 是 branded 类型，**不能字面量构造**；
+  operator principal 只能由签名验证产出（`principalFromOperatorProof`），
+  service principal 只能由已验签的 merge credential 产出
+  （`principalFromVerifiedMergeCredential`）；门本身只接受 branded principal。
 - **per-merge service credential**（`issueMergeServiceCredential` /
   `verifyMergeServiceCredential`）：Ed25519 签名 + `(repo, prRef, headSha)` 绑定
   + 短 TTL（≤15min）；过期/换绑/篡改一律 forbidden。
-- **CLI**：`codeteam auth init [--data-dir <path>] [--rotate]`。
+- **CLI**：`codeteam auth init [--data-dir <path> | --data-dir=<path>] [--rotate]`。
 
 ## Acceptance
 
@@ -43,6 +45,9 @@ per-merge short-TTL credential。
 - [x] merge 执行：仅 `service:merge-owner`；run/operator principal 均 403。
 - [x] merge credential：绑定 repo/prRef/headSha、TTL ≤15min、过期/换绑/篡改拒绝。
 - [x] `codeteam auth init` CLI 可用（含 `--rotate`）。
+- [x] review 收口：keypair 写入前 sign/verify 自检（防 priv/pub 混对）；
+  merge payload parse 后做字段类型守卫；CLI 支持 `--data-dir=` 等号形式；
+  Principal 改为 branded + 工厂产出，字面量构造在类型层被禁止。
 - [x] 包内 122/122、包 build、Biome 通过。
 - [ ] 非作者安全 review（砚砚）与 merge。
 

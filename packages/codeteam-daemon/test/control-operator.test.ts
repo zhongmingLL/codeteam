@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,9 @@ import {
 	MERGE_SERVICE_ACTOR,
 	type MergeCredentialBinding,
 	operatorCredentialPaths,
+	principalFromOperatorProof,
+	principalFromRunId,
+	principalFromVerifiedMergeCredential,
 	resolveOperatorCredentialsDir,
 	signOperatorPayload,
 	verifyMergeServiceCredential,
@@ -96,12 +99,28 @@ describe("codeteam operator credentials", () => {
 	});
 
 	it("separates operator, run, and service principals for gated actions", () => {
-		assertApprovalDecisionPrincipal({ kind: "operator", id: "operator" });
-		expect(() => assertApprovalDecisionPrincipal({ kind: "run", id: "run-1" })).toThrow();
-		expect(() => assertApprovalDecisionPrincipal({ kind: "agent-key", id: "agent" })).toThrow();
-		assertMergeExecutionPrincipal({ kind: "service", id: MERGE_SERVICE_ACTOR });
-		expect(() => assertMergeExecutionPrincipal({ kind: "run", id: "run-1" })).toThrow();
-		expect(() => assertMergeExecutionPrincipal({ kind: "operator", id: "operator" })).toThrow();
+		initOperatorCredential({ dataDir });
+		const publicPem = readFileSync(operatorCredentialPaths(dataDir).publicKeyPath, "utf8");
+		const privateKey = loadOperatorPrivateKey(dataDir);
+		const payload = "approval:decide:42";
+		const operator = principalFromOperatorProof({
+			publicKeyPem: publicPem,
+			payload,
+			signature: signOperatorPayload(privateKey, payload),
+		});
+		assertApprovalDecisionPrincipal(operator);
+
+		const runPrincipal = principalFromRunId("run-1");
+		expect(() => assertApprovalDecisionPrincipal(runPrincipal)).toThrow();
+		expect(() => assertMergeExecutionPrincipal(runPrincipal)).toThrow();
+		expect(() => assertMergeExecutionPrincipal(operator)).toThrow();
+		expect(() =>
+			principalFromOperatorProof({ publicKeyPem: publicPem, payload, signature: "not-a-signature" }),
+		).toThrow();
+
+		const credential = issueMergeServiceCredential(privateKey, binding, { ttlMs: 60_000 });
+		const verified = verifyMergeServiceCredential(loadOperatorPublicKey(dataDir), credential.token, binding);
+		assertMergeExecutionPrincipal(principalFromVerifiedMergeCredential(verified));
 	});
 
 	it("initializes the operator credential through the CLI", () => {
@@ -111,6 +130,11 @@ describe("codeteam operator credentials", () => {
 		const parsed = JSON.parse(output.trim()) as { fingerprint: string; dataDir: string };
 		expect(parsed.dataDir).toBe(dataDir);
 		expect(parsed.fingerprint).toMatch(/^[0-9a-f]{16}$/);
+
+		const equals = execFileSync(process.execPath, [cliPath, "auth", "init", `--data-dir=${dataDir}`], {
+			encoding: "utf8",
+		});
+		expect((JSON.parse(equals.trim()) as { fingerprint: string }).fingerprint).toBe(parsed.fingerprint);
 
 		const rotated = execFileSync(process.execPath, [cliPath, "auth", "init", "--data-dir", dataDir, "--rotate"], {
 			encoding: "utf8",

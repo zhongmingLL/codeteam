@@ -20,6 +20,10 @@ function main(argv: readonly string[]): number {
 }
 
 function option(argv: readonly string[], name: string): string | undefined {
+	const prefix = `${name}=`;
+	for (const arg of argv) {
+		if (arg.startsWith(prefix)) return arg.slice(prefix.length);
+	}
 	const index = argv.indexOf(name);
 	return index >= 0 ? argv[index + 1] : undefined;
 }

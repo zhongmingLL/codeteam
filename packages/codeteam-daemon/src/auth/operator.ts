@@ -46,6 +46,10 @@ export function initOperatorCredential(options: InitOperatorCredentialOptions): 
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const privatePem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 	const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+	const probe = `codeteam-operator-key-probe:${Date.now()}`;
+	if (!verifyOperatorSignature(publicKey, probe, signOperatorPayload(privateKey, probe))) {
+		throw new ControlError("invalid_input", "operator keypair self-check failed; refusing to use mismatched keys");
+	}
 	writeSecretFile(privateKeyPath, privatePem);
 	writeSecretFile(publicKeyPath, publicPem);
 	return operatorCredentialPaths(options.dataDir);

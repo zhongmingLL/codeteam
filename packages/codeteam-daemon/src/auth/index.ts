@@ -40,8 +40,12 @@ export {
 export {
 	assertApprovalDecisionPrincipal,
 	assertMergeExecutionPrincipal,
+	type OperatorProof,
 	type Principal,
 	type PrincipalKind,
+	principalFromOperatorProof,
+	principalFromRunId,
+	principalFromVerifiedMergeCredential,
 } from "./principals.ts";
 export {
 	type InvocationBinding,

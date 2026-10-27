@@ -59,12 +59,14 @@ export function verifyMergeServiceCredential(
 	const signature = parts[1];
 	if (!encoded || !signature || parts.length !== 2) throw forbidden("malformed merge credential");
 	if (!verifyOperatorSignature(publicKey, encoded, signature)) throw forbidden("invalid merge credential signature");
-	let payload: MergeServicePayload;
+	let parsed: unknown;
 	try {
-		payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as MergeServicePayload;
+		parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
 	} catch {
 		throw forbidden("malformed merge credential payload");
 	}
+	if (!isMergeServicePayload(parsed)) throw forbidden("malformed merge credential payload");
+	const payload = parsed;
 	if (payload.v !== 1 || payload.actor !== MERGE_SERVICE_ACTOR) throw forbidden("merge credential actor mismatch");
 	if (payload.repo !== binding.repo || payload.prRef !== binding.prRef || payload.headSha !== binding.headSha) {
 		throw forbidden("merge credential binding mismatch");
@@ -77,6 +79,20 @@ export function verifyMergeServiceCredential(
 function requireField(value: string, field: string): string {
 	if (!value || value.trim() === "") throw new ControlError("invalid_input", `merge credential ${field} is required`);
 	return value;
+}
+
+function isMergeServicePayload(value: unknown): value is MergeServicePayload {
+	if (typeof value !== "object" || value === null) return false;
+	const record = value as Record<string, unknown>;
+	return (
+		record.v === 1 &&
+		typeof record.actor === "string" &&
+		typeof record.repo === "string" &&
+		typeof record.prRef === "string" &&
+		typeof record.headSha === "string" &&
+		typeof record.expiresAt === "number" &&
+		Number.isFinite(record.expiresAt)
+	);
 }
 
 function forbidden(message: string): ControlError {
