@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getModel } from "@earendil-works/pi-ai/compat";
@@ -18,7 +18,9 @@ describe.skipIf(!liveEnabled)("live provider end-to-end", () => {
 		const agentDir = join(root, "agent");
 		mkdirSync(cwd);
 		mkdirSync(agentDir);
-		writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: liveApiKey } }));
+		const authPath = join(agentDir, "auth.json");
+		writeFileSync(authPath, JSON.stringify({ anthropic: { type: "api_key", key: liveApiKey } }), { mode: 0o600 });
+		expect(statSync(authPath).mode & 0o777).toBe(0o600);
 
 		const compiled = compileL0({ role: "coder", sections: [{ id: "task", body: "Live provider check." }] });
 		const model = {

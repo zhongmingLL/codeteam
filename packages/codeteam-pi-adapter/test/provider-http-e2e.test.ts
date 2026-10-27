@@ -64,7 +64,9 @@ describe("provider HTTP end-to-end", () => {
 		agentDir = join(root, "agent");
 		mkdirSync(cwd);
 		mkdirSync(agentDir);
-		writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test" } }));
+		writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test" } }), {
+			mode: 0o600,
+		});
 
 		server = createServer((request, response) => {
 			let body = "";
