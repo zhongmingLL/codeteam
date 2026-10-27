@@ -9,6 +9,9 @@ import { compileL0, createAgentSessionWithL0 } from "../src/index.ts";
 const liveBaseUrl = process.env.CODETEAM_LIVE_BASE_URL;
 const liveModel = process.env.CODETEAM_LIVE_MODEL;
 const liveApiKey = process.env.CODETEAM_LIVE_API_KEY;
+const liveApi = process.env.CODETEAM_LIVE_API ?? "anthropic-messages";
+const liveProviderId =
+	process.env.CODETEAM_LIVE_PROVIDER_ID ?? (liveApi === "anthropic-messages" ? "anthropic" : "openrouter");
 const liveEnabled = process.env.CODETEAM_LIVE_PROVIDER === "1" && Boolean(liveBaseUrl && liveModel && liveApiKey);
 
 describe.skipIf(!liveEnabled)("live provider end-to-end", () => {
@@ -19,12 +22,19 @@ describe.skipIf(!liveEnabled)("live provider end-to-end", () => {
 		mkdirSync(cwd);
 		mkdirSync(agentDir);
 		const authPath = join(agentDir, "auth.json");
-		writeFileSync(authPath, JSON.stringify({ anthropic: { type: "api_key", key: liveApiKey } }), { mode: 0o600 });
+		writeFileSync(authPath, JSON.stringify({ [liveProviderId]: { type: "api_key", key: liveApiKey } }), {
+			mode: 0o600,
+		});
 		expect(statSync(authPath).mode & 0o777).toBe(0o600);
 
 		const compiled = compileL0({ role: "coder", sections: [{ id: "task", body: "Live provider check." }] });
+		const baseModel =
+			liveApi === "anthropic-messages"
+				? getModel("anthropic", "claude-sonnet-4-5")!
+				: getModel("openrouter", "~anthropic/claude-fable-latest")!;
 		const model = {
-			...getModel("anthropic", "claude-sonnet-4-5")!,
+			...baseModel,
+			provider: liveProviderId,
 			id: liveModel!,
 			baseUrl: liveBaseUrl!,
 			maxTokens: 256,
@@ -65,9 +75,19 @@ describe.skipIf(!liveEnabled)("live provider end-to-end", () => {
 			expect(captured[0]!.url.startsWith(liveBaseUrl!)).toBe(true);
 			const body = JSON.parse(captured[0]!.body) as { stream?: boolean; system?: unknown; messages?: unknown };
 			expect(body.stream).toBe(true);
-			const systemText = Array.isArray(body.system)
-				? (body.system as Array<{ text?: string }>).map((block) => block.text ?? "").join("")
-				: String(body.system);
+			const textOf = (value: unknown): string => {
+				if (typeof value === "string") return value;
+				if (Array.isArray(value)) return value.map(textOf).join("");
+				if (value && typeof value === "object") {
+					if ("text" in value) return String((value as { text?: unknown }).text ?? "");
+					if ("content" in value) return textOf((value as { content?: unknown }).content);
+				}
+				return "";
+			};
+			const messages = Array.isArray(body.messages)
+				? (body.messages as Array<{ role?: string; content?: unknown }>)
+				: [];
+			const systemText = textOf(body.system) || textOf(messages.filter((message) => message.role === "system"));
 			expect(systemText).toContain(compiled.text);
 			expect(JSON.stringify(body.messages)).toContain("Reply with exactly LIVE_OK");
 		} finally {

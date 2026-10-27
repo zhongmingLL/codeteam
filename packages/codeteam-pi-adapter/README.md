@@ -22,5 +22,7 @@ system hashes, and cross-process JSONL resume with continued prompting.
 
 `test/provider-live.e2e.test.ts` makes a real vendor call and is skipped unless
 `CODETEAM_LIVE_PROVIDER=1` and `CODETEAM_LIVE_BASE_URL`, `CODETEAM_LIVE_MODEL`,
-`CODETEAM_LIVE_API_KEY` are set. The key is written only to a temp `auth.json` and is never committed.
+`CODETEAM_LIVE_API_KEY` are set. `CODETEAM_LIVE_API` selects `anthropic-messages` (default) or
+`openai-completions`; `CODETEAM_LIVE_PROVIDER_ID` selects the auth key id. The key is written only to
+a temp `auth.json` and is never committed.
 

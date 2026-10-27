@@ -22,16 +22,29 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 - Outbound request captured with a temporary `globalThis.fetch` wrapper to verify the URL and body
   without changing provider routing.
 
-## Result (2026-10-27)
+## Provider matrix (2026-10-27)
+
+| Provider | API shape | Model | Result |
+|---|---|---|---|
+| Zhipu GLM | `anthropic-messages` | `glm-5.3-flash` | pass (~4s) |
+| DeepSeek | `openai-completions` | `deepseek-flash` | pass (~0.8s) |
+| Kimi | `openai-completions` | `kimi-for-coding` | pass (~2.3s) |
+
+All three asserted: request URL matches the live base, `stream: true`, L0 present in the outbound
+system (top-level `system` or a `system` message with content parts), the user prompt in `messages`,
+and `LIVE_OK` in the real streamed reply.
+
+## Result (GLM, 2026-10-27)
 
 ```text
-NODE_ENV=development CODETEAM_LIVE_PROVIDER=1 \
+CODETEAM_LIVE_PROVIDER=1 CODETEAM_LIVE_API=anthropic-messages CODETEAM_LIVE_PROVIDER_ID=anthropic \
   CODETEAM_LIVE_BASE_URL=... CODETEAM_LIVE_MODEL=glm-5.3-flash CODETEAM_LIVE_API_KEY=... \
   npx vitest run --root packages/codeteam-pi-adapter test/provider-live.e2e.test.ts
 
-Test Files  1 passed (1)
-Tests       1 passed (1)
-Duration    ~13s
+# OpenAI-compatible providers
+CODETEAM_LIVE_PROVIDER=1 CODETEAM_LIVE_API=openai-completions CODETEAM_LIVE_PROVIDER_ID=openrouter \
+  CODETEAM_LIVE_BASE_URL=<provider>/v1 CODETEAM_LIVE_MODEL=<model> CODETEAM_LIVE_API_KEY=... \
+  npx vitest run --root packages/codeteam-pi-adapter test/provider-live.e2e.test.ts
 ```
 
 Assertions that passed:
@@ -53,6 +66,6 @@ Default suite without the live flag: `5 passed | 1 skipped (6 files)`, `15 passe
 
 ## Boundaries
 
-- One provider/model was exercised; this is not a provider matrix.
+- Three vendors were exercised across two API shapes; this is still a small matrix, not an exhaustive one.
 - Prompt-cache hit remains unobserved (`cache_observability=unavailable`).
 - No product-level CLI journey; that starts in W1.
