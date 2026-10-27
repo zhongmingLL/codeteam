@@ -12,6 +12,8 @@ export type ControlErrorCode =
 	| "invalid_state"
 	| "version_conflict"
 	| "claim_conflict"
+	| "invalid_token"
+	| "forbidden"
 	| "backlog_not_imported";
 
 export class ControlError extends Error {
