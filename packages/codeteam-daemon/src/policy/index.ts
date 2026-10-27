@@ -6,7 +6,20 @@ import type { CreateToolPolicyOptions, ToolPolicy } from "./types.ts";
 
 export { type CommandExecution, type CommandRequest, DEFAULT_COMMAND_ALLOWLIST, evaluateCommand } from "./commands.ts";
 export { type CommandResult, type RunCommandOptions, runCommand } from "./exec.ts";
-export { assertReadablePath, assertWritablePath } from "./paths.ts";
+export {
+	type CommitWithAuditInput,
+	type CommitWithAuditResult,
+	commitWithAudit,
+} from "./git.ts";
+export {
+	assertHandoffDirection,
+	DEFAULT_ACTION_PAIRS,
+	type HandoffDirectionBinding,
+	type HandoffDirectionDecision,
+	type HandoffDirectionOptions,
+	type HandoffDirectionRequest,
+} from "./handoffs.ts";
+export { assertAllowedCwd, assertReadablePath, assertWritablePath } from "./paths.ts";
 export type { CreateToolPolicyOptions, ToolPolicy, ToolRole } from "./types.ts";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
