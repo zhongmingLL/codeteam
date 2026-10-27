@@ -1,14 +1,14 @@
 ---
 feature_ids: [codeteam/F005]
-title: "F005: W2 权限、身份与沙箱（kickoff）"
-status: in-progress
+title: "F005: W2 权限、身份与沙箱（umbrella）"
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
 
-# F005: W2 权限、身份与沙箱（kickoff）
+# F005: W2 权限、身份与沙箱（umbrella）
 
 > 项目作用域 ID 是 `codeteam/F005`。验收清单以
 > [`docs/plans/0002-w0-w2-foundation.md`](../plans/0002-w0-w2-foundation.md)
@@ -110,9 +110,19 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 ### close 条件
 
 - [x] 真实 repo first-run 证据记录（codeteam 仓，2026-10-28）。
-- [ ] operator 对 W2 收口显式确认：bwrap + 零 secret 的 MVP 满足 W2 真实 repo
-  首跑验收；专用低权 OS user 未做，待 sudo-capable runner 复验。风险表述：
-  bwrap-only 双失效残面 = 宿主 uid 1000 可达文件，由零 secret 限制损失。
+- [x] operator 对 W2 收口显式确认（2026-10-28，消息
+  `0001793131652716-003463-efd5750f`："1）确定"）：bwrap + 零 secret 的 MVP
+  满足 W2 真实 repo 首跑验收；专用低权 OS user 未做，待 sudo-capable runner
+  复验。风险表述：bwrap-only 双失效残面 = 宿主 uid 1000 可达文件，由零 secret
+  限制损失。
+
+### 关闭记录（2026-10-28）
+
+operator 确认后 F005 umbrella → `done`，W2 收口完成。独立愿景守护墨墨
+（非作者非 reviewer）有条件放行，五个条件已折入 PR #41（merge `5bed41657`）；
+砚砚最终 docs delta approve @ `f983c8ba6`。first-run 证据 PR #40
+（merge `2eb4630ba`），包内 131/131 + 1 skipped。后续 residual（distinct-uid /
+资源配额 / TOCTOU）按 ledger 挂 W5 / executor hardening。
 
 ## Out of scope
 
