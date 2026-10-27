@@ -57,10 +57,19 @@ jobs:
 
   build-check-test:
     needs: changes
+    if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Require scope classification
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.mode == '' }}
+        run: |
+          echo "::error::scope classification did not succeed; failing closed"
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Docs whitespace check
         if: needs.changes.outputs.mode == 'docs'
