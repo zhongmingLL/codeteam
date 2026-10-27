@@ -1892,16 +1892,32 @@ audit(id, actor, action, subject, args_json, result, ts)
 
 ### 12.4 恢复算法
 
-启动时：
+W1 实现是 `recoverControlPlane`，整段 sweep 在一个 `BEGIN IMMEDIATE` 事务内；
+任一步失败整体回滚并阻塞启动（fail closed），重复 sweep 幂等。顺序：
 
-1. 读取所有 `running` runs。
-2. 与活跃 worker 集合比对；不在集合里的标记 `interrupted`。
-3. 释放其 claimed handoff，回到 `pending`。
-4. 扫描过期 handoff，标记 `expired` 并重排/升级。
-5. 重建 loop guard 计数。
-6. 触发 dirty-bit drain。
+1. 读取所有 `running` runs；与活跃 worker 集合（W5 前默认空集）比对，不在
+   集合里的标记 `interrupted`，并把其 active invocation credential
+   terminalize 为 `interrupted`（audit `run_interrupted`）。
+2. 扫描 explicit deadline 已过的 `pending|claimed` handoff，标记 `expired`
+   （active claim 同事务释放）。**顺序偏离说明**：旧文本先 release 后 expire，
+   会给过期 handoff 产生 `handoff.returned → handoff.expired` 双事件和一个
+   无人能消费的瞬态 `pending`；先 expire 终态相同、事件轨迹更干净。
+3. 释放被中断 run 持有的 active holder claims，回到 `pending`（同
+   generation）；parallel 只释放被中断 holder，handoff 仍 `claimed`。
+4. 释放其余 stale claims（lease 过期且 run 非活跃）为 `lease_expired`；
+   活跃 run 的 claim 即使 lease 过期也不动。
+5. 回收被中断 run 或过期 claim 占住的 `queue_entries` 回 `queued`——
+   `claimNext` 只取 `queued`，不回收会让死 run 永久占住工作项（dirty-bit
+   断流）。
+6. 重建 loop guard 计数：从 `handoffs` 按 canonical action key 派生
+   attempts/live，不建第二账本。
+7. 触发 dirty-bit drain：报告 queued 计数 + `drainRequested`。
 
-当前实现 `recoverInterruptedRuns` + `hydrate` 已覆盖核心逻辑；目标态需要把 stage/artifact/inbox 一起纳入。
+`wait` 不参与启动恢复：waits 只驱动唤醒，过期裁决只看 handoff explicit
+deadline（见 §12.2）；wait 的过期处理归 W8 tracking/wake 逻辑。W1 只做
+单进程启动收敛；多 daemon 并发时由 W5 worker registry 提供 `activeRunIds`
+全集，否则一方 sweep 会把另一活进程的 runs 标成 interrupted——这是 W5 的
+门禁项，不是 W1 的运行形态。
 
 ### 12.5 保留与 GC
 
