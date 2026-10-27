@@ -135,4 +135,27 @@ describe("codeteam command executor", () => {
 			store.close();
 		}
 	});
+
+	it("does not label a successful command as denied when the audit append fails", async () => {
+		const store = openControlStore({ dataDir: join(root, "data") });
+		const failingStore = {
+			audit: {
+				append: () => {
+					throw new Error("audit store unavailable");
+				},
+			},
+		} as unknown as typeof store;
+		try {
+			await expect(
+				runCommand(
+					policy,
+					{ argv: ["ls", "src"] },
+					{ audit: { store: failingStore, actorRef: "run:run-3", runId: "run-3" } },
+				),
+			).rejects.toThrow("audit store unavailable");
+			expect(store.audit.latest("run:run-3", "tool_command_denied")).toBeNull();
+		} finally {
+			store.close();
+		}
+	});
 });

@@ -47,14 +47,15 @@ export async function runCommand(
 ): Promise<CommandResult> {
 	const audit = options.audit;
 	if (!audit) return runCommandInner(policy, request, options);
+	let result: CommandResult;
 	try {
-		const result = await runCommandInner(policy, request, options);
-		appendCommandAudit(audit, request, policy, result, null);
-		return result;
+		result = await runCommandInner(policy, request, options);
 	} catch (error) {
 		appendCommandAudit(audit, request, policy, null, error);
 		throw error;
 	}
+	appendCommandAudit(audit, request, policy, result, null);
+	return result;
 }
 
 async function runCommandInner(
