@@ -3,7 +3,7 @@ import { lstatSync } from "node:fs";
 import { ControlError } from "../control/errors.ts";
 import { type CommandRequest, collectPathTargets, evaluateCommand } from "./commands.ts";
 import { assertReadablePath, assertWritablePath } from "./paths.ts";
-import { buildSandboxArgv, type SandboxConfig } from "./sandbox.ts";
+import { buildSandboxArgv, resolveBwrapPath, type SandboxConfig } from "./sandbox.ts";
 import type { ToolPolicy } from "./types.ts";
 
 export interface CommandResult {
@@ -39,7 +39,9 @@ export async function runCommand(
 	assertSnapshotsStable(policy, snapshots, execution.cwd);
 	const timeoutMs = options.timeoutMs ?? execution.timeoutMs;
 	if (!options.sandbox) return execute(execution, timeoutMs);
-	const argv = buildSandboxArgv(policy, execution, options.sandbox === true ? {} : options.sandbox);
+	const sandboxConfig = options.sandbox === true ? {} : options.sandbox;
+	const bwrapPath = resolveBwrapPath(sandboxConfig);
+	const argv = buildSandboxArgv(policy, execution, { ...sandboxConfig, bwrapPath });
 	return execute(
 		{
 			argv,

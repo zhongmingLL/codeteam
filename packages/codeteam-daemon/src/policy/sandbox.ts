@@ -55,7 +55,7 @@ export function buildSandboxArgv(
 	execution: CommandExecution,
 	config: SandboxConfig = {},
 ): string[] {
-	const args = [resolveBwrapPath(config), "--die-with-parent", "--unshare-all"];
+	const args = [config.bwrapPath ?? "bwrap", "--die-with-parent", "--unshare-all"];
 	if (config.shareNetwork !== false) args.push("--share-net");
 	args.push("--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp");
 	for (const root of SANDBOX_SYSTEM_ROOTS) pushReadOnlyBind(args, root);
