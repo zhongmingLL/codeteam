@@ -61,6 +61,7 @@ describe("codeteam daemon lifecycle", () => {
 		expect(statSync(dataDir).mode & 0o777).toBe(0o700);
 		expect(statSync(join(dataDir, "daemon-state.json")).mode & 0o777).toBe(0o600);
 		expect(statSync(join(dataDir, "boot-ledger.jsonl")).mode & 0o777).toBe(0o600);
+		expect(statSync(join(dataDir, "daemon.lock")).mode & 0o777).toBe(0o600);
 		expect(daemon.boot.bootSequence).toBe(1);
 	});
 
@@ -84,6 +85,19 @@ describe("codeteam daemon lifecycle", () => {
 		expect(started.map((record) => record.bootSequence)).toEqual([1, 2]);
 		expect(started[1]?.runningRevision).toBe("rev-1");
 		expect(second.boot.bootSequence).toBe(2);
+	});
+
+	it("fails with a typed ledger_corrupt error, leaves no fence, and recovers after repair", async () => {
+		mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+		const ledgerPath = join(dataDir, "boot-ledger.jsonl");
+		writeFileSync(ledgerPath, '{"broken":\n', { mode: 0o600 });
+
+		await expect(start()).rejects.toMatchObject({ code: "ledger_corrupt" });
+		expect(existsSync(join(dataDir, "daemon.lock"))).toBe(false);
+
+		writeFileSync(ledgerPath, "", { mode: 0o600 });
+		const daemon = await start();
+		expect(daemon.boot.bootSequence).toBe(1);
 	});
 
 	it("rejects a second daemon on the same data dir", async () => {

@@ -3,6 +3,7 @@ export type DaemonErrorCode =
 	| "invalid_installation_root"
 	| "already_running"
 	| "listen_failed"
+	| "ledger_corrupt"
 	| "invalid_state"
 	| "missing_services"
 	| "undeclared_service";
