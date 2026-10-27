@@ -5,15 +5,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-	MAX_MERGE_CREDENTIAL_TTL_MS,
-	MERGE_SERVICE_ACTOR,
-	type MergeCredentialBinding,
 	assertApprovalDecisionPrincipal,
 	assertMergeExecutionPrincipal,
 	initOperatorCredential,
 	issueMergeServiceCredential,
 	loadOperatorPrivateKey,
 	loadOperatorPublicKey,
+	MAX_MERGE_CREDENTIAL_TTL_MS,
+	MERGE_SERVICE_ACTOR,
+	type MergeCredentialBinding,
 	operatorCredentialPaths,
 	resolveOperatorCredentialsDir,
 	signOperatorPayload,
@@ -64,9 +64,7 @@ describe("codeteam operator credentials", () => {
 	});
 
 	it("fails closed when the credential is not initialized", () => {
-		expect(() => operatorCredentialPaths(dataDir)).toThrowError(
-			expect.objectContaining({ code: "not_found" }),
-		);
+		expect(() => operatorCredentialPaths(dataDir)).toThrowError(expect.objectContaining({ code: "not_found" }));
 	});
 
 	it("issues merge credentials bound to repo, PR, and exact head with a short TTL", () => {
@@ -80,13 +78,18 @@ describe("codeteam operator credentials", () => {
 			actor: MERGE_SERVICE_ACTOR,
 			headSha: HEAD,
 		});
-		expect(() => verifyMergeServiceCredential(publicKey, credential.token, binding, { now: NOW + 120_000 })).toThrow();
 		expect(() =>
-			verifyMergeServiceCredential(publicKey, credential.token, { ...binding, headSha: "b".repeat(40) }, { now: NOW }),
+			verifyMergeServiceCredential(publicKey, credential.token, binding, { now: NOW + 120_000 }),
 		).toThrow();
 		expect(() =>
-			verifyMergeServiceCredential(publicKey, `${credential.token}x`, binding, { now: NOW }),
+			verifyMergeServiceCredential(
+				publicKey,
+				credential.token,
+				{ ...binding, headSha: "b".repeat(40) },
+				{ now: NOW },
+			),
 		).toThrow();
+		expect(() => verifyMergeServiceCredential(publicKey, `${credential.token}x`, binding, { now: NOW })).toThrow();
 		expect(() =>
 			issueMergeServiceCredential(privateKey, binding, { ttlMs: MAX_MERGE_CREDENTIAL_TTL_MS + 1, now: NOW }),
 		).toThrow();
@@ -109,11 +112,9 @@ describe("codeteam operator credentials", () => {
 		expect(parsed.dataDir).toBe(dataDir);
 		expect(parsed.fingerprint).toMatch(/^[0-9a-f]{16}$/);
 
-		const rotated = execFileSync(
-			process.execPath,
-			[cliPath, "auth", "init", "--data-dir", dataDir, "--rotate"],
-			{ encoding: "utf8" },
-		);
+		const rotated = execFileSync(process.execPath, [cliPath, "auth", "init", "--data-dir", dataDir, "--rotate"], {
+			encoding: "utf8",
+		});
 		const rotatedParsed = JSON.parse(rotated.trim()) as { fingerprint: string };
 		expect(rotatedParsed.fingerprint).not.toBe(parsed.fingerprint);
 	});
