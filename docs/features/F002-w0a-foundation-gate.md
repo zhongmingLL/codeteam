@@ -116,6 +116,7 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 | 2026-10-27 | impl Phase 4 | Baseline reuse map: no old code found; fresh baseline for 6 assets; W1 inputs recorded |
 | 2026-10-27 | impl Phase 5 | Gate pack: CONDITIONAL PASS; AC-18 review pending; W0c remains outside F002 |
 | 2026-10-27 | Phase 5 review | Gate pack approved by 烁烁 at `79ae95ac5`; 2 P3 folded; AC-18/AC-19 ticked |
+| 2026-10-27 | audit correction | Skill catalog N1/N2 rows added to the migration matrix; fresh repo-local catalog deviation recorded |
 
 ### Phase 0 — 真相源与工程基线
 

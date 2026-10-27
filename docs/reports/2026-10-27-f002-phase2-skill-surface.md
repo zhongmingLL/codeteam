@@ -96,3 +96,14 @@ Reviewer probes at `280fd4a9b` found two gaps, both fixed on the same branch:
   skill; resolution now rejects any escaping or unresolvable symlink (`path_escape`).
 - P3: the 512 KiB scan limit exempted `SKILL.md`, so an oversized main file could hide a secret;
   `SKILL.md` is now always scanned and rejected above a 2 MiB hard cap (`skill_too_large`).
+
+## Plan deviations
+
+- The shipped catalog is a fresh two-entry repo-local catalog, not a fork/slim of
+  `cat-cafe-skills/manifest.yaml`. W0a needs an allowlist proof, not a content migration; the latter
+  stays in the W4 migration waves.
+- Because the two skills enter the catalog, they now have rows in
+  `docs/architecture/skill-migration.md` §4.1 (`N` = newly authored), satisfying the
+  "no matrix row, no load" gate. This correction was made after the gate review; the gate report
+  records it as a post-gate correction.
+

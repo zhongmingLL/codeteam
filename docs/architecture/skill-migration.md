@@ -84,6 +84,7 @@ status_note: "DP-MERGE-1=D（2026-10-25）：merge-gate 按 merge owner 执行�
 | **W** | Rewrite | 核心假设不同（如 merge 权限、自动合并、cloud review 循环）；保留方法论，重写流程 |
 | **D** | Defer | 目标 W 明确，但不在 v1；先在矩阵留位，进入该 W 时再迁移 |
 | **X** | Drop | Clowder 产品面/生活面/媒体面，codeteam 不需要；永不进入 catalog |
+| **N** | New | codeteam 新写的 skill，无 Clowder 迁移源；仍需矩阵行、静态检查、非作者 review 与 dry-run |
 
 ## 4. 初始迁移矩阵（61 skills）
 
@@ -180,6 +181,17 @@ status_note: "DP-MERGE-1=D（2026-10-25）：merge-gate 按 merge owner 执行�
 | `MS-SKILL-1` | writing-skills | 价值门禁：软硬同重；不写模型已知的通用教程；skill 不能膨胀回 61 |
 | `MS-SELF-1` | self-evolution | 复盘/蒸馏 + verdict-driven loop（吸收 capability-evolution 的方法论） |
 | `MS-OPEN-1` | opensource-ops | gh CLI + GitHub-only + permission gate + human/operator 终门；无 GitHub MCP/App/IMAP |
+
+
+### 4.1 W0a repo-local authored skills（2026-10-27）
+
+Phase 2 的 catalog 首版不是 `cat-cafe-skills/manifest.yaml` 的 fork/瘦身，而是两个新写的
+repo-local skill。为满足“没有矩阵行不允许加载”，在此补行；完整内容迁移仍按 §7 波次在 W4 执行。
+
+| # | Skill | Family | Decision | Target | Clowder 依赖 / 风险 | codeteam 适配动作 | Owner |
+|---|---|---|---|---|---|---|---|
+| N1 | `codeteam-verify` | delivery | N | W0a | 无迁移源；仅使用 codeteam 真实命令 | 新写；静态检查=path containment + secret scan；非作者 review=烁烁 Phase 2；dry-run=adapter/skills 测试 | 宪宪 |
+| N2 | `codeteam-review` | review | N | W0a | 无迁移源；不含 Clowder 路由/权限假设 | 新写；同上；finding 需带 severity+stance | 宪宪 |
 
 ## 5. 内容适配规则
 
