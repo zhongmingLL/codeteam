@@ -63,3 +63,15 @@ declaration failures, stop/fence release/late-readiness rejection, and a failed 
 taken.
 
 Known boundary: the fence is a best-effort single-writer guard; W5 may harden the stale-fence race.
+
+## Post-merge review follow-ups (2026-10-27)
+
+- **P2-1 ledger corruption**: fixed. `readBootLedger` now throws a typed `ledger_corrupt` error and
+  the fence is not taken; recovery is to repair or truncate the bad line, then start again. Tested.
+- **P3-1 lock mode**: the running daemon's `daemon.lock` is asserted to be 0600. Tested.
+- **P2-2 flock-based fence**: deferred to W5. Node core has no `flock`; adopting a dependency needs a
+  decision. Trigger: multi-process starts or the W5 hardening pass.
+- **P3-2 pre-listen fence leak**: deferred. If `persist`/`record` throws before listen, the fence is
+  reclaimed on the next start via dead-pid detection, but the ledger lacks a terminal event.
+- **P3-3 state-write failure injection**: deferred. Needs an injectable writer to simulate ENOSPC.
+

@@ -1,4 +1,5 @@
 import { appendFileSync, chmodSync, existsSync, readFileSync } from "node:fs";
+import { DaemonError } from "./errors.ts";
 
 export type BootEvent = "started" | "ready" | "stopping" | "stopped" | "failed" | "fence_reclaimed";
 
@@ -15,10 +16,19 @@ export interface BootRecord {
 
 export function readBootLedger(ledgerFile: string): BootRecord[] {
 	if (!existsSync(ledgerFile)) return [];
-	return readFileSync(ledgerFile, "utf8")
+	const lines = readFileSync(ledgerFile, "utf8")
 		.split("\n")
-		.filter((line) => line.trim() !== "")
-		.map((line) => JSON.parse(line) as BootRecord);
+		.filter((line) => line.trim() !== "");
+	return lines.map((line, index) => {
+		try {
+			return JSON.parse(line) as BootRecord;
+		} catch {
+			throw new DaemonError(
+				"ledger_corrupt",
+				`boot ledger line ${index + 1} is not valid JSON; repair or truncate the ledger before starting`,
+			);
+		}
+	});
 }
 
 export function nextBootSequence(ledgerFile: string): number {
