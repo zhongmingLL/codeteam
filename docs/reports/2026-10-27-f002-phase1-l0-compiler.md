@@ -71,3 +71,12 @@ evidence available at this layer; no live prompt-cache hit is claimed.
 - RPC worker migration and re-attach semantics remain W5.
 - AC-18 stays open until the Phase 5 W0a gate pack is reviewed as a whole; this slice's review is
   closed.
+
+## Post-close verification addition (2026-10-27)
+
+The original evidence injected `streamFunction`; it proved L0/session wiring but bypassed provider
+HTTP. `packages/codeteam-pi-adapter/test/provider-http-e2e.test.ts` now runs the real provider client
+against a local Anthropic-shaped SSE server: the captured request `system` contains L0, the streamed
+reply becomes the assistant message, and `stream: true` is set. A live vendor call remains out of
+scope (`cache_observability=unavailable`).
+
