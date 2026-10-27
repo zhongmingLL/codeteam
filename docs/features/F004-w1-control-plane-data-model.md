@@ -150,10 +150,13 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
   PR 证据。
 - **`eval`/`compress` 运行时分派解析**：profile 与 role seed 已落；分派解析
   属运行时接线（W2/W5）。
-- **`tags_json` operator-only 与 feature 多匹配 422**：写权限属 W2 operator
-  auth；store 侧 anchor tag 保护已落。
-- **`workId`/`attemptId` 不出现在公共 DTO**：store 内部 API 需要；MCP/REST/
-  Web DTO 尚不存在，contract test 随 W7 读面补。
+- **`tags_json` operator-only 与 feature 多匹配 422**：store 侧已落
+  operator-only 守卫（`updateTags` 的 actorKind 断言）与 `feature_anchor_locked`；
+  **已验证** operator 身份属 W2 credential auth；feature 解析多匹配 422 挂
+  W7a acceptance（若 W5 tool surface 先解析 feature，则随 W5 落地）。
+- **`workId`/`attemptId` 不出现在公共 DTO**：store 内部 API 需要；第一个公共面
+  随 W5 A2A tool surface 落地，contract test 在 W5 补（`docs/plans/0004` W5
+  Acceptance 已载该门禁）。
 - **A2A 执行链可追溯（ingress → queue → processor → router → invoke）**：
   属 W5 执行链，不在 W1 数据模型范围。
 
