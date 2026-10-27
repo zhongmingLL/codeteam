@@ -32,25 +32,31 @@ describe.skipIf(!liveEnabled)("live provider end-to-end", () => {
 
 		const originalFetch = globalThis.fetch;
 		const captured: Array<{ url: string; body: string }> = [];
+		let session: Awaited<ReturnType<typeof createAgentSessionWithL0>>["session"] | null = null;
+		let abortTimer: NodeJS.Timeout | null = null;
 		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			const body = typeof init?.body === "string" ? init.body : "";
 			captured.push({ url: String(input), body });
 			return originalFetch(input, init);
 		}) as typeof fetch;
 
-		const { session } = await createAgentSessionWithL0({
-			cwd,
-			agentDir,
-			compiledL0: compiled,
-			model,
-			sessionManager: SessionManager.inMemory(cwd),
-			settingsManager: SettingsManager.inMemory({
-				compaction: { enabled: false, reserveTokens: 1, keepRecentTokens: 1 },
-			}),
-			tools: [],
-		});
-
 		try {
+			const created = await createAgentSessionWithL0({
+				cwd,
+				agentDir,
+				compiledL0: compiled,
+				model,
+				sessionManager: SessionManager.inMemory(cwd),
+				settingsManager: SettingsManager.inMemory({
+					compaction: { enabled: false, reserveTokens: 1, keepRecentTokens: 1 },
+				}),
+				tools: [],
+			});
+			session = created.session;
+			abortTimer = setTimeout(() => {
+				void session?.abort();
+			}, 45_000);
+
 			await session.prompt("Reply with exactly LIVE_OK");
 			const text = session.getLastAssistantText() ?? "";
 			expect(text).toContain("LIVE_OK");
@@ -65,8 +71,9 @@ describe.skipIf(!liveEnabled)("live provider end-to-end", () => {
 			expect(systemText).toContain(compiled.text);
 			expect(JSON.stringify(body.messages)).toContain("Reply with exactly LIVE_OK");
 		} finally {
+			if (abortTimer) clearTimeout(abortTimer);
 			globalThis.fetch = originalFetch;
-			session.dispose();
+			session?.dispose();
 			rmSync(root, { recursive: true, force: true });
 		}
 	}, 60_000);
