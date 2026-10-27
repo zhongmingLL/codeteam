@@ -40,8 +40,8 @@ feat index。
 | Slice | 范围 | 状态 |
 |---|---|---|
 | F004 | 契约 + schema foundation（migrations / runner / schema tests） | merged（PR #21，`fa995e8d`） |
-| [F004a](F004a-identity-thread-chat-queue.md) | roles / profiles / sessions / threads / messages / queue_entries store | in progress |
-| F004b | backlog / workflow_sops / work admissions/attempts/bindings / artifacts / inbox | planned |
+| [F004a](F004a-identity-thread-chat-queue.md) | roles / profiles / sessions / threads / messages / queue_entries store | merged（PR #22，`7d7f2b0c`） |
+| [F004b](F004b-work-sop-artifacts.md) | backlog / workflow_sops / work admissions/attempts / artifacts / inbox / dispatch | in progress |
 | F004c | tasks / stages / runs / run_events / invocation_credentials | planned |
 | F004d | custody/waits + approvals/reviews/merges/budgets/evals/forge/audit | planned |
 | F004e | 旧库 backfill + crash recovery + Console M0 read models | planned |
@@ -80,16 +80,22 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
   经砚砚 review 后合入（`fa995e8d`），3 个 forward-only migration、34 张
   控制面表 + `schema_migrations`；WAL、foreign keys、5000ms busy timeout、
   append-only trigger 与关键 partial unique index 已落。
-- 2026-10-28：F004a 进行中。已加 migration 004（queue source 唯一）与
-  identity/thread/chat/queue stores；包内测试 40/40。
+- 2026-10-28：F004a 经砚砚 approve 后合入（PR #22，`7d7f2b0c`）；migration
+  004 + identity/thread/chat/queue stores 40/40。
+- 2026-10-28：F004b 进行中。已落 backlog / workflow_sops / managed-work
+  admission/attempt / artifacts / inbox / audit stores 与原子 dispatch；
+  包内测试 50/50。
 
 ## Evidence
 
 - 矩阵 review：烁烁 approve @ `e2f98cb`；P2/P3 处置见 PR #20。
 - Schema review：砚砚 approve @ `cff2a06d`（29/29 独立复跑）；PR #21 合入
   `fa995e8d`。
-- `npm --prefix packages/codeteam-daemon test`：3 个测试文件、40/40 通过；
-  覆盖 schema 迁移/约束 + identity/thread/chat/queue store。
+- F004a review：砚砚 approve @ `d4c00f04`（40/40 独立复跑）；PR #22 合入
+  `7d7f2b0c`。
+- `npm --prefix packages/codeteam-daemon test`：4 个测试文件、50/50 通过；
+  覆盖 schema 迁移/约束 + identity/thread/chat/queue + work/SOP/artifact/
+  inbox stores。
 - 旧库/backfill 与 crash 重跑测试仍待补；W1 尚未完成。
 
 [宪宪/deepseek-flash🐾]

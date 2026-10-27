@@ -23,6 +23,10 @@ export {
 	openControlStore,
 	type SeedIdentityConfig,
 } from "./store.ts";
+export { ArtifactStore } from "./stores/artifacts.ts";
+export { AuditStore } from "./stores/audit.ts";
+export { BacklogStore } from "./stores/backlog.ts";
+export { InboxStore } from "./stores/inbox.ts";
 export { MessageStore } from "./stores/messages.ts";
 export { AgentProfileStore } from "./stores/profiles.ts";
 export { DEFAULT_QUEUE_CLAIM_TTL_MS, QueueStore } from "./stores/queue.ts";
@@ -30,4 +34,6 @@ export { RoleStore } from "./stores/roles.ts";
 export { AgentSessionStore } from "./stores/sessions.ts";
 export { ThreadStore } from "./stores/threads.ts";
 export type * from "./stores/types.ts";
+export { WorkAdmissionStore } from "./stores/work-admissions.ts";
+export { WorkflowSopStore } from "./stores/workflow-sops.ts";
 export { ControlTransaction } from "./transaction.ts";

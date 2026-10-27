@@ -32,6 +32,7 @@ updated: 2026-10-28
 | [`features/F003-w0c-daemon-lifecycle.md`](features/F003-w0c-daemon-lifecycle.md) | W0c daemon 最小生命周期：boot ledger、单写者 fence、readiness、lifecycle |
 | [`features/F004-w1-control-plane-data-model.md`](features/F004-w1-control-plane-data-model.md) | W1 umbrella：字段继承矩阵、schema foundation、F004a–e 交付切片 |
 | [`features/F004a-identity-thread-chat-queue.md`](features/F004a-identity-thread-chat-queue.md) | F004a：identity / thread / chat / queue store 与 queue source 唯一性 |
+| [`features/F004b-work-sop-artifacts.md`](features/F004b-work-sop-artifacts.md) | F004b：backlog / SOP / managed-work admission / artifacts / inbox 与原子 dispatch |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |
