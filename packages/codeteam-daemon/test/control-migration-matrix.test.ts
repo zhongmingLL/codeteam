@@ -61,6 +61,41 @@ describe("codeteam control migration matrix", () => {
 				"INSERT INTO messages (id, thread_id, author_kind, author_id, kind, body_md, rich_blocks_json, dispatch_refs_json, seq, created_at, updated_at) VALUES (?, ?, 'user', ?, 'chat', ?, '[]', '[]', 1, ?, ?)",
 			)
 			.run("message-old", "thread-old", "user-1", "hello", 1, 1);
+		database
+			.prepare(
+				"INSERT INTO roles (id, label, status, created_at, updated_at) VALUES ('coder', 'Coder', 'active', 1, 1)",
+			)
+			.run();
+		database
+			.prepare(
+				"INSERT INTO agent_profiles (id, role, display_name, provider, model, model_family, tool_policy_profile, status, created_at, updated_at) VALUES ('profile-1', 'coder', 'Coder', 'test', 'model', 'family', 'default', 'active', 1, 1)",
+			)
+			.run();
+		database
+			.prepare(
+				"INSERT INTO tasks (id, kind, thread_id, title, why, owner_profile_id, status, created_by, created_at, updated_at) VALUES ('task-old', 'pr_tracking', 'thread-old', 'Task', 'Why', 'profile-1', 'doing', 'user', 1, 1)",
+			)
+			.run();
+		database
+			.prepare(
+				"INSERT INTO agent_sessions (id, thread_id, task_id, profile_id, role, effective_tool_policy, provider, model, model_family, status, seq, created_at, updated_at) VALUES ('session-old', 'thread-old', 'task-old', 'profile-1', 'coder', 'default', 'test', 'model', 'family', 'active', 0, 1, 1)",
+			)
+			.run();
+		database
+			.prepare(
+				"INSERT INTO queue_entries (id, thread_id, source_id, source_kind, targets_json, author_intent_json, priority, source_category, order_key, status, enqueued_at, updated_at) VALUES ('queue-old', 'thread-old', 'message-old', 'conversation_input', '[\"profile-1\"]', '{}', 'normal', 'a2a', '1', 'queued', 1, 1)",
+			)
+			.run();
+		database
+			.prepare(
+				"INSERT INTO runs (id, task_id, queue_entry_id, role, agent_session_id, source_id, recipient_profile_id, provider, model, model_family, status, started_at, terminal_at) VALUES ('run-old', 'task-old', 'queue-old', 'coder', 'session-old', 'message-old', 'profile-1', 'test', 'model', 'family', 'completed', 1, 2)",
+			)
+			.run();
+		database
+			.prepare(
+				"INSERT INTO handoffs (id, task_id, kind, from_role, to_role, status, subject, subject_ref, action_family, successor_slot, mode, owner_user_id, canonical_action_key, holder_profile_ids_json, holder_thread_id, claim_origin, generation, revision, dispatch_id, terminal_predicate_json, expected_artifact, payload_json, idempotency_key, deadline, attempt, created_at) VALUES ('handoff-old', 'task-old', 'review_request', 'coder', 'coder', 'pending', 'Review', 'pr:owner/repo#1', 'review', 'reviewer', 'single', 'user-1', 'action-old', '[\"profile-1\"]', 'thread-old', 'structured_transfer', 1, 0, 'dispatch-old', '{}', 'artifact-1', '{}', 'idem-old', 999999, 1, 1)",
+			)
+			.run();
 		expect(getControlSchemaVersion(database)).toBe(3);
 		database.close();
 
@@ -68,6 +103,11 @@ describe("codeteam control migration matrix", () => {
 		expect(store.control.schemaVersion).toBe(CONTROL_MIGRATIONS.at(-1)?.version);
 		expect(store.threads.get("thread-old")?.title).toBe("Old thread");
 		expect(store.messages.get("message-old")?.bodyMd).toBe("hello");
+		expect(store.tasks.get("task-old")?.kind).toBe("pr_tracking");
+		expect(store.sessions.get("session-old")?.role).toBe("coder");
+		expect(store.runs.get("run-old")?.status).toBe("completed");
+		expect(store.runs.get("run-old")?.queueEntryId).toBe("queue-old");
+		expect(store.handoffs.get("handoff-old")?.status).toBe("pending");
 		expect(
 			store.database.prepare("SELECT name FROM sqlite_master WHERE name = 'invocation_credentials'").get(),
 		).toBeDefined();
