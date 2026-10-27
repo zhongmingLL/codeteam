@@ -9,12 +9,16 @@ export {
 	CONTROL_MIGRATIONS,
 	CONTROL_TABLE_NAMES,
 	type ControlMigration,
+	ControlStore,
+	type ControlStoreOptions,
 	DEFAULT_CONTROL_BUSY_TIMEOUT_MS,
 	getControlSchemaVersion,
 	type OpenControlDatabaseOptions,
 	openControlDatabase,
+	openControlStore,
 	resolveControlBusyTimeoutMs,
 	resolveControlDataDir,
+	type SeedIdentityConfig,
 	verifyControlSchema,
 } from "./control/index.ts";
 export {

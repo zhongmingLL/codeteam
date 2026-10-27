@@ -156,7 +156,7 @@ describe("codeteam control schema", () => {
 		try {
 			expect(statSync(dataDir).mode & 0o777).toBe(0o700);
 			expect(statSync(control.path).mode & 0o777).toBe(0o600);
-			expect(control.schemaVersion).toBe(3);
+			expect(control.schemaVersion).toBe(4);
 			expect((control.database.prepare("PRAGMA journal_mode").get() as { journal_mode?: string }).journal_mode).toBe(
 				"wal",
 			);
@@ -180,11 +180,11 @@ describe("codeteam control schema", () => {
 		openControlDatabase({ dataDir }).close();
 		const control = openControlDatabase({ dataDir });
 		try {
-			expect(getControlSchemaVersion(control.database)).toBe(3);
+			expect(getControlSchemaVersion(control.database)).toBe(4);
 			expect(
 				(control.database.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get() as { count: number })
 					.count,
-			).toBe(3);
+			).toBe(4);
 		} finally {
 			control.close();
 		}
@@ -230,8 +230,8 @@ describe("codeteam control schema", () => {
 
 	it("rejects a schema that is ahead of the known migration set", () => {
 		const db = createDb();
-		db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(4, "future", NOW);
-		expect(() => applyControlMigrations(db)).toThrow(/schema contains migration 4/);
+		db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(5, "future", NOW);
+		expect(() => applyControlMigrations(db)).toThrow(/schema contains migration 5/);
 		db.close();
 	});
 
@@ -310,6 +310,31 @@ describe("codeteam control schema", () => {
 				)
 				.run("message-approval", "thread-1", "agent", "profile-1", "chat", 2, '[{"kind":"approval"}]', NOW, NOW),
 		).toThrow(/approval_rich_block_forbidden/);
+		db.close();
+	});
+
+	it("keeps one queue entry per source", () => {
+		const db = createDb();
+		seedCore(db);
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO queue_entries (id, thread_id, source_id, source_kind, targets_json, author_intent_json, priority, source_category, order_key, status, enqueued_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+				)
+				.run(
+					"queue-2",
+					"thread-1",
+					"message-1",
+					"conversation_input",
+					'["profile-1"]',
+					"{}",
+					"normal",
+					"a2a",
+					"2",
+					NOW,
+					NOW,
+				),
+		).toThrow(/UNIQUE constraint failed/);
 		db.close();
 	});
 

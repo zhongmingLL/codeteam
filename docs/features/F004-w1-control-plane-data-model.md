@@ -1,14 +1,14 @@
 ---
 feature_ids: [codeteam/F004]
-title: "W1 控制面数据模型（codeteam/F004）"
+title: "F004: W1 控制面 umbrella（schema foundation + delivery slices）"
 status: in-progress
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
 
-# F004: W1 控制面数据模型
+# F004: W1 控制面 umbrella（schema foundation + delivery slices）
 
 > 项目作用域 ID 是 `codeteam/F004`。Clowder 的 task / Mission Hub Feature ID
 > 只接受 `F\d+`，因此任务标题承载作用域，`relatedFeatureId` 不写裸 `F004`，
@@ -31,6 +31,21 @@ W0a 已由 F002 关闭，W0c daemon 已由 F003 交付；W1 是把当前
 - 不存在第二套 queue / custody / message / SOP / approval；clowder 执行
   原语仍是唯一真相。
 
+## W1 交付切片
+
+F004 是单一契约/AC 源；以下 slice 只加自己的验收，不复制 W1 Acceptance。
+slice 使用项目作用域 ID `codeteam/F004a`…，避免裸 F005+ 撞 Clowder 全局
+feat index。
+
+| Slice | 范围 | 状态 |
+|---|---|---|
+| F004 | 契约 + schema foundation（migrations / runner / schema tests） | merged（PR #21，`fa995e8d`） |
+| [F004a](F004a-identity-thread-chat-queue.md) | roles / profiles / sessions / threads / messages / queue_entries store | in progress |
+| F004b | backlog / workflow_sops / work admissions/attempts/bindings / artifacts / inbox | planned |
+| F004c | tasks / stages / runs / run_events / invocation_credentials | planned |
+| F004d | custody/waits + approvals/reviews/merges/budgets/evals/forge/audit | planned |
+| F004e | 旧库 backfill + crash recovery + Console M0 read models | planned |
+
 ## 验收标准
 
 以 [`docs/plans/0002-w0-w2-foundation.md`](../plans/0002-w0-w2-foundation.md)
@@ -48,10 +63,10 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
 
 **In**
 
-- 字段继承矩阵与五处关键差异 decision。
-- SQLite schema + additive migration + down/rollback 说明。
-- repository / store interfaces；CAS 状态更新。
-- migration / rollback / crash recovery 测试。
+- F004：字段继承矩阵、SQLite schema + additive migration、migration runner、
+  schema 约束测试。
+- F004a–d：按域拆分的 repository/store、CAS 状态更新与契约测试。
+- F004e：旧库 backfill、crash recovery、Console M0 只读查询。
 
 **Out**
 
@@ -61,19 +76,20 @@ W1 Acceptance 为单一清单，本文件不复制第二套。W1 入场门禁单
 
 ## 当前进展
 
-- 2026-10-28：矩阵经烁烁 review 后折掉 P2/P3，PR #20 已合入；开始 W1
-  schema/migration。`packages/codeteam-daemon/src/control/` 已落 3 个
-  forward-only migration（core / work-SOP / governance），共 34 张控制面表
-  + `schema_migrations`；WAL、foreign keys、5000ms busy timeout、append-only
-  trigger 与关键 partial unique index 已在包内测试覆盖。
+- 2026-10-28：矩阵 PR #20 合入（`3d15a3f57`）；schema foundation PR #21
+  经砚砚 review 后合入（`fa995e8d`），3 个 forward-only migration、34 张
+  控制面表 + `schema_migrations`；WAL、foreign keys、5000ms busy timeout、
+  append-only trigger 与关键 partial unique index 已落。
+- 2026-10-28：F004a 进行中。已加 migration 004（queue source 唯一）与
+  identity/thread/chat/queue stores；包内测试 40/40。
 
 ## Evidence
 
 - 矩阵 review：烁烁 approve @ `e2f98cb`；P2/P3 处置见 PR #20。
-- `npm --prefix packages/codeteam-daemon test`：2 个测试文件、29/29 通过；
-  覆盖空库迁移、重开幂等、失败迁移回滚、缺失表 fail closed、FK、
-  append-only、消息序/回复、run 单写者、SOP verified 拦截、wait 单
-  active、handoff/approval 唯一性、review session 独立性。
+- Schema review：砚砚 approve @ `cff2a06d`（29/29 独立复跑）；PR #21 合入
+  `fa995e8d`。
+- `npm --prefix packages/codeteam-daemon test`：3 个测试文件、40/40 通过；
+  覆盖 schema 迁移/约束 + identity/thread/chat/queue store。
 - 旧库/backfill 与 crash 重跑测试仍待补；W1 尚未完成。
 
 [宪宪/deepseek-flash🐾]
