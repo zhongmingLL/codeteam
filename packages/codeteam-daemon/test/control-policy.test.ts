@@ -39,6 +39,7 @@ beforeEach(() => {
 	write(join(worktree, ".env"), "SECRET=1");
 	write(join(worktree, "cert.pem"), "pem");
 	write(join(worktree, ".ssh", "id_rsa"), "key");
+	write(join(worktree, "credentials.json"), "{}");
 	write(join(worktree, "credentials", "operator.key"), "key");
 	write(join(worktree, ".git", "objects", "blob"), "blob");
 	write(join(dataDir, "control.db"), "db");
@@ -46,6 +47,7 @@ beforeEach(() => {
 	write(join(dataDir, "artifacts", "a"), "artifact");
 	write(join(root, "outside.txt"), "outside");
 	symlinkSync(join(root, "outside.txt"), join(worktree, "link-out"));
+	symlinkSync(join(root, "missing-target"), join(worktree, "dangling-out"));
 	linkSync(join(root, "outside.txt"), join(worktree, "hard-out"));
 	policy = createToolPolicy({ role: "coder", dataDir, worktreeRoot: worktree });
 });
@@ -93,6 +95,40 @@ describe("codeteam tool policy", () => {
 		expect(() => evaluateCommand(policy, { argv: ["git", "diff", "--no-index"] })).toThrow(ControlError);
 	});
 
+	it("denies git write primitives and validates commit message files", () => {
+		for (const argv of [
+			["git", "diff", "--output=/tmp/x"],
+			["git", "diff", "--output", "/tmp/x"],
+			["git", "diff", "-o/tmp/x"],
+			["git", "diff", "--pathspec-from-file=/tmp/x"],
+			["git", "diff", "--pathspec-file-nul"],
+		]) {
+			expect(() => evaluateCommand(policy, { argv })).toThrow(ControlError);
+		}
+		expect(() => evaluateCommand(policy, { argv: ["git", "commit", "-F", ".env"] })).toThrow(ControlError);
+		expect(evaluateCommand(policy, { argv: ["git", "commit", "-F", "src/a.ts"] }).argv).toEqual([
+			"git",
+			"commit",
+			"-F",
+			"src/a.ts",
+		]);
+	});
+
+	it("exempts commit messages from the hash rule but keeps other shell metacharacters", () => {
+		expect(evaluateCommand(policy, { argv: ["git", "commit", "-m", "fix #123"] }).argv).toEqual([
+			"git",
+			"commit",
+			"-m",
+			"fix #123",
+		]);
+		expect(evaluateCommand(policy, { argv: ["git", "commit", "--message=fix #123"] }).argv).toEqual([
+			"git",
+			"commit",
+			"--message=fix #123",
+		]);
+		expect(() => evaluateCommand(policy, { argv: ["git", "commit", "-m", "fix; rm -rf /"] })).toThrow(ControlError);
+	});
+
 	it("denies path traversal and reads outside allowed roots", () => {
 		expect(() => assertReadablePath(policy, "../outside.txt")).toThrow(ControlError);
 		expect(() => assertReadablePath(policy, join(root, "outside.txt"))).toThrow(ControlError);
@@ -105,6 +141,7 @@ describe("codeteam tool policy", () => {
 			".env",
 			"cert.pem",
 			".ssh/id_rsa",
+			"credentials.json",
 			"credentials/operator.key",
 			".git/objects/blob",
 			"hard-out",
@@ -122,6 +159,8 @@ describe("codeteam tool policy", () => {
 		expect(() => assertWritablePath(policy, "../outside-new.txt")).toThrow(ControlError);
 		expect(() => assertWritablePath(policy, join(root, "outside-new.txt"))).toThrow(ControlError);
 		expect(() => assertWritablePath(policy, ".git/objects/new")).toThrow(ControlError);
+		expect(() => assertWritablePath(policy, "dangling-out")).toThrow(ControlError);
+		expect(() => assertWritablePath(policy, "hard-out")).toThrow(ControlError);
 	});
 
 	it("restricts reviewer writes to the evidence worktree", () => {

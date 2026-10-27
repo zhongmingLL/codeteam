@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { ControlError } from "../control/errors.ts";
 import type { ToolPolicy } from "./types.ts";
 
-const DENIED_BASENAME_PATTERNS: readonly RegExp[] = [/^\.env(\..*)?$/, /\.pem$/i, /^id_rsa/];
+const DENIED_BASENAME_PATTERNS: readonly RegExp[] = [/^\.env(\..*)?$/, /\.pem$/i, /^id_rsa/, /^credentials(\..*)?$/i];
 const DENIED_SEGMENTS = new Set([".ssh", "credentials", ".git"]);
 
 export function assertReadablePath(policy: ToolPolicy, path: string, cwd = policy.cwd): string {
@@ -21,7 +21,21 @@ export function assertWritablePath(policy: ToolPolicy, path: string, cwd = polic
 	const canonical = canonicalize(path, cwd, "write");
 	assertInsideRoots(policy.writeRoots, canonical, "write");
 	assertNotDenied(policy, canonical);
+	assertSafeWriteTarget(path, cwd);
 	return canonical;
+}
+
+function assertSafeWriteTarget(input: string, cwd: string): void {
+	const absolute = isAbsolute(input) ? input : join(cwd, input);
+	try {
+		const stats = lstatSync(absolute);
+		if (stats.isSymbolicLink()) throw forbidden(`symlink write target not allowed: ${input}`);
+		if (!stats.isDirectory() && stats.nlink > 1) throw forbidden(`hardlinked write target not allowed: ${input}`);
+	} catch (error) {
+		if (error instanceof ControlError) throw error;
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code !== "ENOENT") throw forbidden(`cannot inspect write target: ${input}`);
+	}
 }
 
 function canonicalize(input: string, cwd: string, mode: "read" | "write"): string {

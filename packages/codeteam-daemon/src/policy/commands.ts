@@ -5,6 +5,7 @@ import type { ToolPolicy } from "./types.ts";
 export const DEFAULT_COMMAND_ALLOWLIST: readonly string[] = ["git", "ls", "cat", "head", "tail", "wc", "grep", "node"];
 
 const SHELL_META = /[;|&<>`$\n\r#]/;
+const SHELL_META_WITHOUT_HASH = /[;|&<>`$\n\r]/;
 const GIT_ALLOWED_SUBCOMMANDS = new Set(["add", "commit", "status", "diff"]);
 const GIT_DENIED_FLAGS = new Set([
 	"--no-index",
@@ -16,6 +17,14 @@ const GIT_DENIED_FLAGS = new Set([
 	"-C",
 	"-c",
 ]);
+const GIT_DENIED_PREFIXES: readonly string[] = [
+	"--output",
+	"--pathspec-from-file",
+	"--pathspec-file-nul",
+	"-o",
+	"-c",
+	"-C",
+];
 const READ_PATH_COMMANDS = new Set(["cat", "head", "tail", "wc", "ls"]);
 
 export interface CommandRequest {
@@ -36,8 +45,10 @@ export function evaluateCommand(policy: ToolPolicy, request: CommandRequest): Co
 	const argv = request.argv.map((arg) => String(arg));
 	const command = argv[0];
 	if (!command || command.trim() === "") throw forbidden("empty command");
-	for (const arg of argv) {
-		if (SHELL_META.test(arg)) throw forbidden(`shell metacharacters not allowed: ${arg}`);
+	const gitMessageIndexes = command === "git" ? gitMessageArgumentIndexes(argv) : new Set<number>();
+	for (const [index, arg] of argv.entries()) {
+		const pattern = gitMessageIndexes.has(index) ? SHELL_META_WITHOUT_HASH : SHELL_META;
+		if (pattern.test(arg)) throw forbidden(`shell metacharacters not allowed: ${arg}`);
 	}
 	if (!policy.allowedCommands.includes(command)) throw forbidden(`command not allowed: ${command}`);
 	if (command === "git") validateGit(argv);
@@ -61,7 +72,27 @@ function validateGit(argv: readonly string[]): void {
 	}
 	for (const arg of argv.slice(2)) {
 		if (GIT_DENIED_FLAGS.has(arg)) throw forbidden(`git flag not allowed: ${arg}`);
+		if (GIT_DENIED_PREFIXES.some((prefix) => arg.startsWith(prefix))) {
+			throw forbidden(`git flag not allowed: ${arg}`);
+		}
 	}
+}
+
+function gitMessageArgumentIndexes(argv: readonly string[]): Set<number> {
+	const indexes = new Set<number>();
+	if (argv[1] !== "commit") return indexes;
+	for (let index = 2; index < argv.length; index += 1) {
+		const arg = argv[index];
+		if (arg === "-m" || arg === "--message") {
+			indexes.add(index + 1);
+			index += 1;
+			continue;
+		}
+		if (arg?.startsWith("--message=") || (arg?.startsWith("-m") && arg.length > 2)) {
+			indexes.add(index);
+		}
+	}
+	return indexes;
 }
 
 function validateNode(argv: readonly string[]): void {
@@ -80,6 +111,20 @@ function validatePathArguments(policy: ToolPolicy, command: string, argv: readon
 			for (const arg of argv.slice(2)) {
 				if (arg.startsWith("-")) continue;
 				assertWritablePath(policy, arg, cwd);
+			}
+		}
+		if (argv[1] === "commit") {
+			for (let index = 2; index < argv.length; index += 1) {
+				const arg = argv[index];
+				if (arg === "-F" || arg === "--file") {
+					const target = argv[index + 1];
+					if (target) assertReadablePath(policy, target, cwd);
+					index += 1;
+					continue;
+				}
+				if (arg?.startsWith("--file=")) {
+					assertReadablePath(policy, arg.slice("--file=".length), cwd);
+				}
 			}
 		}
 		return;

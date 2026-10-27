@@ -56,7 +56,12 @@ daemon 数据面不可读、review/verify 不能写被审 worktree。
       `credentials/`、`.git/` 内部对象、daemon 数据面全部拒绝。
 - [x] reviewer 写 evidence 放行、写被审 worktree 拒绝。
 - [x] 命令 envelope 带 timeout/output cap / 最小 env。
-- [x] 包内 102/102、包 build、Biome 通过。
+- [x] review 收口：`git diff --output/-o/--pathspec-*` 任意写原语拒绝；`git commit -F`
+  路径按读策略校验。
+- [x] review 收口：写路径 lstat——悬空 symlink / hardlink 目标拒绝。
+- [x] review 收口：`credentials.json` / `credentials.yaml` 等 basename 拒绝。
+- [x] review 收口：commit message 的 `#` 消息位豁免，其余 shell 元字符照旧拒绝。
+- [x] 包内 104/104、包 build、Biome 通过。
 - [ ] 非作者安全 review（砚砚）与 merge。
 
 ## Out of scope
