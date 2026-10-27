@@ -768,13 +768,400 @@ W1 必须在继承矩阵里钉死的差异：
 - `Handoff` vs action lease + ball custody：`pending/claimed/consumed/withdrawn/expired` 要映射到 clowder 的 claim/terminal/wait 语义，不另造 custody 账本。
 - `Artifact` vs `ThreadArtifactDTO`：一个是证据账本，一个是 operator 视图；不能让 thread artifact 面板成为 review/merge 的真相源。
 - `TaskProbeSpec`：`http_get` 复用；`redis_exists` drop/replace（codeteam 不引入 Redis）。
-- `ThreadPhase`：标 `code-delivery-specific`，映射到 code lane 或 drop，不混入 thread。
+- `ThreadPhase`：按已签 A2-1 `sop-bulletin` 卡复用 clowder
+  `coding/research/brainstorm`，同时写 `threads.phase` 与
+  `backlog_items.dispatched_thread_phase`；它是 dispatch/UI phase，不是
+  `tasks.lane` 代码车道，也不触发 gate。
 - `SopChecks`：每项映射到点状 gate 的 `verified` / `attested` 来源，避免成为自报字段。
 - Run 权限：允许 `approval_request`（只创建 proposal），不允许 `approval:decide`；routine merge 只能走 daemon `merge:execute`（`DP-MERGE-1=D`，无 MCP/REST 暴露），不开放任意 `merge:record`。
 - `custody_events`：状态真相在 `handoffs`；重放必须与 handoffs 对账，偏差告警。
 - `BacklogItem.dispatchedThreadId` / `kickoffMessageId`：optional，避免实现第二条建 thread 通路。
 - operator steer：daemon 不解析 agent 正文；operator 自然语言可作为 trusted routing input 并落 audit。
 - lease 命名：`itemLease`（backlog item）与 `workerLease`（worker heartbeat）分开，避免混淆。
+
+### 4.4.2 W1 字段继承矩阵（入场门禁）
+
+> **状态（2026-10-28）**：W1 entry-gate 初稿，等待非作者 review。矩阵未过
+> review、五处关键差异未确认前，不开始建表。
+>
+> **判定口径**：`reused` = 语义/契约来自 clowder 原语，允许改列名、改
+> store/transport；`code-delivery-specific` = 只为代码交付新增，必须写清
+> 为什么 clowder 原语不够。没有来源、也说不清代码交付必要性的字段删除。
+>
+> **源锚点**使用 clowder 仓内相对路径；不把本地参考 checkout 路径、凭据或
+> 运行时部署假设写进产品文档。
+
+#### 4.4.2.1 判定口径与边界
+
+1. 每个 codeteam 字段必须落到 `reused` 或 `code-delivery-specific`；不允
+   许“看起来像 clowder”但没有语义来源的字段。
+2. 不允许第二套 queue/dispatch、custody、approval、message、SOP。唯一
+   pending-wake 仍是 `queue_entries`；唯一 custody 状态真相仍是
+   `handoffs`；审批唯一真相仍是 `approvals`。
+3. `AgentProfile` 是稳定逻辑身份，`AgentSession` 是执行身份；`role` 不是
+   身份。`clowder_cat_id` 只作 provenance，不参与唯一性/授权。
+4. 执行真相与视图分离：`artifacts` 是证据账本，`ThreadArtifactDTO` 是只
+   读投影；`runs` 是执行终态，`LifecycleActiveRun` 是 live 视图；`messages`
+   是聊天正文，`run_events` 是调试/事件流。
+5. 代码交付字段必须能说明“为什么 clowder 原语不够”，否则不进入 W1。
+
+#### 4.4.2.2 D-W1-1：TaskStatus
+
+| codeteam | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `tasks.status` | `TaskStatus`：`todo / doing / blocked / done`（`packages/shared/src/types/task.ts:26`） | reused | 四值原样复用；`running` 映射 `doing`，不新增进度枚举 |
+| `tasks.disposition` | 无同名 TaskItem 字段；终止语义参考 `BallEuthanasiaKind`（`packages/shared/src/types/ball-custody.ts`） | code-delivery-specific | `canceled / abandoned` 是终止处置，不是第五个进度状态；`status=done` 表示关闭，`disposition` 解释关闭方式 |
+
+规则：
+
+- `status=done` 且 `disposition IS NULL` = 正常完成；正常完成仍必须有
+  merge receipt 或人类验收记录。
+- `status=done` 且 `disposition IN (canceled, abandoned)` = 非正常关闭；
+  必须有 decision/audit，不能伪装成正常完成。
+- `disposition` 非空时 `status` 必须是 `done`；`disposition` 不能和
+  `todo/doing/blocked` 并存。
+- 不引入 `running` / `cancelled` 双枚举；`doing` 覆盖进行中，取消/放弃
+  走 `disposition`。
+- clowder 的 `frozen / degraded / abandoned` 球权终止语义不复用到
+  `TaskStatus`；`frozen/degraded` 不是 codeteam task 的终止态。
+
+#### 4.4.2.3 D-W1-2：Task.ownerCatId
+
+| codeteam | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `tasks.owner_profile_id` | `TaskItem.ownerCatId`（`task.ts:203`）的稳定身份语义 | reused | owner 是稳定逻辑身份；codeteam 用 `AgentProfile.id`，不是 catId、role 或 session |
+| `tasks.created_by` | `TaskItem.createdBy`（`CatId / 'user' / 'system'`） | reused | 单列保留 typed actor；`system` 仅 W8/forge inbound 初始 admission，后续 approve/dispatch 仍走 operator；不拆成第二套 actor 表 |
+| `agent_profiles.clowder_cat_id` | clowder catId（`CatId`） | reused（仅 provenance） | 可重复、不唯一、不参与授权；profile 与 cat 不是 1:1 |
+| `tasks.owner_profile_id` 的 role/session 关系 | `AgentProfile.role` / `AgentSession.role` | code-delivery-specific 边界 | role 是本次执行角色，session 是执行身份；换 role/session 不改变 owner；不存在 `owner_role` / `owner_session` 列 |
+
+规则：
+
+- `owner_profile_id` 可空；空表示无主 task，不伪造 owner。
+- 同一 profile 换 session 仍是同一 owner；review 独立性看
+  profile + session + modelFamily，不看 owner/role。
+- `owner_profile_id` 外键指向 `agent_profiles(id)`；`clowder_cat_id` 不建
+  唯一索引，也不用于权限判断。
+- `created_by` 的 `system` variant 不是 owner；它只记录 inbound/import 的 actor
+  来源，避免把 forge 事件伪装成 operator。
+
+#### 4.4.2.4 D-W1-3：Run vs LifecycleActiveRun / ResponseBubble
+
+`runs` 是 `LifecycleActiveRun` + `LifecycleResponseBubble` 的 durable 执行
+终态超集；不建 `active_runs`、`run_inputs` 或第二套 response 表。
+
+| codeteam `runs` 字段 | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `id` | `LifecycleActiveRun.invocationId`（`message-lifecycle.ts:380`） | reused | run id 即 invocation id，保持 child lineage |
+| `task_id` | 无 ActiveRun 字段 | code-delivery-specific | 代码交付 run 必须绑定 task；thread 关系经 task/session 解析 |
+| `queue_entry_id` | `LifecycleActiveRun.inputEntryIds[]` | reused（v1 单输入） | v1 一个 run claim 一个 queue entry；不复制 `inputMessageIds[]`；append-to-active-run 不在 W1 |
+| `stage_id` | 无 ActiveRun 字段 | code-delivery-specific | 指向 `stages` 纯快照；不是 gate 控制器 |
+| `attempt` | 无同名字段；retry 语义 | code-delivery-specific | 重试计数；run terminal 不复活，重试新建 run |
+| `role` | 执行角色 | reused | role 是本次执行角色，不是 owner |
+| `agent_session_id` | `LifecycleActiveRun` 的 invocation/session 语义 | reused | 只经 `agent_sessions` join，不直连 pi session |
+| `parent_run_id` | parent invocation（`InvocationRecord`） | reused | A2A child lineage |
+| `source_id` | source message/entry identity | reused | 与 `queue_entries.source_id` 对齐 |
+| `recipient_profile_id` | `LifecycleActiveRun.targetId` | reused | catId → profile id；多 recipient 各自 run |
+| `chain_metadata_json` | `WorklistRegistry` 的 `a2aCount/maxDepth/streakPair` | reused | 持久化链深/乒乓计数；重启不清零 |
+| `provider` / `model` / `model_family` | provider/model 执行快照 | reused | 用于 review 独立性与审计 |
+| `l0_revision` | 无 clowder 字段 | code-delivery-specific | L0 compiler 版本；压缩免疫证据锚 |
+| `status` | `LifecycleResponseBubble.status` + ActiveRun terminal | reused | `processing→running`；`completed/failed/canceled/interrupted` 原样；one terminal |
+| `response_message_id` | `LifecycleResponseBubble.id` | reused | 一个 run 一个 response；partial unique |
+| `execution_kind` | 无 clowder 字段 | code-delivery-specific | `ordinary / routing_guard`；W7 标“系统辅助” |
+| `handoff_id` / `approval_id` | 无 ActiveRun 字段 | code-delivery-specific | typed control 关联；不替代 handoff/approval 真相 |
+| `started_at` / `terminal_at` | `LifecycleActiveRun.startedAt` / `ResponseBubble.completedAt` | reused | terminal 时间；interrupted 也落 terminal |
+| `usage_json` | provider usage snapshot | reused | token/cost 用量；不是 budget 真相 |
+
+明确不复制到 `runs` 的字段：
+
+- `LifecycleActiveRun.threadId`：不存 `runs.thread_id`；经 `tasks.thread_id`
+  或 `agent_sessions.thread_id` 解析。W1 contract test 必须锁
+  `tasks.thread_id == agent_sessions.thread_id`，避免双真相。
+- `LifecycleActiveRun.inputMessageIds[]` / `privateInputEntryIds[]`：不复制；
+  source 由 `queue_entry_id` 指向的 entry 及其 message 解析；private input
+  走 `inbox` typed `humanGuidance`，不造第二输入表。
+- `LifecycleResponseBubble.body`：落 `messages` response body；run 不存正文。
+- `LifecycleResponseBubble.dispatchRefs`：落 `messages.dispatch_refs_json`；
+  run 不存第二份 delivery refs。
+- `LifecycleResponseBubble.latestInputTimelineOrderAt` / `reason`：v1 不存；
+  需要诊断时从 `run_events` 读；append 能力未进 W1。
+- 早期提案里的 `Run.sessionId` 不是 clowder 字段；W1 统一
+  `agent_session_id`，不保留第二 session 列。
+
+规则：
+
+- `runs` 的 `(source_id, recipient_profile_id) WHERE status='running'` 建
+  partial unique index；违例是 bug，不是可重试状态。
+- `response_message_id` 是 response bubble 唯一身份；`messages.kind='agent_response'`
+  与 `runs` INSERT 同事务；orphan response 由 health 告警。
+- `RunStatus` 只允许 `running / completed / canceled / interrupted / failed`；
+  `canceled` 是 operator 控制终态，`interrupted` 只由 recovery/lease 合成。
+
+#### 4.4.2.5 D-W1-4：Handoff vs action lease + ball custody
+
+`Handoff` 是 `ActionSuccessorMetadata`（`packages/shared/src/types/action-successor.ts:221`）
++ `ActionSuccessorLease`（`packages/api/src/domains/ball-custody/action-successor-state-machine.ts:119`）
++ `BallCustodyEvent`（`packages/shared/src/types/ball-custody.ts:49`）
++ `UnifiedAwaitStateV1`（`packages/shared/src/types/wait-contract.ts:25`）的代码交付 typed envelope。
+状态真相在 `handoffs`；`custody_events` 只做 append-only 审计；`waits` 只驱动唤醒。
+
+| codeteam | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `handoffs.id` | `ActionSuccessorLease.leaseId` | reused | 一个 handoff 对应一个 action lease；`waits.owner_fence.leaseId` 指向它 |
+| `task_id` / `stage_id` | 无 lease 字段 | code-delivery-specific | 代码交付 handoff 绑 task/stage；stage 只是快照 |
+| `kind` | `actionFamily` | reused | review/merge/investigate/implement/verify/vision_guard |
+| `from_role` / `to_role` | 无 lease 字段；clowder 用 holderCatIds | code-delivery-specific | SOP actionPair 需要 role 方向白名单；holder 身份仍用 profile |
+| `status` | `ActionSuccessorLeaseStatus` + custody events + wait outcome | reused（映射） | `pending / claimed / consumed / withdrawn / expired` 是对 lease 状态 + claim + terminal + wait 的 typed 投影；不新增 custody 账本 |
+| `subject` | 无同名字段；显示标签 | code-delivery-specific | 人类可读 subject；`subject_ref` 才是身份 |
+| `subject_ref` | `ActionSuccessorIdentity.subjectRef` | reused | canonical subject identity；不造新球 ID |
+| `action_family` / `successor_slot` / `mode` / `parallel_intent` | `ActionSuccessorMetadata` | reused | single/parallel 校验原样复用；parallel 必须有 intent |
+| `owner_user_id` | lease owner | reused | operator owner scope |
+| `canonical_action_key` | `canonicalizeActionIdentity` | reused | partial unique live index；同一 action identity 同时最多一个 pending/claimed |
+| `holder_profile_ids_json` | `holderCatIds[]` | reused | catId → profile id；single 一个，parallel 多个 |
+| `holder_thread_id` | `holderThreadId` | reused | 投递/回收 thread |
+| `predecessor_profile_id` / `predecessor_thread_id` | `predecessorCatId` / `predecessorThreadId` | reused | return-to-predecessor |
+| `claim_origin` / `issuer_standing_evidence_ref` | `claimOrigin` / `issuerStandingEvidenceRef` | reused | existing_standing 必须有 grounding evidence |
+| `generation` / `revision` | lease generation/revision | reused | CAS 与 replacement lineage |
+| `dispatch_id` | lease dispatchId | reused | 投递身份 |
+| `terminal_predicate_json` | `CanonicalActionTerminalPredicate` | reused | new handoff 必须有 typed predicate；不继承 `legacy_predicate_absent` |
+| `completion_candidates_json` / `holder_outcomes_json` | `completionCandidates` / `holderOutcomes` | reused | candidate 不是 complete；resolver 证据后才 commit |
+| `return_transitions_json` / `replacement_transitions_json` | 对应 lease 字段 | reused | return/replace 历史 |
+| `return_delivery_*` / `dispatch_delivery_*` | 对应 lease 字段 | reused | 投递状态/重试/SLA |
+| `terminal_actor_ref` / `terminal_reason` / `terminal_evidence_ref` | lease evidence/terminal | reused（拆分） | 通用 `evidenceRefs[]` 拆成 terminal/dispatch/return 专用 ref；不复制正文 |
+| `expected_artifact` | 无 lease 字段 | code-delivery-specific | 代码交付必须声明 expected artifact；否则不唤醒接收者 |
+| `deadline` | `UnifiedAwaitStateV1.expiresAt` 的显式终止语义 | code-delivery-specific | action lease 本身没有 wall-clock deadline；codeteam handoff 需要显式 deadline；claim lease stale 只触发 run recovery |
+| `payload_json` / `idempotency_key` / `reply_to` | lease/message identity | reused | replay 幂等与回复锚 |
+| `attempt` | lease attempt/replay | reused | expired 重排必须 attempt+1 |
+| `claimed_by_run_id` / `claimed_at` / `claimed_lease_until` / `last_heartbeat_at` | single-mode claim summary | reused | single mode 摘要；parallel 以 `handoff_holder_claims` 为准 |
+| `terminal_at` / `result_json` / `created_at` | lease terminal/result/createdAt | reused | one terminal；replay 返回原结果 |
+| `updated_at` | 无独立列；revision CAS | code-delivery-specific | 不存 updated_at，更新走 revision CAS；避免双 CAS 源 |
+
+Handoff 状态映射：
+
+| codeteam status | 证据 | 规则 |
+|---|---|---|
+| `pending` | lease 存在、无 active holder claim | 责任未领取；唤醒账本在 `queue_entries` |
+| `claimed` | 至少一个 active `handoff_holder_claims` | single 一个，parallel 每 holder 一条；非 holder `safe_wait` |
+| `consumed` | lease completed + terminal result | 幂等 replay 返回原结果 |
+| `withdrawn` | operator/author 显式撤回 | terminal；记录 actor+reason；不再唤醒 |
+| `expired` | explicit deadline/operator | terminal；不得 late-complete；重排 attempt+1 |
+
+`ActionSuccessorLeaseStatus` 的 `replaceable` 不作为 codeteam 的第五个
+status；它映射到 pending/replacement transition。`BallCustodyEvent` 映射：
+
+| codeteam `custody_events` | clowder `BallCustodyEvent` | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `id` | `sourceEventId` | reused | 幂等去重键 |
+| `subject_ref` | `subjectKey` | reused | 复用 `ball:thread:` / `ball:task:` 派生口径，不造球 ID |
+| `kind` | `BallEventKind` | reused（前缀映射） | 统一为 `handoff.*` 枚举：created/dispatched/claimed/returned/replaced/completion_candidate/completed/parallel_unfinished/withdrawn/expired/recovered |
+| `classification` | `state-changing / informational` | reused | 原样 |
+| `payload_json` / `ts` | `payload` / `at` | reused | 原样 |
+| `handoff_id` / `generation` / `seq` / `actor_ref` | 无同名字段 | code-delivery-specific | 审计索引/对账；状态真相仍在 `handoffs`，重放必须对账 |
+
+`handoff_holder_claims`：`handoff_id/profile_id/generation/run_id/status/claimed_at/lease_until/last_heartbeat_at/released_at/release_reason`
+复用 action lease 的 per-holder claim 语义；`status` 收敛为
+`active / released / interrupted`；`run_id` 必须 active run；一个 active run
+至多 claim 一个 handoff。
+
+`waits`：`wait_id/generation/subject_ref/kind/wait_source_ref/expected_signal/baseline_json/continuation_json/owner_fence_json/status/expires_at/auto_renew/sla_until/outcome_json/outcome_delivery/publish_claimed_at/consumed_at/approval_id/created_at/terminalized_at`
+复用 `UnifiedAwaitStateV1` + F280；`kind ∈ timer / event / managed_command`；
+event 型必须有 `expected_signal`；所有 wait 必须有 `wait_source_ref` +
+SLA + owner fence，缺一 fail closed。`wait_terminations` 是 canonical
+append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
+`user_cancel` actor 必须是 owner。
+
+#### 4.4.2.6 D-W1-5：Artifact vs ThreadArtifactDTO
+
+| codeteam `artifacts` | 来源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `id` | 无 clowder artifact 账本 | code-delivery-specific | 内容不可变；新版本新 id |
+| `task_id` / `run_id` | 无 clowder artifact 账本 | code-delivery-specific | 证据归属 task/run |
+| `kind` | `ThreadArtifactType` 仅作投影提示 | code-delivery-specific | `spec / plan / diff / test-report / review / verification / merge-receipt`；不是 ThreadArtifactType 子集 |
+| `sha256` / `path` / `media_type` / `bytes` | 无 clowder artifact 账本 | code-delivery-specific | 内容 hash + 临时文件 + fsync + rename；证据可重放 |
+| `provenance_json` | `ThreadArtifactDTO.sourceMessageId` 等 | code-delivery-specific | 至少含 `sourceMessageId`；可含 actor/profile/run/command；不复制正文 |
+| `approval_id` | F246 1:1 effect receipt | reused | `approvals.effect_reservation_ref` 1:1；succeeded 必须有 effect_ref |
+| `created_at` | 无 clowder artifact 账本 | code-delivery-specific | 证据创建时间 |
+
+`ThreadArtifactDTO` 是 operator 视图，不是表：
+
+| ThreadArtifactDTO 字段 | 投影来源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `type` | `artifacts.kind` → `image/file/code/pr/audio/video/widget` | reused（投影） | 默认 `code`/`file`；新增枚举需 operator 定 |
+| `name` | `path` / artifact title | reused（投影） | 显示名，不是身份 |
+| `catId` | `provenance_json.actor_profile_id` → profile 的 `clowder_cat_id` | reused（投影） | 仅 provenance；profile 无 catId 时为 null |
+| `createdAt` | `artifacts.created_at` | reused（投影） | 排序键 |
+| `sourceMessageId` | `provenance_json.sourceMessageId` | reused（投影） | 跳回原消息；证据 artifact 必填 |
+| `url` | artifact store URL / 外链 | code-delivery-specific（投影） | 视图 URL；不是账本身份 |
+| `publicationItem` / `ref` / `fileLedgerRef` / `work` | artifact provenance / publication | reused（投影） | 只读；不反向成为 review/merge 真相源 |
+
+规则：
+
+- `artifacts` 是证据账本；`ThreadArtifactDTO` 是只读投影。Hub 面板不能反
+  向成为 review/merge 真相源。
+- `spec/plan/diff/test-report/review/verification/merge-receipt` 默认映射
+  `file` 或 `code`；新增 Hub 可见 type 需 operator 定。
+- 每个 evidence artifact 的 `provenance_json` 至少含 `sourceMessageId`；
+  `artifactRef` 是消息/Review/Merge 回指 artifact 的稳定引用。
+
+#### 4.4.2.7 其余 W1 对象字段矩阵
+
+**0. Task**
+
+| codeteam 字段 | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `tasks.id` / `kind` / `thread_id` / `subject_key` / `title` / `why` / `status` / `created_by` / `created_at` / `updated_at` | `TaskItem.id/kind/threadId/subjectKey/title/why/status/createdBy/createdAt/updatedAt`（`task.ts:190`） | reused | `why` 替代 `goal`；`status` 见 D-W1-1；`createdBy` 单列见 D-W1-2 |
+| `tasks.owner_profile_id` | `TaskItem.ownerCatId` | reused | 见 D-W1-2；owner 是 profile，不是 role/session |
+| `tasks.automation_state_json` / `deployment_wait_json` / `probe_json` / `resolve_mode` / `entrusted_work_json` / `related_feature_id` / `detected_feature_ids_json` / `dispatch_gate_json` / `user_id` / `source_message_id` / `source_summary_id` | `TaskItem.automationState/deploymentWait/probe/resolveMode/entrustedWork/relatedFeatureId/detectedFeatureIds/dispatchGate/userId/sourceMessageId/sourceSummaryId` | reused | shape 复用；`probe.http_get` 复用，`redis_exists` drop/replace；`relatedFeatureId` 替代 `featureId` |
+| `tasks.backlog_item_id` | 无 TaskItem 字段 | code-delivery-specific | work task 必须绑 backlog item；`CHECK (kind <> 'work' OR backlog_item_id IS NOT NULL)` |
+| `tasks.repo` / `base_ref` / `base_sha` / `worktree` / `branch` | 无 TaskItem 字段 | code-delivery-specific | 代码交付目标、基线、worktree、分支 |
+| `tasks.risk` / `risk_axes_json` | 无 TaskItem 字段 | code-delivery-specific | 五轴风险 + assurance level；merge gate 输入 |
+| `tasks.lane` | 无 TaskItem 字段 | code-delivery-specific | 当前代码车道快照；不是 `WorkflowSop.stage` |
+| `tasks.budget_json` | 无 TaskItem 字段 | code-delivery-specific | per-task budget 快照；真正账本在 `budgets` |
+| `tasks.disposition` | 无 TaskItem 字段 | code-delivery-specific | 见 D-W1-1；取消/放弃不改四值 status |
+| `tasks.goal` / `tasks.feature_id` | `TaskItem.why` / `relatedFeatureId` 已覆盖 | not separate columns | 不另存 goal/featureId；避免双真相 |
+
+**A. Thread / Message / Queue**
+
+| codeteam 字段 | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `threads.id` / `title` / `created_at` | `Thread.id/title/createdAt`（`ThreadStore.ts:201`） | reused | 直接身份/显示/创建时间 |
+| `threads.repo` | `Thread.projectPath` | reused | 改写为目标 repo 路径；产品文档不写本地参考路径 |
+| `threads.phase` | `Thread.phase`（`ThreadPhase`） | reused | `coding / research / brainstorm`；dispatch 同时写 `backlog_items.dispatched_thread_phase`；不是 `tasks.lane` |
+| `threads.backlog_item_id` | `Thread.backlogItemId` | reused | dispatch 单事务写；`ON DELETE SET NULL` |
+| `threads.status` | 无 clowder Thread.status | code-delivery-specific | `active / archived`；无 gate；archived 仍可读 |
+| `threads.updated_at` | `Thread.lastActiveAt` 是活动时间 | code-delivery-specific | 行 mutation/CAS 时间；不与 last activity 混用 |
+| `messages.id` / `thread_id` / `created_at` / `updated_at` | `Message.id/threadId/createdAt/updatedAt`（`message.ts:98`） | reused | 直接身份 |
+| `messages.author_kind` / `author_id` | `Message.sender` union | reused | 拆 union；保留 user/agent/external/plugin/system |
+| `messages.body_md` | `Message.content` 文本部分 | reused | 扁平 Markdown；rich blocks 分开；不建第二 message store |
+| `messages.rich_blocks_json` | `MessageContent` / RichBlock | reused | JSON 投影；不含 approval kind |
+| `messages.dispatch_refs_json` | `LifecycleMessageMetadata.dispatchRefs` | reused | source×target 实际投递；terminal 仍以 runs 为准 |
+| `messages.task_id` | 无 Message.taskId | code-delivery-specific | 代码交付聊天绑定 task；可空 |
+| `messages.kind` | 无 Message.kind | code-delivery-specific | chat/question/answer/proposal/finding/status/handoff/verdict/approval_request/agent_response/backlog_kickoff/approval_pointer |
+| `messages.reply_to` | 无 Message.replyTo | code-delivery-specific | 只允许同 thread；跨 thread 用 access-checked navigation ref |
+| `messages.control_ref` | 无 Message.controlRef | code-delivery-specific | daemon 在 typed control 创建后回填；agent 不能手填 |
+| `messages.seq` | `orderKey` 是展示排序 | code-delivery-specific | thread-scoped 可见序；`UNIQUE(thread_id,seq)`；`BEGIN IMMEDIATE` 分配 |
+| `queue_entries.id` / `thread_id` / `priority` / `enqueued_at` | `LifecycleQueueEntryBase.id/threadId/priority/enqueuedAt`（`message-lifecycle.ts:33`） | reused | 单 pending-wake 账本 |
+| `queue_entries.source_id` / `source_record_id` / `source_kind` | `from` union / `sourceRecordId` / `kind` | reused | 扁平 source identity；不存 inline payload |
+| `queue_entries.targets_json` | `targets[]` | reused | profile/session id；多 recipient 一行，不拆行 |
+| `queue_entries.author_intent_json` | `authorIntentByTarget` | reused | 每 target 意图；路由只读 typed 字段 |
+| `queue_entries.source_category` | clowder source category | reused | a2a/review/continuation/backlog_dispatch |
+| `queue_entries.order_key` | `position` / order list | reused | SQLite 显式排序键 |
+| `queue_entries.revision` | `version` | reused | 行 CAS/replay |
+| `queue_entries.fence_refs_json` | F254/F167/F280 fence refs | reused | 只运输 refs；不复制 fence 正文 |
+| `queue_entries.status` | `QueueLedgerStatus` | reused | queued/claimed/processing；terminal 行同事务删除；不落 durable tombstone |
+| `queue_entries.claim_id` / `claim_owner_run_id` | clowder claim | reused | 短 cutover claim |
+| `queue_entries.claim_expires_at` | `claimedAt` + recovery threshold | code-delivery-specific | SQLite 自到期列；clowder 无同名列 |
+| `queue_entries.updated_at` | 无 clowder 行 updatedAt | code-delivery-specific | 行 mutation/CAS |
+
+**B. Backlog / SOP / managed work**
+
+| codeteam 字段 | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `backlog_items.id` / `user_id` / `project_id` / `title` / `summary` / `priority` / `tags_json` / `status` / `suggestion_json` / `lease_json` / `dependencies_json` / `dispatched_thread_id` / `dispatched_thread_phase` / `dispatch_attempt_id` / `pending_thread_id` / `kickoff_message_id` / `approved_at` / `dispatched_at` / `done_at` / `created_at` / `updated_at` | `BacklogItem`（`backlog.ts:59`） | reused | 全形状复用；`audit` 不内嵌，从全局 `audit` 投影；`suggestion/lease/dependencies` 用 JSON |
+| `backlog_items.created_by_kind` / `created_by_id` | `BacklogItem.createdBy` | reused（枚举扩展 `system`） | 拆 CatId/user；`system` 仅 W8/forge inbound 初始 `open/suggested`，后续 approve/dispatch 仍走 operator |
+| `workflow_sops.backlog_item_id` / `feature_id` / `sop_definition_id` / `stage` / `baton_holder` / `next_skill` / `resume_capsule_json` / `checks_json` / `version` / `updated_at` / `updated_by` | `WorkflowSop`（`workflow-sop.ts:23`） | reused | 告示牌+CAS 原样；`stage` 不做迁移校验 |
+| `workflow_sops.checks_json` 的 `verified` | `SopChecks` / `sop_check_evidence`（W4） | code-delivery-specific 限制 | W1 只写 `attested/unknown`；`verified` 由 gate 证据投影，agent 不能自报 |
+| `work_admissions.work_id` / `owner_user_id` / `producer_kind` / `producer_ref` / `initial_attempt_id` / `admitted_at` | F275 `WorkAdmission` | reused | TTL=0；确定性 work id |
+| `work_attempts.attempt_id` / `work_id` / `attempt_number` / `executor_profile_id` / `created_at` / `executor_bound_at` | F275 `WorkAttempt` | reused | `executor_profile_id` 由 catId 适配为 profile；attempt 1 初始 unbound |
+| `run_managed_work_bindings.*` / `task_managed_work_bindings.*` | F275 invocation/task binding | code-delivery-specific | server-private；raw workId/attemptId 不进公共 DTO |
+
+**C. Role / AgentProfile / AgentSession / credential**
+
+| codeteam 字段 | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `roles.id` / `label` / `description` / `status` / `created_at` / `updated_at` | `Role = string` 动态 registry | code-delivery-specific 存储 | role 语义复用；表是 codeteam registry；内置 architect/coder/reviewer/verifier，seed eval/compress；未知/禁用 fail closed |
+| `agent_profiles.id` | `catId` + `CatConfig` 的稳定身份 | code-delivery-specific handle | codeteam 自有稳定 id；不直接沿用 clowder catId |
+| `agent_profiles.role` | `CatConfig`/role registry | reused | primary role；一个 profile 一个 primary role |
+| `agent_profiles.display_name` / `provider` / `model` / `model_family` / `role_description` / `restrictions_json` / `status` | `CatConfig` | reused | R1 适配；model_family 是 review 独立性依据 |
+| `agent_profiles.tool_policy_profile` | 无 CatConfig 同名字段 | code-delivery-specific | 工具策略 profile 名；由 W2 解析 |
+| `agent_profiles.clowder_cat_id` | clowder catId | reused（provenance） | 可重复、不唯一、不参与授权 |
+| `agent_profiles.created_at` / `updated_at` | 无 CatConfig 行时间 | code-delivery-specific | registry 审计 |
+| `agent_sessions.id` / `thread_id` / `seq` / `status` / `cli_session_id` / `native_session_binding_json` / `context_health_json` / `capacity_pin_json` / `seal_reason` / `compression_count` / `continuity_capsule_json` / `chain_key` / `latest_resume_session_id` / `created_at` / `updated_at` / `sealed_at` | `SessionRecord`（`session.ts:56`） | reused | 全字段复用；结构化字段用 JSON 列承载；`scopedInvocation`/`externalImport` 显式不继承 |
+| `agent_sessions.cat_handoff_note_json` / `last_usage_json` / `message_count` / `working_directory` / `workspace_fingerprint` / `user_id` | `SessionRecord.catHandoffNote/lastUsage/messageCount/workingDirectory/workspaceFingerprint/userId` | reused | `catHandoffNote` 是 F225 typed 五件套，必须单独落 JSON，不并进 `continuityCapsule`；`lastUsage` 是展示快照；其余四列原样落列，不静默丢 |
+| `agent_sessions.task_id` / `stage_id` / `profile_id` / `role` / `effective_tool_policy` / `pi_session_id` / `provider` / `model` / `model_family` | SessionRecord 扩展 | code-delivery-specific / adapted | `pi_session_id` 映射 `cliSessionId`；session role 可不同于 profile primary role；effective policy 落快照 |
+| `invocation_credentials.id` / `token_hash` / `token_salt` / `run_id` / `task_id` / `role` / `agent_session_id` / `agent_profile_id` / `thread_id` / `user_id` / `owner_auth_provenance` / `parent_run_id` / `tool_policy_json` / `state` / `disposition` / `last_refresh_at` / `expires_at` / `created_at` / `updated_at` | F174 `InvocationRecord` | reused | SQLite 实现；active 无短 TTL，terminal tombstone 30d；`owner_auth_provenance ∈ strict/compat/unknown`（clowder `compatibility_fallback` → `compat`，只改名不改语义），managed-work bind 只 strict |
+
+**D. Run / event / stage**
+
+| codeteam 字段 | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `runs.*` | 见 §4.4.2.4 | mixed reused / code-delivery-specific | 不建第二 active-run/response 表 |
+| `run_events.id` / `run_id` / `seq` / `kind` / `payload_json` / `ts` | `TurnExecutionRecord` / `InvocationRecord` 事件语义 | code-delivery-specific | child event stream；不替代 run terminal truth |
+| `thread_events.id` / `thread_id` / `seq` / `kind` / `payload_json` / `ts` | thread projection events | code-delivery-specific | 只写 thread 已存在后的 `backlog_item_dispatched/backlog_item_done/workflow_sop_updated`；聊天不落这里 |
+| `stages.id` / `task_id` / `lane` / `status` / `started_at` / `ended_at` | 无 clowder Stage 原语 | code-delivery-specific | 纯快照；`status active/passed`；无 entry/exit/criteria/attempt；gate 不以 stage 迁移触发 |
+
+**E. Wait / Inbox / Approval**
+
+| codeteam 字段 | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `waits.*` | `UnifiedAwaitStateV1` + F280 | reused | 见 §4.4.2.5；timer/event/managed_command；event 必须有 expected_signal；所有 wait 必须有 wait_source_ref/SLA/owner fence |
+| `wait_terminations.*` | `WaitTermination` canonical event | reused | append-only；`(wait_id,generation)` 唯一；user_cancel actor=owner |
+| `inbox.id` / `task_id` / `run_id` / `kind` / `payload_json` / `status` / `created_at` / `consumed_at` | clowder inbox/steer 语义 | code-delivery-specific 存储 | `kind ∈ steer / followUp / humanGuidance`；不产生 handoff；operator chat 行动才生成 |
+| `approvals.id` / `thread_id` / `task_id` / `kind` / `idempotency_key` / `origin_ref_json` / `card_ref_json` / `resolution` / `materialization_json` / `effect_reservation_ref` / `effect_ref` / `payload_json` / `requested_by` / `decided_by` / `decided_at` / `decided_note` / `expires_at` / `created_at` / `updated_at` | F246 Approval | reused（`kind` 扩展） | 单表 canonical；`kind ∈ merge/design_gate/spec_change/blocker/budget_pause`；双锚；resolution/materialization 分离；expiry=stale；decide operator-only |
+
+**F. Review / Merge / Budget / Eval / Forge / Audit**
+
+| codeteam 字段 | clowder 源 | 处置 | 差异 / 理由 |
+|---|---|---|---|
+| `reviews.id` / `task_id` / `run_id` / `head_sha` / `author_session_id` / `author_model` / `author_model_family` / `reviewer_session_id` / `reviewer_model` / `reviewer_model_family` / `review_mode` / `verdict` / `findings_json` / `created_at` | harness-eval review verdict envelope | code-delivery-specific 存储 | `head_sha` 硬绑定；`review_mode ∈ cross_family / same_family_fresh`；代码默认 cross_family |
+| `findings.id` / `review_id` / `index` / `severity` / `file` / `line` / `claim` / `evidence_kind` / `falsifier` / `falsifier_expected` / `required_action` | harness-eval finding | reused | P1/P2 必须有可执行 falsifier；否则降 P3 |
+| `verifications.id` / `finding_id` / `head_sha` / `producing_review_id` / `status` / `reason` / `command` / `cwd` / `exit_code` / `duration_ms` / `stdout_tail` / `stderr_tail` / `created_at` | verifier/falsifier 语义 | reused | 证据关闭 finding；`producing_review_id` 追溯 |
+| `merges.id` / `task_id` / `base_sha` / `head_sha` / `merge_sha` / `policy` / `approved_by` / `receipt_ref` / `approval_id` / `created_at` | merge policy/receipt | code-delivery-specific 存储 | 复用 merge gate 语义；routine merge 由 daemon merge-owner 执行 |
+| `budgets.id` / `task_id` / `tokens_limit` / `tokens_used` / `cost_limit` / `cost_used` / `wall_time_limit_ms` / `wall_time_used_ms` | per-task/provider budget | code-delivery-specific | 代码交付资源边界 |
+| `evals.id` / `task_id` / `provider` / `model` / `role` / `metrics_json` / `created_at` | eval dimensions | code-delivery-specific 存储 | 复用 eval 方法，不建第二 evidence store |
+| `forge_deliveries.id` / `provider` / `repo` / `delivery_id` / `natural_key` / `status` / `retry_count` / `received_at` / `processed_at` | github-signals / webhook delivery | code-delivery-specific 存储 | `(provider, delivery_id)` claim；重启去重 |
+| `audit.id` / `actor` / `action` / `subject` / `args_json` / `result` / `ts` | clowder audit | reused（存储适配） | append-only trigger；backlog/SOP/approval mutation 同事务追加 |
+
+#### 4.4.2.8 明确不继承的 clowder 字段/能力
+
+| clowder 字段/能力 | 处置 | 理由 / revisit trigger |
+|---|---|---|
+| `TaskProbeSpec.redis_exists` | drop / replace | codeteam 不引入 Redis；`http_get` 复用。需要外部状态探测时用 HTTP/命令 adapter，不恢复 Redis 依赖 |
+| `Message.status`（pending / streaming / complete / error） | not stored | 消息行是 durable final body；流式/错误是 run/bubble 投影。W7 若需要断线续流，读 `run_events`，不把 message 变双状态表 |
+| `LifecycleActiveRun.inputEntryIds[]` 的 append 能力 | v1 drop | 一个 run 一个 `queue_entry_id`；append-to-active-run 不在 W1。W7 真实需要时再评估 `run_inputs`，不提前造表 |
+| `LifecycleActiveRun.inputMessageIds[]` / `privateInputEntryIds[]` | not stored | 由 queue entry source / inbox 解析；不复制第二输入身份 |
+| `LifecycleResponseBubble.body` / `dispatchRefs` 作为 run 列 | not stored | body 落 `messages`；delivery 落 `messages.dispatch_refs_json`；run 不存正文/第二 delivery 账本 |
+| `Run.updated_at` | drop | 用 status/revision/terminal_at；避免双 CAS 源 |
+| `ActionSuccessorLeaseStatus.replaceable` | 不作为 codeteam status | 映射 pending/replacement transition；codeteam status 不增加第五值 |
+| `terminalPredicateState.legacy_predicate_absent` | not inherited | 新 handoff 必须有 typed terminal predicate；legacy 只用于 clowder 历史数据 |
+| `SessionRecord.scopedInvocation` / `externalImport` | v1 drop | codeteam session 不承接 clowder 的一次性 scoped/external import；W5 re-attach 再评估 |
+| `Thread` 的 participants/createdBy/pinned/favorited/titleSource/mentionActionabilityMode/routingPolicy 等 | W1 slice 不持久化 | W1 只建 thread 身份/phase/backlog 链接；参与者从 messages/agent_sessions 派生；UI metadata 归 W7 |
+| `BacklogItem.audit` 内嵌 | not stored | 统一从全局 `audit` 投影；避免第二 audit 账本 |
+| clowder Redis queue 的 durable tombstone / per-target 行 / F122 steer 预留 | not inherited | SQLite 同库 cutover 单事务；单行多 recipient；terminal 行删除；F122 是历史 |
+| `agent_keys` 表 | v1 not built | callback credential 够用；P1 external/IDE direct 再开 |
+| `ThreadArtifactDTO` 作为表 | not a table | 只读投影；账本权威在 `artifacts` |
+| `tool_usage_counters` / telemetry traces | W6/W7 | 不阻塞 W1；按 observability 卡单独落 |
+| `clowder_cat_id` 作为唯一/授权键 | not allowed | 只作 provenance；授权看 profile/session/credential |
+| `LifecycleQueueEntryBase.ownerAuthProvenance` 作为 `queue_entries` 列 | not duplicated | admission 时解析，cutover 时 mint 到 `invocation_credentials.owner_auth_provenance`；managed-work bind 只接受 strict；Queue 不存第二份 auth provenance |
+
+#### 4.4.2.9 入场门禁检查项
+
+矩阵 review 时必须逐项确认；未确认不得建表：
+
+1. `queue_entries` 不重复存 `owner_auth_provenance`；cutover 时 mint 到
+   `invocation_credentials`，managed-work bind 只接受 `strict`。contract
+   test 覆盖 compat/unknown 不绑定；clowder `compatibility_fallback` 映射
+   `compat`，只改名不改语义。
+2. `runs` 不存 `thread_id`；`tasks.thread_id == agent_sessions.thread_id`
+   由 contract test 锁定；不一致 fail closed。
+3. `handoffs.deadline` 是显式 deadline；claim lease/heartbeat stale 只触
+  发 run interrupted recovery，不判 custody expired。
+4. `threads.phase` 是 clowder dispatch/UI phase；`tasks.lane` 是代码车道；
+   两者不互换、不互相推导；thread phase 与 backlog dispatched phase 不一
+   致时 dispatch 事务回滚。
+5. `messages.status` 不持久化；W7 只从 `runs.status` / `run_events` 投影
+   streaming/terminal，不从 message 行猜。
+6. `artifacts.kind` → `ThreadArtifactType` 默认映射 `file`/`code`；新增
+   Hub 枚举需 operator 定，不由 W1 自创。
+7. `owner_profile_id` 是唯一 owner 字段；不存在 `owner_role` /
+   `owner_session`；换 role/session 不改变 owner。
+8. `custody_events` 与 `handoffs` 重放对账；偏差告警，不反向裁决；wait
+   canonical 终止只在 `wait_terminations`。
+9. `§12.2` 的 `agent_sessions` DDL 是摘要；迁移时必须按 `SessionRecord`
+   全字段展开（或明确 JSON 列），不能把摘要当完整列清单。`seq` /
+   `cli_session_id` / `context_health_json` / `seal_reason` /
+   `compression_count` / `continuity_capsule_json` / `sealed_at` 等必须有
+   落点；`cat_handoff_note_json` 必须单独落列，不得并进
+   `continuity_capsule_json`。
 
 ---
 
