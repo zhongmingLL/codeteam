@@ -128,4 +128,5 @@ export {
 	type ToolPolicy,
 	type ToolRole,
 } from "./policy/index.ts";
+export * from "./review/index.ts";
 export { type DaemonState, type DaemonStateFile, readStateFile, writeStateFile } from "./state.ts";

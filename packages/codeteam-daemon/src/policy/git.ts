@@ -8,6 +8,8 @@ export interface CommitWithAuditInput {
 	readonly paths?: readonly string[];
 	readonly actorRef: string;
 	readonly env?: Record<string, string>;
+	readonly taskId?: string;
+	readonly runId?: string;
 }
 
 export interface CommitWithAuditResult {
@@ -55,7 +57,14 @@ export async function commitWithAudit(
 		actor: input.actorRef,
 		action: "commit_created",
 		subject: `commit:${commitSha}`,
-		args: { previousHead, headSha: commitSha, paths: input.paths ?? [], cwd: policy.cwd },
+		args: {
+			previousHead,
+			headSha: commitSha,
+			paths: input.paths ?? [],
+			cwd: policy.cwd,
+			taskId: input.taskId ?? null,
+			runId: input.runId ?? null,
+		},
 	});
 	return { previousHead, commitSha, auditId: audit.id };
 }

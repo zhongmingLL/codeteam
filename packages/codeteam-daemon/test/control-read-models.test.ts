@@ -59,8 +59,8 @@ function base() {
 		role: "coder",
 		effectiveToolPolicy: "default",
 		provider: "test",
-		model: "model",
-		modelFamily: "family",
+		model: "deepseek-flash",
+		modelFamily: "deepseek",
 		seq: 0,
 	});
 	const source = store.messages.append({
@@ -87,8 +87,8 @@ function base() {
 		sourceId: source.id,
 		recipientProfileId: "profile-coder",
 		provider: "test",
-		model: "model",
-		modelFamily: "family",
+		model: "deepseek-flash",
+		modelFamily: "deepseek",
 	});
 	return { backlog, thread, task, session, source, queue, run };
 }
@@ -102,8 +102,8 @@ function reviewerSession(threadId: string, taskId: string) {
 		role: "reviewer",
 		effectiveToolPolicy: "default",
 		provider: "test",
-		model: "review-model",
-		modelFamily: "review-family",
+		model: "glm-5.3-flash",
+		modelFamily: "glm",
 		seq: 1,
 	});
 }
@@ -181,17 +181,27 @@ describe("codeteam console M0 read models", () => {
 			mediaType: "text/x-diff",
 			provenance: { sourceMessageId: context.source.id },
 		});
+		store.audit.append({
+			actor: "profile:coder",
+			action: "commit_created",
+			subject: `commit:${HEAD}`,
+			args: { headSha: HEAD, taskId: context.task.id },
+		});
 		store.reviews.create({
 			id: "review-1",
 			taskId: context.task.id,
 			runId: context.run.id,
 			headSha: HEAD,
+			baseSha: "b".repeat(40),
 			authorSessionId: context.session.id,
-			authorModel: "model-a",
-			authorModelFamily: "family-a",
+			authorModel: "deepseek-flash",
+			authorModelFamily: "deepseek",
 			reviewerSessionId: reviewer.id,
-			reviewerModel: "model-b",
-			reviewerModelFamily: "family-b",
+			reviewerModel: "glm-5.3-flash",
+			reviewerModelFamily: "glm",
+			authorProfileId: "profile-coder",
+			reviewerProfileId: "profile:eval",
+			riskClass: "code",
 			reviewMode: "cross_family",
 			verdict: "changes_requested",
 			findings: [

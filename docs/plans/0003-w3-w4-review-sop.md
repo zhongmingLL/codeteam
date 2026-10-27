@@ -159,6 +159,19 @@ interface Finding {
 - 砚砚：ReviewPolicy、falsifier 信任边界、headSha、blocked 生命周期。
 - 墨墨：review UX/文档是否把“独立 review”讲清楚；低风险例外是否可理解。
 
+### W3 Results（2026-10-28，实现完成，独立 review 待发生）
+
+- 实现计划与验收映射：`plans/0008-w3-review-implementation.md`。
+- 代码：`src/review/`（model-family / policy / envelope / findings / falsifier /
+  head / service / eval）+ migration 007 + `reviews`/`verifications` 接线。
+- 测试：包内 **159 passed / 1 skipped**；新增 W3 28 条；Biome clean；
+  `build:offline` 与根级 tsc 通过。
+- Eval smoke：5 clean + 5 seeded、glm/qwen 两族 fixture observation；
+  overall FP 10%、recall 90%、survival 90.9%，预注册门槛通过；n=10 cases
+  只作 smoke，不作模型家族结论。
+- 证据报告：`reports/2026-10-28-w3-review-evidence.md`。
+- 以上是本地实现证据，不替代非作者 review、merge 或 operator acceptance。
+
 ---
 
 ## W4. SOP 与 Design Gate：全面复用 clowder SOP

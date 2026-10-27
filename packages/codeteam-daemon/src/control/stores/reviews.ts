@@ -1,14 +1,16 @@
 import type { DatabaseSync } from "node:sqlite";
+import { assertModelFamilyClaim } from "../../review/model-family.ts";
 import { ControlError } from "../errors.ts";
 import type { ControlTransaction } from "../transaction.ts";
 import type { AuditStore } from "./audit.ts";
-import { type Clock, mapStoreError, newId, nonEmpty } from "./helpers.ts";
+import { type Clock, jsonObject, mapStoreError, newId, nonEmpty, parseJsonObject } from "./helpers.ts";
 import type {
 	CreateReviewInput,
 	CreateVerificationInput,
 	Finding,
 	Review,
 	ReviewMode,
+	ReviewRisk,
 	ReviewVerdict,
 	Verification,
 	VerificationStatus,
@@ -19,14 +21,19 @@ interface ReviewRow {
 	task_id: string;
 	run_id: string;
 	head_sha: string;
+	base_sha: string | null;
 	author_session_id: string;
 	author_model: string;
 	author_model_family: string;
 	reviewer_session_id: string;
 	reviewer_model: string;
 	reviewer_model_family: string;
+	author_profile_id: string | null;
+	reviewer_profile_id: string | null;
+	risk_class: ReviewRisk;
 	review_mode: ReviewMode;
 	verdict: ReviewVerdict;
+	policy_json: string;
 	findings_json: string;
 	created_at: number;
 }
@@ -59,6 +66,14 @@ interface VerificationRow {
 	stdout_tail: string | null;
 	stderr_tail: string | null;
 	created_at: number;
+}
+
+interface SessionIdentityRow {
+	profile_id: string;
+	role: string;
+	task_id: string | null;
+	model: string;
+	model_family: string;
 }
 
 function mapFinding(row: FindingRow): Finding {
@@ -103,6 +118,26 @@ function validateHeadSha(value: string): string {
 	return sha;
 }
 
+function isReviewRisk(value: string): value is ReviewRisk {
+	return value === "low_risk_docs" || value === "code" || value === "high_risk";
+}
+
+function assertSessionIdentity(
+	row: SessionIdentityRow,
+	profileId: string,
+	model: string,
+	modelFamily: string,
+	label: string,
+): void {
+	if (row.profile_id !== profileId) {
+		throw new ControlError("invalid_input", `${label} profile does not match session ${profileId}`);
+	}
+	if (row.model !== model || row.model_family !== modelFamily) {
+		throw new ControlError("invalid_input", `${label} model/family does not match the session record`);
+	}
+	assertModelFamilyClaim(row.model, row.model_family);
+}
+
 export class ReviewStore {
 	private readonly database: DatabaseSync;
 	private readonly transaction: ControlTransaction;
@@ -136,14 +171,55 @@ export class ReviewStore {
 		return rows.map(mapFinding);
 	}
 
+	getFinding(id: string): Finding | null {
+		const row = this.database.prepare("SELECT * FROM findings WHERE id = ?").get(id) as FindingRow | undefined;
+		return row ? mapFinding(row) : null;
+	}
+
+	getReviewForFinding(id: string): Review | null {
+		const row = this.database
+			.prepare(
+				"SELECT reviews.* FROM reviews JOIN findings ON findings.review_id = reviews.id WHERE findings.id = ?",
+			)
+			.get(id) as ReviewRow | undefined;
+		if (!row) return null;
+		return { ...this.mapReview(row), findings: this.getFindings(row.id) };
+	}
+
+	isCurrent(
+		review: Pick<Review, "headSha" | "baseSha">,
+		currentHeadSha: string,
+		currentBaseSha?: string | null,
+	): boolean {
+		if (review.headSha !== currentHeadSha) return false;
+		if (currentBaseSha === undefined) return true;
+		return review.baseSha === currentBaseSha;
+	}
+
+	listCurrentByTask(taskId: string, currentHeadSha: string, currentBaseSha?: string | null): Review[] {
+		return this.listByTask(taskId).filter((review) => this.isCurrent(review, currentHeadSha, currentBaseSha));
+	}
+
 	create(input: CreateReviewInput): Review {
 		const headSha = validateHeadSha(input.headSha);
-		if (input.authorSessionId === input.reviewerSessionId) {
+		const baseSha = validateHeadSha(nonEmpty(input.baseSha, "baseSha"));
+		const taskId = nonEmpty(input.taskId, "taskId");
+		const runId = nonEmpty(input.runId, "runId");
+		const authorSessionId = nonEmpty(input.authorSessionId, "authorSessionId");
+		const reviewerSessionId = nonEmpty(input.reviewerSessionId, "reviewerSessionId");
+		const authorProfileId = nonEmpty(input.authorProfileId, "authorProfileId");
+		const reviewerProfileId = nonEmpty(input.reviewerProfileId, "reviewerProfileId");
+		if (authorSessionId === reviewerSessionId) {
 			throw new ControlError("invalid_input", "reviewer session must differ from author session");
 		}
-		if (input.reviewMode === "cross_family" && input.authorModelFamily === input.reviewerModelFamily) {
-			throw new ControlError("invalid_input", "cross-family review requires different model families");
+		if (authorProfileId === reviewerProfileId) {
+			throw new ControlError("invalid_input", "reviewer profile must differ from author profile");
 		}
+		const riskClass = input.riskClass;
+		if (!riskClass || !isReviewRisk(riskClass)) {
+			throw new ControlError("invalid_input", "review risk class is required");
+		}
+		const policyJson = jsonObject(input.policy ?? {}, "policy");
 		const id = input.id ?? newId();
 		const createdAt = input.createdAt ?? this.clock();
 		const findings: Finding[] = input.findings.map((finding, index) => ({
@@ -164,23 +240,58 @@ export class ReviewStore {
 		}));
 		try {
 			return this.transaction.run(() => {
+				const authorSession = this.readSessionIdentity(authorSessionId, "author", taskId, "coder");
+				const reviewerSession = this.readSessionIdentity(reviewerSessionId, "reviewer", taskId);
+				assertSessionIdentity(authorSession, authorProfileId, input.authorModel, input.authorModelFamily, "author");
+				assertSessionIdentity(
+					reviewerSession,
+					reviewerProfileId,
+					input.reviewerModel,
+					input.reviewerModelFamily,
+					"reviewer",
+				);
+				const sameFamily = authorSession.model_family === reviewerSession.model_family;
+				if (riskClass === "low_risk_docs") {
+					const expectedMode = sameFamily ? "same_family_fresh" : "cross_family";
+					if (input.reviewMode !== expectedMode) {
+						throw new ControlError(
+							"invalid_input",
+							`low-risk docs review must use ${expectedMode} for the recorded model families`,
+						);
+					}
+				} else {
+					if (sameFamily) {
+						throw new ControlError("invalid_input", `${riskClass} review requires different model families`);
+					}
+					if (input.reviewMode !== "cross_family") {
+						throw new ControlError("invalid_input", `${riskClass} review must use cross_family mode`);
+					}
+				}
+				if (!this.audit.latest(`commit:${headSha}`, "commit_created")) {
+					throw new ControlError("invalid_input", `headSha ${headSha} is not traceable to a coder commit audit`);
+				}
 				this.database
 					.prepare(
-						"INSERT INTO reviews (id, task_id, run_id, head_sha, author_session_id, author_model, author_model_family, reviewer_session_id, reviewer_model, reviewer_model_family, review_mode, verdict, findings_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+						"INSERT INTO reviews (id, task_id, run_id, head_sha, base_sha, author_session_id, author_model, author_model_family, reviewer_session_id, reviewer_model, reviewer_model_family, author_profile_id, reviewer_profile_id, risk_class, review_mode, verdict, policy_json, findings_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 					)
 					.run(
 						id,
-						nonEmpty(input.taskId, "taskId"),
-						nonEmpty(input.runId, "runId"),
+						taskId,
+						runId,
 						headSha,
-						nonEmpty(input.authorSessionId, "authorSessionId"),
+						baseSha,
+						authorSessionId,
 						nonEmpty(input.authorModel, "authorModel"),
 						nonEmpty(input.authorModelFamily, "authorModelFamily"),
-						nonEmpty(input.reviewerSessionId, "reviewerSessionId"),
+						reviewerSessionId,
 						nonEmpty(input.reviewerModel, "reviewerModel"),
 						nonEmpty(input.reviewerModelFamily, "reviewerModelFamily"),
+						authorProfileId,
+						reviewerProfileId,
+						riskClass,
 						input.reviewMode,
 						input.verdict,
+						policyJson,
 						JSON.stringify(findings),
 						createdAt,
 					);
@@ -204,10 +315,20 @@ export class ReviewStore {
 						);
 				}
 				this.audit.append({
-					actor: `profile:${input.reviewerSessionId}`,
+					actor: `profile:${reviewerSessionId}`,
 					action: "review_recorded",
 					subject: `review:${id}`,
-					args: { taskId: input.taskId, headSha, verdict: input.verdict, findings: findings.length },
+					args: {
+						taskId,
+						headSha,
+						baseSha,
+						verdict: input.verdict,
+						findings: findings.length,
+						reviewMode: input.reviewMode,
+						riskClass,
+						authorProfileId,
+						reviewerProfileId,
+					},
 				});
 				return this.get(id)!;
 			});
@@ -216,17 +337,54 @@ export class ReviewStore {
 		}
 	}
 
+	private readSessionIdentity(
+		sessionId: string,
+		label: string,
+		taskId: string,
+		expectedRole?: string,
+	): SessionIdentityRow {
+		const row = this.database
+			.prepare("SELECT profile_id, role, task_id, model, model_family FROM agent_sessions WHERE id = ?")
+			.get(sessionId) as SessionIdentityRow | undefined;
+		if (!row) throw new ControlError("not_found", `${label} session ${sessionId} not found`);
+		if (expectedRole && row.role !== expectedRole) {
+			throw new ControlError("invalid_input", `${label} session ${sessionId} is not a ${expectedRole} session`);
+		}
+		if (row.task_id !== taskId) {
+			throw new ControlError("invalid_input", `${label} session ${sessionId} is not bound to task ${taskId}`);
+		}
+		return row;
+	}
+
 	verify(input: CreateVerificationInput): Verification {
 		const headSha = validateHeadSha(input.headSha);
 		const id = newId();
 		const createdAt = this.clock();
 		try {
 			return this.transaction.run(() => {
-				if (!this.database.prepare("SELECT id FROM findings WHERE id = ?").get(input.findingId)) {
+				const findingRow = this.database
+					.prepare("SELECT review_id FROM findings WHERE id = ?")
+					.get(input.findingId) as { review_id: string } | undefined;
+				if (!findingRow) {
 					throw new ControlError("not_found", `finding ${input.findingId} not found`);
 				}
-				if (!this.database.prepare("SELECT id FROM reviews WHERE id = ?").get(input.producingReviewId)) {
+				if (findingRow.review_id !== input.producingReviewId) {
+					throw new ControlError(
+						"invalid_input",
+						`finding ${input.findingId} belongs to review ${findingRow.review_id}`,
+					);
+				}
+				const reviewRow = this.database
+					.prepare("SELECT head_sha FROM reviews WHERE id = ?")
+					.get(input.producingReviewId) as { head_sha: string } | undefined;
+				if (!reviewRow) {
 					throw new ControlError("not_found", `review ${input.producingReviewId} not found`);
+				}
+				if (reviewRow.head_sha !== headSha) {
+					throw new ControlError(
+						"invalid_input",
+						`verification headSha ${headSha} does not match review head ${reviewRow.head_sha}`,
+					);
 				}
 				this.database
 					.prepare(
@@ -251,7 +409,13 @@ export class ReviewStore {
 					actor: `review:${input.producingReviewId}`,
 					action: "finding_verified",
 					subject: `finding:${input.findingId}`,
-					args: { status: input.status, headSha },
+					args: {
+						status: input.status,
+						headSha,
+						producingReviewId: input.producingReviewId,
+						command: input.command ?? null,
+						exitCode: input.exitCode ?? null,
+					},
 				});
 				return {
 					id,
@@ -287,14 +451,19 @@ export class ReviewStore {
 			taskId: row.task_id,
 			runId: row.run_id,
 			headSha: row.head_sha,
+			baseSha: row.base_sha,
 			authorSessionId: row.author_session_id,
 			authorModel: row.author_model,
 			authorModelFamily: row.author_model_family,
 			reviewerSessionId: row.reviewer_session_id,
 			reviewerModel: row.reviewer_model,
 			reviewerModelFamily: row.reviewer_model_family,
+			authorProfileId: row.author_profile_id,
+			reviewerProfileId: row.reviewer_profile_id,
+			riskClass: row.risk_class,
 			reviewMode: row.review_mode,
 			verdict: row.verdict,
+			policy: parseJsonObject(row.policy_json),
 			createdAt: row.created_at,
 		};
 	}

@@ -1116,6 +1116,7 @@ export interface ApprovalListFilter {
 
 export type ReviewMode = "cross_family" | "same_family_fresh";
 export type ReviewVerdict = "approve" | "changes_requested" | "blocked";
+export type ReviewRisk = "low_risk_docs" | "code" | "high_risk";
 export type FindingSeverity = "P1" | "P2" | "P3";
 export type EvidenceKind = "red_test" | "repro_command" | "static_check" | "code_reading" | "judgment";
 export type VerificationStatus = "confirmed" | "rejected" | "blocked";
@@ -1150,14 +1151,19 @@ export interface Review {
 	taskId: string;
 	runId: string;
 	headSha: string;
+	baseSha: string | null;
 	authorSessionId: string;
 	authorModel: string;
 	authorModelFamily: string;
 	reviewerSessionId: string;
 	reviewerModel: string;
 	reviewerModelFamily: string;
+	authorProfileId: string | null;
+	reviewerProfileId: string | null;
+	riskClass: ReviewRisk;
 	reviewMode: ReviewMode;
 	verdict: ReviewVerdict;
+	policy: Record<string, unknown>;
 	findings: Finding[];
 	createdAt: number;
 }
@@ -1167,14 +1173,19 @@ export interface CreateReviewInput {
 	taskId: string;
 	runId: string;
 	headSha: string;
+	baseSha: string;
 	authorSessionId: string;
 	authorModel: string;
 	authorModelFamily: string;
 	reviewerSessionId: string;
 	reviewerModel: string;
 	reviewerModelFamily: string;
+	authorProfileId: string;
+	reviewerProfileId: string;
+	riskClass: ReviewRisk;
 	reviewMode: ReviewMode;
 	verdict: ReviewVerdict;
+	policy?: Record<string, unknown>;
 	findings: CreateFindingInput[];
 	createdAt?: number;
 }
