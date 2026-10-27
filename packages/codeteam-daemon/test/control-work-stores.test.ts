@@ -153,6 +153,33 @@ describe("codeteam work / SOP / artifact stores", () => {
 		expect(() => store.backlog.updateTags(item.id, ["feature:F004"], "cat", "profile-coder")).toThrow(ControlError);
 	});
 
+	it("rejects work task creation without a backlog item using a typed error", () => {
+		const thread = store.threads.create({ id: "thread-task-check", title: "Thread" });
+		let thrown: unknown;
+		try {
+			store.tasks.create({
+				kind: "work",
+				threadId: thread.id,
+				title: "Task",
+				why: "Why",
+				createdBy: "user",
+			});
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(ControlError);
+		expect((thrown as ControlError).code).toBe("backlog_not_imported");
+		const tracking = store.tasks.create({
+			kind: "pr_tracking",
+			threadId: thread.id,
+			subjectKey: "pr:owner/repo#1",
+			title: "PR tracking",
+			why: "Why",
+			createdBy: "user",
+		});
+		expect(tracking.kind).toBe("pr_tracking");
+	});
+
 	it("creates a SOP with admission/attempt and updates it with version CAS", () => {
 		const item = createBacklog();
 		const created = store.sops.upsert(sopInput());
