@@ -78,7 +78,8 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
   （随首跑授权执行）。
 - [x] audit 不可 UPDATE/DELETE；命令 audit 可还原完整命令（argv/cwd/exit/tails）。
 - [x] 威胁测试矩阵 21 条全有锚点 + 报告落盘（真实 repo first-run 另列）。
-- [ ] 真实 repo first-run：需 operator 提供 dogfood repo/授权。
+- [x] 真实 repo first-run：operator 授权 codeteam 仓；只读矩阵与拒绝矩阵在
+  bwrap 沙箱内通过（证据：`docs/reports/2026-10-28-w2-real-repo-first-run.md`）。
 
 ## W2 收口状态（2026-10-28）
 
@@ -88,7 +89,9 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
   不在本阶段实现（`--share-net` 是 D3=A 的已知边界）。
 - **已完成**：per-run token、工具策略（命令/路径/git/commit wrapper/handoff 方向）、
   operator/service 凭据与权限门、bwrap sandbox MVP、命令 audit。
-- **唯一未覆盖**：真实 repo first-run——W2 全量验收以它为最后一条。
+- **真实 repo first-run 已完成**（codeteam 仓，HEAD `042695f5d`，bwrap 0.6.1，
+  只读矩阵 exit 0 / 拒绝矩阵 typed forbidden）——证据见
+  `docs/reports/2026-10-28-w2-real-repo-first-run.md`。
 
 ### Follow-up ledger
 
@@ -103,7 +106,7 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 
 ### close 条件
 
-- [ ] 真实 repo first-run 证据记录（operator 提供 repo/授权）。
+- [x] 真实 repo first-run 证据记录（codeteam 仓，2026-10-28）。
 - [ ] operator 对 W2 收口确认。
 
 ## Out of scope
