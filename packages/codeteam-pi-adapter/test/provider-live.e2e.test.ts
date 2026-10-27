@@ -64,7 +64,7 @@ describe.skipIf(!liveEnabled)("live provider end-to-end", () => {
 			});
 			session = created.session;
 			abortTimer = setTimeout(() => {
-				void session?.abort();
+				session?.abort().catch(() => {});
 			}, 45_000);
 
 			await session.prompt("Reply with exactly LIVE_OK");
