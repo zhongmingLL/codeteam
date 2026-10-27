@@ -4,6 +4,9 @@
 	"private": true,
 	"description": "codeteam daemon state, boot ledger, readiness, and minimal lifecycle",
 	"type": "module",
+	"bin": {
+		"codeteam": "./dist/cli.js"
+	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"exports": {
