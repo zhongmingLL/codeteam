@@ -76,10 +76,13 @@ export {
 	assertWritablePath,
 	type CommandExecution,
 	type CommandRequest,
+	type CommandResult,
 	type CreateToolPolicyOptions,
 	createToolPolicy,
 	DEFAULT_COMMAND_ALLOWLIST,
 	evaluateCommand,
+	type RunCommandOptions,
+	runCommand,
 	type ToolPolicy,
 	type ToolRole,
 } from "./policy/index.ts";

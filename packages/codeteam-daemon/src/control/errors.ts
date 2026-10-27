@@ -14,7 +14,8 @@ export type ControlErrorCode =
 	| "claim_conflict"
 	| "invalid_token"
 	| "forbidden"
-	| "backlog_not_imported";
+	| "backlog_not_imported"
+	| "command_failed";
 
 export class ControlError extends Error {
 	readonly code: ControlErrorCode;

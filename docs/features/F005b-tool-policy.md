@@ -39,10 +39,13 @@ daemon 数据面不可读、review/verify 不能写被审 worktree。
     `-C`/`-c`/`--git-dir`/`--work-tree`/`--no-index` 等逃逸 flag
   - 资源 envelope：`timeoutMs`、`maxOutputBytes`；env 只保留 allowlist
   - 读命令的路径参数过路径策略；`git add` 的参数按写路径校验
+- 命令执行器（`runCommand`）：
+  - spawn（`shell:false`）+ 最小 env + timeout（SIGKILL）+ output cap（超限即停）
+  - TOCTOU 第二层：执行前对路径参数做 canonical + `dev/ino` 快照复查
+  - spawn 失败 → typed `command_failed`
 
 ## Remaining in F005b（下一批）
 
-- 命令执行器：spawn + timeout/output cap 真正落地
 - coder commit wrapper：捕获 `head_sha` 写 audit，供 `reviews.head_sha` 回溯
 - handoff `(fromRole,toRole,kind)` 方向白名单 + fromRole 从 token 派生
 
@@ -56,6 +59,8 @@ daemon 数据面不可读、review/verify 不能写被审 worktree。
       `credentials/`、`.git/` 内部对象、daemon 数据面全部拒绝。
 - [x] reviewer 写 evidence 放行、写被审 worktree 拒绝。
 - [x] 命令 envelope 带 timeout/output cap / 最小 env。
+- [x] 执行器：spawn 落地、timeout SIGKILL、output cap、`command_failed` typed。
+- [x] 执行器 TOCTOU 第二层：canonical + dev/ino 快照复查。
 - [x] review 收口：`git diff --output/-o/--pathspec-*` 任意写原语拒绝；`git commit -F`
   路径按读策略校验。
 - [x] review 收口：`git commit --file=` / `-F<path>` attached 形态同样走读策略；
@@ -63,7 +68,7 @@ daemon 数据面不可读、review/verify 不能写被审 worktree。
 - [x] review 收口：写路径 lstat——悬空 symlink / hardlink 目标拒绝。
 - [x] review 收口：`credentials.json` / `credentials.yaml` 等 basename 拒绝。
 - [x] review 收口：commit message 的 `#` 消息位豁免，其余 shell 元字符照旧拒绝。
-- [x] 包内 104/104、包 build、Biome 通过。
+- [x] 包内 110/110、包 build、Biome 通过。
 - [ ] 非作者安全 review（砚砚）与 merge。
 
 ## Out of scope
