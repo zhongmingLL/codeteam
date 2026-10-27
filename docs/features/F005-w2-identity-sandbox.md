@@ -101,8 +101,8 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 | 2 | 并发 commit lock | executor / W5 hardening |
 | 3 | 子进程进程组 kill | executor hardening |
 | 4 | audit wrapper 成功/拒绝语义 | ✅ PR #38 已修 |
-| 5 | 真实 repo first-run | 等 operator 授权 |
-| 6 | TOCTOU 原子 open（O_NOFOLLOW/openat2） | 真实 repo 首跑时验证 |
+| 5 | 真实 repo first-run | ✅ PR #40（证据：`docs/reports/2026-10-28-w2-real-repo-first-run.md`） |
+| 6 | TOCTOU 原子 open（O_NOFOLLOW/openat2） | executor hardening；首跑矩阵只读未触发 openat2 面 |
 
 ### close 条件
 
