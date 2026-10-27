@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F005e]
 related_features: [codeteam/F005]
 title: "F005e: 威胁矩阵与命令 audit 收口"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -31,7 +31,8 @@ updated: 2026-10-28
 - [x] `--new-session` 生效；timeout 后沙箱内进程停止写文件（行为测试）。
 - [x] 威胁矩阵 21 条全部有测试锚点；未覆盖项如实列出。
 - [x] 包内 130/130、包 build、Biome 通过。
-- [ ] 非作者 review（砚砚）与 merge。
+- [x] 非作者 review（砚砚 approve @ `271757f83`，131/131 独立复跑）与 merge
+  （PR #38，`8c399c934`）。
 - [ ] 真实 repo first-run（需 operator 提供 dogfood repo/授权）。
 
 ## Out of scope

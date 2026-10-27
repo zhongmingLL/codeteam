@@ -62,23 +62,47 @@ sandbox 与 dogfood 边界还只是文字。W2 要把「策略层」变成「工
 
 ## Slice-specific 验收（W2 全量见 plan）
 
-- [ ] 同 worker 内两个 run 的 MCP token 不能互相冒用；tool args 身份字段一律忽略。
-- [ ] 危险命令、路径逃逸、symlink/hardlink、secret 路径全部拒绝；拒绝有 typed error + audit。
-- [ ] agent 读自身 token 文件被拒；interrupted run 的 token 不能完成 handoff。
-- [ ] approval decide 对 run token/agent-key 返回 403；routine merge 只由 `service:merge-owner` 执行。
-- [ ] callback credential 只接受 header；body/query 401 `invalid_token`。
-- [ ] stale lease/heartbeat 只产生 liveness candidate，无独立证据不吊销。
-- [ ] coder 只能 `git add/commit/status/diff`，commit sha 从 audit 回溯并写入 `reviews.head_sha`。
-- [ ] review/verify 不能写被审 worktree；取证写只限隔离 evidence worktree；同 task 峰值 ≤2 份（计入 W5 pool）。
-- [ ] agent 进程零 secret；daemon 数据与 worktree 都在仓外；dogfood 分支不 push。
-- [ ] audit 不可 UPDATE/DELETE；能还原完整命令。
-- [ ] 威胁测试矩阵全绿 + 报告落盘。
+- [x] 同 worker 内两个 run 的 token 不能互相冒用（resolver 结构性隔离；MCP 接线 W7a）。
+- [x] 危险命令、路径逃逸、symlink/hardlink、secret 路径全部拒绝；拒绝有 typed error + audit。
+- [x] agent 读自身 token 文件被拒；interrupted run 的 token 不能完成 handoff。
+- [x] approval decide 对 run token/agent-key 返回 403；merge 执行仅 `service:merge-owner`
+  （principal 门；executor 接线 W8）。
+- [x] callback credential 只接受 header；body/query 401 `invalid_token`。
+- [x] stale lease/heartbeat 只产生 liveness candidate，无独立证据不吊销。
+- [x] coder 只能 `git add/commit/status/diff`；commit sha 经 wrapper 写 audit
+  （写入 `reviews.head_sha` 在 W3 接线）。
+- [x] review/verify 不能写被审 worktree；取证写只限隔离 evidence worktree
+  （同 task 峰值计数随 W5 pool）。
+- [x] agent 进程零 secret；daemon 数据与 worktree 都在仓外。
+- [x] audit 不可 UPDATE/DELETE；命令 audit 可还原完整命令（argv/cwd/exit/tails）。
+- [x] 威胁测试矩阵 21 条全有锚点 + 报告落盘（真实 repo first-run 另列）。
+- [ ] 真实 repo first-run：需 operator 提供 dogfood repo/授权。
 
-## 待 operator 确认
+## W2 收口状态（2026-10-28）
 
-- sandbox 最终选型：MVP 默认低权 user + bwrap，目标态 container（microVM 后置）。
-  本阶段按 MVP 执行；不把「网络 allowlist」写成已实现——它属于 container 目标态。
-- 若 operator 选择提前上 container，F005d 的范围与验证层级需要重排。
+- F005a–e 五片全部合入并过非作者 review（砚砚安全侧 15 条 typed verdict、
+  烁烁 SDK/RPC 侧）；包内 131/131。
+- operator 已拍板 sandbox 走 MVP（bwrap）；container 为目标态，网络 allowlist
+  不在本阶段实现（`--share-net` 是 D3=A 的已知边界）。
+- **已完成**：per-run token、工具策略（命令/路径/git/commit wrapper/handoff 方向）、
+  operator/service 凭据与权限门、bwrap sandbox MVP、命令 audit。
+- **唯一未覆盖**：真实 repo first-run——W2 全量验收以它为最后一条。
+
+### Follow-up ledger
+
+| # | 项 | 去向 |
+|---|---|---|
+| 1 | verified merge payload 二级 brand | W7a 接线前 |
+| 2 | 并发 commit lock | executor / W5 hardening |
+| 3 | 子进程进程组 kill | executor hardening |
+| 4 | audit wrapper 成功/拒绝语义 | ✅ PR #38 已修 |
+| 5 | 真实 repo first-run | 等 operator 授权 |
+| 6 | TOCTOU 原子 open（O_NOFOLLOW/openat2） | 真实 repo 首跑时验证 |
+
+### close 条件
+
+- [ ] 真实 repo first-run 证据记录（operator 提供 repo/授权）。
+- [ ] operator 对 W2 收口确认。
 
 ## Out of scope
 
