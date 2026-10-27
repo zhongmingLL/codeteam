@@ -338,18 +338,23 @@ F002 不要求一个 PR 做完。每个 Phase 用独立 worktree/PR，最后一�
 - 受支持的 Linux CI runner；WSL2 只作本地预检，不作为全量测试绿证。
 - Hub spike 需要现成 clowder Hub；若需改 clowder-ai，另走 operator 授权。
 
+> **D9 口径（2026-10-27）**：pi 没有名为 L0 的内置层；L0 是我们的编译层，经
+> `systemPromptOverride` 放入 native system prompt。v1.4.0 上“压缩免疫”已实证；
+> “prompt cache 命中”未观测（短 system 可能低于 provider 缓存阈值），因此 D9 的 cache 收益仍是
+> target，归 W6 观测，不是 W1/W5 的设计阻塞。
+
 ## Risks
 
-| 风险 | 影响 | 缓解 |
-|---|---|---|
-| L0 在 v1.4.0 上不成立 | D9 失效，W1/W5 设计要改 | 先测 v1.4.0；失败按 `UPSTREAM.md` 回退 v1.3.0；仍失败则记 KERNEL_GAPS 并重开 D9 |
-| session export/resume 不支持 | W5 迁移会静默失忆 | 先验证；不支持就明确 fresh+capsule，不把“应该可以”写进计划 |
-| skill loader API 与文档不符 | W0 skill surface 卡住 | 以 v1.4.0 源码/实测为准；失败记 KERNEL_GAPS，不擅自改 kernel |
-| bwrap 在 WSL2 不可用 | W2 sandbox 假设失效 | W0a 预检即重开 D3；给出降级/替代方案，不等 W2 |
-| Hub 需要 clowder 改动 | 范围溢出到另一仓 | 只输出改动清单；作为独立 operator 授权项，不混入 codeteam 产品代码 |
-| 旧 codeteam 源码不可得 | W1 migration 方向错误 | 明确 fresh baseline，用合成 fixture，不伪造旧数据 backfill |
-| CI 只绿在本地/WSL2 | 合入证据不可信 | 受支持 Linux runner + required checks；WSL2 差异单独记录 |
-| F002 范围过大 | 拖慢 W1 | 按 Phase 独立 worktree/PR；每个 Phase 有 exit evidence；失败可 conditional gate，不硬撑 |
+| 风险 | 影响 | 缓解 | 结果（2026-10-27） |
+|---|---|---|---|
+| L0 在 v1.4.0 上不成立 | D9 失效，W1/W5 设计要改 | 先测 v1.4.0；失败按 `UPSTREAM.md` 回退 v1.3.0；仍失败则记 KERNEL_GAPS 并重开 D9 | **未发生**：v1.4.0 上 AC-7/8/9/11 + provider HTTP/live 均成立；D9 核心语义（压缩免疫）已证明。**cache 收益仍未观测**（AC-10 允许 unavailable），归 W6，不阻塞 W1/W5 |
+| session export/resume 不支持 | W5 迁移会静默失忆 | 先验证；不支持就明确 fresh+capsule，不把“应该可以”写进计划 | **未发生**：跨进程 resume 通过（`parent + 2` + 父内容锚定） |
+| skill loader API 与文档不符 | W0 skill surface 卡住 | 以 v1.4.0 源码/实测为准；失败记 KERNEL_GAPS，不擅自改 kernel | **未发生**：`noSkills: true` + `additionalSkillPaths` 实测可用 |
+| bwrap 在 WSL2 不可用 | W2 sandbox 假设失效 | W0a 预检即重开 D3；给出降级/替代方案，不等 W2 | **未发生（本机）**：userns/bwrap 隔离通过；W2 目标机仍需复测 |
+| Hub 需要 clowder 改动 | 范围溢出到另一仓 | 只输出改动清单；作为独立 operator 授权项，不混入 codeteam 产品代码 | **部分**：thread/消息/卡片可用；approval producer 归 W4/W7；`pending-decisions` 503 已记录 |
+| 旧 codeteam 源码不可得 | W1 migration 方向错误 | 明确 fresh baseline，用合成 fixture，不伪造旧数据 backfill | **发生**：确认不可得，fresh baseline 已入 Phase 4 |
+| CI 只绿在本地/WSL2 | 合入证据不可信 | 受支持 Linux runner + required checks；WSL2 差异单独记录 | **未发生**：Linux runner 上 3 required checks 全绿 |
+| F002 范围过大 | 拖慢 W1 | 按 Phase 独立 worktree/PR；每个 Phase 有 exit evidence；失败可 conditional gate，不硬撑 | **部分**：W0c 拆为 F003；AC-12 W4 deferral 经 operator signoff |
 
 ## Open Questions
 
