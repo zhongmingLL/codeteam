@@ -884,6 +884,8 @@ W1 必须在继承矩阵里钉死的差异：
   run 不存第二份 delivery refs。
 - `LifecycleResponseBubble.latestInputTimelineOrderAt` / `reason`：v1 不存；
   需要诊断时从 `run_events` 读；append 能力未进 W1。
+- 早期提案里的 `Run.sessionId` 不是 clowder 字段；W1 统一
+  `agent_session_id`，不保留第二 session 列。
 
 规则：
 
@@ -1074,8 +1076,9 @@ append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
 | `agent_profiles.clowder_cat_id` | clowder catId | reused（provenance） | 可重复、不唯一、不参与授权 |
 | `agent_profiles.created_at` / `updated_at` | 无 CatConfig 行时间 | code-delivery-specific | registry 审计 |
 | `agent_sessions.id` / `thread_id` / `seq` / `status` / `cli_session_id` / `native_session_binding_json` / `context_health_json` / `capacity_pin_json` / `seal_reason` / `compression_count` / `continuity_capsule_json` / `chain_key` / `latest_resume_session_id` / `created_at` / `updated_at` / `sealed_at` | `SessionRecord`（`session.ts:56`） | reused | 全字段复用；结构化字段用 JSON 列承载；`scopedInvocation`/`externalImport` 显式不继承 |
+| `agent_sessions.cat_handoff_note_json` / `last_usage_json` / `message_count` / `working_directory` / `workspace_fingerprint` / `user_id` | `SessionRecord.catHandoffNote/lastUsage/messageCount/workingDirectory/workspaceFingerprint/userId` | reused | `catHandoffNote` 是 F225 typed 五件套，必须单独落 JSON，不并进 `continuityCapsule`；`lastUsage` 是展示快照；其余四列原样落列，不静默丢 |
 | `agent_sessions.task_id` / `stage_id` / `profile_id` / `role` / `effective_tool_policy` / `pi_session_id` / `provider` / `model` / `model_family` | SessionRecord 扩展 | code-delivery-specific / adapted | `pi_session_id` 映射 `cliSessionId`；session role 可不同于 profile primary role；effective policy 落快照 |
-| `invocation_credentials.id` / `token_hash` / `token_salt` / `run_id` / `task_id` / `role` / `agent_session_id` / `agent_profile_id` / `thread_id` / `user_id` / `owner_auth_provenance` / `parent_run_id` / `tool_policy_json` / `state` / `disposition` / `last_refresh_at` / `expires_at` / `created_at` / `updated_at` | F174 `InvocationRecord` | reused | SQLite 实现；active 无短 TTL，terminal tombstone 30d；`owner_auth_provenance ∈ strict/compat/unknown`，managed-work bind 只 strict |
+| `invocation_credentials.id` / `token_hash` / `token_salt` / `run_id` / `task_id` / `role` / `agent_session_id` / `agent_profile_id` / `thread_id` / `user_id` / `owner_auth_provenance` / `parent_run_id` / `tool_policy_json` / `state` / `disposition` / `last_refresh_at` / `expires_at` / `created_at` / `updated_at` | F174 `InvocationRecord` | reused | SQLite 实现；active 无短 TTL，terminal tombstone 30d；`owner_auth_provenance ∈ strict/compat/unknown`（clowder `compatibility_fallback` → `compat`，只改名不改语义），managed-work bind 只 strict |
 
 **D. Run / event / stage**
 
@@ -1113,11 +1116,10 @@ append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
 | clowder 字段/能力 | 处置 | 理由 / revisit trigger |
 |---|---|---|
 | `TaskProbeSpec.redis_exists` | drop / replace | codeteam 不引入 Redis；`http_get` 复用。需要外部状态探测时用 HTTP/命令 adapter，不恢复 Redis 依赖 |
-| `Message.status`（pending/streaming/error） | not stored | 消息行是 durable final body；流式/错误是 run/bubble 投影。W7 若需要断线续流，读 `run_events`，不把 message 变双状态表 |
+| `Message.status`（pending / streaming / complete / error） | not stored | 消息行是 durable final body；流式/错误是 run/bubble 投影。W7 若需要断线续流，读 `run_events`，不把 message 变双状态表 |
 | `LifecycleActiveRun.inputEntryIds[]` 的 append 能力 | v1 drop | 一个 run 一个 `queue_entry_id`；append-to-active-run 不在 W1。W7 真实需要时再评估 `run_inputs`，不提前造表 |
 | `LifecycleActiveRun.inputMessageIds[]` / `privateInputEntryIds[]` | not stored | 由 queue entry source / inbox 解析；不复制第二输入身份 |
 | `LifecycleResponseBubble.body` / `dispatchRefs` 作为 run 列 | not stored | body 落 `messages`；delivery 落 `messages.dispatch_refs_json`；run 不存正文/第二 delivery 账本 |
-| `Run.sessionId` 第二字段 | drop | 统一 `agent_session_id`；不保留两个 session 字段 |
 | `Run.updated_at` | drop | 用 status/revision/terminal_at；避免双 CAS 源 |
 | `ActionSuccessorLeaseStatus.replaceable` | 不作为 codeteam status | 映射 pending/replacement transition；codeteam status 不增加第五值 |
 | `terminalPredicateState.legacy_predicate_absent` | not inherited | 新 handoff 必须有 typed terminal predicate；legacy 只用于 clowder 历史数据 |
@@ -1137,7 +1139,8 @@ append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
 
 1. `queue_entries` 不重复存 `owner_auth_provenance`；cutover 时 mint 到
    `invocation_credentials`，managed-work bind 只接受 `strict`。contract
-   test 覆盖 compat/unknown 不绑定。
+   test 覆盖 compat/unknown 不绑定；clowder `compatibility_fallback` 映射
+   `compat`，只改名不改语义。
 2. `runs` 不存 `thread_id`；`tasks.thread_id == agent_sessions.thread_id`
    由 contract test 锁定；不一致 fail closed。
 3. `handoffs.deadline` 是显式 deadline；claim lease/heartbeat stale 只触
@@ -1157,7 +1160,8 @@ append-only `wait.terminated` 事件；`(wait_id,generation)` 唯一；
    全字段展开（或明确 JSON 列），不能把摘要当完整列清单。`seq` /
    `cli_session_id` / `context_health_json` / `seal_reason` /
    `compression_count` / `continuity_capsule_json` / `sealed_at` 等必须有
-   落点。
+   落点；`cat_handoff_note_json` 必须单独落列，不得并进
+   `continuity_capsule_json`。
 
 ---
 
