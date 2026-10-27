@@ -45,7 +45,13 @@ jobs:
             head="${{ github.sha }}"
           fi
           files="$(git diff --name-only --no-renames "$base" "$head" || true)"
-          mode="$(printf '%s\n' "$files" | node scripts/classify-ci-scope.mjs)"
+          mode=upstream
+          if printf '%s\n' "$files" | grep -qE '^(\.github/|scripts/classify-ci-scope\.mjs$)'; then
+            mode=upstream
+          elif git cat-file -e "$base:scripts/classify-ci-scope.mjs" 2>/dev/null; then
+            git show "$base:scripts/classify-ci-scope.mjs" > "$RUNNER_TEMP/classify-ci-scope.mjs"
+            mode="$(printf '%s\n' "$files" | node "$RUNNER_TEMP/classify-ci-scope.mjs")"
+          fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           printf 'mode=%s\nchanged files:\n%s\n' "$mode" "$files"
 
