@@ -81,11 +81,13 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 
 ## 状态
 
+> **Review routing（operator 2026-10-27）**：代码/安全/测试覆盖 review 默认找砚砚；烁烁负责 L0/session/fork 专项；愿景守护必须既非作者也非 reviewer。
+
 > 三猫评审已完成；4 个 P1 与已接受的 P2/P3 已修入计划正文，详见 `0005-plan-review-resolutions.md`。W6、W7 载体、D1（notify-but-not-block）、D3（sandbox）已确认；D2 dogfood 里程碑延后到 W4 前拍板，不阻塞 W0a。全量覆盖审计（2026-10-25）：14/14 架构卡、10/10 Decision Packet 均有 plans 落点，见 `0007-architecture-plan-coverage.md` §1.1/§5；三猫 v2 复审全部 accept，`0007` 冻结为 DP→plans 唯一对账索引。
 
 | W | 状态 | 备注 |
 |---|---|---|
-| W0 | W0a done (CONDITIONAL, F002) + W0c done (F003) | W0b 治理已生效；W1 runtime 启动前置已满足 |
+| W0 | W0a closed (F002, operator signoff) + W0c done (F003) | W0b 治理已生效；W1 runtime 启动前置已满足 |
 | W1 | planned | 待 schema/migration |
 | W2 | planned | 待权限/身份/沙箱 |
 | W3 | planned | 待独立 review 实现 |
