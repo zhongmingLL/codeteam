@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { lstatSync } from "node:fs";
 import { ControlError } from "../control/errors.ts";
-import { type CommandExecution, type CommandRequest, collectPathTargets, evaluateCommand } from "./commands.ts";
+import { type CommandRequest, collectPathTargets, evaluateCommand } from "./commands.ts";
 import { assertReadablePath, assertWritablePath } from "./paths.ts";
+import { buildSandboxArgv, resolveBwrapPath, type SandboxConfig } from "./sandbox.ts";
 import type { ToolPolicy } from "./types.ts";
 
 export interface CommandResult {
@@ -17,6 +18,7 @@ export interface CommandResult {
 
 export interface RunCommandOptions {
 	readonly timeoutMs?: number;
+	readonly sandbox?: SandboxConfig | boolean;
 }
 
 interface PathSnapshot {
@@ -35,7 +37,20 @@ export async function runCommand(
 	const execution = evaluateCommand(policy, request);
 	const snapshots = snapshotPaths(policy, execution.argv, execution.cwd);
 	assertSnapshotsStable(policy, snapshots, execution.cwd);
-	return execute(execution, options.timeoutMs ?? execution.timeoutMs);
+	const timeoutMs = options.timeoutMs ?? execution.timeoutMs;
+	if (!options.sandbox) return execute(execution, timeoutMs);
+	const sandboxConfig = options.sandbox === true ? {} : options.sandbox;
+	const bwrapPath = resolveBwrapPath(sandboxConfig);
+	const argv = buildSandboxArgv(policy, execution, { ...sandboxConfig, bwrapPath });
+	return execute(
+		{
+			argv,
+			cwd: execution.cwd,
+			env: { ...execution.env, TMPDIR: execution.env.TMPDIR ?? "/tmp" },
+			maxOutputBytes: execution.maxOutputBytes,
+		},
+		timeoutMs,
+	);
 }
 
 function snapshotPaths(policy: ToolPolicy, argv: readonly string[], cwd: string): PathSnapshot[] {
@@ -70,7 +85,14 @@ function assertSnapshotsStable(policy: ToolPolicy, snapshots: readonly PathSnaps
 	}
 }
 
-function execute(execution: CommandExecution, timeoutMs: number): Promise<CommandResult> {
+interface SpawnSpec {
+	readonly argv: readonly string[];
+	readonly cwd: string;
+	readonly env: Record<string, string>;
+	readonly maxOutputBytes: number;
+}
+
+function execute(execution: SpawnSpec, timeoutMs: number): Promise<CommandResult> {
 	const [command, ...args] = execution.argv;
 	if (!command) return Promise.reject(new ControlError("invalid_input", "empty command"));
 	return new Promise((resolve, reject) => {
