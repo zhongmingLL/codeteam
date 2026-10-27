@@ -802,3 +802,489 @@ export interface WorkTaskBinding {
 	attemptId: string;
 	boundAt: number;
 }
+
+export type HandoffKind =
+	| "handoff"
+	| "review_request"
+	| "verdict"
+	| "blocker"
+	| "spec_change"
+	| "plan_revision"
+	| "question";
+export type HandoffStatus = "pending" | "claimed" | "consumed" | "withdrawn" | "expired";
+export type HandoffActionFamily = "review" | "merge" | "investigate" | "implement" | "verify" | "vision_guard";
+export type HandoffSuccessorSlot =
+	| "reviewer"
+	| "merge_owner"
+	| "vision_guardian"
+	| "investigator"
+	| "implementer"
+	| "verifier";
+export type HandoffMode = "single" | "parallel";
+export type HandoffClaimOrigin = "structured_transfer" | "existing_standing";
+export type HandoffHolderClaimStatus = "active" | "released" | "interrupted";
+export type CustodyEventKind =
+	| "handoff.created"
+	| "handoff.dispatched"
+	| "handoff.claimed"
+	| "handoff.returned"
+	| "handoff.replaced"
+	| "handoff.completion_candidate"
+	| "handoff.completed"
+	| "handoff.parallel_unfinished"
+	| "handoff.withdrawn"
+	| "handoff.expired"
+	| "handoff.recovered";
+export type CustodyEventClassification = "state-changing" | "informational";
+
+export interface Handoff {
+	id: string;
+	taskId: string;
+	stageId: string | null;
+	kind: HandoffKind;
+	fromRole: string;
+	toRole: string;
+	status: HandoffStatus;
+	subject: string;
+	subjectRef: string;
+	actionFamily: HandoffActionFamily;
+	successorSlot: HandoffSuccessorSlot;
+	mode: HandoffMode;
+	parallelIntent: string | null;
+	ownerUserId: string;
+	canonicalActionKey: string;
+	holderProfileIds: string[];
+	holderThreadId: string;
+	predecessorProfileId: string | null;
+	predecessorThreadId: string | null;
+	claimOrigin: HandoffClaimOrigin;
+	issuerStandingEvidenceRef: string | null;
+	generation: number;
+	revision: number;
+	dispatchId: string;
+	terminalPredicate: Record<string, unknown>;
+	completionCandidates: Record<string, unknown>;
+	holderOutcomes: Record<string, unknown>;
+	returnTransitions: unknown[];
+	replacementTransitions: unknown[];
+	terminalActorRef: string | null;
+	terminalReason: string | null;
+	terminalEvidenceRef: string | null;
+	expectedArtifact: string;
+	payload: Record<string, unknown>;
+	idempotencyKey: string;
+	replyTo: string | null;
+	deadline: number;
+	attempt: number;
+	claimedByRunId: string | null;
+	claimedAt: number | null;
+	claimedLeaseUntil: number | null;
+	lastHeartbeatAt: number | null;
+	terminalAt: number | null;
+	result: Record<string, unknown> | null;
+	createdAt: number;
+}
+
+export interface CreateHandoffInput {
+	id?: string;
+	taskId: string;
+	stageId?: string | null;
+	kind: HandoffKind;
+	fromRole: string;
+	toRole: string;
+	subject: string;
+	subjectRef: string;
+	actionFamily: HandoffActionFamily;
+	successorSlot: HandoffSuccessorSlot;
+	mode: HandoffMode;
+	parallelIntent?: string | null;
+	ownerUserId: string;
+	canonicalActionKey: string;
+	holderProfileIds: string[];
+	holderThreadId: string;
+	predecessorProfileId?: string | null;
+	predecessorThreadId?: string | null;
+	claimOrigin: HandoffClaimOrigin;
+	issuerStandingEvidenceRef?: string | null;
+	dispatchId: string;
+	terminalPredicate: Record<string, unknown>;
+	expectedArtifact: string;
+	payload: Record<string, unknown>;
+	idempotencyKey: string;
+	replyTo?: string | null;
+	deadline: number;
+}
+
+export interface HandoffHolderClaim {
+	handoffId: string;
+	profileId: string;
+	generation: number;
+	runId: string;
+	status: HandoffHolderClaimStatus;
+	claimedAt: number;
+	leaseUntil: number | null;
+	lastHeartbeatAt: number | null;
+	releasedAt: number | null;
+	releaseReason: string | null;
+}
+
+export interface ClaimHandoffInput {
+	handoffId: string;
+	profileId: string;
+	runId: string;
+	leaseMs?: number;
+}
+
+export interface HandoffCompletionCandidateInput {
+	handoffId: string;
+	profileId: string;
+	runId: string;
+	evidenceRef: string;
+	result: Record<string, unknown>;
+	verified?: boolean;
+}
+
+export interface HandoffListFilter {
+	taskId?: string;
+	status?: HandoffStatus;
+	actionFamily?: HandoffActionFamily;
+}
+
+export interface CustodyEvent {
+	id: string;
+	subjectRef: string;
+	handoffId: string;
+	generation: number;
+	seq: number;
+	classification: CustodyEventClassification;
+	kind: CustodyEventKind;
+	actorRef: string;
+	payload: Record<string, unknown>;
+	ts: number;
+}
+
+export type WaitKind = "timer" | "event" | "managed_command";
+export type WaitStatus = "active" | "terminated";
+export type WaitOutcomeDelivery =
+	| "pending"
+	| "delivered"
+	| "suppressed"
+	| "not_applicable"
+	| "legacy_unfenced"
+	| "queue_conflict";
+
+export interface Wait {
+	id: string;
+	waitId: string;
+	generation: number;
+	subjectRef: string;
+	kind: WaitKind;
+	waitSourceRef: string;
+	expectedSignal: string | null;
+	baseline: Record<string, unknown>;
+	continuation: Record<string, unknown>;
+	ownerFence: Record<string, unknown>;
+	status: WaitStatus;
+	expiresAt: number | null;
+	autoRenew: boolean;
+	slaUntil: number;
+	outcome: Record<string, unknown> | null;
+	outcomeDelivery: WaitOutcomeDelivery | null;
+	publishClaimedAt: number | null;
+	consumedAt: number | null;
+	approvalId: string | null;
+	createdAt: number;
+	terminalizedAt: number | null;
+}
+
+export interface CreateWaitInput {
+	waitId: string;
+	generation: number;
+	subjectRef: string;
+	kind: WaitKind;
+	waitSourceRef: string;
+	expectedSignal?: string | null;
+	baseline: Record<string, unknown>;
+	continuation: Record<string, unknown>;
+	ownerFence: Record<string, unknown>;
+	expiresAt?: number | null;
+	autoRenew?: boolean;
+	slaUntil: number;
+	approvalId?: string | null;
+}
+
+export interface WaitTermination {
+	eventId: string;
+	waitId: string;
+	generation: number;
+	waitKind: WaitKind;
+	reason: string;
+	actor: Record<string, unknown>;
+	subjectRef: string;
+	ownerUserId: string;
+	ownerProfileId: string | null;
+	threadId: string;
+	at: number;
+	dispositionRef: string | null;
+}
+
+export interface TerminateWaitInput {
+	waitId: string;
+	generation: number;
+	reason: string;
+	actor: Record<string, unknown>;
+	ownerUserId: string;
+	ownerProfileId?: string | null;
+	threadId: string;
+	dispositionRef?: string | null;
+}
+
+export interface RenewWaitInput {
+	waitId: string;
+	generation: number;
+	next: CreateWaitInput;
+	ownerUserId: string;
+	ownerProfileId?: string | null;
+	threadId: string;
+}
+
+export type ApprovalKind = "merge" | "design_gate" | "spec_change" | "blocker" | "budget_pause";
+export type ApprovalResolution = "open" | "accepted" | "rejected" | "closed_without_decision";
+export type MaterializationState = "not_started" | "outcome_unknown" | "in_progress" | "succeeded" | "failed";
+
+export interface Approval {
+	id: string;
+	threadId: string;
+	taskId: string;
+	kind: ApprovalKind;
+	idempotencyKey: string;
+	originRef: Record<string, unknown>;
+	cardRef: Record<string, unknown>;
+	resolution: ApprovalResolution;
+	materialization: Record<string, unknown>;
+	effectReservationRef: string | null;
+	effectRef: string | null;
+	payload: Record<string, unknown>;
+	requestedBy: string;
+	decidedBy: string | null;
+	decidedAt: number | null;
+	decidedNote: string | null;
+	expiresAt: number | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface CreateApprovalInput {
+	id?: string;
+	threadId: string;
+	taskId: string;
+	kind: ApprovalKind;
+	idempotencyKey: string;
+	originRef: Record<string, unknown>;
+	cardRef: Record<string, unknown>;
+	payload?: Record<string, unknown>;
+	requestedBy: string;
+	expiresAt?: number | null;
+}
+
+export interface DecideApprovalInput {
+	resolution: Exclude<ApprovalResolution, "open">;
+	decidedBy: string;
+	note?: string | null;
+}
+
+export interface MaterializeApprovalInput {
+	state: MaterializationState;
+	effectRef?: string | null;
+	failureRef?: string | null;
+	retryable?: boolean;
+}
+
+export interface ApprovalListFilter {
+	taskId?: string;
+	kind?: ApprovalKind;
+	resolution?: ApprovalResolution;
+}
+
+export type ReviewMode = "cross_family" | "same_family_fresh";
+export type ReviewVerdict = "approve" | "changes_requested" | "blocked";
+export type FindingSeverity = "P1" | "P2" | "P3";
+export type EvidenceKind = "red_test" | "repro_command" | "static_check" | "code_reading" | "judgment";
+export type VerificationStatus = "confirmed" | "rejected" | "blocked";
+
+export interface Finding {
+	id: string;
+	reviewId: string;
+	findingIndex: number;
+	severity: FindingSeverity;
+	file: string | null;
+	line: number | null;
+	claim: string;
+	evidenceKind: EvidenceKind;
+	falsifier: string;
+	falsifierExpected: "zero" | "nonzero" | null;
+	requiredAction: string;
+}
+
+export interface CreateFindingInput {
+	severity: FindingSeverity;
+	file?: string | null;
+	line?: number | null;
+	claim: string;
+	evidenceKind: EvidenceKind;
+	falsifier: string;
+	falsifierExpected?: "zero" | "nonzero" | null;
+	requiredAction: string;
+}
+
+export interface Review {
+	id: string;
+	taskId: string;
+	runId: string;
+	headSha: string;
+	authorSessionId: string;
+	authorModel: string;
+	authorModelFamily: string;
+	reviewerSessionId: string;
+	reviewerModel: string;
+	reviewerModelFamily: string;
+	reviewMode: ReviewMode;
+	verdict: ReviewVerdict;
+	findings: Finding[];
+	createdAt: number;
+}
+
+export interface CreateReviewInput {
+	id?: string;
+	taskId: string;
+	runId: string;
+	headSha: string;
+	authorSessionId: string;
+	authorModel: string;
+	authorModelFamily: string;
+	reviewerSessionId: string;
+	reviewerModel: string;
+	reviewerModelFamily: string;
+	reviewMode: ReviewMode;
+	verdict: ReviewVerdict;
+	findings: CreateFindingInput[];
+	createdAt?: number;
+}
+
+export interface Verification {
+	id: string;
+	findingId: string;
+	headSha: string;
+	producingReviewId: string;
+	status: VerificationStatus;
+	reason: string;
+	command: string | null;
+	cwd: string | null;
+	exitCode: number | null;
+	durationMs: number | null;
+	stdoutTail: string | null;
+	stderrTail: string | null;
+	createdAt: number;
+}
+
+export interface CreateVerificationInput {
+	findingId: string;
+	headSha: string;
+	producingReviewId: string;
+	status: VerificationStatus;
+	reason: string;
+	command?: string | null;
+	cwd?: string | null;
+	exitCode?: number | null;
+	durationMs?: number | null;
+	stdoutTail?: string | null;
+	stderrTail?: string | null;
+}
+
+export interface Merge {
+	id: string;
+	taskId: string;
+	baseSha: string;
+	headSha: string;
+	mergeSha: string;
+	policy: string;
+	approvedBy: string;
+	receiptRef: string;
+	approvalId: string | null;
+	createdAt: number;
+}
+
+export interface CreateMergeInput {
+	id?: string;
+	taskId: string;
+	baseSha: string;
+	headSha: string;
+	mergeSha: string;
+	policy: string;
+	approvedBy: string;
+	receiptRef: string;
+	approvalId?: string | null;
+}
+
+export interface Budget {
+	id: string;
+	taskId: string;
+	tokensLimit: number | null;
+	tokensUsed: number;
+	costLimit: number | null;
+	costUsed: number;
+	wallTimeLimitMs: number | null;
+	wallTimeUsedMs: number;
+}
+
+export interface CreateBudgetInput {
+	id?: string;
+	taskId: string;
+	tokensLimit?: number | null;
+	tokensUsed?: number;
+	costLimit?: number | null;
+	costUsed?: number;
+	wallTimeLimitMs?: number | null;
+	wallTimeUsedMs?: number;
+}
+
+export interface Eval {
+	id: string;
+	taskId: string;
+	provider: string;
+	model: string;
+	role: string;
+	metrics: Record<string, unknown>;
+	createdAt: number;
+}
+
+export interface CreateEvalInput {
+	id?: string;
+	taskId: string;
+	provider: string;
+	model: string;
+	role: string;
+	metrics: Record<string, unknown>;
+}
+
+export interface ForgeDelivery {
+	id: string;
+	provider: string;
+	repo: string;
+	deliveryId: string;
+	naturalKey: string;
+	status: string;
+	retryCount: number;
+	receivedAt: number;
+	processedAt: number | null;
+}
+
+export interface CreateForgeDeliveryInput {
+	id?: string;
+	provider: string;
+	repo: string;
+	deliveryId: string;
+	naturalKey: string;
+	status?: string;
+	receivedAt?: number;
+}

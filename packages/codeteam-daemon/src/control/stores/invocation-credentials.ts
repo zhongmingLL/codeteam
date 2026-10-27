@@ -89,6 +89,14 @@ export class InvocationCredentialStore {
 	create(input: CreateInvocationCredentialInput): InvocationCredential {
 		const id = input.id ?? newId();
 		const now = this.clock();
+		const tokenHash = nonEmpty(input.tokenHash, "tokenHash");
+		if (!/^[0-9a-f]{64}$/.test(tokenHash)) {
+			throw new ControlError("invalid_input", "tokenHash must be 64 lowercase hex characters");
+		}
+		const tokenSalt = nonEmpty(input.tokenSalt, "tokenSalt");
+		if (tokenSalt.length < 16 || /\s/.test(tokenSalt)) {
+			throw new ControlError("invalid_input", "tokenSalt must be at least 16 non-whitespace characters");
+		}
 		try {
 			const run = this.database
 				.prepare("SELECT task_id, role, agent_session_id, recipient_profile_id FROM runs WHERE id = ?")
@@ -124,8 +132,8 @@ export class InvocationCredentialStore {
 				)
 				.run(
 					id,
-					nonEmpty(input.tokenHash, "tokenHash"),
-					nonEmpty(input.tokenSalt, "tokenSalt"),
+					tokenHash,
+					tokenSalt,
 					nonEmpty(input.runId, "runId"),
 					nonEmpty(input.taskId, "taskId"),
 					nonEmpty(input.role, "role"),

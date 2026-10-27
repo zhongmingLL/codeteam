@@ -246,8 +246,8 @@ describe("codeteam run / task / credential stores", () => {
 		});
 		const credential = store.credentials.create({
 			id: "cred-1",
-			tokenHash: "hash",
-			tokenSalt: "salt",
+			tokenHash: "a".repeat(64),
+			tokenSalt: "salt-01234567890",
 			runId: run.id,
 			taskId: task.id,
 			role: "coder",
@@ -263,8 +263,8 @@ describe("codeteam run / task / credential stores", () => {
 		expect(() =>
 			store.credentials.create({
 				id: "cred-2",
-				tokenHash: "hash2",
-				tokenSalt: "salt2",
+				tokenHash: "b".repeat(64),
+				tokenSalt: "salt-98765432100",
 				runId: run.id,
 				taskId: task.id,
 				role: "coder",

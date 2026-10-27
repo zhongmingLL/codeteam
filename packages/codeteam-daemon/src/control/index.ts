@@ -23,14 +23,21 @@ export {
 	openControlStore,
 	type SeedIdentityConfig,
 } from "./store.ts";
+export { ApprovalStore } from "./stores/approvals.ts";
 export { ArtifactStore } from "./stores/artifacts.ts";
 export { AuditStore } from "./stores/audit.ts";
 export { BacklogStore } from "./stores/backlog.ts";
+export { BudgetStore } from "./stores/budgets.ts";
+export { EvalStore } from "./stores/evals.ts";
+export { ForgeDeliveryStore } from "./stores/forge-deliveries.ts";
+export { HandoffStore } from "./stores/handoffs.ts";
 export { InboxStore } from "./stores/inbox.ts";
 export { InvocationCredentialStore } from "./stores/invocation-credentials.ts";
+export { MergeStore } from "./stores/merges.ts";
 export { MessageStore } from "./stores/messages.ts";
 export { AgentProfileStore } from "./stores/profiles.ts";
 export { DEFAULT_QUEUE_CLAIM_TTL_MS, QueueStore } from "./stores/queue.ts";
+export { ReviewStore } from "./stores/reviews.ts";
 export { RoleStore } from "./stores/roles.ts";
 export { RunStore } from "./stores/runs.ts";
 export { AgentSessionStore } from "./stores/sessions.ts";
@@ -39,6 +46,7 @@ export { TaskStore } from "./stores/tasks.ts";
 export { ThreadEventStore } from "./stores/thread-events.ts";
 export { ThreadStore } from "./stores/threads.ts";
 export type * from "./stores/types.ts";
+export { WaitStore } from "./stores/waits.ts";
 export { WorkAdmissionStore } from "./stores/work-admissions.ts";
 export { WorkflowSopStore } from "./stores/workflow-sops.ts";
 export { ControlTransaction } from "./transaction.ts";

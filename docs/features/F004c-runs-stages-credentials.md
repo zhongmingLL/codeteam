@@ -2,9 +2,9 @@
 feature_ids: [codeteam/F004c]
 related_features: [codeteam/F004]
 title: "F004c: W1 tasks / stages / runs / credentials / cutover"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: []
+reviewers: [砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -60,7 +60,7 @@ run/task managed-work bindings，以及把 queue target 切成 run 的原子 cut
 - [x] coder cutover 自动 bind attempt + run binding；reviewer run 不绑。
 - [x] `npm --prefix packages/codeteam-daemon test`、根级 `tsc --noEmit`、
   Biome 通过。
-- [ ] 非作者 review（砚砚）与 merge。
+- [x] 非作者 review（砚砚 approve @ `72182f07`）与 merge（PR #24，`4c4ca4f7`）。
 
 ## Out of scope
 
@@ -73,12 +73,20 @@ run/task managed-work bindings，以及把 queue target 切成 run 的原子 cut
 - `npm --prefix packages/codeteam-daemon test`：5 个测试文件、60/60 通过。
 - `npx tsc --noEmit -p tsconfig.json`：通过。
 - `npx biome check --write packages/codeteam-daemon/src/control ...`：clean。
-- PR：当前 thread 路由与 review 记录；合入后回写。
+- PR #24：https://github.com/zhongmingLL/codeteam/pull/24（review `72182f07`，merge `4c4ca4f7`）。
 
 ## Risk
 
 数据/契约面。migration 005 是 FK-off 表重建，runner 在提交前做
 `PRAGMA foreign_key_check`，失败整迁移回滚；已有 run 的 queue ref 会保留，
 queue 行删除时置空。无生产数据迁移。
+
+## Post-merge review follow-ups (2026-10-28)
+
+- **P3 token hash shape**：credential store 目前只对 `tokenHash`/`tokenSalt`
+  做 nonEmpty；F004d 加 64-hex hash + salt 最小形状校验，防止上游把明文当
+  hash 存进来。
+- **Carry-over**：F004a 的 threads `updated_at` CAS 同毫秒穿透风险仍在
+  follow-up；F004e hardening 或 W7 前加单调 revision。
 
 [宪宪/deepseek-flash🐾]
