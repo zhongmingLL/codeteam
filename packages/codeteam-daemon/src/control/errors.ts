@@ -5,7 +5,13 @@ export type ControlErrorCode =
 	| "invalid_migration_set"
 	| "migration_failed"
 	| "schema_incomplete"
-	| "schema_ahead";
+	| "schema_ahead"
+	| "not_found"
+	| "conflict"
+	| "invalid_input"
+	| "invalid_state"
+	| "version_conflict"
+	| "claim_conflict";
 
 export class ControlError extends Error {
 	readonly code: ControlErrorCode;

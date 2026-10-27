@@ -37,3 +37,7 @@ control.close();
 Migration heads are contiguous and checked against `schema_migrations`; a failed migration rolls
 back atomically, and a database with an unknown/ahead version fails closed. `CODETEAM_SQLITE_BUSY_TIMEOUT_MS`
 overrides the default busy timeout.
+
+WAL and `-shm` files are created by SQLite with the process umask; their confidentiality relies on
+the `0700` data directory. Set `umask 077` or pre-create the files if a deployment requires explicit
+modes.

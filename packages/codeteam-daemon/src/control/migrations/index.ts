@@ -1,6 +1,7 @@
 import { CORE_SCHEMA_STATEMENTS } from "./001-core.ts";
 import { WORK_SCHEMA_STATEMENTS } from "./002-work.ts";
 import { GOVERNANCE_SCHEMA_STATEMENTS } from "./003-governance.ts";
+import { QUEUE_SOURCE_STATEMENTS } from "./004-queue-source.ts";
 
 export interface ControlMigration {
 	readonly version: number;
@@ -12,6 +13,7 @@ export const CONTROL_MIGRATIONS: readonly ControlMigration[] = [
 	{ version: 1, name: "core-control-plane", statements: CORE_SCHEMA_STATEMENTS },
 	{ version: 2, name: "work-sop-artifacts", statements: WORK_SCHEMA_STATEMENTS },
 	{ version: 3, name: "custody-approval-review", statements: GOVERNANCE_SCHEMA_STATEMENTS },
+	{ version: 4, name: "queue-source-uniqueness", statements: QUEUE_SOURCE_STATEMENTS },
 ];
 
 export const CONTROL_TABLE_NAMES: readonly string[] = [
