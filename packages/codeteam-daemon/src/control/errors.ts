@@ -13,7 +13,8 @@ export type ControlErrorCode =
 	| "version_conflict"
 	| "claim_conflict"
 	| "invalid_token"
-	| "forbidden";
+	| "forbidden"
+	| "backlog_not_imported";
 
 export class ControlError extends Error {
 	readonly code: ControlErrorCode;
