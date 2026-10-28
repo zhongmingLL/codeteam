@@ -43,6 +43,17 @@ template: ../0004-reuse-architecture-review-plan.md
 | F073 P0 hooks / P4 hook 集成 | `out-of-scope` | 归 pi/L0 hooks 与 W1/W2 运行时；SOP 不执行流程 |
 | F076 跨项目治理 | `defer→P1` | 只保留 `projectId` 形状；跨项目语义已被 F152 supersede |
 
+### 1.1 W4 实现边界（2026-10-28）
+
+W4 的 operator surface 先落 CLI，不新增 HTTP/MCP transport：CLI 直接调用
+`ControlStore` / SOP/gate service，不绕过 store，也不建第二状态机。W7a 复用
+同一 service 暴露 HTTP/事件，届时只加 transport，不重写语义。agent 回复的
+production runner 仍归 W5；W4 dogfood 用 W1 的 `messages` / `queue_entries` /
+`cutoverQueueEntry` 验证 durable 投递链，不把 W5 runner 塞进 W4。
+
+实现计划与证据见 `plans/0009-w4-sop-gates-implementation.md` 与
+`reports/2026-10-28-w4-sop-gates.md`。
+
 ## 2. clowder 架构
 
 ### 2.1 架构图

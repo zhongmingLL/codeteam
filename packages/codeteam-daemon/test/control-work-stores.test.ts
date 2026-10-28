@@ -212,8 +212,8 @@ describe("codeteam work / SOP / artifact stores", () => {
 		} as unknown as SopChecks;
 		expect(() => store.sops.upsert(sopInput({ checks: verified }))).toThrow(ControlError);
 		expect(() => store.sops.upsert(sopInput({ stage: "completion" }))).toThrow(ControlError);
-		const done = createBacklog({ id: "backlog-done", initialStatus: "done" });
-		expect(store.sops.upsert(sopInput({ backlogItemId: done.id, stage: "completion" })).stage).toBe("completion");
+		const done = createBacklog({ id: "backlog-done", initialStatus: "done", importReason: "test fixture" });
+		expect(() => store.sops.upsert(sopInput({ backlogItemId: done.id, stage: "completion" }))).toThrow(ControlError);
 	});
 
 	it("dispatches an approved backlog item atomically and replays by attempt id", () => {

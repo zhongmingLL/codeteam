@@ -549,6 +549,32 @@ describe("codeteam governance stores", () => {
 
 	it("records merge receipts, budgets, evals, and forge deliveries", () => {
 		const base = baseRun();
+		const evalRun = createEvalRun(base);
+		store.audit.append({
+			actor: "profile:coder",
+			action: "commit_created",
+			subject: `commit:${HEAD}`,
+			args: { headSha: HEAD, taskId: base.task.id },
+		});
+		const review = store.reviews.create({
+			id: "review-merge",
+			taskId: base.task.id,
+			runId: base.run.id,
+			headSha: HEAD,
+			baseSha: "b".repeat(40),
+			authorSessionId: base.session.id,
+			authorModel: "deepseek-flash",
+			authorModelFamily: "deepseek",
+			reviewerSessionId: evalRun.session.id,
+			reviewerModel: "glm-5.3-flash",
+			reviewerModelFamily: "glm",
+			authorProfileId: "profile-coder",
+			reviewerProfileId: "profile:eval",
+			riskClass: "code",
+			reviewMode: "cross_family",
+			verdict: "approve",
+			findings: [],
+		});
 		const approval = store.approvals.create({
 			id: "merge-approval",
 			threadId: base.thread.id,
@@ -567,7 +593,10 @@ describe("codeteam governance stores", () => {
 			headSha: HEAD,
 			mergeSha: HEAD,
 			policy: "merge-owner",
-			approvedBy: "user-1",
+			executedBy: "service:merge-owner",
+			gateEvidenceRef: "audit:test",
+			reviewRef: review.id,
+			hardGate: true,
 			receiptRef: "receipt-1",
 			approvalId: approval.id,
 		});
@@ -580,7 +609,10 @@ describe("codeteam governance stores", () => {
 				headSha: HEAD,
 				mergeSha: HEAD,
 				policy: "merge-owner",
-				approvedBy: "user-1",
+				executedBy: "service:merge-owner",
+				gateEvidenceRef: "audit:test",
+				reviewRef: review.id,
+				hardGate: true,
 				receiptRef: "receipt-2",
 				approvalId: approval.id,
 			}),

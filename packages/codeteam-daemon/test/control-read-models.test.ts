@@ -223,7 +223,9 @@ describe("codeteam console M0 read models", () => {
 			headSha: HEAD,
 			mergeSha: "c".repeat(40),
 			policy: "merge-gate",
-			approvedBy: "profile-coder",
+			executedBy: "service:merge-owner",
+			gateEvidenceRef: "audit:test",
+			reviewRef: "review-1",
 			receiptRef: "receipt-1",
 		});
 		store.approvals.create({

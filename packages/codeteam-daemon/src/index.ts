@@ -95,7 +95,20 @@ export {
 } from "./daemon.ts";
 export { DaemonError, type DaemonErrorCode } from "./errors.ts";
 export { acquireFence, type FenceRecord, isProcessAlive, readFence, releaseFence } from "./fence.ts";
+export { GateService, type GateTelemetry, type MergeGateEvaluation, type MergeGateRequest } from "./gates/service.ts";
+export type {
+	AssuranceLevel,
+	DiffFileStat,
+	GateFinding,
+	GateName,
+	GateResult,
+	GateStatus,
+	RiskAxis,
+	RiskClassification,
+	RiskLane,
+} from "./gates/types.ts";
 export { type InstallationIdentity, resolveInstallation } from "./installation.ts";
+export { type MergeExecuteInput, type MergeExecuteResult, MergeExecutor } from "./merge/executor.ts";
 export { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
 export {
 	assertAllowedCwd,
@@ -129,4 +142,5 @@ export {
 	type ToolRole,
 } from "./policy/index.ts";
 export * from "./review/index.ts";
+export { type ResolveBacklogInput, SOP_CATALOG, SOP_STAGE_IDS, SopService, type SopViewOptions } from "./sop/index.ts";
 export { type DaemonState, type DaemonStateFile, readStateFile, writeStateFile } from "./state.ts";

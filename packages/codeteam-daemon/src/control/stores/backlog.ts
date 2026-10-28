@@ -14,7 +14,9 @@ import {
 	parseJsonObject,
 } from "./helpers.ts";
 import type {
+	BacklogAuditProjection,
 	BacklogItem,
+	BacklogItemView,
 	BacklogListFilter,
 	BacklogPriority,
 	BacklogStatus,
@@ -115,6 +117,25 @@ export class BacklogStore {
 		return row ? mapBacklog(row) : null;
 	}
 
+	getAudit(id: string, limit = 100): BacklogAuditProjection {
+		this.require(id);
+		const bounded = Math.min(Math.max(limit, 1), 100);
+		const entries = this.audit.listSubject(`backlog:${id}`, bounded + 1);
+		const truncated = entries.length > bounded;
+		const audit = entries.slice(0, bounded);
+		return {
+			audit,
+			auditTruncated: truncated,
+			auditCursor: truncated ? (audit[audit.length - 1]?.id ?? null) : null,
+		};
+	}
+
+	getView(id: string, limit = 100): BacklogItemView | null {
+		const item = this.get(id);
+		if (!item) return null;
+		return { ...item, ...this.getAudit(id, limit) };
+	}
+
 	list(filter: BacklogListFilter = {}): BacklogItem[] {
 		const clauses: string[] = [];
 		const params: string[] = [];
@@ -131,9 +152,10 @@ export class BacklogStore {
 			params.push(filter.projectId);
 		}
 		const where = clauses.length > 0 ? ` WHERE ${clauses.join(" AND ")}` : "";
+		const limit = Math.min(Math.max(filter.limit ?? 200, 1), 200);
 		const rows = this.database
-			.prepare(`SELECT * FROM backlog_items${where} ORDER BY priority, created_at, id`)
-			.all(...params) as unknown as BacklogRow[];
+			.prepare(`SELECT * FROM backlog_items${where} ORDER BY priority, created_at, id LIMIT ?`)
+			.all(...params, limit) as unknown as BacklogRow[];
 		return rows.map(mapBacklog);
 	}
 
@@ -142,6 +164,9 @@ export class BacklogStore {
 		const status = input.initialStatus ?? "open";
 		if (input.createdByKind === "system" && status !== "open" && status !== "suggested") {
 			throw new ControlError("invalid_input", "system backlog items may only start open or suggested");
+		}
+		if (status !== "open" && status !== "suggested" && (!input.importReason || input.importReason.trim() === "")) {
+			throw new ControlError("invalid_input", "imported backlog status requires a reason");
 		}
 		const tags = uniqueTags(input.tags);
 		const now = this.clock();
@@ -173,7 +198,7 @@ export class BacklogStore {
 					actor: `${input.createdByKind}:${input.createdById}`,
 					action: status === "open" ? "created" : "imported",
 					subject: `backlog:${id}`,
-					args: { status },
+					args: status === "open" ? { status } : { status, reason: input.importReason ?? null },
 				});
 				return this.get(id)!;
 			});

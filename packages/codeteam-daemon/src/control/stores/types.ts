@@ -235,6 +235,7 @@ export interface AppendMessageInput {
 export interface MessageListOptions {
 	limit?: number;
 	beforeSeq?: number;
+	afterSeq?: number;
 }
 
 export interface MessageMutationOptions {
@@ -329,6 +330,14 @@ export interface BacklogItem {
 	updatedAt: number;
 }
 
+export interface BacklogAuditProjection {
+	audit: AuditEntry[];
+	auditTruncated: boolean;
+	auditCursor: string | null;
+}
+
+export interface BacklogItemView extends BacklogItem, BacklogAuditProjection {}
+
 export interface CreateBacklogItemInput {
 	id?: string;
 	userId: string;
@@ -341,6 +350,7 @@ export interface CreateBacklogItemInput {
 	createdById: string;
 	dependencies?: Record<string, unknown> | null;
 	initialStatus?: BacklogStatus;
+	importReason?: string;
 }
 
 export interface SuggestBacklogInput {
@@ -360,6 +370,7 @@ export interface BacklogListFilter {
 	status?: BacklogStatus;
 	priority?: BacklogPriority;
 	projectId?: string;
+	limit?: number;
 }
 
 export interface MarkBacklogDispatchedInput {
@@ -389,12 +400,53 @@ export interface DispatchBacklogResult {
 
 export type SopStage = "kickoff" | "impl" | "quality_gate" | "fresh_context" | "review" | "merge" | "completion";
 export type SopCheckStatus = "attested" | "unknown";
+export type EffectiveSopCheckStatus = SopCheckStatus | "verified";
 
 export interface SopChecks {
 	remoteMainSynced: SopCheckStatus;
 	qualityGatePassed: SopCheckStatus;
 	reviewApproved: SopCheckStatus;
 	visionGuardDone: SopCheckStatus;
+}
+
+export type SopCheckName = keyof SopChecks;
+
+export interface EffectiveSopChecks {
+	remoteMainSynced: EffectiveSopCheckStatus;
+	qualityGatePassed: EffectiveSopCheckStatus;
+	reviewApproved: EffectiveSopCheckStatus;
+	visionGuardDone: EffectiveSopCheckStatus;
+}
+
+export type SopEvidenceKind = "git_sync" | "quality_gate" | "review" | "vision_guard";
+
+export interface SopCheckEvidence {
+	id: string;
+	backlogItemId: string;
+	checkName: SopCheckName;
+	evidenceKind: SopEvidenceKind;
+	evidenceRef: string;
+	subjectRevision: string;
+	recordedBy: string;
+	recordedAt: number;
+}
+
+export interface RecordSopCheckEvidenceInput {
+	id?: string;
+	backlogItemId: string;
+	checkName: SopCheckName;
+	evidenceKind: SopEvidenceKind;
+	evidenceRef: string;
+	subjectRevision: string;
+	recordedBy: string;
+}
+
+export interface WorkflowSopView {
+	sop: WorkflowSop;
+	effectiveChecks: EffectiveSopChecks;
+	evidence: SopCheckEvidence[];
+	staleEvidence: SopCheckName[];
+	currentRevisions: Partial<Record<SopCheckName, string>>;
 }
 
 export interface ResumeCapsule {
@@ -428,6 +480,7 @@ export interface UpsertWorkflowSopInput {
 	checks: SopChecks;
 	expectedVersion?: number;
 	updatedBy: string;
+	completionSubjectRevision?: string | null;
 }
 
 export interface WorkAdmission {
@@ -1232,6 +1285,8 @@ export interface CreateVerificationInput {
 	blockedExpiresAt?: number | null;
 }
 
+export type MergeStatus = "succeeded" | "failed" | "unknown";
+
 export interface Merge {
 	id: string;
 	taskId: string;
@@ -1242,6 +1297,16 @@ export interface Merge {
 	approvedBy: string;
 	receiptRef: string;
 	approvalId: string | null;
+	executedBy: string;
+	gateEvidenceRef: string | null;
+	reviewRef: string | null;
+	status: MergeStatus;
+	failureRef: string | null;
+	hardGate: boolean;
+	strategy: string | null;
+	repo: string | null;
+	prRef: string | null;
+	mergedAt: number | null;
 	createdAt: number;
 }
 
@@ -1252,9 +1317,19 @@ export interface CreateMergeInput {
 	headSha: string;
 	mergeSha: string;
 	policy: string;
-	approvedBy: string;
+	approvedBy?: string;
 	receiptRef: string;
 	approvalId?: string | null;
+	executedBy?: string;
+	gateEvidenceRef?: string | null;
+	reviewRef?: string | null;
+	status?: MergeStatus;
+	failureRef?: string | null;
+	hardGate?: boolean;
+	strategy?: string | null;
+	repo?: string | null;
+	prRef?: string | null;
+	mergedAt?: number | null;
 }
 
 export interface Budget {

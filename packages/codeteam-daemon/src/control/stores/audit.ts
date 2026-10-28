@@ -62,7 +62,7 @@ export class AuditStore {
 
 	listSubject(subject: string, limit = 100): AuditEntry[] {
 		const rows = this.database
-			.prepare("SELECT * FROM audit WHERE subject = ? ORDER BY ts DESC, id DESC LIMIT ?")
+			.prepare("SELECT * FROM audit WHERE subject = ? ORDER BY ts DESC, rowid DESC LIMIT ?")
 			.all(subject, Math.min(Math.max(limit, 1), 500)) as unknown as AuditRow[];
 		return rows.map(mapAudit);
 	}
@@ -70,10 +70,10 @@ export class AuditStore {
 	latest(subject: string, action?: string): AuditEntry | null {
 		const row = action
 			? (this.database
-					.prepare("SELECT * FROM audit WHERE subject = ? AND action = ? ORDER BY ts DESC, id DESC LIMIT 1")
+					.prepare("SELECT * FROM audit WHERE subject = ? AND action = ? ORDER BY ts DESC, rowid DESC LIMIT 1")
 					.get(subject, action) as AuditRow | undefined)
 			: (this.database
-					.prepare("SELECT * FROM audit WHERE subject = ? ORDER BY ts DESC, id DESC LIMIT 1")
+					.prepare("SELECT * FROM audit WHERE subject = ? ORDER BY ts DESC, rowid DESC LIMIT 1")
 					.get(subject) as AuditRow | undefined);
 		return row ? mapAudit(row) : null;
 	}
