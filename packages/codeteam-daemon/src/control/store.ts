@@ -1,5 +1,7 @@
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { assertDependencyGraph } from "../scheduling/dependencies.ts";
+import { backlogQueuePriority } from "../scheduling/priority.ts";
 import { type ControlDatabase, type OpenControlDatabaseOptions, openControlDatabase } from "./database.ts";
 import { ControlError } from "./errors.ts";
 import { ControlReadModels } from "./read-models.ts";
@@ -7,7 +9,7 @@ import { ApprovalStore } from "./stores/approvals.ts";
 import { ArtifactStore } from "./stores/artifacts.ts";
 import { AuditStore } from "./stores/audit.ts";
 import { BacklogStore } from "./stores/backlog.ts";
-import { BudgetStore } from "./stores/budgets.ts";
+import { BudgetStore, budgetLimitsHit } from "./stores/budgets.ts";
 import { EvalStore } from "./stores/evals.ts";
 import { ForgeDeliveryStore } from "./stores/forge-deliveries.ts";
 import { HandoffStore } from "./stores/handoffs.ts";
@@ -21,6 +23,7 @@ import { QueueStore } from "./stores/queue.ts";
 import { ReviewStore } from "./stores/reviews.ts";
 import { RoleStore } from "./stores/roles.ts";
 import { RunStore } from "./stores/runs.ts";
+import { ScheduleStore } from "./stores/schedules.ts";
 import { AgentSessionStore } from "./stores/sessions.ts";
 import { SopCheckEvidenceStore } from "./stores/sop-check-evidence.ts";
 import { StageStore } from "./stores/stages.ts";
@@ -38,6 +41,7 @@ import { WaitStore } from "./stores/waits.ts";
 import { WorkAdmissionStore } from "./stores/work-admissions.ts";
 import { WorkerStore } from "./stores/workers.ts";
 import { WorkflowSopStore } from "./stores/workflow-sops.ts";
+import { WorktreeLeaseStore } from "./stores/worktree-leases.ts";
 import { ControlTransaction } from "./transaction.ts";
 
 export interface ControlStoreOptions extends OpenControlDatabaseOptions {
@@ -71,6 +75,8 @@ export class ControlStore {
 	readonly reviews: ReviewStore;
 	readonly merges: MergeStore;
 	readonly budgets: BudgetStore;
+	readonly worktreeLeases: WorktreeLeaseStore;
+	readonly schedules: ScheduleStore;
 	readonly evals: EvalStore;
 	readonly forgeDeliveries: ForgeDeliveryStore;
 	readonly backlog: BacklogStore;
@@ -104,7 +110,9 @@ export class ControlStore {
 		this.waits = new WaitStore(control.database, this.transaction, clock);
 		this.reviews = new ReviewStore(control.database, this.transaction, clock, this.audit);
 		this.merges = new MergeStore(control.database, this.transaction, clock, this.audit);
-		this.budgets = new BudgetStore(control.database);
+		this.budgets = new BudgetStore(control.database, this.transaction, clock);
+		this.worktreeLeases = new WorktreeLeaseStore(control.database, this.transaction, clock);
+		this.schedules = new ScheduleStore(control.database, this.transaction, clock);
 		this.evals = new EvalStore(control.database, clock);
 		this.forgeDeliveries = new ForgeDeliveryStore(control.database, clock);
 		this.backlog = new BacklogStore(control.database, this.transaction, clock, this.audit);
@@ -177,6 +185,22 @@ export class ControlStore {
 			if (backlog.status !== "approved") {
 				throw new ControlError("invalid_state", `backlog item ${input.backlogItemId} is ${backlog.status}`);
 			}
+			assertDependencyGraph(this, backlog.id);
+			const existingWorkTask = this.tasks.findWorkByBacklog(backlog.id);
+			if (existingWorkTask) {
+				const budgets = this.budgets.listByTask(existingWorkTask.id);
+				if (budgets.length > 1) {
+					throw new ControlError("invalid_state", `task ${existingWorkTask.id} has ambiguous budgets`);
+				}
+				const budget = budgets[0];
+				const paused =
+					(budget !== undefined && budgetLimitsHit(budget).length > 0) ||
+					this.approvals.list({ taskId: existingWorkTask.id, kind: "budget_pause", resolution: "open" }).length >
+						0;
+				if (paused) {
+					throw new ControlError("budget_paused", `task ${existingWorkTask.id} is paused by budget enforcement`);
+				}
+			}
 			for (const target of targets) {
 				if (!this.profiles.get(target)) {
 					throw new ControlError("not_found", `dispatch target profile ${target} not found`);
@@ -202,7 +226,7 @@ export class ControlStore {
 				sourceKind: "backlog_dispatch",
 				targets,
 				authorIntent: Object.fromEntries(targets.map((target) => [target, "next_work"])),
-				priority: "normal",
+				priority: backlogQueuePriority(backlog.priority),
 				sourceCategory: "backlog_dispatch",
 				orderKey: `${backlog.createdAt}:${backlog.id}`,
 			});

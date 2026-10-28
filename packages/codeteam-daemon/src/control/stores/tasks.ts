@@ -134,6 +134,13 @@ export class TaskStore {
 		return rows.map(mapTask);
 	}
 
+	findWorkByBacklog(backlogItemId: string): Task | null {
+		const row = this.database
+			.prepare("SELECT * FROM tasks WHERE kind = 'work' AND backlog_item_id = ? ORDER BY created_at, id LIMIT 1")
+			.get(backlogItemId) as TaskRow | undefined;
+		return row ? mapTask(row) : null;
+	}
+
 	create(input: CreateTaskInput): Task {
 		const id = input.id ?? newId();
 		const kind = input.kind;

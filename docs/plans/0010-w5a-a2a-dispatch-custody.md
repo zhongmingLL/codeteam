@@ -270,7 +270,7 @@ NODE_ENV=development npx biome check packages/codeteam-daemon
 | # | 项 | 去向 |
 |---|---|---|
 | 1 | `WaitContractService.arm` 与 stop/interrupt/guide/cancel 的 actor 仍是调用方字符串；W5a in-process 可接受 | W7a 必须与 per-run token → principal 一起绑定 |
-| 2 | `a2aDepth` 只持久化，无软上限 | W5c 预算/DAG 前加上限或准入 |
+| 2 | `a2aDepth` 只持久化，无软上限 | W5c 已落 `CODETEAM_A2A_MAX_DEPTH=32`（F010）；超过返回 `a2a_depth_exceeded` |
 | 3 | observation 意图正则为启发式，可能误触发一次 correction | W6 eval 调优 |
 
 ## 风险与回滚

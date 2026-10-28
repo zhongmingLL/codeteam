@@ -10,6 +10,7 @@ import { SOP_CHECK_EVIDENCE_STATEMENTS } from "./009-sop-check-evidence.ts";
 import { MERGE_RECEIPT_CONTRACT_STATEMENTS } from "./010-merge-receipt-contract.ts";
 import { DISPATCH_WITHDRAWAL_STATEMENTS } from "./011-dispatch-withdrawal.ts";
 import { WORKER_RUNTIME_STATEMENTS } from "./012-worker-runtime.ts";
+import { SCHEDULING_RESOURCE_STATEMENTS } from "./013-w5c-scheduling-resources.ts";
 
 export interface ControlMigration {
 	readonly version: number;
@@ -36,6 +37,7 @@ export const CONTROL_MIGRATIONS: readonly ControlMigration[] = [
 		foreignKeysOff: true,
 	},
 	{ version: 12, name: "worker-runtime", statements: WORKER_RUNTIME_STATEMENTS },
+	{ version: 13, name: "w5c-scheduling-resources", statements: SCHEDULING_RESOURCE_STATEMENTS },
 ];
 
 export const CONTROL_TABLE_NAMES: readonly string[] = [
@@ -72,6 +74,10 @@ export const CONTROL_TABLE_NAMES: readonly string[] = [
 	"verifications",
 	"merges",
 	"budgets",
+	"budget_charges",
+	"worktree_leases",
+	"schedule_specs",
+	"schedule_runs",
 	"evals",
 	"forge_deliveries",
 	"audit",

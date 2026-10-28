@@ -99,6 +99,19 @@ function uniqueTags(tags: string[]): string[] {
 	return unique;
 }
 
+function validateDependenciesInput(id: string, dependencies: Record<string, unknown> | null | undefined): string[] {
+	if (dependencies === null || dependencies === undefined) return [];
+	const raw = dependencies.dependsOn;
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw) || !raw.every((item) => typeof item === "string" && item.trim() !== "")) {
+		throw new ControlError("invalid_input", "dependencies.dependsOn must be a non-empty string array");
+	}
+	const unique = [...new Set(raw)];
+	if (unique.length !== raw.length) throw new ControlError("invalid_input", "dependencies.dependsOn must be unique");
+	if (unique.includes(id)) throw new ControlError("invalid_input", "a backlog item cannot depend on itself");
+	return unique;
+}
+
 export class BacklogStore {
 	private readonly database: DatabaseSync;
 	private readonly transaction: ControlTransaction;
@@ -161,6 +174,7 @@ export class BacklogStore {
 
 	create(input: CreateBacklogItemInput): BacklogItem {
 		const id = input.id ?? newId();
+		const dependsOn = validateDependenciesInput(id, input.dependencies);
 		const status = input.initialStatus ?? "open";
 		if (input.createdByKind === "system" && status !== "open" && status !== "suggested") {
 			throw new ControlError("invalid_input", "system backlog items may only start open or suggested");
@@ -172,6 +186,11 @@ export class BacklogStore {
 		const now = this.clock();
 		try {
 			return this.transaction.run(() => {
+				for (const dependency of dependsOn) {
+					if (!this.database.prepare("SELECT id FROM backlog_items WHERE id = ?").get(dependency)) {
+						throw new ControlError("dependency_missing", `dependency ${dependency} not found`);
+					}
+				}
 				this.database
 					.prepare(
 						"INSERT INTO backlog_items (id, user_id, project_id, title, summary, priority, tags_json, status, created_by_kind, created_by_id, dependencies_json, approved_at, dispatched_at, done_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -204,6 +223,49 @@ export class BacklogStore {
 			});
 		} catch (error) {
 			throw mapStoreError(error, "invalid_input");
+		}
+	}
+
+	setDependencies(id: string, dependsOn: string[], actorId: string): BacklogItem {
+		const unique = validateDependenciesInput(id, { dependsOn });
+		try {
+			return this.transaction.run(() => {
+				const current = this.require(id);
+				for (const dependency of unique) {
+					if (!this.database.prepare("SELECT id FROM backlog_items WHERE id = ?").get(dependency)) {
+						throw new ControlError("dependency_missing", `dependency ${dependency} not found`);
+					}
+				}
+				const stack = [...unique];
+				const seen = new Set<string>();
+				while (stack.length > 0) {
+					const next = stack.pop()!;
+					if (next === id) {
+						throw new ControlError("dependency_cycle", `dependency cycle would include ${id}`);
+					}
+					if (seen.has(next)) continue;
+					seen.add(next);
+					const item = this.get(next);
+					if (item) stack.push(...validateDependenciesInput(item.id, item.dependencies));
+				}
+				const merged = { ...(current.dependencies ?? {}) };
+				if (unique.length > 0) merged.dependsOn = unique;
+				else delete merged.dependsOn;
+				const dependenciesJson = Object.keys(merged).length > 0 ? jsonObject(merged, "dependencies") : null;
+				const now = this.clock();
+				this.database
+					.prepare("UPDATE backlog_items SET dependencies_json = ?, updated_at = ? WHERE id = ?")
+					.run(dependenciesJson, now, id);
+				this.audit.append({
+					actor: `user:${actorId}`,
+					action: "dependencies_set",
+					subject: `backlog:${id}`,
+					args: { dependsOn: unique },
+				});
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
 		}
 	}
 

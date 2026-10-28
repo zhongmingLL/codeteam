@@ -56,6 +56,7 @@ export { DEFAULT_QUEUE_CLAIM_TTL_MS, QueueStore } from "./stores/queue.ts";
 export { ReviewStore } from "./stores/reviews.ts";
 export { RoleStore } from "./stores/roles.ts";
 export { RunStore } from "./stores/runs.ts";
+export { ScheduleStore } from "./stores/schedules.ts";
 export { AgentSessionStore } from "./stores/sessions.ts";
 export {
 	SOP_CHECK_EVIDENCE_KIND,
@@ -72,4 +73,5 @@ export { WaitStore } from "./stores/waits.ts";
 export { WorkAdmissionStore } from "./stores/work-admissions.ts";
 export { WorkerStore } from "./stores/workers.ts";
 export { WorkflowSopStore } from "./stores/workflow-sops.ts";
+export { WorktreeLeaseStore } from "./stores/worktree-leases.ts";
 export { ControlTransaction } from "./transaction.ts";

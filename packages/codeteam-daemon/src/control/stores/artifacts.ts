@@ -78,6 +78,26 @@ export class ArtifactStore {
 		return rows.map(mapArtifact);
 	}
 
+	listAll(): Artifact[] {
+		const rows = this.database
+			.prepare("SELECT * FROM artifacts ORDER BY created_at, id")
+			.all() as unknown as ArtifactRow[];
+		return rows.map(mapArtifact);
+	}
+
+	delete(id: string): Artifact {
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `artifact ${id} not found`);
+				this.database.prepare("DELETE FROM artifacts WHERE id = ?").run(id);
+				return current;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
 	put(input: PutArtifactInput): Artifact {
 		if (!Buffer.isBuffer(input.content)) {
 			throw new ControlError("invalid_input", "artifact content must be a Buffer");

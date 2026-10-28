@@ -36,7 +36,8 @@ export function runBacklogCommand(args: ParsedArgs, context: CliContext): number
 	if (subcommand === "approve") return approveBacklog(args, context);
 	if (subcommand === "dispatch") return dispatchBacklog(args, context);
 	if (subcommand === "done") return doneBacklog(args, context);
-	throw new ControlError("invalid_input", "usage: codeteam backlog <create|list|show|approve|dispatch|done>");
+	if (subcommand === "depend") return dependBacklog(args, context);
+	throw new ControlError("invalid_input", "usage: codeteam backlog <create|list|show|approve|dispatch|done|depend>");
 }
 
 function createBacklog(args: ParsedArgs, context: CliContext): number {
@@ -50,6 +51,7 @@ function createBacklog(args: ParsedArgs, context: CliContext): number {
 	}
 	const priority = priorityOption(option(args, "priority")) ?? "p2";
 	const status = statusOption(option(args, "status")) ?? "open";
+	const dependsOn = options(args, "depends-on");
 	const item = context.store.backlog.create({
 		userId: option(args, "user") ?? operator.id,
 		projectId: option(args, "project") ?? null,
@@ -59,6 +61,7 @@ function createBacklog(args: ParsedArgs, context: CliContext): number {
 		tags,
 		createdByKind: "user",
 		createdById: operator.id,
+		dependencies: dependsOn.length > 0 ? { dependsOn } : null,
 		initialStatus: status,
 		importReason: option(args, "reason"),
 	});
@@ -101,6 +104,9 @@ function showBacklog(args: ParsedArgs, context: CliContext): number {
 	writeLine(`${item.id}  ${item.status}  ${item.priority}  ${item.title}`);
 	writeLine(`summary: ${item.summary}`);
 	writeLine(`tags: ${item.tags.join(", ")}`);
+	if (item.dependencies && Array.isArray(item.dependencies.dependsOn)) {
+		writeLine(`dependsOn: ${item.dependencies.dependsOn.join(", ")}`);
+	}
 	writeLine(`createdBy: ${item.createdByKind}:${item.createdById}`);
 	if (item.dispatchedThreadId) writeLine(`thread: ${item.dispatchedThreadId} (${item.dispatchedThreadPhase})`);
 	if (sop) writeLine(`sop: stage=${sop.stage} baton=${sop.batonHolder} version=${sop.version}`);
@@ -175,5 +181,21 @@ function doneBacklog(args: ParsedArgs, context: CliContext): number {
 					})();
 	if (context.json) writeJson(item);
 	else writeLine(`done ${item.id}`);
+	return 0;
+}
+
+function dependBacklog(args: ParsedArgs, context: CliContext): number {
+	const operator = requireOperator(context);
+	const id = args.positionals[1];
+	if (!id)
+		throw new ControlError("invalid_input", "usage: codeteam backlog depend <id> [--on <backlogId> ... | --clear]");
+	const clear = args.flags.has("clear");
+	const dependsOn = clear ? [] : options(args, "on");
+	if (!clear && dependsOn.length === 0) {
+		throw new ControlError("invalid_input", "backlog depend requires --on <backlogId> or --clear");
+	}
+	const item = context.store.backlog.setDependencies(id, dependsOn, operator.id);
+	if (context.json) writeJson(item);
+	else writeLine(`dependencies ${item.id}: ${dependsOn.length > 0 ? dependsOn.join(", ") : "(none)"}`);
 	return 0;
 }

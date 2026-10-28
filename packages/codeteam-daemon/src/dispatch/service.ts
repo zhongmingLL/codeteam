@@ -3,6 +3,7 @@ import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import { newId } from "../control/stores/helpers.ts";
 import type { Run } from "../control/stores/types.ts";
+import type { BudgetService } from "../scheduling/budget.ts";
 import { routeParallel } from "./route.ts";
 import { settleRunTerminal } from "./settle.ts";
 import type {
@@ -30,6 +31,10 @@ const POISON_DISPATCH_ERRORS = new Set([
 	"schema_incomplete",
 ]);
 
+export interface DispatchServiceOptions {
+	readonly budget?: BudgetService;
+}
+
 function objectOrEmpty(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -48,6 +53,7 @@ function positiveAttempt(value: unknown): number {
 export class DispatchService {
 	readonly store: ControlStore;
 	readonly executor: AgentExecutor;
+	private readonly budget: BudgetService | undefined;
 	private readonly clock: () => number;
 	private readonly hooks: DispatchServiceHooks;
 	private readonly controllers = new Map<string, AbortController>();
@@ -59,11 +65,13 @@ export class DispatchService {
 		executor: AgentExecutor,
 		clock: () => number = Date.now,
 		hooks: DispatchServiceHooks = {},
+		options: DispatchServiceOptions = {},
 	) {
 		this.store = store;
 		this.executor = executor;
 		this.clock = clock;
 		this.hooks = hooks;
+		this.budget = options.budget;
 	}
 
 	requestDrain(): void {
@@ -193,10 +201,32 @@ export class DispatchService {
 	settleRun(runId: string, input: DispatchSettleInput): Run {
 		const existing = this.store.runs.get(runId);
 		if (!existing) throw new ControlError("not_found", `run ${runId} not found`);
-		if (TERMINAL_STATUSES.has(existing.status)) return existing;
+		if (TERMINAL_STATUSES.has(existing.status)) {
+			this.chargeBudget(existing);
+			return existing;
+		}
 		const result = settleRunTerminal(this.store, runId, input, this.clock);
 		if (result.changed) this.hooks.onRunTerminal?.(result.run, input);
+		this.chargeBudget(result.run);
 		return result.run;
+	}
+
+	private chargeBudget(run: Run): void {
+		if (!this.budget) return;
+		try {
+			this.budget.chargeRun(run.id);
+		} catch (error) {
+			try {
+				this.store.audit.append({
+					actor: "system:dispatch",
+					action: "budget_charge_failed",
+					subject: `run:${run.id}`,
+					args: { message: error instanceof Error ? error.message : String(error) },
+				});
+			} catch {
+				// Budget accounting failure must not overwrite a committed run terminal.
+			}
+		}
 	}
 
 	private async drainLoop(options: DispatchDrainOptions): Promise<DispatchDrainResult> {
@@ -240,6 +270,12 @@ export class DispatchService {
 						if (current?.status === "claimed" && current.claimId) {
 							this.store.queue.release(entry.id, current.claimId);
 						}
+						this.store.audit.append({
+							actor: "system:dispatch",
+							action: "dispatch_deferred",
+							subject: `queue:${entry.id}`,
+							args: { code, message },
+						});
 						break;
 					}
 				}
@@ -258,6 +294,7 @@ export class DispatchService {
 		if (!source.taskId) {
 			throw new ControlError("invalid_state", `queue source message ${source.id} has no task`);
 		}
+		this.assertBudgetAdmission(source.taskId);
 		const targets = [...entry.targets];
 		return this.store.transaction.run(() => {
 			let activeClaimId = claimId;
@@ -315,6 +352,17 @@ export class DispatchService {
 			}
 			return { runs, failures };
 		});
+	}
+
+	private assertBudgetAdmission(taskId: string): void {
+		if (!this.budget) return;
+		const status = this.budget.status(taskId);
+		if (status.paused) {
+			throw new ControlError(
+				"budget_paused",
+				`budget for task ${taskId} is paused: ${status.limitsHit.join(", ") || "operator approval open"}`,
+			);
+		}
 	}
 
 	private deadLetterEntry(queueEntryId: string, claimId: string, code: string, message: string): void {
