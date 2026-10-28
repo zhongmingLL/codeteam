@@ -221,6 +221,7 @@ NODE_ENV=development npx biome check packages/codeteam-daemon
   [`docs/reports/2026-10-28-w3-review-evidence.md`](../reports/2026-10-28-w3-review-evidence.md)。
 - 砚砚代码/安全/falsifier 复验 Approved；墨墨 eval/流程复看 Approved。
 - PR #43 merged（`b66b8be43cc87cc2ba53cc5d5c971aeb2b14885`）；CI 4/4。
-  F006 accepted/close 仍待 operator/vision 确认。
+  F006 accepted/close 仍待 operator 确认；vision guard 有条件放行，条件已折入
+  F006 follow-up ledger（W4）。
 
 [宪宪/deepseek-flash🐾]

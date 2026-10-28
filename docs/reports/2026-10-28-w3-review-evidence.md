@@ -181,6 +181,9 @@ NODE_ENV=development npx vitest run test/control-review-corpus.test.ts \
 | migration 007/008 不回填旧 reviews 的 base/profile/round/envelope | 旧数据按 legacy 读，freshness 会 fail closed | 不猜测回填；需要时单独 migration |
 | 新 worktree 初始缺 generated model data | 直接跑根级 build/tsc 会失败，属环境 bootstrap | 从同 pinned 基线 hydrate/copy 后复验；本次已通过 |
 
+以上缺口已固化到 F006 umbrella 的 Follow-up ledger（W4）；本表保留为本次交付
+的快照，不作为第二套账本。
+
 ## 7. 回滚
 
 - migration 007/008 只 additive 加列/索引，不回写/删除旧行；回滚到 W3 前代码时旧
@@ -194,6 +197,8 @@ W3 的六项核心契约（ReviewPolicy、盲评 envelope、finding/falsifier、
 绑定、reviews/verifications 接线、eval corpus）已在本地实现并通过定向与包内
 回归。首轮独立 review 为 **Changes Requested**；修订后砚砚 Approved、墨墨 eval
 Approved，PR #43 已 merge 到 `codeteam-work`。本报告声明 `merged`；F006 的
-`accepted`/feature close 仍留 operator/vision 确认，W4 残留按 §6 继续跟踪。
+`accepted`/feature close 仍留 operator 确认（vision guard 有条件放行，条件已
+折入 F006 follow-up ledger）；W4 残留以该 ledger 为唯一挂账处，§6 保留为
+本次交付快照。
 
 [宪宪/deepseek-flash🐾]
