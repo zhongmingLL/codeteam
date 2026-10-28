@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F011]
 title: "F011: W5d daemon lifecycle / deployment wait / managed work"
-status: in_review
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-28
@@ -62,13 +62,14 @@ passing tests 冒充。
   action，不是子命令）。execute 时从 identity-verified
   pid 重新推导 descendants，避免 signal 已回收/复用的 pid。relaunch 的
   新 daemon 启动仍归 external executor。
-- 验证：`build:offline` exit 0；daemon 包 52 files passed + 2 skipped，
-  378 tests passed + 2 skipped；`tsc` / `biome` 通过。证据见
+- 验证（merged `125ba4f81`）：`build:offline` exit 0；daemon 包 52
+  files passed + 2 skipped，380 tests passed + 2 skipped；`tsc` /
+  `biome` 通过。证据见
   `docs/reports/2026-10-28-w5d-runtime-lifecycle-managed-work.md`。
 - 未完成：W7 HTTP/Console、W8 revert connector；relaunch CLI 的 external
   start；W6 episode store。不得用本 slice 的 tests 冒充。
 
-## Merge record / post-merge review（2026-10-28）
+## Close record（2026-10-28）
 
 - PR #56 squash merged at `168e67dd0`（reviewed HEAD
   `dfb872d9c36c62e476f2e11fcfd3d2f37575e1f1`，base `7adc30ee4`）。
@@ -76,19 +77,16 @@ passing tests 冒充。
   `0001793202850007-003779`，2×P2 + 3×P3 全闭合）；墨墨
   SOP/process/Product approved @ `dfb872d9c`（msg
   `0001793202985338-003781`，无 P1/P2）。CI 4/4。
-- **post-merge review pending**：operator 已把烁烁拉入工作 thread，其
-  W5/session-interface lane（lifecycle / boot ledger / observation /
-  recovery）正在对已合入代码复核，verdict 未出。此前“routableNotJoined、
-  由砚砚合票覆盖”的表述已作废。
-- 状态口径：**代码已合入 ≠ W5d 已完成独立复核**。烁烁无 P1/P2 后本
-  feature 才转 `done`；若报 P1/P2，保持 `in_review` 并开 follow-up fix
-  PR；P3/备忘进 residual。
-- **烁烁 verdict（已出）**：1×P2（observation 缺 pid 活性，真实 SIGTERM
-  后 state 仍 `ready`，精确 `revision_included` 可在 dead window 误唤醒）
-  + 2×备忘（restart↔`WorkerRuntime.recover()` 契约未接线，归 W6；
-  descendants SIGTERM 与 recover 语义自洽）。P2 修复走
-  `fix/w5d-observation-liveness` follow-up PR；合入后由烁烁按 exact 新
-  HEAD 复审增量，通过后本 feature 才转 `done`。
+- 烁烁 post-merge W5/session-interface review：1×P2（observation 缺 pid
+  活性，真实 SIGTERM 后 state 仍 `ready`，精确 `revision_included` 可在
+  dead window 误唤醒）+ 2×备忘（M1/M2）+ 1×P3（pid 复用窄缝）。P2 修复
+  PR #59 squash merged at `125ba4f81`（reviewed HEAD `d96ca039b`）；
+  烁烁复审 **APPROVED** @ `d96ca039b`（msg
+  `0001793203881405-003808-d1123c44`）。
+- Post-merge acceptance（merged `125ba4f81`）：`build:offline` 后
+  daemon 包 52 files passed + 2 skipped，**380 tests passed + 2 skipped**。
+- 三条 focus 结论：W5b registry/capacity 消费干净；boot ledger vs worker
+  记录干净；stop/restart × run/lease 的契约缺口记为 M1（归 W6）。
 
 ## Residual ledger（W5d）
 
@@ -96,9 +94,8 @@ passing tests 冒充。
 |---|---|---|
 | W5d-M1 | 外部 executor 重启后必须在 `markReady` 前跑 `WorkerRuntime.recover()`；否则 SIGTERM 遗留的 `running` runs / `attached` sessions 要等 lease 过期才被惰性收拾，而 lifecycle 已显示 `reverified` | W6 接线 checklist |
 | W5d-M2 | 未来接线后 `executeStop` 重推导 descendants 会一并 SIGTERM worker 子进程，与 `interrupted/"daemon_restarted"` 语义自洽；这正是 M1 必须成立的原因 | W6，与 M1 同段 |
-| W5d-R1 | 精确 `revision_included` 需配合 observation 的 pid 活性 fail-closed | 已修（follow-up PR，待烁烁复审） |
-- Post-merge acceptance：`build:offline` 后 daemon 包 52 files passed
-  + 2 skipped，378 tests passed + 2 skipped。
+| W5d-R1 | 精确 `revision_included` 需配合 observation 的 pid 活性 fail-closed | 已修并复审通过（PR #59 @ `d96ca039b`） |
+| W5d-R2 | pid 复用窄缝：daemon 死后 pid 被另一活进程复用，`isProcessAlive` 仍判活，stale `ready` 依旧；需 pid 复用 + dead window 同 revision 叠加，观察层刻意不拿 full process identity（归 lifecycle 层） | 未来硬化（与 R1 同段，不阻塞） |
 
 ## Out of scope
 
