@@ -161,9 +161,25 @@ export class StopOperationService {
 				this.store.fail(opId, "frozen_identity_mismatch");
 				throw new ControlError("lifecycle_identity_mismatch", "daemon process identity changed before stop");
 			}
+			// Re-derive descendants from the identity-verified daemon pid. The frozen
+			// targetProcessSet is a request-time snapshot: one of its descendant pids may
+			// already belong to an unrelated process by now, and new children must still
+			// be stopped or the daemon can respawn.
+			let liveTargets: number[];
+			try {
+				liveTargets = [record.frozenIdentity.pid, ...this.processProvider.descendants(record.frozenIdentity.pid)];
+				assertExecutorOutside(liveTargets, this.executorPid, this.processProvider);
+			} catch (error) {
+				const reason =
+					error instanceof ControlError && error.code === "lifecycle_executor_inside_target"
+						? "executor_inside_target"
+						: "process_tree_unreadable";
+				this.store.fail(opId, reason);
+				throw error;
+			}
 			this.store.transition(opId, "requested", "stopping");
 			try {
-				await this.terminateTargets(record.targetProcessSet);
+				await this.terminateTargets(liveTargets);
 			} catch (error) {
 				this.store.fail(opId, "signal_failed");
 				throw new ControlError(
@@ -174,7 +190,7 @@ export class StopOperationService {
 			const graceMs = options.graceMs ?? Number(process.env.CODETEAM_STOP_GRACE_MS ?? 15_000);
 			const pollMs = options.pollMs ?? 50;
 			const deadline = this.clock().getTime() + graceMs;
-			while (record.targetProcessSet.some((pid) => this.processProvider.isAlive(pid))) {
+			while (liveTargets.some((pid) => this.processProvider.isAlive(pid))) {
 				if (this.clock().getTime() >= deadline) {
 					this.store.fail(opId, "stop_timeout");
 					throw new ControlError(
@@ -184,7 +200,7 @@ export class StopOperationService {
 				}
 				await this.sleep(pollMs);
 			}
-			return this.store.transition(opId, "stopping", "stopped");
+			return this.store.transition(opId, "stopping", "stopped", { stoppedProcessSet: liveTargets });
 		} finally {
 			this.store.releaseClaim(this.deploymentId, claim.holder.token);
 		}

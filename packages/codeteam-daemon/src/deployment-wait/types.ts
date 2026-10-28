@@ -72,6 +72,12 @@ export interface DeploymentWaitRegisterInput {
 	readonly actorRef: string;
 }
 
+export interface DeploymentWaitCancelInput {
+	readonly taskId: string;
+	readonly actorRef: string;
+	readonly reason: string;
+}
+
 export interface DeploymentObserver {
 	subjectRef(): string;
 	observe(): DeploymentObservation | null;

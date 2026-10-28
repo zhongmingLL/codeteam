@@ -231,6 +231,29 @@ describe("W5d daemon lifecycle", () => {
 		);
 	});
 
+	it("re-derives descendants at execute time instead of trusting frozen pids", async () => {
+		const base = setup();
+		base.processes.children.set(100, [101]);
+		base.processes.identities.set(101, { pid: 101, startedAt: "101.0", command: "worker-old" });
+		base.processes.alive.add(101);
+		const requested = base.service.requestStop(authorization(base.dataDir, "halt"));
+		expect(requested.targetProcessSet).toEqual([100, 101]);
+
+		// 101 was reparented (or its pid reused) before execute; 102 is a new child.
+		base.processes.children.set(100, [102]);
+		base.processes.identities.set(102, { pid: 102, startedAt: "102.0", command: "worker-new" });
+		base.processes.alive.add(102);
+
+		const stopped = await base.service.executeStop(requested.opId, { graceMs: 1_000, pollMs: 1 });
+		expect(stopped.state).toBe("stopped");
+		expect(base.signals.sent).toEqual([
+			{ target: 100, signal: "SIGTERM" },
+			{ target: 102, signal: "SIGTERM" },
+		]);
+		expect(stopped.stoppedProcessSet).toEqual([100, 102]);
+		expect(base.processes.alive.has(101)).toBe(true);
+	});
+
 	it("records deploymentId, health identity and clean exit evidence", async () => {
 		const root = mkdtempSync(join(tmpdir(), "codeteam-lifecycle-boot-"));
 		dirs.push(root);

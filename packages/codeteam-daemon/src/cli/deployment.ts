@@ -8,13 +8,14 @@ import { writeJson, writeLine } from "./output.ts";
 
 export function runDeploymentCommand(args: ParsedArgs, context: CliContext): number {
 	if (args.positionals[0] !== "wait") {
-		throw new ControlError("invalid_input", "usage: codeteam deployment wait <register|status|sweep> ...");
+		throw new ControlError("invalid_input", "usage: codeteam deployment wait <register|status|sweep|cancel> ...");
 	}
 	const action = args.positionals[1];
 	if (action === "register") return registerWait(args, context);
 	if (action === "status") return waitStatus(args, context);
 	if (action === "sweep") return sweepWaits(args, context);
-	throw new ControlError("invalid_input", "usage: codeteam deployment wait <register|status|sweep> ...");
+	if (action === "cancel") return cancelWait(args, context);
+	throw new ControlError("invalid_input", "usage: codeteam deployment wait <register|status|sweep|cancel> ...");
 }
 
 function waitService(context: CliContext, args: ParsedArgs): DeploymentWaitService {
@@ -91,5 +92,22 @@ function sweepWaits(args: ParsedArgs, context: CliContext): number {
 		writeLine(`matched=${result.matched.length} delivered=${result.delivered.length} errors=${result.errors.length}`);
 		for (const error of result.errors) writeLine(`error ${error.taskId}: ${error.message}`);
 	}
+	return 0;
+}
+
+function cancelWait(args: ParsedArgs, context: CliContext): number {
+	const operator = requireOperator(context);
+	const taskId = args.positionals[2];
+	if (!taskId) {
+		throw new ControlError("invalid_input", "usage: codeteam deployment wait cancel <taskId> --reason <text>");
+	}
+	const state = waitService(context, args).cancel({
+		taskId,
+		actorRef: `user:${operator.id}`,
+		reason: requireOption(args, "reason"),
+	});
+	if (context.json) writeJson(state);
+	else if (!state) writeLine(`task ${taskId} has no deployment wait`);
+	else writeLine(`canceled deployment wait task=${taskId} status=${state.status} subject=${state.subjectRef}`);
 	return 0;
 }

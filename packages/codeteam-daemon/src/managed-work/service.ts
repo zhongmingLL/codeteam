@@ -115,17 +115,22 @@ export class ManagedWorkService {
 				const existing = this.store.tasks.findBySubjectKey("pr_tracking", subjectKey);
 				const existingBinding = existing ? this.store.work.getTaskBinding(existing.id) : null;
 				if (existing && existingBinding) {
-					this.store.audit.append({
-						actor: "system:managed-work",
-						action: "work_binding_conflict",
-						subject: `task:${existing.id}`,
-						args: {
-							existingWorkId: existingBinding.workId,
-							existingAttemptId: existingBinding.attemptId,
-							requestedWorkId: input.binding.workId,
-							requestedAttemptId: input.binding.attemptId,
-						},
-					});
+					try {
+						this.store.audit.append({
+							actor: "system:managed-work",
+							action: "work_binding_conflict",
+							subject: `task:${existing.id}`,
+							args: {
+								existingWorkId: existingBinding.workId,
+								existingAttemptId: existingBinding.attemptId,
+								requestedWorkId: input.binding.workId,
+								requestedAttemptId: input.binding.attemptId,
+							},
+						});
+					} catch {
+						// Conflict evidence is best-effort; never let audit failure mask the
+						// original conflict error the caller must see.
+					}
 				}
 			}
 			throw error;

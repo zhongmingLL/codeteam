@@ -246,3 +246,92 @@ describe("W5d deployment wait", () => {
 		expect(readBootLedger(join(dataDir, "boot-ledger.jsonl")).some((record) => record.event === "exited")).toBe(true);
 	});
 });
+
+describe("W5d deployment wait operator cancel", () => {
+	it("clears an unmatched wait so the task can start, and is idempotent", () => {
+		const base = fixture();
+		const observer = new FakeObserver();
+		const wait = service(base, observer);
+		const registered = wait.register({
+			taskId: "task-1",
+			predicate: { kind: "revision_included", revision: "b".repeat(40), services: ["daemon"] },
+			targetProfileIds: ["profile:coder"],
+			actorRef: "user:user-1",
+		});
+		expect(() => wait.assertCanStart("task-1")).toThrow(/deployment wait is still pending/);
+
+		const canceled = wait.cancel({
+			taskId: "task-1",
+			actorRef: "operator:user-1",
+			reason: "wrong sha after rollback",
+		});
+		expect(canceled?.status).toBe("terminal");
+		expect(() => wait.assertCanStart("task-1")).not.toThrow();
+		expect(wait.cancel({ taskId: "task-1", actorRef: "operator:user-1", reason: "again" })).toMatchObject({
+			status: "terminal",
+			generation: registered.generation,
+		});
+		const audit = base.store.audit
+			.listSubject("task:task-1")
+			.filter((item) => item.action === "deployment_wait_canceled");
+		expect(audit).toHaveLength(1);
+		expect(audit[0]).toMatchObject({ actor: "operator:user-1" });
+	});
+
+	it("rejects non-operator actors and empty reasons", () => {
+		const base = fixture();
+		const observer = new FakeObserver();
+		const wait = service(base, observer);
+		wait.register({
+			taskId: "task-1",
+			predicate: { kind: "new_ready_boot", services: ["daemon"] },
+			targetProfileIds: ["profile:coder"],
+			actorRef: "user:user-1",
+		});
+		expect(() => wait.cancel({ taskId: "task-1", actorRef: "system:dispatch", reason: "nope" })).toThrow(
+			/operator principal/,
+		);
+		expect(() => wait.cancel({ taskId: "task-1", actorRef: "operator:user-1", reason: "  " })).toThrow(
+			/reason is required/,
+		);
+		expect(wait.projection("task-1").state?.status).toBe("waiting");
+	});
+
+	it("allows a fresh generation after cancel but not after delivery", () => {
+		const base = fixture();
+		const observer = new FakeObserver();
+		const wait = service(base, observer);
+		const first = wait.register({
+			taskId: "task-1",
+			predicate: { kind: "revision_included", revision: "b".repeat(40), services: ["daemon"] },
+			targetProfileIds: ["profile:coder"],
+			actorRef: "user:user-1",
+		});
+		wait.cancel({ taskId: "task-1", actorRef: "operator:user-1", reason: "wrong sha" });
+		const second = wait.register({
+			taskId: "task-1",
+			predicate: { kind: "revision_included", revision: "c".repeat(40), services: ["daemon"] },
+			targetProfileIds: ["profile:coder"],
+			actorRef: "user:user-1",
+		});
+		expect(second.generation).toBe(first.generation + 1);
+		expect(second.status).toBe("waiting");
+		expect(() => wait.assertCanStart("task-1")).toThrow(/still pending/);
+
+		observer.observation = observation({ runningRevision: "c".repeat(40) });
+		expect(wait.sweep(base.now()).delivered).toEqual(["task-1"]);
+		expect(wait.projection("task-1").state?.status).toBe("matched");
+		expect(() => wait.assertCanStart("task-1")).not.toThrow();
+		expect(wait.cancel({ taskId: "task-1", actorRef: "operator:user-1", reason: "late cancel" })?.status).toBe(
+			"terminal",
+		);
+		expect(() =>
+			wait.register({
+				taskId: "task-1",
+				predicate: { kind: "new_ready_boot", services: ["daemon"] },
+				targetProfileIds: ["profile:coder"],
+				actorRef: "user:user-1",
+			}),
+		).toThrow(/already delivered/);
+	});
+});

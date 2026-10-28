@@ -7,6 +7,7 @@ import { DeploymentObservationService } from "./observation.ts";
 import {
 	type DeploymentObservation,
 	type DeploymentObserver,
+	type DeploymentWaitCancelInput,
 	type DeploymentWaitOutcome,
 	type DeploymentWaitPredicate,
 	type DeploymentWaitRegisterInput,
@@ -55,14 +56,25 @@ export class DeploymentWaitService {
 		}
 		const existing = parseDeploymentWaitState(task.deploymentWait);
 		if (existing) {
-			if (sameWait(existing, predicate, targets)) return existing;
-			throw new ControlError("deployment_wait_conflict", `task ${task.id} already has a different deployment wait`);
+			if (existing.status !== "terminal") {
+				if (sameWait(existing, predicate, targets)) return existing;
+				throw new ControlError(
+					"deployment_wait_conflict",
+					`task ${task.id} already has a different deployment wait`,
+				);
+			}
+			if (existing.outcome?.delivery === "delivered") {
+				throw new ControlError(
+					"deployment_wait_conflict",
+					`task ${task.id} already delivered its deployment wait; cancel alone cannot re-arm it`,
+				);
+			}
 		}
 		const subjectRef = this.observer.subjectRef();
 		const observation = this.observer.observe();
 		const state: DeploymentWaitStateV1 = {
 			v: 1,
-			generation: 1,
+			generation: (existing?.generation ?? 0) + 1,
 			subjectRef,
 			ownerFence: { kind: "containing_task", taskId: task.id },
 			baseline: {
@@ -92,6 +104,51 @@ export class DeploymentWaitService {
 			return next;
 		});
 		return this.evaluate(task.id, now) ?? parseDeploymentWaitState(updated.deploymentWait)!;
+	}
+
+	/**
+	 * Operator exit path for a wait that can never match (wrong sha, merge-commit
+	 * build, rolled-back deploy). Marks the wait terminal so `assertCanStart` stops
+	 * blocking the task; the audit record carries actor and reason. Idempotent for an
+	 * already-terminal wait. A terminal wait without a delivered outcome can be
+	 * re-registered as generation+1.
+	 */
+	cancel(input: DeploymentWaitCancelInput): DeploymentWaitStateV1 | null {
+		if (!input.actorRef.startsWith("user:") && !input.actorRef.startsWith("operator:")) {
+			throw new ControlError(
+				"forbidden",
+				"deployment wait cancel requires an operator principal (user: or operator: actor)",
+			);
+		}
+		const reason = input.reason.trim();
+		if (reason === "") throw new ControlError("deployment_wait_invalid", "cancel reason is required");
+		const task = this.store.tasks.get(input.taskId);
+		if (!task) throw new ControlError("not_found", `task ${input.taskId} not found`);
+		const state = parseDeploymentWaitState(task.deploymentWait);
+		if (!state) return null;
+		if (state.status === "terminal") return state;
+		const now = this.clock();
+		const next: DeploymentWaitStateV1 = { ...state, status: "terminal", updatedAt: now };
+		return this.store.transaction.run(() => {
+			const updated = this.store.tasks.setDeploymentWait(task.id, next as unknown as Record<string, unknown>, {
+				expectedUpdatedAt: task.updatedAt,
+			});
+			this.store.audit.append({
+				actor: input.actorRef,
+				action: "deployment_wait_canceled",
+				subject: `task:${task.id}`,
+				args: {
+					reason,
+					previousStatus: state.status,
+					generation: state.generation,
+					subjectRef: state.subjectRef,
+					outcomeId: state.outcome?.outcomeId ?? null,
+					delivery: state.outcome?.delivery ?? null,
+					queueEntryId: state.outcome?.queueEntryId ?? null,
+				},
+			});
+			return parseDeploymentWaitState(updated.deploymentWait)!;
+		});
 	}
 
 	evaluate(taskId: string, now = this.clock()): DeploymentWaitStateV1 | null {

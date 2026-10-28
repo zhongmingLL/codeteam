@@ -91,6 +91,7 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
 | B3 predicate/sweep | 同上 | revision/new boot 命中；unknown 保持 waiting | unit |
 | B4 delivery | 同上 | message + queue entry 幂等；不直接起 run | integration |
 | B5 start guard | `DeploymentWaitStartGuard` + dispatch option | waiting 拒绝 cutover、release + skip 该 entry 后继续 drain；delivered 放行 | dispatch tests |
+| B6 exit path | `DeploymentWaitService.cancel` + CLI | operator cancel → terminal + audit；cancel 后可 `generation+1` 重注册；已投递拒绝重注册 | service/CLI tests |
 
 ## 4. W5d-C daemon lifecycle
 
@@ -118,6 +119,7 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
 | C3 authorization | `src/lifecycle/service.ts` + operator auth | 缺/伪造签名 fail closed；typed principal | unit |
 | C4 stop/restart/reverify | 同上 + health probe | stop→stopped；restart→restarted→reverified | integration |
 | C5 boot evidence | `boot-ledger.ts`/`daemon.ts`/`state.ts` | deploymentId/exit clean/startup_failed | daemon tests |
+| C5b descendant re-derive | `lifecycle/service.ts` | execute 时从复验 pid 重算 descendants；不 signal 已回收/复用 pid；`stoppedProcessSet` | lifecycle tests |
 | C6 CLI | `src/cli/daemon.ts` | operator status/stop/restart；no agent/MCP surface | CLI tests |
 
 ## 5. AC 映射（`0004` §W5 未勾 W5d 项）
@@ -137,7 +139,9 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
 - `control-managed-work.test.ts`：register 三态、binding 同事务、cascade、attribution、audit raw ID 内部。
 - `control-managed-retry.test.ts`：same profile、different profile 消费 target + blocker、review/verify 不绑、非 managed fallback。
 - `control-deployment-wait.test.ts`：register replay、revision/new boot、unknown retain、outcome 幂等、wrong deployment/port、start guard。
+- 同上（cancel）：operator cancel 放行 start、幂等、非 operator 拒绝、cancel 后 generation+1、已投递拒绝重注册。
 - `control-daemon-lifecycle.test.ts`：六态顺序、failed/stale、签名、executor independence、frozen identity、health 复验、boot exit。
+- 同上（descendants）：execute 时重算 descendants，已回收/复用 pid 不被 signal，新 child 被纳入。
 - `control-dispatch-budget.test.ts`：队头 `budget_paused`/`deployment_wait_pending` 不阻塞后续 entry（`claimNext.excludeIds` skip-set）。
 - CLI tests：daemon status/stop/restart（fake process/health）、deployment wait register/status/sweep。
 

@@ -41,6 +41,8 @@ export interface StopOperationRecord {
 	readonly requestedAt: string;
 	readonly stoppedBootId: string;
 	readonly targetProcessSet: readonly number[];
+	/** Actual set signalled at execute time; descendants are re-derived from the verified pid. */
+	readonly stoppedProcessSet?: readonly number[];
 	readonly frozenIdentity: ProcessIdentity;
 	readonly restart?: {
 		readonly authorizedBy: string;

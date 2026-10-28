@@ -47,6 +47,12 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
 - register / evaluate / deliver / sweep / start guard；outcomeId + owner
   fence + queue entry 幂等；投递经 `messages` + `queue_entries`，不直接
   起 Run。`sweep(now)` 是唯一恢复入口，没有每猫 timer。
+- 退出路径：`cancel`（operator `user:`/`operator:` principal、必填
+  reason、terminal 状态、audit 记 previousStatus/outcome/queueEntryId）。
+  不可匹配的 wait（错 sha、merge-commit runningRevision、部署回滚）不再
+  永久阻塞任务。cancel 幂等；terminal 且未投递的 wait 可重注册为
+  `generation+1`（修正 predicate 后重新等待），已投递的 wait 拒绝重注册
+  以防二次唤醒。CLI：`codeteam deployment wait cancel <taskId> --reason`。
 - `DispatchService` 可注入 `deploymentWaitGuard`；waiting / outcome pending
   时释放 claim、记 `dispatch_deferred`、不启动 run。
 - 单任务级 admission gate（`budget_paused`、`deployment_wait_pending`）不再
@@ -61,6 +67,10 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
 - `StopOperationRecord` 文件 owner：`CODETEAM_DATA_DIR/lifecycle/`，目录
   0700、记录 0600；六态 `requested → stopping → stopped →
   restart_authorized → restarted → reverified` + `failed`/`stale_cleared`。
+- `targetProcessSet` 是 requestStop 时的快照；`executeStop` 先用
+  frozen identity 复验主 daemon pid，再从该 pid 重新推导 descendants
+  作为实际信号集，并复验 executor 不在树内。请求与执行之间被回收/复用的
+  descendant pid 不会被误杀；`stoppedProcessSet` 记录实际信号集。
 - operator 授权：签名 payload 覆盖 action/opId/deploymentId/stoppedBootId；
   校验 operator.key 公钥 fingerprint + signature；自由文本不构成授权。
 - StopOperationClaim 世代链 + `wx`；holder 存活不可证明时拒绝接管；corrupt
@@ -84,7 +94,7 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
 | Check | Command | Result |
 |---|---|---|
 | Build | `NODE_ENV=development npm run build:offline` | exit 0 |
-| Daemon package tests | `NODE_ENV=development npm --prefix packages/codeteam-daemon test` | 52 files passed + 2 skipped；372 tests passed + 2 skipped |
+| Daemon package tests | `NODE_ENV=development npm --prefix packages/codeteam-daemon test` | 52 files passed + 2 skipped；377 tests passed + 2 skipped |
 | Root typecheck | `node_modules/.bin/tsc --noEmit` | exit 0 |
 | Format/lint | `node_modules/.bin/biome check packages/codeteam-daemon` | exit 0 |
 
@@ -96,8 +106,13 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
   same profile 启动并保留 run binding。
 - `control-deployment-wait.test.ts`：register replay、new boot、revision、
   unknown/wrong subject、delivery 幂等、start guard、真实 daemon boot/exit。
+  另有 operator cancel/quarantine：cancel 放行 start、幂等、非 operator
+  拒绝、cancel 后 `generation+1` 重注册、已投递拒绝重注册。
 - `control-daemon-lifecycle.test.ts`：六态顺序、签名、executor containment、
   frozen identity、relaunch/reverify、stale clear、boot exit evidence。
+  新增：execute 时从 identity-verified pid 重新推导 descendants——请求时
+  冻结的 descendant pid 若已被回收/复用不再被 signal，新 child 会被纳入；
+  `stoppedProcessSet` 记录实际信号集。
 - `cli-daemon.test.ts`：operator `daemon status` 真实 CLI 子进程。
 - `control-dispatch-budget.test.ts`：队头 `budget_paused` / `deployment_wait_pending`
   时后续 ready entry 仍被 dispatch，deferred entry 保持 `queued`。回归验证：

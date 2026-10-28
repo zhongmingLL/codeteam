@@ -53,13 +53,16 @@ passing tests 冒充。
   evidence、preflight sticky retry、DispatchService conflict 消费 +
   operator inbox；merge evidence 已接 `MergeExecutor`。
 - W5d-B deployment wait：原 Task JSON、observation/predicate/sweep、
-  start guard、queue 投递、CLI register/status/sweep；无第二等待表。
+  start guard、queue 投递、CLI register/status/sweep/cancel；无第二等待表。
+  operator cancel 提供不可匹配 wait 的退出路径（terminal + audit），
+  cancel 后可 `generation+1` 重注册，已投递的 wait 拒绝重注册。
 - W5d-C daemon lifecycle：文件型 `StopOperationRecord` 六态、operator
   签名、claim、frozen identity、executor containment、health 复验、
-  boot exit evidence；CLI status/halt。relaunch 的新 daemon 启动仍归
-  external executor。
+  boot exit evidence；CLI status/halt。execute 时从 identity-verified
+  pid 重新推导 descendants，避免 signal 已回收/复用的 pid。relaunch 的
+  新 daemon 启动仍归 external executor。
 - 验证：`build:offline` exit 0；daemon 包 52 files passed + 2 skipped，
-  370 tests passed + 2 skipped；`tsc` / `biome` 通过。证据见
+  377 tests passed + 2 skipped；`tsc` / `biome` 通过。证据见
   `docs/reports/2026-10-28-w5d-runtime-lifecycle-managed-work.md`。
 - 未完成：W7 HTTP/Console、W8 revert connector；relaunch CLI 的 external
   start；W6 episode store。不得用本 slice 的 tests 冒充。
