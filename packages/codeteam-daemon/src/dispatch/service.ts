@@ -426,9 +426,14 @@ export class DispatchService {
 			const message = error instanceof Error ? error.message : String(error);
 			const interrupted = error instanceof InterruptedExecutionError;
 			const retryable = error instanceof RetryableExecutionError;
+			const terminalStatus: "canceled" | "interrupted" | "failed" = controller.signal.aborted
+				? "canceled"
+				: interrupted
+					? "interrupted"
+					: "failed";
 			const settled = this.settleRun(run.id, {
-				status: controller.signal.aborted ? "canceled" : interrupted ? "interrupted" : "failed",
-				bodyMd: `Execution ${controller.signal.aborted ? "canceled" : "failed"}: ${message}`,
+				status: terminalStatus,
+				bodyMd: `Execution ${terminalStatus}: ${message}`,
 				reason: controller.signal.aborted ? "aborted" : interrupted || retryable ? error.code : "executor_failed",
 				actorRef: "system:dispatch",
 			});

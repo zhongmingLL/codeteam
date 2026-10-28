@@ -63,10 +63,6 @@ export function buildWorkerPrompt(input: WorkerPromptInput): string {
 	return sections.join("\n");
 }
 
-export function freshSessionCapsule(input: WorkerPromptInput): string {
-	return buildWorkerPrompt({ ...input, degradedContinuity: null });
-}
-
 function capsuleText(value: unknown): string {
 	if (value === null || value === undefined) return "";
 	if (typeof value === "string") return value.trim();

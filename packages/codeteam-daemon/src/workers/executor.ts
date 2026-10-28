@@ -1,6 +1,7 @@
 import { unlinkSync } from "node:fs";
 import { mintInvocationCredential } from "../auth/mint.ts";
 import { resolveInvocationTokenDir } from "../auth/tokens.ts";
+import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import type { AgentExecutionResult, AgentExecutor, DispatchExecutionRequest } from "../dispatch/types.ts";
 import { InterruptedExecutionError, RetryableExecutionError } from "../dispatch/types.ts";
@@ -31,7 +32,7 @@ export class RpcAgentExecutor implements AgentExecutor {
 	}
 
 	async execute(request: DispatchExecutionRequest, signal: AbortSignal): Promise<AgentExecutionResult> {
-		const { run, task, session, sourceMessage } = request;
+		const { run, task, session, target, sourceMessage } = request;
 		if (run.status !== "running") {
 			throw new InterruptedExecutionError("run_not_running", `run ${run.id} is ${run.status}`);
 		}
@@ -40,6 +41,15 @@ export class RpcAgentExecutor implements AgentExecutor {
 		}
 		if (!task.worktree) {
 			throw new RetryableExecutionError("task_worktree_missing", `task ${task.id} has no worktree`);
+		}
+		if (
+			run.taskId !== task.id ||
+			run.agentSessionId !== session.id ||
+			run.recipientProfileId !== target.id ||
+			session.taskId !== task.id ||
+			session.profileId !== target.id
+		) {
+			throw new ControlError("invalid_input", `dispatch context mismatch for run ${run.id}`);
 		}
 		if (signal.aborted) throw new InterruptedExecutionError("aborted", "run was aborted before execution");
 		let ensured: Awaited<ReturnType<WorkerHarness["ensureWorker"]>>;
@@ -82,6 +92,9 @@ export class RpcAgentExecutor implements AgentExecutor {
 				signal,
 			});
 			const summary = sink.summary(result.aborted ? "Execution aborted." : "");
+			const bodyMd = ensured.degradedReason
+				? `> Continuity degraded: ${ensured.degradedReason}\n\n${summary.bodyMd}`
+				: summary.bodyMd;
 			if (sink.errorMessage) {
 				throw new RetryableExecutionError("model_error", sink.errorMessage);
 			}
@@ -101,7 +114,7 @@ export class RpcAgentExecutor implements AgentExecutor {
 				});
 			}
 			return {
-				bodyMd: summary.bodyMd,
+				bodyMd,
 				usage: summary.usage,
 				toolCalls: summary.toolCalls,
 			};

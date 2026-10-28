@@ -122,6 +122,7 @@ describe("W5b RPC executor", () => {
 		const secondRun = store.runs.get(second.runs[0]!.id)!;
 		const body = store.messages.get(secondRun.responseMessageId!)!.bodyMd;
 		expect(body).toContain("capsule=yes");
+		expect(body).toContain("Continuity degraded");
 		expect(store.audit.latest(`session:session-coder`, "session_reattach_failed")).toBeDefined();
 		const events = store.runs.listEvents(secondRun.id, 100);
 		expect(events.some((event) => event.kind === "error")).toBe(true);

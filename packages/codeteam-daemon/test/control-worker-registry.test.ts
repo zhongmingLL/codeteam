@@ -76,6 +76,18 @@ describe("W5b worker registry", () => {
 		expect(resolution.kind).toBe("reattach");
 	});
 
+	it("treats an expired online lease as re-attach before a sweep runs", () => {
+		fixture = createW5BFixture();
+		const { runtime } = fixture;
+		runtime.registry.register({ workerId: "worker-1", role: "coder" });
+		runtime.registry.heartbeat("worker-1");
+		runtime.registry.bindSession("session-coder", "worker-1");
+		fixture.advance(3_000);
+		expect(runtime.registry.snapshot("worker-1")?.state).toBe("online");
+		const resolution = runtime.registry.resolveSessionWorker("session-coder");
+		expect(resolution.kind).toBe("reattach");
+	});
+
 	it("marks stale worker runs interrupted, session re_attach_pending, and queues one retry", async () => {
 		fixture = createW5BFixture();
 		const { runtime, store } = fixture;

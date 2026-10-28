@@ -54,7 +54,7 @@ transport（W7a）；第二 queue/message store/worker registry。
 NODE_ENV=development npm --prefix packages/codeteam-daemon test
 ```
 
-Result（2026-10-28）：`40 passed | 2 skipped` files，`313 passed | 2 skipped`
+Result（2026-10-28）：`40 passed | 2 skipped` files，`314 passed | 2 skipped`
 tests。skip = env-gated live provider smoke + 既有 real-repo first-run。
 
 ### 2. W5b 定向
@@ -63,7 +63,7 @@ tests。skip = env-gated live provider smoke + 既有 real-repo first-run。
 NODE_ENV=development npm --prefix packages/codeteam-daemon test -- control-worker
 ```
 
-Result：`5 passed | 1 skipped` files，`22 passed | 1 skipped` tests。
+Result：`5 passed | 1 skipped` files，`23 passed | 1 skipped` tests。
 
 覆盖：
 
@@ -76,6 +76,19 @@ Result：`5 passed | 1 skipped` files，`22 passed | 1 skipped` tests。
 - executor：dispatch 全链路、同 worker 两 run token 隔离、worker crash→
   interrupted→retry→dead-letter、session file 重挂、fresh+capsule、
   graceful drain、drain timeout、retryable code preservation。
+
+### Review follow-up（2026-10-28）
+
+烁烁 A2A/session/worker review：**changes_requested**（2×P2，P3 可选）；其余
+维度认可，并独立复跑 W5b 22+1 / daemon 313+2 / Biome / 真实 pi E2E。
+
+- P2-1：`resolveSessionWorker` 现在同时检查 `leaseExpiresAt > now`；lease
+  过期的 online worker 在进入 executor 前即按 `reattach` 处理，不必等 sweep。
+  新增 `treats an expired online lease as re-attach before a sweep runs` 测试。
+- P2-2：fresh 降级的 response body 确定性加 `> Continuity degraded: ...`
+  前缀；fresh fallback 测试断言该标记。
+- P3：interrupted bubble 文案改为 `Execution interrupted: ...`；删除未使用的
+  `freshSessionCapsule`；executor 增加 run/session/profile/task 一致性交叉校验。
 
 ### 3. 真实 pi RPC E2E（deterministic mock provider）
 

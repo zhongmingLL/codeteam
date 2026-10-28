@@ -120,7 +120,10 @@ export class WorkerRegistry {
 			throw new ControlError("invalid_state", `agent session ${sessionId} is ${session.status}`);
 		}
 		const worker = session.workerId ? this.store.workers.get(session.workerId) : null;
-		const live = worker !== null && (worker.state === "online" || worker.state === "starting");
+		const live =
+			worker !== null &&
+			(worker.state === "online" || worker.state === "starting") &&
+			worker.leaseExpiresAt > this.clock();
 		if (live && session.workerBindingState === "attached") {
 			return { kind: "attached", session, worker: worker! };
 		}

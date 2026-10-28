@@ -48,8 +48,11 @@ slice-specific 证据，不把 W5c/W7a 项冒充完成。
   registry/capacity 投影与 RPC executor 契约。
 - 2026-10-28：migration 012 + worker store/registry + RPC harness/extension +
   control plane + executor + retry/dead-letter/recovery/drain 实现完成。
-- 验证：daemon 包 40 files passed + 2 skipped，313 tests passed + 2 skipped；
-  W5b 定向 5 files + 1 skipped，22 tests + 1 skipped；daemon scoped
+- Review follow-up：烁烁 P2-1（lease 过期 online worker 不复用）与 P2-2
+  （fresh 降级 response 正文标注）已修；P3 收口 body 措辞、死代码与
+  run/session 一致性校验。
+- 验证：daemon 包 40 files passed + 2 skipped，314 tests passed + 2 skipped；
+  W5b 定向 5 files + 1 skipped，23 tests + 1 skipped；daemon scoped
   `tsc --noEmit`、`build:offline`、Biome 通过。根级 `tsc --noEmit` 最终复跑
   被宿主内存终止（exit 137），与 F005a 同类环境限制。
 - 真实 pi RPC + mock provider：implement→review、control-plane down
