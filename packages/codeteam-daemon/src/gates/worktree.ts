@@ -23,6 +23,7 @@ export interface WorktreeGateOptions {
 export function evaluateWorktreeGate(evidence: WorktreeEvidence, options: WorktreeGateOptions = {}): GateResult {
 	const findings: GateFinding[] = [];
 	const evidenceRefs: string[] = [];
+	const overrides: string[] = [];
 	const phase = options.phase ?? "start";
 	if (!evidence.baseRef.trim()) {
 		findings.push({ code: "base_ref_missing", severity: "P1", message: "base ref is required" });
@@ -38,17 +39,17 @@ export function evaluateWorktreeGate(evidence: WorktreeEvidence, options: Worktr
 		evidenceRefs.push(`git:${evidence.baseSha}`);
 	}
 	if (evidence.remoteBaseSha) evidenceRefs.push(`git:${evidence.remoteBaseSha}`);
-	if (
-		phase === "start" &&
-		resolve(evidence.worktreePath) === resolve(evidence.primaryWorktreePath) &&
-		!options.allowPrimaryWorktree
-	) {
-		findings.push({
-			code: "worktree_must_be_isolated",
-			severity: "P1",
-			message: "changes must run in an isolated worktree, not the primary checkout",
-			evidenceRef: evidence.worktreePath,
-		});
+	if (phase === "start" && resolve(evidence.worktreePath) === resolve(evidence.primaryWorktreePath)) {
+		if (!options.allowPrimaryWorktree) {
+			findings.push({
+				code: "worktree_must_be_isolated",
+				severity: "P1",
+				message: "changes must run in an isolated worktree, not the primary checkout",
+				evidenceRef: evidence.worktreePath,
+			});
+		} else {
+			overrides.push("allow_primary_worktree");
+		}
 	}
 	if (phase === "start" && evidence.branch !== null && evidence.branch === evidence.baseRef) {
 		findings.push({
@@ -65,6 +66,7 @@ export function evaluateWorktreeGate(evidence: WorktreeEvidence, options: Worktr
 		});
 	}
 	if (!evidence.remoteBaseSha) {
+		if (options.allowUnsyncedBase) overrides.push("allow_unsynced_base");
 		const severity = options.allowUnsyncedBase ? "P3" : "P1";
 		findings.push({
 			code: "remote_base_unknown",
@@ -72,6 +74,7 @@ export function evaluateWorktreeGate(evidence: WorktreeEvidence, options: Worktr
 			message: `remote tracking ref for ${evidence.baseRef} is unavailable`,
 		});
 	} else if (evidence.baseSha && evidence.baseSha !== evidence.remoteBaseSha) {
+		if (options.allowUnsyncedBase) overrides.push("allow_unsynced_base");
 		const severity = options.allowUnsyncedBase ? "P3" : "P1";
 		findings.push({
 			code: "base_not_synced",
@@ -96,5 +99,5 @@ export function evaluateWorktreeGate(evidence: WorktreeEvidence, options: Worktr
 	} else if (evidence.baseIsAncestorOfHead === null) {
 		findings.push({ code: "base_ancestry_unknown", severity: "P2", message: "base ancestry could not be resolved" });
 	}
-	return gateResult("worktree", findings, evidenceRefs, `phase=${phase}`);
+	return gateResult("worktree", findings, evidenceRefs, `phase=${phase}`, [...new Set(overrides)]);
 }

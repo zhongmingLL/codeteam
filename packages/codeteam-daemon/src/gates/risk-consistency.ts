@@ -15,6 +15,13 @@ export function evaluateRiskConsistency(risk: RiskClassification): ReturnType<ty
 				"product fast lane is only valid when the operator has confirmed direction and rollback is one commit",
 		});
 	}
+	if (!risk.declared) {
+		findings.push({
+			code: "risk_declaration_missing",
+			severity: "P3",
+			message: "lane/assurance/axes were not declared; computed risk is still authoritative",
+		});
+	}
 	return gateResult(
 		"risk_consistency",
 		findings,

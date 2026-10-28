@@ -376,13 +376,14 @@ behavior / data / security / contract / irreversible。
   worktree/design/review/verify/risk-consistency/merge/completion gates；
   approval/backlog/thread/task CLI；local `MergeExecutor` + merge receipt
   migration 010；gate telemetry。
-- 测试：daemon **199 passed / 1 skipped**；W4 新增 28 条；真实 CLI dogfood
+- 测试：daemon **203 passed / 1 skipped**；W4 新增 32 条；真实 CLI dogfood
   跑通 backlog→dispatch→thread→agent cutover 回复→approval→merge→SOP
   completion；adapter 15 passed / 1 skipped；skills 15 passed。
 - 类型/构建：`build:offline`、根级 tsc、Biome、静态检查通过。
 - 证据报告：`reports/2026-10-28-w4-sop-gates.md`。
-- 状态：尚未 merged/accepted；待砚砚（code/security/gate）与墨墨
-  （SOP/process/Product）独立 review。
+- 砚砚 code/security/gate review **Approved** @ `5b3eba634`（7 P3 non-blocking）；
+  P3-2/3/4/5/6/7 已修，P3-1 留 W7a 前置 residual；待 delta 复审后转墨墨
+  （SOP/process/Product）。尚未 merged/accepted。
 
 ---
 

@@ -100,6 +100,8 @@ export function classifyRisk(input: RiskClassificationInput): RiskClassification
 	else lane = "standard";
 
 	const mismatches: RiskMismatch[] = [];
+	const declared =
+		input.declaredAxes !== undefined || input.declaredLane !== undefined || input.declaredAssurance !== undefined;
 	if (input.declaredAssurance && ASSURANCE_RANK[input.declaredAssurance] < ASSURANCE_RANK[assurance]) {
 		mismatches.push({
 			code: "declared_assurance_understated",
@@ -133,6 +135,7 @@ export function classifyRisk(input: RiskClassificationInput): RiskClassification
 		deletions,
 		reasons,
 		mismatches,
+		declared,
 	};
 }
 

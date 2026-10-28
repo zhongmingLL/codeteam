@@ -162,6 +162,11 @@ describe("codeteam point gate evaluators", () => {
 				(item) => item.code,
 			),
 		).toContain("base_not_synced");
+		const overridden = evaluateWorktreeGate(
+			{ ...base, remoteBaseSha: null },
+			{ phase: "merge", allowUnsyncedBase: true },
+		);
+		expect(overridden.overrides).toContain("allow_unsynced_base");
 	});
 
 	it("design gate is machine-default and only critical/spec_change needs human approval", () => {

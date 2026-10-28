@@ -40,11 +40,18 @@ merges 的 schema 与 store；W3 已有独立 review/falsifier 证据链。W4 �
 ## 当前进展
 
 - 2026-10-28：W4 kickoff；实施计划与 F007 建立。
-- 2026-10-28：W4a/b/c 实现完成；daemon 199 passed / 1 skipped；
+- 2026-10-28：W4a/b/c 实现完成；daemon 203 passed / 1 skipped；
   CLI dogfood 真实跑通 backlog→dispatch→thread→agent cutover 回复→approval→
   merge execute→SOP completion；build/tsc/Biome/静态检查通过。
 - 证据报告：`docs/reports/2026-10-28-w4-sop-gates.md`。
-- 待独立 review：砚砚（code/security/gate）、墨墨（SOP/process/Product）。
+- 砚砚 code/security/gate review **Approved** @ `5b3eba634`（7 P3 non-blocking）；
+  P3-2/3/4/5/6/7 已修，待同风险面 delta 复审；墨墨（SOP/process/Product）待转。
+
+### Residual ledger（W7a）
+
+| # | 项 | 去向 |
+|---|---|---|
+| 1 | `SopCheckEvidenceStore.record` 本身不解析 evidenceRef；解析仅在 `SopService` | W7a 暴露 HTTP 前下沉 store 或收窄 store 写入面；W4 生产路径全走 service |
 
 ## Out of scope
 

@@ -129,10 +129,7 @@ export function runGateCommand(args: ParsedArgs, context: CliContext): number {
 	}
 	if (gate === "merge") {
 		const evaluated = service.merge(mergeRequest(args));
-		const auditRef = service.record(
-			evaluated.result,
-			evaluated.result.gate === "merge" ? requireOption(args, "task") : "unknown",
-		);
+		const auditRef = service.record(evaluated.result, requireOption(args, "task"));
 		output(context, evaluated.result, {
 			risk: evaluated.risk,
 			reviewRef: evaluated.reviewRef,

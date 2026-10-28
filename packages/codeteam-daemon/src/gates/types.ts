@@ -31,6 +31,7 @@ export interface RiskClassification {
 	readonly deletions: number;
 	readonly reasons: readonly string[];
 	readonly mismatches: readonly RiskMismatch[];
+	readonly declared: boolean;
 }
 
 export type GateName = "worktree" | "design" | "review" | "verify" | "risk_consistency" | "merge" | "completion";
@@ -49,6 +50,7 @@ export interface GateResult {
 	readonly status: GateStatus;
 	readonly findings: readonly GateFinding[];
 	readonly evidenceRefs: readonly string[];
+	readonly overrides: readonly string[];
 	readonly summary: string;
 }
 
@@ -57,13 +59,14 @@ export function gateResult(
 	findings: readonly GateFinding[],
 	evidenceRefs: readonly string[],
 	summary: string,
+	overrides: readonly string[] = [],
 ): GateResult {
 	const status: GateStatus = findings.some((finding) => finding.severity === "P1" || finding.severity === "P2")
 		? "block"
 		: findings.length > 0
 			? "advisory"
 			: "pass";
-	return { gate, status, findings, evidenceRefs, summary };
+	return { gate, status, findings, evidenceRefs, overrides, summary };
 }
 
 export function gateCodes(result: GateResult): string[] {

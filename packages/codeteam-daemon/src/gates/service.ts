@@ -110,7 +110,23 @@ export class GateService {
 		baseSha: string;
 		headSha: string;
 	} {
-		const diff = diffNumstat(repoPath, baseRef, headRef);
+		let diff: ReturnType<typeof diffNumstat>;
+		try {
+			diff = diffNumstat(repoPath, baseRef, headRef);
+		} catch (error) {
+			if (error instanceof ControlError && error.message.includes("binary diff")) {
+				this.record(
+					gateResult(
+						"risk_consistency",
+						[{ code: "binary_diff_unsupported", severity: "P1", message: error.message }],
+						[],
+						"binary diff unsupported",
+					),
+					`${baseRef}..${headRef}`,
+				);
+			}
+			throw error;
+		}
 		const risk = classifyRisk({
 			changedFiles: diff.files,
 			declaredLane: declared.lane,
@@ -145,7 +161,23 @@ export class GateService {
 	merge(request: MergeGateRequest): MergeGateEvaluation {
 		const task = this.store.tasks.get(request.taskId);
 		if (!task) throw new ControlError("not_found", `task ${request.taskId} not found`);
-		const diff = diffNumstat(request.repoPath, request.baseRef, request.headSha);
+		let diff: ReturnType<typeof diffNumstat>;
+		try {
+			diff = diffNumstat(request.repoPath, request.baseRef, request.headSha);
+		} catch (error) {
+			if (error instanceof ControlError && error.message.includes("binary diff")) {
+				this.record(
+					gateResult(
+						"merge",
+						[{ code: "binary_diff_unsupported", severity: "P1", message: error.message }],
+						[],
+						"binary diff unsupported",
+					),
+					request.taskId,
+				);
+			}
+			throw error;
+		}
 		const headSha = diff.headSha;
 		const risk = classifyRisk({
 			changedFiles: diff.files,
@@ -201,6 +233,7 @@ export class GateService {
 		const subResults = [worktree, reviewResult, verifyResult, riskGate];
 		const findings = subResults.flatMap((result) => result.findings);
 		const evidenceRefs = subResults.flatMap((result) => result.evidenceRefs);
+		const overrides = [...new Set(subResults.flatMap((result) => result.overrides))];
 		if (!fastLane && !approvingReview) {
 			findings.push({
 				code: "merge_review_ref_missing",
@@ -248,7 +281,13 @@ export class GateService {
 			}
 		}
 		for (const result of subResults) evidenceRefs.push(...result.evidenceRefs);
-		const result = gateResult("merge", findings, [...new Set(evidenceRefs)], `merge gate for ${request.taskId}`);
+		const result = gateResult(
+			"merge",
+			findings,
+			[...new Set(evidenceRefs)],
+			`merge gate for ${request.taskId}`,
+			overrides,
+		);
 		return {
 			result,
 			reviewRef: approvingReview?.id ?? null,
@@ -264,7 +303,13 @@ export class GateService {
 			actor: "system:gate",
 			action: "gate_evaluated",
 			subject: `gate:${result.gate}`,
-			args: { gate: result.gate, status: result.status, subjectRef, codes: gateCodes(result) },
+			args: {
+				gate: result.gate,
+				status: result.status,
+				subjectRef,
+				codes: gateCodes(result),
+				...(result.overrides.length > 0 ? { overrides: result.overrides } : {}),
+			},
 		});
 		return audit.id;
 	}

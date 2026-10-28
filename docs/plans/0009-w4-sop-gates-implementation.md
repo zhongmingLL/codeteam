@@ -266,13 +266,15 @@ NODE_ENV=development npm run build:offline
 - 墨墨：SOP 告示牌是否仍可读、operator CLI 体验、design gate/fast lane、
   dogfood 路径是否真的不需要 Web。
 
-## Results（2026-10-28，implemented，pending review）
+## Results（2026-10-28，implemented；砚砚 approved，delta/墨墨 pending）
 
 - 实现落点：SOP catalog/evidence/service、gates、approval/backlog/thread/task CLI、
   local MergeExecutor、gate telemetry；详见
   [`../reports/2026-10-28-w4-sop-gates.md`](../reports/2026-10-28-w4-sop-gates.md)。
-- 验证：daemon **199 passed / 1 skipped**；W4 新增 28 条测试；CLI dogfood
+- 验证：daemon **203 passed / 1 skipped**；W4 新增 32 条测试；CLI dogfood
   1 条真实端到端；adapter 15 passed / 1 skipped；skills 15 passed；
   `build:offline`、根级 tsc、Biome、静态检查全通过。
-- 独立 review 尚未发生；本切片不宣称 merged/accepted。
+- 砚砚 code/security/gate review **Approved** @ `5b3eba634`
+  （7 P3 non-blocking）；P3-2/3/4/5/6/7 已修，P3-1 留 W7a 前置 residual；
+  待同风险面 delta 复审后转墨墨；本切片不宣称 merged/accepted。
 

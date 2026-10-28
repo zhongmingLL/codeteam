@@ -71,4 +71,10 @@ describe("codeteam five-axis risk classifier", () => {
 		const risk = classifyRisk({ changedFiles: [file("packages/codeteam-pi-adapter/src/a.ts", 1300, 0)] });
 		expect(risk.assurance).toBe("high");
 	});
+
+	it("adds an advisory when no lane/assurance/axes were declared", () => {
+		const result = evaluateRiskConsistency(classifyRisk({ changedFiles: [file("docs/a.md", 1, 0)] }));
+		expect(result.status).toBe("advisory");
+		expect(result.findings.map((finding) => finding.code)).toContain("risk_declaration_missing");
+	});
 });

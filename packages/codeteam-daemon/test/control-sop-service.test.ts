@@ -231,6 +231,43 @@ describe("codeteam SOP service", () => {
 		expect(count.count).toBe(0);
 	});
 
+	it("treats vision evidence on the merge head as fresh in the SOP view", () => {
+		const { backlog, verdict } = createDoneBacklogWithMerge();
+		store.sops.upsert(sopInput({ backlogItemId: backlog.id }));
+		sop.recordEvidence({
+			backlogItemId: backlog.id,
+			checkName: "visionGuardDone",
+			evidenceKind: "vision_guard",
+			evidenceRef: `message:${verdict.id}`,
+			subjectRevision: HEAD,
+			recordedBy: "operator:test",
+		});
+		const view = sop.view(backlog.id);
+		expect(view?.effectiveChecks.visionGuardDone).toBe("verified");
+		expect(view?.staleEvidence).toEqual([]);
+	});
+
+	it("rejects a vision guard authored by the task owner", () => {
+		const { backlog } = createDoneBacklogWithMerge();
+		const ownerVerdict = store.messages.append({
+			threadId: "thread-done",
+			authorKind: "agent",
+			authorId: "profile-coder",
+			kind: "verdict",
+			bodyMd: "self approval",
+		});
+		expect(() =>
+			sop.recordEvidence({
+				backlogItemId: backlog.id,
+				checkName: "visionGuardDone",
+				evidenceKind: "vision_guard",
+				evidenceRef: `message:${ownerVerdict.id}`,
+				subjectRevision: HEAD,
+				recordedBy: "operator:test",
+			}),
+		).toThrow(/task owner/);
+	});
+
 	it("validates capsule size, next skill length, baton holder, and feature anchor immutability", () => {
 		createBacklog();
 		store.sops.upsert(sopInput());

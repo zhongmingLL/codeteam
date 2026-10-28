@@ -4,6 +4,7 @@ import type { ControlStore } from "../control/store.ts";
 import { validateSubjectRevision } from "../control/stores/sop-check-evidence.ts";
 import type {
 	BacklogItem,
+	Message,
 	RecordSopCheckEvidenceInput,
 	SopCheckEvidence,
 	SopCheckName,
@@ -47,7 +48,13 @@ export class SopService {
 			const latest = evidence.find((entry) => entry.checkName === checkName);
 			if (!latest) continue;
 			const revision = currentRevisions[checkName];
-			if (revision && latest.subjectRevision === revision) {
+			const matchesRevision =
+				revision !== undefined &&
+				(latest.subjectRevision === revision ||
+					(checkName === "visionGuardDone" &&
+						(latest.subjectRevision === currentRevisions.reviewApproved ||
+							latest.subjectRevision === currentRevisions.qualityGatePassed)));
+			if (matchesRevision) {
 				effectiveChecks[checkName] = "verified";
 			} else {
 				effectiveChecks[checkName] = "unknown";
@@ -211,6 +218,7 @@ export class SopService {
 			if (!thread || thread.backlogItemId !== backlogItemId) {
 				throw new ControlError("invalid_input", "vision guard message thread is not bound to the backlog item");
 			}
+			this.assertVisionGuardIndependence(backlogItemId, message);
 			return;
 		}
 		throw new ControlError("invalid_input", `unsupported evidenceRef kind ${prefix}`);
@@ -221,6 +229,22 @@ export class SopService {
 		if (!task) throw new ControlError("not_found", `task ${taskId} not found`);
 		if (task.backlogItemId !== backlogItemId) {
 			throw new ControlError("invalid_input", "evidence task is not bound to the backlog item");
+		}
+	}
+
+	private assertVisionGuardIndependence(backlogItemId: string, message: Message): void {
+		const tasks = this.store.tasks.list().filter((task) => task.backlogItemId === backlogItemId);
+		if (tasks.length === 0) {
+			throw new ControlError("invalid_input", "vision guard evidence requires a task bound to the backlog item");
+		}
+		for (const task of tasks) {
+			if (task.ownerProfileId && task.ownerProfileId === message.authorId) {
+				throw new ControlError("invalid_input", "vision guard author must not be the task owner");
+			}
+			const reviews = this.store.reviews.listByTask(task.id);
+			if (reviews.some((review) => review.reviewerProfileId === message.authorId)) {
+				throw new ControlError("invalid_input", "vision guard author must not be a reviewer of the task");
+			}
 		}
 	}
 

@@ -120,6 +120,7 @@ describe("local MergeExecutor", () => {
 		expect(result.receipt.gateEvidenceRef).toBeTruthy();
 		expect(git(repo, ["rev-parse", "main"])).toBe(result.receipt.mergeSha);
 		expect(store.audit.latest(`merge:${result.receipt.id}`, "merge_recorded")).not.toBeNull();
+		expect(store.audit.latest("gate:merge", "gate_evaluated")?.args.overrides).toContain("allow_unsynced_base");
 		store.backlog.markDone(backlog.id, "operator:test");
 		const verdict = store.messages.append({
 			threadId: thread.id,
@@ -211,5 +212,18 @@ describe("local MergeExecutor", () => {
 		expect(result.receipt.failureRef).toMatch(/merge_failed/);
 		expect(git(repo, ["rev-parse", "main"])).toBe(before);
 		expect(git(repo, ["status", "--porcelain"])).toBe("");
+	});
+
+	it("fails closed and leaves a gate audit when the diff contains a binary file", () => {
+		const { task } = createWork();
+		git(repo, ["checkout", "-b", "feature-binary", "-q"]);
+		writeFileSync(join(repo, "docs", "binary.bin"), Buffer.from([0, 1, 2, 3]));
+		git(repo, ["add", "docs/binary.bin"]);
+		git(repo, ["commit", "-m", "binary"]);
+		const featureSha = git(repo, ["rev-parse", "HEAD"]);
+		git(repo, ["checkout", "main", "-q"]);
+		expect(() => execute({ taskId: task.id, headSha: featureSha })).toThrow(/binary diff/);
+		const audit = store.audit.latest("gate:merge", "gate_evaluated");
+		expect(audit?.args.codes).toContain("P1:binary_diff_unsupported");
 	});
 });
