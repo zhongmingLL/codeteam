@@ -157,3 +157,29 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
 - 烁烁：StopOperationRecord/boot ledger、deployment observation/recovery、
   daemon crash/lease 交互。
 - 墨墨：operator CLI 可解释性、ready≠task done、W5c/W5d 边界、AC 不 overclaim。
+
+## 6. Close record（2026-10-28）
+
+- PR #56 squash merged at `168e67dd0`（reviewed HEAD
+  `dfb872d9c36c62e476f2e11fcfd3d2f37575e1f1`，base `7adc30ee4`）。
+- Review：砚砚 code/security approved @ `dfb872d9c`（msg
+  `0001793202850007-003779`；2×P2 + 3×P3 全闭合，residual 清零）；墨墨
+  SOP/process/Product approved @ `dfb872d9c`（msg
+  `0001793202985338-003781`；无 P1/P2，4 条 close-out 文档项）。
+- Review 轮次修复（已进 squash commit）：dispatch admission gate
+  head-of-line 饥饿（三条 gate 统一 defer + skip-set）；deployment wait
+  operator `cancel` 退出路径 + `generation+1` 重臂；conflict audit
+  try/catch；execute 时 descendant 重推导 + `stoppedProcessSet`。
+- Post-merge acceptance（merged `168e67dd0`，主 checkout 先
+  `build:offline`）：daemon 包 52 files passed + 2 skipped，378 tests
+  passed + 2 skipped。注意：主 checkout 未重建 `dist/cli.js` 时
+  `cli-daemon.test.ts` 会因旧 CLI 失败，属构建前置条件而非产品回归。
+- 未采纳项：无。`revision_included` 的精确 runningRevision 匹配保留为
+  v1 有意 fail-closed 选择，reuse 卡未要求 ancestry。
+- 烁烁 W5/session-interface lane：`cat-u12wt5ln` 在本 thread 为
+  `routableNotJoined`，无法投递；砚砚 review 以同一 focus（lifecycle /
+  boot ledger / observation / recovery）合票覆盖，不再另开 lane；如需
+  独立复核由 operator 另派。已向 co-creator 报备。
+- Close-out 文档项（墨墨 4 条）：0013 §10 数字/CLI 列表、`status/halt` →
+  `status/stop` 命名统一、烁烁 lane 处置、merge 前 re-pin 要求——本 PR
+  一并处理。

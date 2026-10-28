@@ -1,7 +1,7 @@
 ---
 title: "W5d runtime lifecycle / deployment wait / managed work 实施计划"
 doc_kind: plan
-status: active
+status: closed
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -178,15 +178,30 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
 
 ## 10. Current progress（2026-10-28）
 
-- W5d-A/B/C 已实现并进入 review：managed work register/attribution/
+- W5d-A/B/C 已实现并 closed：managed work register/attribution/
   lifecycle evidence + sticky preflight；deployment wait observation/
-  predicate/sweep/start guard；daemon lifecycle 文件记录、operator 签名、
-  claim、frozen identity、executor containment、health 复验、boot exit。
-- CLI：`deployment wait register/status/sweep`、`daemon status/halt`。
-  relaunch 的新 daemon 启动仍归 external executor。
+  predicate/sweep/start guard + operator `cancel` 退出路径；daemon
+  lifecycle 文件记录、operator 签名、claim、frozen identity、executor
+  containment、health 复验、boot exit、execute 时 descendant 重推导。
+- CLI：`deployment wait register/status/sweep/cancel`、`daemon status`、
+  `daemon stop`（`halt` 是签名 action）。relaunch 的新 daemon 启动仍归
+  external executor。
 - 验证：`build:offline` exit 0；daemon 包 52 files passed + 2 skipped，
-  370 tests passed + 2 skipped；root `tsc` / `biome` 通过。
+  378 tests passed + 2 skipped；root `tsc` / `biome` 通过。
 - 未完成：W7 HTTP/Console、W8 revert connector、W6 episode store；
   `revision_included` v1 用精确 runningRevision；restart CLI 的 external
   start 未接 supervisor。不得用本 slice tests 冒充这些边界。
+- Review：砚砚 code/security approved @ `dfb872d9c`（2×P2 + 3×P3 闭合）；
+  墨墨 SOP/process/Product approved @ `dfb872d9c`（无 P1/P2）。4 条
+  close-out 文档项已在 docs close-out PR 处理，不触发第三轮 code review。
+- 烁烁 lane 处置：本 thread 中烁烁为 `routableNotJoined`，W5/session
+  interface focus 由砚砚 code/security review 合票覆盖；独立复核如需要
+  由 operator 另派，不作为本 slice 的未完成项。
+
+## 11. Close record
+
+- PR #56 squash merged at `168e67dd0`（reviewed HEAD `dfb872d9c`，
+  base `7adc30ee4`）；CI 4/4。
+- Post-merge acceptance：`build:offline` 后 daemon 包 52 files passed
+  + 2 skipped，378 tests passed + 2 skipped。
 
