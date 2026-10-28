@@ -243,7 +243,7 @@ export interface MessageMutationOptions {
 }
 
 export type QueuePriority = "urgent" | "normal";
-export type QueueStatus = "queued" | "claimed" | "processing";
+export type QueueStatus = "queued" | "claimed" | "processing" | "withdrawn";
 export type QueueSourceKind = "conversation_input" | "message_wake" | "private_input" | "backlog_dispatch";
 
 export interface QueueEntry {
@@ -907,6 +907,7 @@ export interface Handoff {
 	mode: HandoffMode;
 	parallelIntent: string | null;
 	ownerUserId: string;
+	createdByActorRef?: string;
 	canonicalActionKey: string;
 	holderProfileIds: string[];
 	holderThreadId: string;
@@ -954,6 +955,7 @@ export interface CreateHandoffInput {
 	mode: HandoffMode;
 	parallelIntent?: string | null;
 	ownerUserId: string;
+	createdByActorRef?: string;
 	canonicalActionKey: string;
 	holderProfileIds: string[];
 	holderThreadId: string;

@@ -344,14 +344,14 @@ describe("codeteam control schema", () => {
 		db.close();
 	});
 
-	it("sets a run queue reference to null when its queue entry is deleted", () => {
+	it("keeps a run queue reference after its queue entry is deleted", () => {
 		const db = createDb();
 		seedCore(db);
 		db.prepare("DELETE FROM queue_entries WHERE id = 'queue-1'").run();
 		const row = db.prepare("SELECT queue_entry_id FROM runs WHERE id = 'run-1'").get() as
 			| { queue_entry_id?: string | null }
 			| undefined;
-		expect(row?.queue_entry_id).toBeNull();
+		expect(row?.queue_entry_id).toBe("queue-1");
 		db.close();
 	});
 

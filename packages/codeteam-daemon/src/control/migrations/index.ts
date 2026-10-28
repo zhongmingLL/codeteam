@@ -8,6 +8,7 @@ import { REVIEW_EVIDENCE_STATEMENTS } from "./007-review-evidence.ts";
 import { REVIEW_ROUND_DECISION_STATEMENTS } from "./008-review-round-decision.ts";
 import { SOP_CHECK_EVIDENCE_STATEMENTS } from "./009-sop-check-evidence.ts";
 import { MERGE_RECEIPT_CONTRACT_STATEMENTS } from "./010-merge-receipt-contract.ts";
+import { DISPATCH_WITHDRAWAL_STATEMENTS } from "./011-dispatch-withdrawal.ts";
 
 export interface ControlMigration {
 	readonly version: number;
@@ -27,6 +28,12 @@ export const CONTROL_MIGRATIONS: readonly ControlMigration[] = [
 	{ version: 8, name: "review-round-decision", statements: REVIEW_ROUND_DECISION_STATEMENTS },
 	{ version: 9, name: "sop-check-evidence", statements: SOP_CHECK_EVIDENCE_STATEMENTS },
 	{ version: 10, name: "merge-receipt-contract", statements: MERGE_RECEIPT_CONTRACT_STATEMENTS },
+	{
+		version: 11,
+		name: "dispatch-withdrawal-traceability",
+		statements: DISPATCH_WITHDRAWAL_STATEMENTS,
+		foreignKeysOff: true,
+	},
 ];
 
 export const CONTROL_TABLE_NAMES: readonly string[] = [

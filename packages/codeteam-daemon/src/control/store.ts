@@ -89,13 +89,13 @@ export class ControlStore {
 		this.sessions = new AgentSessionStore(control.database, this.transaction, clock);
 		this.threads = new ThreadStore(control.database, this.transaction, clock);
 		this.messages = new MessageStore(control.database, this.transaction, clock);
-		this.queue = new QueueStore(control.database, this.transaction, clock);
+		this.audit = new AuditStore(control.database, clock);
+		this.queue = new QueueStore(control.database, this.transaction, clock, this.audit);
 		this.tasks = new TaskStore(control.database, this.transaction, clock);
 		this.stages = new StageStore(control.database, this.transaction, clock);
 		this.runs = new RunStore(control.database, this.transaction, clock);
 		this.threadEvents = new ThreadEventStore(control.database, this.transaction, clock);
 		this.credentials = new InvocationCredentialStore(control.database, this.transaction, clock);
-		this.audit = new AuditStore(control.database, clock);
 		this.approvals = new ApprovalStore(control.database, this.transaction, clock, this.audit);
 		this.handoffs = new HandoffStore(control.database, this.transaction, clock, this.audit);
 		this.waits = new WaitStore(control.database, this.transaction, clock);

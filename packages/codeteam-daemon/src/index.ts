@@ -1,3 +1,4 @@
+export * from "./a2a/index.ts";
 export {
 	assertApprovalDecisionPrincipal,
 	assertMergeExecutionPrincipal,
@@ -86,6 +87,7 @@ export {
 	type ThreadTimelineOptions,
 	verifyControlSchema,
 } from "./control/index.ts";
+export * from "./custody/index.ts";
 export {
 	type DaemonBoot,
 	type DaemonHandle,
@@ -93,6 +95,7 @@ export {
 	type StartDaemonOptions,
 	startDaemon,
 } from "./daemon.ts";
+export * from "./dispatch/index.ts";
 export { DaemonError, type DaemonErrorCode } from "./errors.ts";
 export { acquireFence, type FenceRecord, isProcessAlive, readFence, releaseFence } from "./fence.ts";
 export { GateService, type GateTelemetry, type MergeGateEvaluation, type MergeGateRequest } from "./gates/service.ts";

@@ -88,6 +88,13 @@ export class MessageStore {
 		return row ? mapMessage(row) : null;
 	}
 
+	findByControlRef(controlRef: string): Message | null {
+		const row = this.database.prepare("SELECT * FROM messages WHERE control_ref = ? LIMIT 1").get(controlRef) as
+			| MessageRow
+			| undefined;
+		return row ? mapMessage(row) : null;
+	}
+
 	latestSeq(threadId: string): number {
 		const row = this.database
 			.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM messages WHERE thread_id = ?")
@@ -169,6 +176,31 @@ export class MessageStore {
 		}
 	}
 
+	setBody(id: string, bodyMd: string, options: MessageMutationOptions = {}): Message {
+		if (typeof bodyMd !== "string") throw new ControlError("invalid_input", "bodyMd must be a string");
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `message ${id} not found`);
+				const now = this.clock();
+				const result =
+					options.expectedUpdatedAt === undefined
+						? this.database
+								.prepare("UPDATE messages SET body_md = ?, updated_at = ? WHERE id = ?")
+								.run(bodyMd, now, id)
+						: this.database
+								.prepare("UPDATE messages SET body_md = ?, updated_at = ? WHERE id = ? AND updated_at = ?")
+								.run(bodyMd, now, id, options.expectedUpdatedAt);
+				if (changesOf(result) === 0) {
+					throw new ControlError("version_conflict", `message ${id} changed since the expected revision`);
+				}
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
 	setControlRef(id: string, controlRef: string | null, options: MessageMutationOptions = {}): Message {
 		const value = controlRef === null ? null : nonEmpty(controlRef, "controlRef");
 		try {
@@ -184,6 +216,55 @@ export class MessageStore {
 						: this.database
 								.prepare("UPDATE messages SET control_ref = ?, updated_at = ? WHERE id = ? AND updated_at = ?")
 								.run(value, now, id, options.expectedUpdatedAt);
+				if (changesOf(result) === 0) {
+					throw new ControlError("version_conflict", `message ${id} changed since the expected revision`);
+				}
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
+	settleDispatchRef(
+		id: string,
+		input: { targetId: string; statusMessageId: string; patch?: Record<string, unknown> },
+		options: MessageMutationOptions = {},
+	): Message {
+		const targetId = nonEmpty(input.targetId, "targetId");
+		const statusMessageId = nonEmpty(input.statusMessageId, "statusMessageId");
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `message ${id} not found`);
+				const refs = current.dispatchRefs.map((ref) => ({ ...(ref as Record<string, unknown>) }));
+				let index = -1;
+				for (let position = refs.length - 1; position >= 0; position -= 1) {
+					const ref = refs[position]!;
+					if (ref.targetId === targetId && ref.statusMessageId === statusMessageId) {
+						index = position;
+						break;
+					}
+				}
+				if (index < 0) {
+					throw new ControlError(
+						"not_found",
+						`dispatch ref ${targetId}/${statusMessageId} not found on message ${id}`,
+					);
+				}
+				refs[index] = { ...refs[index], ...input.patch, phase: "settled" };
+				validateDispatchRef(refs[index]);
+				const now = this.clock();
+				const result =
+					options.expectedUpdatedAt === undefined
+						? this.database
+								.prepare("UPDATE messages SET dispatch_refs_json = ?, updated_at = ? WHERE id = ?")
+								.run(JSON.stringify(refs), now, id)
+						: this.database
+								.prepare(
+									"UPDATE messages SET dispatch_refs_json = ?, updated_at = ? WHERE id = ? AND updated_at = ?",
+								)
+								.run(JSON.stringify(refs), now, id, options.expectedUpdatedAt);
 				if (changesOf(result) === 0) {
 					throw new ControlError("version_conflict", `message ${id} changed since the expected revision`);
 				}
