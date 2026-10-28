@@ -158,7 +158,7 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
   daemon crash/lease 交互。
 - 墨墨：operator CLI 可解释性、ready≠task done、W5c/W5d 边界、AC 不 overclaim。
 
-## 6. Close record（2026-10-28）
+## 6. Merge record / post-merge review（2026-10-28）
 
 - PR #56 squash merged at `168e67dd0`（reviewed HEAD
   `dfb872d9c36c62e476f2e11fcfd3d2f37575e1f1`，base `7adc30ee4`）。
@@ -176,10 +176,12 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
   `cli-daemon.test.ts` 会因旧 CLI 失败，属构建前置条件而非产品回归。
 - 未采纳项：无。`revision_included` 的精确 runningRevision 匹配保留为
   v1 有意 fail-closed 选择，reuse 卡未要求 ancestry。
-- 烁烁 W5/session-interface lane：`cat-u12wt5ln` 在本 thread 为
-  `routableNotJoined`，无法投递；砚砚 review 以同一 focus（lifecycle /
-  boot ledger / observation / recovery）合票覆盖，不再另开 lane；如需
-  独立复核由 operator 另派。已向 co-creator 报备。
+- 烁烁 W5/session-interface lane（现行）：operator 已把 `cat-u12wt5ln`
+  拉入本 thread，其 post-merge 复核（lifecycle / boot ledger /
+  observation / recovery）仍在进行，**verdict 未出**。此前“routableNotJoined、
+  由砚砚合票覆盖”的处置作废，不能把“已合入”当作“已完成独立复核”。
+  结论口径：无 P1/P2 后 F011 才转 done、W5 才 closed；有 P1/P2 则保持
+  in_review，并从 `94bf38c1e` 起开 follow-up fix PR 后复审。
 - Close-out 文档项（墨墨 4 条）：0013 §10 数字/CLI 列表、`status/halt` →
   `status/stop` 命名统一、烁烁 lane 处置、merge 前 re-pin 要求——本 PR
   一并处理。
