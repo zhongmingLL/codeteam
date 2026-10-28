@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F007]
 title: "F007: W4 SOP 复用与点状 Gate"
-status: in_review
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-28
@@ -56,7 +56,16 @@ merges 的 schema 与 store；W3 已有独立 review/falsifier 证据链。W4 �
   dogfood `auth init` 也 spawn CLI；daemon **264 passed / 1 skipped**。
 - Follow-up 抓到并修复两个真实缺口：`suggested` 换 profile 应为 `conflict`；
   store completion gate 漏了 backlog `done` 检查。
-- 待 follow-up PR merge → 愿景守护（非作者非 reviewer）→ operator close。
+- Follow-up PR #48 merged；愿景守护（非作者非 reviewer）与 operator close 见下方关闭记录。
+
+### 关闭记录（2026-10-28）
+
+- PR #47 **merged** at `4743137c9`；PR #48 **merged** at `772dd1741`。
+- Review：砚砚 code/security/gate Approved；墨墨 SOP/process/Product Approved；
+  烁烁（非作者非 reviewer）vision guard **approve**。
+- operator close 已确认：message `0001793185812278-003600-f076c296`。
+- W4 AC 22/22 勾验；daemon **264 passed / 1 skipped**；CI 5/5 green。
+- W7a residuals 继续由本文件 ledger 承接；F007 → `done`。
 
 ### Residual ledger（W7a 前置）
 

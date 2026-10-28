@@ -3,7 +3,7 @@ title: "codeteam 执行计划索引"
 doc_kind: index
 status: reviewed
 created: 2026-10-21
-updated: 2026-10-25
+updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 ---
 
@@ -92,7 +92,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W1 | closed (F004, operator confirmed) | schema + F004a–e all merged；84/84 at close（current tip 122/122）；收口清单见 F004 umbrella |
 | W2 | closed (F005, operator confirmed) | F005a–e 全合入（131/131）；真实 repo 首跑已记录；墨墨愿景守护有条件放行；operator 已显式确认 bwrap + 零 secret MVP 边界；residual 按 ledger 挂 W5/executor hardening |
 | W3 | closed (F006, operator confirmed) | `0008` + F006；包内 171 passed / 1 skipped；砚砚 code/security + 墨墨 eval 均 Approved；CI 4/4；烁烁愿景守护有条件放行，follow-up ledger（W4）已补；operator 已确认 F006 accepted/done |
-| W4 | merged (PR #47); close pending | clowder SOP 复用 + point gates + approval CLI + 最小 thread CLI；merged `4743137c9`；follow-up 矩阵/docs + 愿景守护 + operator close 待办（`0009` / F007） |
+| W4 | closed (F007, operator confirmed) | PR #47 `4743137c9` + PR #48 `772dd1741`；264 passed / 1 skipped；22/22 AC；vision guard 烁烁 approve；W7a residuals tracked（`0009` / F007） |
 | W5 | planned | 待 scheduler/RPC |
 | W6 | planned | memory/observability/harness-eval 契约已冻结；继承 + 代码 adapter |
 | W7 | planned | W7a headless → W7b Console（C → A）；前端复用基线 `DP-WEB-1=B`（classic）；`thread-chat-surface`/`thread-navigation` 在 W7b 前补卡 |
