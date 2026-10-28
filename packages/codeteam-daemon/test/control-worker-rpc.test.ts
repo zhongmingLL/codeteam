@@ -46,4 +46,14 @@ describe("W5b strict RPC JSONL framing", () => {
 			await client.finish();
 		}
 	});
+
+	it("fails closed when an unterminated frame exceeds the configured maximum", async () => {
+		const client = connection("partial-oversize", 128);
+		await client.start();
+		try {
+			await expect(client.getState()).rejects.toBeInstanceOf(RpcProtocolError);
+		} finally {
+			await client.finish();
+		}
+	});
 });

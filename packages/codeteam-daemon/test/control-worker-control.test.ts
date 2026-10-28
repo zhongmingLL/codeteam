@@ -123,6 +123,22 @@ describe("W5b worker control plane", () => {
 				input: { command: "git status; rm -rf /" },
 			});
 			expect(bashDenied).toMatchObject({ ok: true, allow: false });
+			const readMissingPath = await request({
+				type: "tool_policy",
+				workerId: "worker-1",
+				token: minted.token,
+				toolName: "read",
+				input: {},
+			});
+			expect(readMissingPath).toMatchObject({ ok: true, allow: false, code: "missing_path" });
+			const grepDefaultCwd = await request({
+				type: "tool_policy",
+				workerId: "worker-1",
+				token: minted.token,
+				toolName: "grep",
+				input: { pattern: "codeteam" },
+			});
+			expect(grepDefaultCwd).toMatchObject({ ok: true, allow: true });
 		} finally {
 			socket.destroy();
 		}

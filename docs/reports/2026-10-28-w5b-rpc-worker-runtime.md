@@ -54,7 +54,7 @@ transport（W7a）；第二 queue/message store/worker registry。
 NODE_ENV=development npm --prefix packages/codeteam-daemon test
 ```
 
-Result（2026-10-28）：`40 passed | 2 skipped` files，`314 passed | 2 skipped`
+Result（2026-10-28）：`40 passed | 2 skipped` files，`316 passed | 2 skipped`
 tests。skip = env-gated live provider smoke + 既有 real-repo first-run。
 
 ### 2. W5b 定向
@@ -63,7 +63,7 @@ tests。skip = env-gated live provider smoke + 既有 real-repo first-run。
 NODE_ENV=development npm --prefix packages/codeteam-daemon test -- control-worker
 ```
 
-Result：`5 passed | 1 skipped` files，`23 passed | 1 skipped` tests。
+Result：`5 passed | 1 skipped` files，`25 passed | 1 skipped` tests。
 
 覆盖：
 
@@ -72,15 +72,17 @@ Result：`5 passed | 1 skipped` files，`23 passed | 1 skipped` tests。
 - control：0600 socket、heartbeat、token 绑定、write path escape deny、
   bash metachar deny、reviewer read-only matrix、verifier evidence-only write。
 - rpc：split frame / U+2028、invalid JSON fail-closed、oversized frame
-  fail-closed。
+  fail-closed、无换行残留帧超限 fail-closed。
 - executor：dispatch 全链路、同 worker 两 run token 隔离、worker crash→
   interrupted→retry→dead-letter、session file 重挂、fresh+capsule、
-  graceful drain、drain timeout、retryable code preservation。
+  graceful drain、drain timeout、retryable code preservation、model_error
+  有界重试。
 
 ### Review follow-up（2026-10-28）
 
 烁烁 A2A/session/worker review：**changes_requested**（2×P2，P3 可选）；其余
-维度认可，并独立复跑 W5b 22+1 / daemon 313+2 / Biome / 真实 pi E2E。
+维度认可，并独立复跑旧 HEAD `bc702344c` 的 W5b 22+1 / daemon 313+2 /
+Biome / 真实 pi E2E。
 
 - P2-1：`resolveSessionWorker` 现在同时检查 `leaseExpiresAt > now`；lease
   过期的 online worker 在进入 executor 前即按 `reattach` 处理，不必等 sweep。
@@ -89,6 +91,24 @@ Result：`5 passed | 1 skipped` files，`23 passed | 1 skipped` tests。
   前缀；fresh fallback 测试断言该标记。
 - P3：interrupted bubble 文案改为 `Execution interrupted: ...`；删除未使用的
   `freshSessionCapsule`；executor 增加 run/session/profile/task 一致性交叉校验。
+
+### Review follow-up #2（2026-10-28，砚砚 code/security）
+
+砚砚 code/security review：**changes_requested**（1×P2，P3 不阻塞）；确认
+token/policy/socket/crash/drain/migration/retry 阳性项，并复核本轮烁烁 P2。
+
+- P2-3：`consumeStdout` 的 `index < 0` 分支由 `return` 改为 `break`，使循环后
+  的残留帧 max-frame 检查可达；无换行超大 payload 不再让 `stdoutBuffer` 无界
+  增长至 OOM。新增 `partial-oversize` fixture 与负例测试；旧行为下该测试 5s
+  超时失败（Red），修复后通过（Green）。
+- P3-1：删除 `WorkerRegistry.heartbeat` 两个分支完全相同的冗余判断。
+- P3-2：把 `model_error` 加入 `RETRYABLE_REASONS`，使
+  `RetryableExecutionError("model_error")` 与失败策略一致；仍受 maxAttempts=3
+  与 audit 幂等约束，新增有界重试测试。
+- P3-3：`read` 缺少 `path` 时 fail-closed（`missing_path`）；`grep`/`find`/`ls`
+  的 `path` 在 pi schema 中可省略且默认 worktree cwd，保持允许，并补集成断言。
+- P3-4/5/6 仅备注留痕：`/tmp` socket fallback、`start()` 50ms 启动探测、
+  16KiB 截断可能切断代理对；均不影响本 PR 的控制面安全边界，见 Residual 表。
 
 ### 3. 真实 pi RPC E2E（deterministic mock provider）
 
@@ -142,6 +162,9 @@ skip，CI 不依赖。真实 pi 进程链已由 mock-provider E2E 覆盖。
 | RPC capacity=1 | 符合 pi 一进程一 session；跨 session 池/预算留 W5c |
 | role 启动白名单 + per-run 查询 | 当前双层；动态工具收缩留 W7a transport |
 | live provider | 本机 401；默认 skip，环境恢复后手动复跑 |
+| 超长 dataDir 的 `/tmp` socket fallback | 0600 socket + fail-closed 已验证；W7a transport 硬化 |
+| `start()` 50ms 启动探测 | 更慢启动崩溃由后续 `getState` 捕获；必要时改 readiness handshake |
+| event 文本截断按 UTF-16 code unit | 16KiB 边界可能切断代理对；后续硬化，不影响安全边界 |
 
 ## Review routing
 

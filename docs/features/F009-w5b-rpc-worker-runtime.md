@@ -51,8 +51,11 @@ slice-specific 证据，不把 W5c/W7a 项冒充完成。
 - Review follow-up：烁烁 P2-1（lease 过期 online worker 不复用）与 P2-2
   （fresh 降级 response 正文标注）已修；P3 收口 body 措辞、死代码与
   run/session 一致性校验。
-- 验证：daemon 包 40 files passed + 2 skipped，314 tests passed + 2 skipped；
-  W5b 定向 5 files + 1 skipped，23 tests + 1 skipped；daemon scoped
+- Review follow-up #2：砚砚 P2-3（RPC 残留帧 max-frame 保护不可达）已修，
+  并补无换行超限负例；P3 收口 heartbeat 冗余、`model_error` 有界重试、
+  `read` 缺 path fail-closed。
+- 验证：daemon 包 40 files passed + 2 skipped，316 tests passed + 2 skipped；
+  W5b 定向 5 files + 1 skipped，25 tests + 1 skipped；daemon scoped
   `tsc --noEmit`、`build:offline`、Biome 通过。根级 `tsc --noEmit` 最终复跑
   被宿主内存终止（exit 137），与 F005a 同类环境限制。
 - 真实 pi RPC + mock provider：implement→review、control-plane down

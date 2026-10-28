@@ -14,6 +14,10 @@ rl.on("line", (line) => {
 		process.stdout.write(`${"x".repeat(Number(process.env.FRAMING_BYTES ?? 4096))}\n`);
 		return;
 	}
+	if (mode === "partial-oversize") {
+		process.stdout.write("x".repeat(Number(process.env.FRAMING_BYTES ?? 4096)));
+		return;
+	}
 	const payload = `${JSON.stringify({
 		id: command.id,
 		type: "response",

@@ -67,13 +67,11 @@ export class WorkerRegistry {
 	}
 
 	heartbeat(workerId: string, pid?: number | null): Worker {
-		const worker = this.store.workers.heartbeat(workerId, {
+		return this.store.workers.heartbeat(workerId, {
 			at: this.clock(),
 			leaseMs: this.config.leaseMs,
 			pid: pid ?? null,
 		});
-		if (worker.state === "online") return worker;
-		return worker;
 	}
 
 	markOnline(workerId: string, pid?: number | null): Worker {

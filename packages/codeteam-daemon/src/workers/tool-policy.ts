@@ -60,7 +60,12 @@ export function evaluateWorkerToolCall(
 		}
 		const policy = policyForWorker(context, toolRole);
 		switch (call.toolName) {
-			case "read":
+			case "read": {
+				const path = pathInput(call.input);
+				if (path === null) return { allow: false, code: "missing_path", reason: "path is required" };
+				assertReadablePath(policy, path, policy.cwd);
+				return { allow: true };
+			}
 			case "grep":
 			case "find":
 			case "ls": {

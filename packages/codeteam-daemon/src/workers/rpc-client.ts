@@ -309,7 +309,7 @@ export class RpcConnection {
 		this.stdoutBuffer += this.decoder.write(chunk);
 		while (true) {
 			const index = this.stdoutBuffer.indexOf("\n");
-			if (index < 0) return;
+			if (index < 0) break;
 			const line = this.stdoutBuffer.slice(0, index);
 			this.stdoutBuffer = this.stdoutBuffer.slice(index + 1);
 			if (Buffer.byteLength(line, "utf8") > (this.options.maxFrameBytes ?? DEFAULT_RPC_MAX_FRAME_BYTES)) {

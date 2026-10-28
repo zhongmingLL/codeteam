@@ -189,6 +189,28 @@ describe("W5b RPC executor", () => {
 		expect(store.queue.pendingCount()).toBe(1);
 		expect(store.audit.latest(`run:${run.id}`, "run_retry_queued")).toBeDefined();
 	});
+
+	it("retries model errors within the bounded failure policy", async () => {
+		fixture = createW5BFixture();
+		const { store } = fixture;
+		const executor: AgentExecutor = {
+			execute: async () => {
+				throw new RetryableExecutionError("model_error", "simulated model error");
+			},
+		};
+		const dispatch = new DispatchService(store, executor, fixture.now, fixture.runtime.dispatchHooks);
+		const source = fixture.createSource("Model error.");
+		fixture.enqueue({ sourceId: source.id });
+		const drain = await dispatch.drain({ maxEntries: 1 });
+		expect(drain.outcomes[0]?.status).toBe("failed");
+		const run = store.runs.get(drain.runs[0]!.id)!;
+		const terminal = store.runs
+			.listEvents(run.id, 100)
+			.find((event) => (event.payload as { phase?: string }).phase === "terminal");
+		expect((terminal?.payload as { reason?: string }).reason).toBe("model_error");
+		expect(store.queue.pendingCount()).toBe(1);
+		expect(store.audit.latest(`run:${run.id}`, "run_retry_queued")).toBeDefined();
+	});
 });
 
 async function waitForRunningRun(store: W5BFixture["store"], timeoutMs = 2_000) {

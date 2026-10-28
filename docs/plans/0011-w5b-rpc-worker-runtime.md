@@ -358,9 +358,13 @@ DB（无生产数据）。
   `> Continuity degraded: ...`。P3 顺手收：interrupted bubble 措辞按真实
   terminal status、删除未使用的 `freshSessionCapsule`、executor 增加
   run/session/profile/task 一致性交叉校验。
+- Review follow-up #2（2026-10-28，砚砚）：P2-3 修复 `consumeStdout` 残留帧
+  max-frame 检查不可达（`return`→`break`），新增无换行超限负例；P3 收口
+  heartbeat 冗余分支、`model_error` 有界重试白名单、`read` 缺 path
+  fail-closed（`grep`/`find`/`ls` 可省略 path 并默认 worktree cwd）。
 - 验证（2026-10-28）：daemon 包全量 40 files passed + 2 skipped，
-  314 tests passed + 2 skipped；daemon scoped `tsc --noEmit`、`build:offline`、
-  Biome 通过。W5b 定向 5 files + 1 skipped，23 tests + 1 skipped。
+  316 tests passed + 2 skipped；daemon scoped `tsc --noEmit`、`build:offline`、
+  Biome 通过。W5b 定向 5 files + 1 skipped，25 tests + 1 skipped。
   根级 `tsc --noEmit` 在本机最终复跑被宿主内存终止（exit 137，swap 已满，
   与 F005a 记录同类环境限制）；daemon 包 build 与 scoped tsc 覆盖本切片改动。
 - **未通过的环境项**：env-gated live provider smoke 在本机返回
@@ -378,4 +382,7 @@ DB（无生产数据）。
 | 3 | RPC worker capacity 固定 1；跨 session 池/并发预算未做 | W5c scheduling/budget |
 | 4 | `--tools` 是 role 级启动白名单，per-run 仍靠 tool_call 查询；工具集动态收缩未做 | W7a per-run policy transport |
 | 5 | live provider smoke 受本机 key 401 阻塞；默认 skip，CI 不依赖 | 环境恢复后手动复跑 |
+| 6 | 超长 dataDir 时 control socket fallback 到 `/tmp` 可预测名；0600 + fail-closed 已验证 | W7a transport 硬化 |
+| 7 | `RpcConnection.start()` 固定 50ms 启动探测；更慢启动崩溃由后续 `getState` 捕获 | 必要时改 readiness handshake |
+| 8 | `event-sink` 16KiB 截断按 UTF-16 code unit，边界可能切断代理对 | 后续硬化，不影响控制面安全 |
 

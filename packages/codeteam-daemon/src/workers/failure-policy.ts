@@ -14,6 +14,7 @@ const RETRYABLE_REASONS = new Set([
 	"drain_timeout",
 	"worker_capacity",
 	"daemon_restarted",
+	"model_error",
 ]);
 
 export interface WorkerFailurePolicyOptions {
