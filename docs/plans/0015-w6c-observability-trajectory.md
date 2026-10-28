@@ -1,7 +1,7 @@
 ---
 title: "W6c Observability / Trajectory 实施计划"
 doc_kind: plan
-status: in_review
+status: closed
 created: 2026-10-29
 updated: 2026-10-29
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -261,3 +261,16 @@ init 失败不得阻止 daemon 启动；`/ready` 不得把未初始化报成 hea
   `/api/logs/tail`、operator auth、Console UI、`/request-generations`。
 - W8：GitHub/GitLab forge。
 - 不做 trace 持久化、第二事件账本、跨进程 trace aggregation、Pino 依赖。
+
+## 9. Results（2026-10-29）
+
+- PR #63 squash merged into `codeteam-work` at
+  `12c54685439a3b8cb92142bbac7a5d88764e1cea`；final reviewed HEAD
+  `04d3f9382298e35c4bbecc4de39da378fd4564b5`。
+- 砚砚 approved at `04d3f9382`（security/redaction/provenance）；墨墨 approved
+  at `04d3f9382`（reuse/真实路径/可解释性）。P1 OTLP composition、P2 strict
+  fields、6 P3 全部收口。
+- Post-merge acceptance at `12c546854`：`build:offline` exit 0；daemon
+  62 files + 437 tests passed / 2 skipped；root `tsc` / biome clean。
+- Residual optional P3：dropped counters 未进 `/ready` telemetry payload，
+  W7a Console 可展示，不阻塞。
