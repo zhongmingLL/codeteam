@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F008]
 title: "F008: W5a A2A 投递与球权内核"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
@@ -47,8 +47,25 @@ slice-specific 证据。W5b/W5c 项不在本 feature 冒充完成。
 - 2026-10-28：migration 011 + dispatch queue adapter + A2A tool handlers +
   custody projection + wait contract 实现；定向测试 27/27。
 - 包内全量 291 passed / 1 skipped，根级 `tsc` 与 `build:offline` 通过；
-  命令与边界见 `docs/reports/2026-10-28-w5a-a2a-dispatch-custody.md`。review
-  与 merge 尚未发生，不声称 W5a 已关闭。
+  命令与边界见 `docs/reports/2026-10-28-w5a-a2a-dispatch-custody.md`。
+- 2026-10-28：PR #50 合入 `codeteam-work`（merge `d9d3d966`，reviewed
+  HEAD `4892da95e`）；两路 review、CI 4/4、墨墨独立 vision guard 全部通过。
+
+## Close record（2026-10-28）
+
+- **Merge**：PR #50 squash merged at `d9d3d96639db57579bcd712a8fdec8d1839b2722`；
+  reviewed HEAD `4892da95edad883619a314fc243298fc414f84db`，base `aa0840f8c`。
+- **Review**：烁烁 A2A/session/custody approve（`0001793189310255-003631-e357e81d`）；
+  砚砚 code/security approve（`0001793189468719-003634-eedc426d`）。P1 跨 task
+  custody 劫持与 P2 poison/多 target 回归均在最终 HEAD 闭合。
+- **Vision guard**：墨墨（非作者非 reviewer）approve
+  （`0001793189549681-003638-325cfe68`），确认交付为真实实现、AC 无 overclaim、
+  residual ledger 足够支撑 W5b/W5c。
+- **Post-merge acceptance**：`codeteam-work` @ `d9d3d966` 复跑 daemon
+  35 files passed + 1 skipped，291 tests passed + 1 skipped；CI 4/4 green。
+- **Boundary**：W5b/W5c 仍未实现；fake executor / transport-neutral tool surface
+  是已声明边界。source thread 可在本契约冻结后提议 W5b/W5c。
+
 
 ## Out of scope
 

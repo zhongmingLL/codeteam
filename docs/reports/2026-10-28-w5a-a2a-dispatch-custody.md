@@ -1,7 +1,7 @@
 ---
 title: "W5a A2A 投递与球权内核实现报告"
 doc_kind: report
-status: in_progress
+status: closed
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -146,3 +146,15 @@ node packages/ai/scripts/hydrate-model-catalog.ts /tmp/pi-catalog-w5a.json
 - migration 011 是 queue/runs 表重建；本地 dev DB 回滚需重建（无生产数据）。
 - 代码为新增 `dispatch/`、`a2a/`、`custody/` service；回滚到
   `aa0840f8c` 基线即可。
+
+## Close（2026-10-28）
+
+- PR #50 merged into `codeteam-work` at
+  `d9d3d96639db57579bcd712a8fdec8d1839b2722`, reviewed HEAD
+  `4892da95edad883619a314fc243298fc414f84db`.
+- Reviews: 烁烁 approve (`0001793189310255-003631-e357e81d`); 砚砚 approve
+  (`0001793189468719-003634-eedc426d`); vision guard 墨墨 approve
+  (`0001793189549681-003638-325cfe68`).
+- Post-merge acceptance on `codeteam-work`: daemon 35 files passed + 1 skipped,
+  291 tests passed + 1 skipped; CI 4/4 green.
+- W5a is closed; W5b/W5c remain future source-thread proposals.
