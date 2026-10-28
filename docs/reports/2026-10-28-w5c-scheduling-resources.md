@@ -1,11 +1,12 @@
 ---
 title: "W5c core 运营调度与资源实施报告"
 doc_kind: report
-status: active
+status: closed
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 source: "docs/plans/0012-w5c-scheduling-resources.md"
+feature: "codeteam/F010"
 ---
 
 # W5c core 运营调度与资源实施报告
@@ -16,7 +17,7 @@ source: "docs/plans/0012-w5c-scheduling-resources.md"
 
 ## 1. 已实现
 
-### 1.1 Migration 012
+### 1.1 Migration 013
 
 新增 `budget_charges`、`worktree_leases`、`schedule_specs`、`schedule_runs`。
 没有新增第二 queue、第二 run、worker registry、heartbeat 或 lease 表。
@@ -164,4 +165,17 @@ F010/0012/migration 013。
   关闭 `checkCapacity → acquire` 的 check-then-act 窗口。
 - **P3-3（已记录）**：`schedule_runs.status='queued'` 只是 occurrence 记录，
   Queue Entry / Run terminal 才是执行真相；已写入计划/报告边界。
+
+## 6. Close record（2026-10-28）
+
+- PR #52 squash merged into `codeteam-work` at
+  `959ef7e760ee5227e0d125b2235bf75e36395d91`; reviewed HEAD
+  `15b7009c3c59594f13987e40ab0f9855d4056688`; base `0827773aa`.
+- 砚砚 code/security approved（msg `0001793199344123-003737-a8c073df`，
+  P2-1 修复后复验）；墨墨 SOP/process/Product approved（msg
+  `0001793199744633-003740-f7c64992`）。无 P1/P2 未闭合。
+- CI 4/4 green；post-merge daemon acceptance 47 files passed + 2 skipped，
+  349 tests passed + 2 skipped。
+- 本 close-out docs PR 修正 §1.1 heading（Migration 012 → 013）；W5d 仍为
+  F011 / 未实现。
 
