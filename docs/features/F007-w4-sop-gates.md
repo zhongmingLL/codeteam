@@ -40,12 +40,14 @@ merges 的 schema 与 store；W3 已有独立 review/falsifier 证据链。W4 �
 ## 当前进展
 
 - 2026-10-28：W4 kickoff；实施计划与 F007 建立。
-- 2026-10-28：W4a/b/c 实现完成；daemon 203 passed / 1 skipped；
+- 2026-10-28：W4a/b/c 实现完成；daemon 204 passed / 1 skipped；
   CLI dogfood 真实跑通 backlog→dispatch→thread→agent cutover 回复→approval→
   merge execute→SOP completion；build/tsc/Biome/静态检查通过。
 - 证据报告：`docs/reports/2026-10-28-w4-sop-gates.md`。
-- 砚砚 code/security/gate review **Approved** @ `5b3eba634`（7 P3 non-blocking）；
-  P3-2/3/4/5/6/7 已修，待同风险面 delta 复审；墨墨（SOP/process/Product）待转。
+- 砚砚 code/security/gate review **Approved** @ `5b3eba634`，delta **Approved**
+  @ `90761ab5e`；P3-2/3/4/5/6/7 已修，P3-1 留 W7a residual。
+- 墨墨 SOP/process/Product review **changes_requested**（P2-1 bootstrap、P2-2
+  global flags、P2-3 agent approval request）；已修，待墨墨 delta 复审。
 
 ### Residual ledger（W7a）
 

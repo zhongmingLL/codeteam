@@ -166,7 +166,7 @@ W4 dogfood 测试使用测试内的 agent executor 调 `cutoverQueueEntry` 写�
 | 单元 | 落点 | 可观察结果 | 验证 |
 |---|---|---|---|
 | W4a-1 SOP catalog | `sop-definitions/development.yaml`、`scripts/sop-definitions.mjs`、generated TS | 7 stage / checks / skills / predicate 可 codegen；无 clowder 参数 | `control-sop-catalog.test.ts` + `npm run generate:sop-definitions` drift check |
-| W4a-2 evidence schema | 019 migration、`SopCheckEvidenceStore` | verified 只能带 evidence；stale 读 unknown；audit 同事务 | migration/schema + store tests |
+| W4a-2 evidence schema | 009 migration、`SopCheckEvidenceStore` | verified 只能带 evidence；stale 读 unknown；audit 同事务 | migration/schema + store tests |
 | W4a-3 SOP service | `src/sop/service.ts` | projection、capsule limits、baton validation、completion gate | `control-sop-service.test.ts` |
 | W4a-4 backlog read model | `BacklogStore` audit projection + CLI `backlog show` | audit newest-first / 100 / truncated cursor | store + CLI tests |
 | W4a-5 backlog CLI | `backlog create/list/show/approve/dispatch/done/override-done` | operator 能建 item、approve、dispatch；缺 item task fail closed | CLI integration |
@@ -266,15 +266,17 @@ NODE_ENV=development npm run build:offline
 - 墨墨：SOP 告示牌是否仍可读、operator CLI 体验、design gate/fast lane、
   dogfood 路径是否真的不需要 Web。
 
-## Results（2026-10-28，implemented；砚砚 approved，delta/墨墨 pending）
+## Results（2026-10-28，implemented；砚砚 approved，墨墨 changes_requested/delta pending）
 
 - 实现落点：SOP catalog/evidence/service、gates、approval/backlog/thread/task CLI、
   local MergeExecutor、gate telemetry；详见
   [`../reports/2026-10-28-w4-sop-gates.md`](../reports/2026-10-28-w4-sop-gates.md)。
-- 验证：daemon **203 passed / 1 skipped**；W4 新增 32 条测试；CLI dogfood
+- 验证：daemon **204 passed / 1 skipped**；W4 新增 33 条测试；CLI dogfood
   1 条真实端到端；adapter 15 passed / 1 skipped；skills 15 passed；
   `build:offline`、根级 tsc、Biome、静态检查全通过。
-- 砚砚 code/security/gate review **Approved** @ `5b3eba634`
+- 砚砚 code/security/gate review **Approved** @ `5b3eba634`，delta **Approved** @ `90761ab5e`
   （7 P3 non-blocking）；P3-2/3/4/5/6/7 已修，P3-1 留 W7a 前置 residual；
-  待同风险面 delta 复审后转墨墨；本切片不宣称 merged/accepted。
+  墨墨 SOP/process/Product review **changes_requested**（P2-1/P2-2/P2-3）；已补
+  `profile seed`、全局 flag 前置解析、agent `approval request --requester`，待
+  墨墨同风险面 delta 复审；本切片不宣称 merged/accepted。
 

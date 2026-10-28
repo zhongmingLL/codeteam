@@ -376,14 +376,16 @@ behavior / data / security / contract / irreversible。
   worktree/design/review/verify/risk-consistency/merge/completion gates；
   approval/backlog/thread/task CLI；local `MergeExecutor` + merge receipt
   migration 010；gate telemetry。
-- 测试：daemon **203 passed / 1 skipped**；W4 新增 32 条；真实 CLI dogfood
+- 测试：daemon **204 passed / 1 skipped**；W4 新增 33 条；真实 CLI dogfood
   跑通 backlog→dispatch→thread→agent cutover 回复→approval→merge→SOP
   completion；adapter 15 passed / 1 skipped；skills 15 passed。
 - 类型/构建：`build:offline`、根级 tsc、Biome、静态检查通过。
 - 证据报告：`reports/2026-10-28-w4-sop-gates.md`。
-- 砚砚 code/security/gate review **Approved** @ `5b3eba634`（7 P3 non-blocking）；
-  P3-2/3/4/5/6/7 已修，P3-1 留 W7a 前置 residual；待 delta 复审后转墨墨
-  （SOP/process/Product）。尚未 merged/accepted。
+- 砚砚 code/security/gate review **Approved** @ `5b3eba634`，delta **Approved**
+  @ `90761ab5e`（7 P3）；P3-2/3/4/5/6/7 已修，P3-1 留 W7a 前置 residual。
+- 墨墨 SOP/process/Product review **changes_requested**（P2-1 bootstrap / P2-2
+  global flags / P2-3 agent approval request）；已补 `profile seed`、前置全局 flag、
+  agent `approval request --requester`，待墨墨 delta 复审。尚未 merged/accepted。
 
 ---
 

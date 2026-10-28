@@ -32,9 +32,9 @@ export function runApprovalCommand(args: ParsedArgs, context: CliContext): numbe
 }
 
 function requestApproval(args: ParsedArgs, context: CliContext): number {
-	const operator = requireOperator(context);
 	const kind = requireOption(args, "kind") as ApprovalKind;
 	if (!KINDS.has(kind)) throw new ControlError("invalid_input", `unknown approval kind ${kind}`);
+	const requestedBy = resolveRequester(args, context);
 	const approval = context.store.approvals.create({
 		threadId: requireOption(args, "thread"),
 		taskId: requireOption(args, "task"),
@@ -43,12 +43,35 @@ function requestApproval(args: ParsedArgs, context: CliContext): number {
 		originRef: parseJsonObject(option(args, "origin-json"), "origin-json") ?? {},
 		cardRef: parseJsonObject(option(args, "card-json"), "card-json") ?? {},
 		payload: parseJsonObject(option(args, "payload-json"), "payload-json") ?? {},
-		requestedBy: operator.id,
+		requestedBy,
 		expiresAt: numberOption(args, "expires-at"),
 	});
 	if (context.json) writeJson(approval);
 	else writeLine(`requested approval ${approval.id} kind=${approval.kind} resolution=${approval.resolution}`);
 	return 0;
+}
+
+function resolveRequester(args: ParsedArgs, context: CliContext): string {
+	const explicit = option(args, "requester");
+	if (explicit) {
+		const candidate = explicit.startsWith("profile:") ? explicit : `profile:${explicit}`;
+		const profile = context.store.profiles.get(candidate) ?? context.store.profiles.get(explicit);
+		if (!profile || profile.status !== "active") {
+			throw new ControlError("not_found", `active agent profile ${explicit} not found`);
+		}
+		return profile.id;
+	}
+	try {
+		return requireOperator(context).id;
+	} catch (error) {
+		if (error instanceof ControlError && error.code === "not_found") {
+			throw new ControlError(
+				"invalid_input",
+				"approval request needs --requester <profile> when no operator credential is initialized",
+			);
+		}
+		throw error;
+	}
 }
 
 function listApprovals(args: ParsedArgs, context: CliContext): number {

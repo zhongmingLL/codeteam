@@ -129,7 +129,7 @@ export class ApprovalStore {
 						now,
 					);
 				this.audit.append({
-					actor: `profile:${input.requestedBy}`,
+					actor: input.requestedBy.includes(":") ? input.requestedBy : `profile:${input.requestedBy}`,
 					action: "approval_requested",
 					subject: `approval:${id}`,
 					args: { kind: input.kind, idempotencyKey: input.idempotencyKey },
@@ -160,7 +160,7 @@ export class ApprovalStore {
 					.run(input.resolution, nonEmpty(input.decidedBy, "decidedBy"), now, input.note ?? null, now, id);
 				if (changesOf(result) === 0) throw new ControlError("version_conflict", `approval ${id} changed state`);
 				this.audit.append({
-					actor: `user:${input.decidedBy}`,
+					actor: input.decidedBy.includes(":") ? input.decidedBy : `user:${input.decidedBy}`,
 					action: `approval_${input.resolution}`,
 					subject: `approval:${id}`,
 					args: input.note ? { note: input.note } : {},

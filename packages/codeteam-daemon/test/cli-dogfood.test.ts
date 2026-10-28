@@ -11,7 +11,7 @@ const dirs: string[] = [];
 let dataDir: string;
 
 function cli(args: readonly string[], expectStatus = 0): string {
-	const result = spawnSync(process.execPath, [CLI, ...args, "--data-dir", dataDir], {
+	const result = spawnSync(process.execPath, [CLI, "--data-dir", dataDir, ...args], {
 		encoding: "utf8",
 		env: { ...process.env, CODETEAM_DATA_DIR: dataDir },
 	});
@@ -69,12 +69,6 @@ beforeEach(() => {
 	dataDir = mkdtempSync(join(tmpdir(), "codeteam-dogfood-data-"));
 	dirs.push(dataDir);
 	initOperatorCredential({ dataDir });
-	const store = openControlStore({ dataDir });
-	store.seedIdentity({
-		eval: { provider: "test", model: "glm-5.3-flash", modelFamily: "glm" },
-		compress: { provider: "test", model: "qwen3.8-flash", modelFamily: "qwen" },
-	});
-	store.close();
 });
 
 afterEach(() => {
@@ -83,6 +77,9 @@ afterEach(() => {
 
 describe("codeteam W4 CLI dogfood", () => {
 	it("runs backlog -> thread -> agent reply -> approval -> merge -> SOP completion without Web", () => {
+		cli(["profile", "seed"]);
+		const profiles = cliJson<Array<{ id: string }>>(["profile", "list"]);
+		expect(profiles.some((profile) => profile.id === "profile:eval")).toBe(true);
 		const created = cliJson<{ id: string }>([
 			"backlog",
 			"create",
@@ -194,6 +191,23 @@ describe("codeteam W4 CLI dogfood", () => {
 		cli(["approval", "show", approval.id]);
 		const approved = cliJson<{ resolution: string }>(["approval", "approve", approval.id]);
 		expect(approved.resolution).toBe("accepted");
+		const agentRequest = cliJson<{ requestedBy: string }>([
+			"approval",
+			"request",
+			"--task",
+			task.id,
+			"--thread",
+			threadId,
+			"--kind",
+			"blocker",
+			"--idempotency-key",
+			"dogfood-agent-request",
+			"--requester",
+			"profile:eval",
+			"--payload-json",
+			'{"reason":"agent escalation wiring"}',
+		]);
+		expect(agentRequest.requestedBy).toBe("profile:eval");
 		const { repo, featureSha } = createMergeRepo();
 		const merge = cliJson<{ receipt: { status: string; mergeSha: string; executedBy: string } }>([
 			"merge",
