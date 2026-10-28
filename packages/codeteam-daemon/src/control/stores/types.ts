@@ -70,6 +70,7 @@ export interface ProfileListFilter {
 }
 
 export type SessionStatus = "active" | "sealing" | "sealed";
+export type WorkerBindingState = "unbound" | "attached" | "re_attach_pending";
 
 export interface AgentSession {
 	id: string;
@@ -98,6 +99,9 @@ export interface AgentSession {
 	messageCount: number;
 	workingDirectory: string | null;
 	workspaceFingerprint: string | null;
+	workerId: string | null;
+	workerBindingState: WorkerBindingState;
+	workerAttachedAt: number | null;
 	userId: string | null;
 	createdAt: number;
 	updatedAt: number;
@@ -131,7 +135,61 @@ export interface CreateAgentSessionInput {
 	messageCount?: number;
 	workingDirectory?: string | null;
 	workspaceFingerprint?: string | null;
+	workerId?: string | null;
+	workerBindingState?: WorkerBindingState;
+	workerAttachedAt?: number | null;
 	userId?: string | null;
+}
+
+export type WorkerKind = "rpc";
+export type WorkerState = "starting" | "online" | "draining" | "stale" | "retired";
+
+export interface Worker {
+	id: string;
+	kind: WorkerKind;
+	role: string;
+	capacity: number;
+	state: WorkerState;
+	pid: number | null;
+	heartbeatAt: number;
+	leaseExpiresAt: number;
+	drainRequestedAt: number | null;
+	retiredAt: number | null;
+	lastError: string | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface CreateWorkerInput {
+	id: string;
+	kind?: WorkerKind;
+	role: string;
+	capacity?: number;
+	state?: WorkerState;
+	pid?: number | null;
+	heartbeatAt: number;
+	leaseExpiresAt: number;
+}
+
+export interface WorkerListFilter {
+	role?: string;
+	state?: WorkerState;
+}
+
+export interface WorkerCapacitySnapshot {
+	workerId: string;
+	role: string;
+	state: WorkerState;
+	capacity: number;
+	activeRuns: number;
+	activeSessions: number;
+	boundSessions: number;
+	availableSlots: number;
+	availableRunSlots: number;
+	heartbeatAt: number;
+	leaseExpiresAt: number;
+	activeRunIds: string[];
+	activeSessionIds: string[];
 }
 
 export interface SealAgentSessionInput {
@@ -695,6 +753,7 @@ export interface Run {
 	model: string;
 	modelFamily: string;
 	l0Revision: string | null;
+	workerId: string | null;
 	status: RunStatus;
 	responseMessageId: string | null;
 	executionKind: RunExecutionKind;
@@ -721,6 +780,7 @@ export interface CreateRunInput {
 	model: string;
 	modelFamily: string;
 	l0Revision?: string | null;
+	workerId?: string | null;
 	responseMessageId?: string | null;
 	executionKind?: RunExecutionKind;
 	handoffId?: string | null;
@@ -739,6 +799,7 @@ export interface RunListFilter {
 	taskId?: string;
 	agentSessionId?: string;
 	recipientProfileId?: string;
+	workerId?: string;
 	status?: RunStatus;
 }
 

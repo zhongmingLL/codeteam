@@ -1,0 +1,28 @@
+export const WORKER_RUNTIME_STATEMENTS: readonly string[] = [
+	`CREATE TABLE workers (
+		id TEXT PRIMARY KEY,
+		kind TEXT NOT NULL CHECK (kind IN ('rpc')),
+		role TEXT NOT NULL,
+		capacity INTEGER NOT NULL CHECK (capacity >= 1),
+		state TEXT NOT NULL CHECK (state IN ('starting', 'online', 'draining', 'stale', 'retired')),
+		pid INTEGER,
+		heartbeat_at INTEGER NOT NULL,
+		lease_expires_at INTEGER NOT NULL,
+		drain_requested_at INTEGER,
+		retired_at INTEGER,
+		last_error TEXT,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		CHECK (lease_expires_at >= heartbeat_at),
+		CHECK (state <> 'retired' OR retired_at IS NOT NULL),
+		FOREIGN KEY (role) REFERENCES roles(id) ON DELETE RESTRICT
+	) STRICT`,
+	"CREATE INDEX workers_state_lease ON workers(state, lease_expires_at)",
+	"CREATE INDEX workers_role_state ON workers(role, state)",
+	"ALTER TABLE agent_sessions ADD COLUMN worker_id TEXT REFERENCES workers(id) ON DELETE SET NULL",
+	`ALTER TABLE agent_sessions ADD COLUMN worker_binding_state TEXT NOT NULL DEFAULT 'unbound' CHECK (worker_binding_state IN ('unbound', 'attached', 're_attach_pending'))`,
+	"ALTER TABLE agent_sessions ADD COLUMN worker_attached_at INTEGER",
+	"CREATE INDEX agent_sessions_worker ON agent_sessions(worker_id) WHERE worker_id IS NOT NULL",
+	"ALTER TABLE runs ADD COLUMN worker_id TEXT REFERENCES workers(id) ON DELETE SET NULL",
+	"CREATE INDEX runs_worker_status ON runs(worker_id, status) WHERE worker_id IS NOT NULL",
+];

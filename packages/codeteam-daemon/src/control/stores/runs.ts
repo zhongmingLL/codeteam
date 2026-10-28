@@ -29,6 +29,7 @@ interface RunRow {
 	model: string;
 	model_family: string;
 	l0_revision: string | null;
+	worker_id: string | null;
 	status: RunStatus;
 	response_message_id: string | null;
 	execution_kind: RunExecutionKind;
@@ -65,6 +66,7 @@ function mapRun(row: RunRow): Run {
 		model: row.model,
 		modelFamily: row.model_family,
 		l0Revision: row.l0_revision,
+		workerId: row.worker_id,
 		status: row.status,
 		responseMessageId: row.response_message_id,
 		executionKind: row.execution_kind,
@@ -117,6 +119,10 @@ export class RunStore {
 		if (filter.recipientProfileId !== undefined) {
 			clauses.push("recipient_profile_id = ?");
 			params.push(filter.recipientProfileId);
+		}
+		if (filter.workerId !== undefined) {
+			clauses.push("worker_id = ?");
+			params.push(filter.workerId);
 		}
 		if (filter.status !== undefined) {
 			clauses.push("status = ?");
@@ -172,7 +178,7 @@ export class RunStore {
 		try {
 			this.database
 				.prepare(
-					"INSERT INTO runs (id, task_id, queue_entry_id, stage_id, attempt, role, agent_session_id, parent_run_id, source_id, recipient_profile_id, chain_metadata_json, provider, model, model_family, l0_revision, status, response_message_id, execution_kind, handoff_id, approval_id, started_at, usage_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)",
+					"INSERT INTO runs (id, task_id, queue_entry_id, stage_id, attempt, role, agent_session_id, parent_run_id, source_id, recipient_profile_id, chain_metadata_json, provider, model, model_family, l0_revision, worker_id, status, response_message_id, execution_kind, handoff_id, approval_id, started_at, usage_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)",
 				)
 				.run(
 					id,
@@ -190,6 +196,7 @@ export class RunStore {
 					nonEmpty(input.model, "model"),
 					nonEmpty(input.modelFamily, "modelFamily"),
 					input.l0Revision ?? null,
+					input.workerId ?? null,
 					input.responseMessageId ?? null,
 					input.executionKind ?? "ordinary",
 					input.handoffId ?? null,
@@ -251,6 +258,31 @@ export class RunStore {
 					payload,
 					ts,
 				};
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
+	attachWorker(id: string, workerId: string): Run {
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `run ${id} not found`);
+				if (current.status !== "running") {
+					throw new ControlError("invalid_state", `run ${id} is ${current.status}`);
+				}
+				if (current.workerId !== null && current.workerId !== workerId) {
+					throw new ControlError("conflict", `run ${id} is already attached to worker ${current.workerId}`);
+				}
+				if (current.workerId === workerId) return current;
+				const result = this.database
+					.prepare("UPDATE runs SET worker_id = ? WHERE id = ? AND status = 'running' AND worker_id IS NULL")
+					.run(workerId, id);
+				if (changesOf(result) === 0) {
+					throw new ControlError("version_conflict", `run ${id} changed while attaching a worker`);
+				}
+				return this.get(id)!;
 			});
 		} catch (error) {
 			throw mapStoreError(error);

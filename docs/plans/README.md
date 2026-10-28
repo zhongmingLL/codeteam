@@ -45,6 +45,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0003-w3-w4-review-sop.md`](0003-w3-w4-review-sop.md) | W3 独立 review、W4 SOP 复用/Design Gate | 砚砚（review/security）+ 墨墨（流程/Product） |
 | [`0004-w5-w8-scale-product.md`](0004-w5-w8-scale-product.md) | W5 调度/RPC、W6 memory/eval、W7 Console、W8 GitHub | 烁烁（W5）+ 墨墨（W7）+ 砚砚（W8） |
 | [`0010-w5a-a2a-dispatch-custody.md`](0010-w5a-a2a-dispatch-custody.md) | W5a A2A 投递与球权内核实施计划、投影契约、AC 映射 | 烁烁（A2A/session/custody）+ 砚砚（code/security） |
+| [`0011-w5b-rpc-worker-runtime.md`](0011-w5b-rpc-worker-runtime.md) | W5b RPC worker harness、worker registry/sticky/re-attach、失败重试与 AC 映射 | 烁烁（A2A/session/worker）+ 砚砚（code/security） |
 
 ## W0–W8 一览
 
@@ -94,7 +95,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W2 | closed (F005, operator confirmed) | F005a–e 全合入（131/131）；真实 repo 首跑已记录；墨墨愿景守护有条件放行；operator 已显式确认 bwrap + 零 secret MVP 边界；residual 按 ledger 挂 W5/executor hardening |
 | W3 | closed (F006, operator confirmed) | `0008` + F006；包内 171 passed / 1 skipped；砚砚 code/security + 墨墨 eval 均 Approved；CI 4/4；烁烁愿景守护有条件放行，follow-up ledger（W4）已补；operator 已确认 F006 accepted/done |
 | W4 | closed (F007, operator confirmed) | PR #47 `4743137c9` + PR #48 `772dd1741`；264 passed / 1 skipped；22/22 AC；vision guard 烁烁 approve；W7a residuals tracked（`0009` / F007） |
-| W5 | in_progress (W5a closed) | F008 + `0010`；W5a 投递/球权内核已合入，W5b/W5c 待 source thread 提议 |
+| W5 | in_progress (W5a closed; W5b active) | F008 + `0010` 已 closed；F009 + `0011` 承接 RPC worker runtime；W5c 待 source thread 提议 |
 | W6 | planned | memory/observability/harness-eval 契约已冻结；继承 + 代码 adapter |
 | W7 | planned | W7a headless → W7b Console（C → A）；前端复用基线 `DP-WEB-1=B`（classic）；`thread-chat-surface`/`thread-navigation` 在 W7b 前补卡 |
 | W8 | planned | github-signals W8 契约已冻结；待 Forge connector |

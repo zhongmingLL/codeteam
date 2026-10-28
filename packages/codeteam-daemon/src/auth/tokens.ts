@@ -70,3 +70,18 @@ export function writeInvocationTokenFile(options: WriteInvocationTokenFileOption
 	chmodSync(path, 0o600);
 	return path;
 }
+
+export function writeSecretFile(path: string, content: string): string {
+	const temp = `${path}.tmp`;
+	const fd = openSync(temp, "w", 0o600);
+	try {
+		writeSync(fd, content);
+		fsyncSync(fd);
+	} finally {
+		closeSync(fd);
+	}
+	chmodSync(temp, 0o600);
+	renameSync(temp, path);
+	chmodSync(path, 0o600);
+	return path;
+}

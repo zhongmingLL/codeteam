@@ -4,6 +4,7 @@ import type { ControlStore } from "../control/store.ts";
 import { newId } from "../control/stores/helpers.ts";
 import type { Run } from "../control/stores/types.ts";
 import { routeParallel } from "./route.ts";
+import { settleRunTerminal } from "./settle.ts";
 import type {
 	AgentExecutor,
 	DispatchDrainOptions,
@@ -11,10 +12,12 @@ import type {
 	DispatchEntryError,
 	DispatchRoute,
 	DispatchRunOutcome,
+	DispatchServiceHooks,
 	DispatchSettleInput,
 	GuideRunInput,
 	InterruptRunResult,
 } from "./types.ts";
+import { InterruptedExecutionError, RetryableExecutionError } from "./types.ts";
 
 const DEFAULT_MAX_ENTRIES = 100;
 const DEFAULT_QUEUE_CLAIM_TTL_MS = 5 * 60 * 1000;
@@ -37,22 +40,30 @@ function chainMetadataFor(entryIntent: unknown, fallback: Record<string, unknown
 	return { ...fallback, ...nested };
 }
 
-function isTerminal(run: Run): boolean {
-	return TERMINAL_STATUSES.has(run.status);
+function positiveAttempt(value: unknown): number {
+	const attempt = typeof value === "number" ? value : Number(value);
+	return Number.isSafeInteger(attempt) && attempt >= 1 ? attempt : 1;
 }
 
 export class DispatchService {
 	readonly store: ControlStore;
 	readonly executor: AgentExecutor;
 	private readonly clock: () => number;
+	private readonly hooks: DispatchServiceHooks;
 	private readonly controllers = new Map<string, AbortController>();
 	private draining: Promise<DispatchDrainResult> | null = null;
 	private dirty = false;
 
-	constructor(store: ControlStore, executor: AgentExecutor, clock: () => number = Date.now) {
+	constructor(
+		store: ControlStore,
+		executor: AgentExecutor,
+		clock: () => number = Date.now,
+		hooks: DispatchServiceHooks = {},
+	) {
 		this.store = store;
 		this.executor = executor;
 		this.clock = clock;
+		this.hooks = hooks;
 	}
 
 	requestDrain(): void {
@@ -91,6 +102,7 @@ export class DispatchService {
 			model: session.model,
 			modelFamily: session.modelFamily,
 			l0Revision: null,
+			attempt: positiveAttempt(chainMetadata.attempt),
 			chainMetadata,
 		};
 	}
@@ -179,55 +191,12 @@ export class DispatchService {
 	}
 
 	settleRun(runId: string, input: DispatchSettleInput): Run {
-		return this.store.transaction.run(() => {
-			const current = this.store.runs.get(runId);
-			if (!current) throw new ControlError("not_found", `run ${runId} not found`);
-			if (isTerminal(current)) return current;
-			if (current.status !== "running") {
-				throw new ControlError("invalid_state", `run ${runId} is ${current.status}`);
-			}
-			if (current.responseMessageId) {
-				const finalBody =
-					input.bodyMd ??
-					(input.status === "completed"
-						? ""
-						: `Execution ${input.status}${input.reason ? `: ${input.reason}` : ""}`);
-				this.store.messages.setBody(current.responseMessageId, finalBody);
-			}
-			this.store.runs.terminal(current.id, {
-				status: input.status,
-				usage: input.usage ?? null,
-			});
-			this.store.runs.appendEvent(current.id, "message", {
-				phase: "terminal",
-				status: input.status,
-				reason: input.reason ?? null,
-				responseMessageId: current.responseMessageId,
-			});
-			if (current.responseMessageId) {
-				this.store.messages.settleDispatchRef(current.sourceId, {
-					targetId: current.recipientProfileId,
-					statusMessageId: current.responseMessageId,
-					patch: {
-						status: input.status,
-						reason: input.reason ?? null,
-						settledAt: this.clock(),
-					},
-				});
-			}
-			this.store.audit.append({
-				actor: input.actorRef ?? "system:dispatch",
-				action: "run_terminal",
-				subject: `run:${current.id}`,
-				args: { status: input.status, reason: input.reason ?? null },
-			});
-			if (input.status !== "completed") {
-				for (const claim of this.store.handoffs.listActiveClaimsByRun(current.id)) {
-					this.store.handoffs.releaseClaim(claim.handoffId, claim.profileId, input.reason ?? input.status);
-				}
-			}
-			return this.store.runs.get(current.id)!;
-		});
+		const existing = this.store.runs.get(runId);
+		if (!existing) throw new ControlError("not_found", `run ${runId} not found`);
+		if (TERMINAL_STATUSES.has(existing.status)) return existing;
+		const result = settleRunTerminal(this.store, runId, input, this.clock);
+		if (result.changed) this.hooks.onRunTerminal?.(result.run, input);
+		return result.run;
 	}
 
 	private async drainLoop(options: DispatchDrainOptions): Promise<DispatchDrainResult> {
@@ -338,6 +307,7 @@ export class DispatchService {
 					model: route.model,
 					modelFamily: route.modelFamily,
 					l0Revision: route.l0Revision,
+					attempt: route.attempt,
 					responseBody: "",
 					chainMetadata: route.chainMetadata,
 				});
@@ -454,10 +424,12 @@ export class DispatchService {
 			};
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
+			const interrupted = error instanceof InterruptedExecutionError;
+			const retryable = error instanceof RetryableExecutionError;
 			const settled = this.settleRun(run.id, {
-				status: controller.signal.aborted ? "canceled" : "failed",
+				status: controller.signal.aborted ? "canceled" : interrupted ? "interrupted" : "failed",
 				bodyMd: `Execution ${controller.signal.aborted ? "canceled" : "failed"}: ${message}`,
-				reason: controller.signal.aborted ? "aborted" : "executor_failed",
+				reason: controller.signal.aborted ? "aborted" : interrupted || retryable ? error.code : "executor_failed",
 				actorRef: "system:dispatch",
 			});
 			return {
