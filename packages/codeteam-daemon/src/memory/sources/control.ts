@@ -10,7 +10,7 @@ import type {
 	ProvenanceTier,
 } from "../contract.ts";
 import { sha256Hex } from "../hash.ts";
-import { evaluateMemoryPath } from "../redaction.ts";
+import { evaluateMemoryPath, redactSecrets } from "../redaction.ts";
 
 export interface ControlEvidenceDocument {
 	readonly source: ControlEvidenceSourceRef;
@@ -297,7 +297,7 @@ export class ControlEvidenceReader {
 						table: "artifacts",
 						id,
 						taskId: text(row, "task_id"),
-						provenance: text(row, "provenance_json"),
+						provenance: redactSecrets(text(row, "provenance_json") ?? "").text,
 						artifactSha256: artifactSha,
 						contentIndexed: read.content !== null,
 					},
@@ -474,10 +474,12 @@ export class ControlEvidenceReader {
 					| { sha256?: string; path?: string }
 					| undefined;
 				if (!row) return { stale: true, reasons: ["source_missing"] };
-				if (!row.path || !existsSync(row.path)) return { stale: true, reasons: ["source_missing"] };
+				if (!row.path) return { stale: true, reasons: ["source_missing"] };
+				const decision = evaluateMemoryPath(row.path, { root: this.artifactRoot });
+				if (!decision.allowed) return { stale: true, reasons: ["source_missing"] };
 				let actual: string;
 				try {
-					actual = sha256Hex(readFileSync(row.path));
+					actual = sha256Hex(readFileSync(decision.absolutePath));
 				} catch {
 					return { stale: true, reasons: ["source_missing"] };
 				}

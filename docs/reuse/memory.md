@@ -79,10 +79,10 @@ updated: 2026-10-25
 - **读面**：`memory/recall.ts`（FTS/BM25 + short-query fallback + passage +
   source ref/drill-down + coverage/stale）、`memory/triggers.ts`（六 trigger）、
   `memory/digest.ts`（canonical session/run digest）、`memory/service.ts`。
-- **安全**：`memory/redaction.ts`（pattern+entropy secret scan、绝对前缀 deny、
-  出口二次脱敏）。
+- **安全**：`memory/redaction.ts`（pattern+entropy secret scan、high_entropy
+  按 `/` 分段 + sha 豁免、绝对前缀 deny、read/recall/digest 出口二次脱敏）。
 - **CLI**：`codeteam memory index|status|recall|read|digest|trigger`。
-- **测试**：8 个文件 / 36 个测试；daemon 全量 416 passed / 2 skipped。
+- **测试**：8 个文件 / 42 个测试；daemon 全量 422 passed / 2 skipped。
 - **与卡的差异**：v1 卡写“source_kind=file only”；W6a dispatch 明确要求
   task/artifact/review/verification/merge source refs，因此 v2 以
   `source_kind='control'` 做派生投影，control truth 仍在 W1/W5 canonical

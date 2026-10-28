@@ -50,12 +50,12 @@ evidence adapter。W6a 先把 **code evidence / source-ref 契约**和独立
   completion 的 kinds/query/context block 正确；只含 code evidence。证据：
   `memory-triggers.test.ts`。
 - [x] AC-7 secret redaction + path deny：pattern/entropy 命中 skip+audit；绝对
-  前缀 deny；出口二次脱敏。证据：`memory-redaction.test.ts`、
+  前缀 deny；read/recall/digest 出口二次脱敏。证据：`memory-redaction.test.ts`、
   `memory-index.test.ts`、`memory-recall.test.ts`。
 - [x] AC-8 session digest：run/session digest 有 task/events/reviews/
   verifications/merges + sourceRefs。证据：`memory-digest.test.ts`。
 - [x] AC-9 CLI 边界：`memory index/status/recall/read/digest/trigger` 可运行、
-  JSON 稳定。证据：`cli-memory.test.ts`。
+  JSON 稳定；recall/digest not-found 为 exit 0，调用方读 JSON `found`/`coverage`。证据：`cli-memory.test.ts`。
 - [x] AC-10 契约冻结：`contract.ts` 导出、计划文档 §3 与实现一致；W6b/W6c
   可直接 import。证据：`packages/codeteam-daemon/src/index.ts` 导出 +
   `0014` §3。
@@ -63,13 +63,33 @@ evidence adapter。W6a 先把 **code evidence / source-ref 契约**和独立
 ## Evidence
 
 - `npm --prefix packages/codeteam-daemon test`：60 files passed / 2 skipped；
-  416 tests passed / 2 skipped（2026-10-29，worktree `codeteam-w6a`）。
+  422 tests passed / 2 skipped（2026-10-29，worktree `codeteam-w6a`）。
 - `npx tsc --noEmit -p packages/codeteam-daemon/tsconfig.build.json`：通过。
 - `biome check`（memory src + tests + CLI wiring）：clean。
-- 新增测试：8 个文件、36 个测试（schema/redaction/index/control/recall/
+- 新增测试：8 个文件、42 个测试（schema/redaction/index/control/recall/
   triggers/digest/CLI）。
-- 独立 review：待墨墨（memory/reuse/真实路径）与砚砚（provenance/redaction）。
-- PR：待创建（分支 `feat/w6a-memory-evidence`，基线 `codeteam-work @ 6ac622ad0`）。
+- 独立 review：墨墨（memory/reuse/真实路径）与砚砚（provenance/redaction）均在 `aa78adcb8` 给出 approved-with-findings；P2/P3 修复后待复核新 HEAD。
+- PR：#62（`feat/w6a-memory-evidence` → `codeteam-work`，基线 `6ac622ad0`）。
+
+## Review follow-ups (2026-10-29)
+
+第一面（墨墨，memory/reuse/真实路径）与第二面（砚砚，provenance/redaction）均在
+`aa78adcb8` 给出 approved-with-findings；无 P1/blocker。
+
+- **P2 high_entropy 误报整篇 skip**：`redaction.ts` 改为按 `/` 分段逐段评估、
+  `-` 不参与 class 计数、`sha(1|256|512)?-<hex>` 显式豁免；新增真实串
+  RED→GREEN（F011 path、W5a report `sha256-<hex>`）。真实 repo index：
+  114 sources / 0 errors，原两篇 skip 文档均恢复索引。
+- **P2 digest 出口绕过 redaction**：`digest.ts` 对 `verifications[].command`、
+  `task.title`、`task.why` 套 `redactSecrets`；RED→GREEN。
+- **P3 isStale artifacts 未过 path policy**：统一 `evaluateMemoryPath`；新增测试。
+- **P3 digest 缺 `merges` 表守卫**：补 `hasTable`，缺表降级为空列表；新增测试。
+- **P3 metadata_json 存未扫描 provenance**：artifact `provenance_json` 写入前
+  redact；schema annex 注明 W7 surfacing 前必须再过 redact；新增断言。
+- **P3 digest rc=0 语义**：在 `0014` §7 与 schema annex 记录 W7 必须读 JSON
+  `found`/`coverage`，不得用 exit code 判断源存在。
+- **P3 keywords round-trip**：`keywords` 改用 U+001F 分隔，读取对 legacy
+  whitespace 回退；新增含空格 keyword 测试。
 
 ## Out of scope
 

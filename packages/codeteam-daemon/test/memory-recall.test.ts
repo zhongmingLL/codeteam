@@ -105,6 +105,19 @@ describe("memory recall", () => {
 		expect(decision.items.map((hit) => hit.anchor)).toEqual(["file:docs/decisions/001-independent-memory.md"]);
 	});
 
+	it("preserves multi-word keywords across index and read", () => {
+		const root = tempDir();
+		write(
+			root,
+			"docs/features/F003.md",
+			"---\ntitle: Keywords\ntags: [memory evidence, W6a]\n---\n\n# Keywords\n\nContent about keyword round-trip.\n",
+		);
+		const { recall } = indexed(root);
+		const read = recall.read("file:docs/features/F003.md");
+		if (!read.found) throw new Error("expected found");
+		expect(read.item.keywords).toContain("memory evidence");
+	});
+
 	it("returns an explicit empty result with indexed scope and no fake existence claim", () => {
 		const root = cleanRoot();
 		const { recall } = indexed(root);

@@ -107,8 +107,8 @@ export function buildSessionDigest(options: BuildDigestOptions): DigestResult {
 		task: task
 			? {
 					id: taskId ?? "",
-					title: text(task, "title") ?? "",
-					why: text(task, "why") ?? "",
+					title: redactSecrets(text(task, "title") ?? "").text,
+					why: redactSecrets(text(task, "why") ?? "").text,
 					status: text(task, "status") ?? "",
 				}
 			: null,
@@ -141,11 +141,12 @@ export function buildSessionDigest(options: BuildDigestOptions): DigestResult {
 		};
 	});
 
-	const reviewRows = taskId
-		? (database
-				.prepare("SELECT * FROM reviews WHERE task_id = ? ORDER BY created_at DESC LIMIT 20")
-				.all(taskId) as unknown as Row[])
-		: [];
+	const reviewRows =
+		taskId && reader.hasTable("reviews")
+			? (database
+					.prepare("SELECT * FROM reviews WHERE task_id = ? ORDER BY created_at DESC LIMIT 20")
+					.all(taskId) as unknown as Row[])
+			: [];
 	const reviews: SessionDigestReview[] = [];
 	const verifications: SessionDigestVerification[] = [];
 	const sourceRefs = new Set<string>();
@@ -184,23 +185,25 @@ export function buildSessionDigest(options: BuildDigestOptions): DigestResult {
 			for (const verification of verificationRows) {
 				const verificationId = text(verification, "id");
 				if (!verificationId) continue;
+				const command = text(verification, "command");
 				sourceRefs.add(`verification:${verificationId}`);
 				verifications.push({
 					id: verificationId,
 					findingId: text(verification, "finding_id") ?? "",
 					status: text(verification, "status") ?? "unknown",
 					headSha: text(verification, "head_sha") ?? "",
-					command: text(verification, "command"),
+					command: command ? redactSecrets(command).text : null,
 					exitCode: number(verification, "exit_code"),
 				});
 			}
 		}
 	}
-	const mergeRows = taskId
-		? (database
-				.prepare("SELECT * FROM merges WHERE task_id = ? ORDER BY created_at DESC LIMIT 20")
-				.all(taskId) as unknown as Row[])
-		: [];
+	const mergeRows =
+		taskId && reader.hasTable("merges")
+			? (database
+					.prepare("SELECT * FROM merges WHERE task_id = ? ORDER BY created_at DESC LIMIT 20")
+					.all(taskId) as unknown as Row[])
+			: [];
 	const merges: SessionDigestMerge[] = [];
 	for (const merge of mergeRows) {
 		const mergeId = text(merge, "id");

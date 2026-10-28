@@ -18,6 +18,7 @@ import type {
 import type { MemoryDatabase } from "./database.ts";
 import { MemoryError } from "./errors.ts";
 import { sha256Hex } from "./hash.ts";
+import { decodeKeywords } from "./keywords.ts";
 import { redactSecrets } from "./redaction.ts";
 import type { ControlEvidenceReader } from "./sources/control.ts";
 
@@ -145,7 +146,7 @@ function mapItem(row: EvidenceRow): EvidenceItem {
 		status: row.status,
 		title: row.title,
 		summary: row.summary,
-		keywords: (row.keywords ?? "").split(/\s+/).filter((entry) => entry !== ""),
+		keywords: decodeKeywords(row.keywords),
 		provenanceTier: row.provenance_tier ?? "derived",
 		source: mapSource(row),
 		drillDown: parseDrillDown(row.drill_down_json, row.source_kind, row.source_ref),

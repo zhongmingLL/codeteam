@@ -200,6 +200,9 @@ type RetrievalTrigger = "kickoff" | "design" | "impl" | "review" | "verify" | "m
 - v1 一个 memory DB 对应一个 workspace/collection；`anchor` 是 sourceRef 的单 workspace
   命名。多 workspace 需要 anchor 命名空间（未来 migration）；W6b/W6c 用 `sourceRef`
   而不是 `anchor` 做 join。
+- `keywords` 用 U+001F 分隔存储，保留含空格 keyword；读取对 legacy whitespace 回退。
+- `metadata_json` 是派生元数据；artifact `provenance_json` 写入前必须 redact；W7
+  surfacing 前必须再过 redact 或显式 raw 语义。
 
 Schema v2（相对 `docs/architecture/memory-schema.md` 的增量）：
 
@@ -281,6 +284,11 @@ coverage 标 `control_db_absent`。
 - `MemoryRecall.read(anchor)`：
   - 返回 item + passages + coverage；不存在 → `{ found:false, coverage }`。
   - 出口再次 redaction；`redacted: true` + pattern names。
+- `digest` 是第三个 redaction 出口：`verifications[].command`、`task.title`、
+  `task.why` 必须过 `redactSecrets`；digest 只读 canonical control 数据，不写
+  memory.db。
+- CLI `recall`/`digest` 的 not-found 是成功查询（exit 0）；调用方（W7）读 JSON
+  `coverage`/`found` 字段，不得用 exit code 判断源是否存在。
 - `MemoryService.retrieveForTrigger()`：
   - `buildTriggerRequest()` 组合 query/kinds；recall；生成有界 `contextBlock`
     （默认 ≤ 6000 chars，含 `sourceRef` 与标题，不塞全文）。
@@ -290,7 +298,9 @@ coverage 标 `control_db_absent`。
 
 - 内容级 secret 扫描：pattern + entropy。v1 命中**整条 source skip**（默认），
   可用 `--redact-secrets` 选择 redact 占位；两种都写 `index_errors`。
-- 出口 redaction：`read`/`recall` 返回前再扫一次，防旧索引/边缘漏网。
+- 出口 redaction：`read`/`recall`/`digest` 返回前再扫一次，防旧索引/边缘漏网。
+- `high_entropy` 候选按 `/` 分段逐段评估；`-` 不参与字符类计数；
+  `sha(1|256|512)?-<hex>` 显式豁免，避免 repo 路径/哈希引用误报。
 - 绝对前缀 deny：默认 `$HOME/.ssh`、`$HOME/.aws`、`$HOME/.gnupg`、
   `$HOME/.config`、`$HOME/.cat-cafe`、`$HOME/.codeteam/auth`、`/etc`、`/proc`、
   `/sys`、`/dev`；可用 `CODETEAM_MEMORY_DENY_PREFIXES`（`path.delimiter` 分隔）
@@ -320,7 +330,7 @@ coverage 标 `control_db_absent`。
 | AC-4 source ref + drill-down | 每个 hit 有 sourceRef + drillDown；read 按 anchor 返回 passages | recall/read 测试 |
 | AC-5 coverage/degraded/stale | 空结果带 `indexed_scope_only`；无索引/索引中/失败/control 缺失都有原因；source 变更标 stale | coverage 测试 |
 | AC-6 6 个 retrieval trigger | 六 trigger 的 kinds/query/context block 正确；只含 code evidence | trigger 测试 |
-| AC-7 secret redaction + path deny | pattern/entropy 命中 skip+audit；绝对前缀 deny；出口二次脱敏 | redaction 测试 |
+| AC-7 secret redaction + path deny | pattern/entropy 命中 skip+audit；绝对前缀 deny；read/recall/digest 出口二次脱敏 | redaction 测试 |
 | AC-8 session digest | run/session digest 有 task/events/reviews/merges + sourceRefs | digest 测试 |
 | AC-9 CLI 边界 | `memory index/status/recall/read/digest/trigger` 可运行、JSON 稳定 | CLI 测试 |
 | AC-10 契约冻结 | contract.ts 导出、计划文档 §3 与实现一致；W6b/W6c 可直接 import | 文档 + typecheck |

@@ -53,6 +53,20 @@ describe("secret scanning", () => {
 		expect(scanSecrets(uuid)).toHaveLength(0);
 	});
 
+	it("does not flag real repo paths, kebab slugs or sha256 references as high-entropy secrets", () => {
+		const kebab = "docs/reports/2026-10-28-w5d-runtime-lifecycle-managed-work";
+		const shaRef = `dev/api/models/revisions/sha256-${"a".repeat(64)}`;
+		const shortShaRef = `dev/api/models/revisions/sha256-${"b".repeat(32)}`;
+		expect(scanSecrets(kebab)).toHaveLength(0);
+		expect(scanSecrets(shaRef)).toHaveLength(0);
+		expect(scanSecrets(shortShaRef)).toHaveLength(0);
+	});
+
+	it("still detects a high-entropy secret embedded next to a path separator", () => {
+		const secret = "aB3dE5fG7hJ9kL2mN4pQ6rS8tU0vW1xY3zA5bC7dE9fG";
+		expect(scanSecrets(`prefix/${secret}`).map((finding) => finding.pattern)).toContain("high_entropy");
+	});
+
 	it("redacts a complete private key block including the body", () => {
 		const key = "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAsecretbody1234\n-----END OPENSSH PRIVATE KEY-----";
 		const result = redactSecrets(key);

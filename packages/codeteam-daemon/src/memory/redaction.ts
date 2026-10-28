@@ -93,7 +93,8 @@ function isHighEntropy(value: string): boolean {
 	if (value.length < 40) return false;
 	if (/^[0-9a-fA-F]+$/.test(value)) return false;
 	if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value)) return false;
-	const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[+/=_-]/].filter((regex) => regex.test(value)).length;
+	if (/^sha(?:1|256|512)?-[0-9a-fA-F]+$/i.test(value)) return false;
+	const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[+/=_]/].filter((regex) => regex.test(value)).length;
 	if (classes < 3) return false;
 	return entropy(value) >= 4.5;
 }
@@ -122,7 +123,10 @@ export function scanSecrets(text: string): SecretFinding[] {
 		if (start === undefined) continue;
 		const end = start + match[0].length;
 		if (overlaps(findings, start, end)) continue;
-		if (!isHighEntropy(match[0])) continue;
+		// Paths are not credentials: evaluate each slash-delimited segment so a
+		// long repo path cannot turn into one high-entropy token.
+		const segments = match[0].split("/");
+		if (!segments.some((segment) => isHighEntropy(segment))) continue;
 		findings.push({ pattern: "high_entropy", start, end });
 	}
 	return findings.sort((left, right) => left.start - right.start || left.end - right.end);

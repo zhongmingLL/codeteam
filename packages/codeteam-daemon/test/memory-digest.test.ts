@@ -238,6 +238,31 @@ describe("session digest", () => {
 		}
 	});
 
+	it("redacts verification commands and task text at the digest outlet", () => {
+		const dataDir = tempDir();
+		seed(dataDir);
+		const secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+		store!.database
+			.prepare("UPDATE verifications SET command = ? WHERE id = 'verify-1'")
+			.run(`NPM_TOKEN=${secret} pnpm test`);
+		store!.database
+			.prepare("UPDATE tasks SET title = ?, why = ? WHERE id = 'task-1'")
+			.run(`Task ${secret}`, `Why ${secret}`);
+		const reader = ControlEvidenceReader.open({ path: join(dataDir, "control.db") });
+		try {
+			const result = buildSessionDigest({ reader, runId: "run-1" });
+			if (!result.found) throw new Error("expected digest");
+			expect(result.digest.verifications[0]?.command).toContain("[REDACTED:github_token]");
+			expect(result.digest.verifications[0]?.command).not.toContain(secret);
+			expect(result.digest.task?.title).toContain("[REDACTED:github_token]");
+			expect(result.digest.task?.title).not.toContain(secret);
+			expect(result.digest.task?.why).toContain("[REDACTED:github_token]");
+			expect(result.digest.task?.why).not.toContain(secret);
+		} finally {
+			reader?.close();
+		}
+	});
+
 	it("resolves a session to its latest run and bounds the event list", () => {
 		const dataDir = tempDir();
 		seed(dataDir);
@@ -248,6 +273,20 @@ describe("session digest", () => {
 			expect(result.digest.runId).toBe("run-1");
 			expect(result.digest.events).toHaveLength(1);
 			expect(result.digest.eventCounts).toMatchObject({ message: 1, tool_call: 1, error: 1 });
+		} finally {
+			reader?.close();
+		}
+	});
+
+	it("degrades when the merges table is absent", () => {
+		const dataDir = tempDir();
+		seed(dataDir);
+		store!.database.exec("DROP TABLE merges");
+		const reader = ControlEvidenceReader.open({ path: join(dataDir, "control.db") });
+		try {
+			const result = buildSessionDigest({ reader, runId: "run-1" });
+			if (!result.found) throw new Error("expected digest");
+			expect(result.digest.merges).toEqual([]);
 		} finally {
 			reader?.close();
 		}

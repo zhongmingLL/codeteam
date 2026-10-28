@@ -24,7 +24,9 @@ related_review: reuse-review/memory.md
 - 写者：`codeteam memory index` 独立进程单写者；`memory.db.lock` 记录 PID +
   startedAt；daemon 事件循环不跑大扫描/FTS 重建。
 - 内容安全：path allowlist + 绝对前缀 hard deny + 内容级 secret 扫描
-  （pattern/entropy）；命中 skip/redact + `index_errors`；出口再脱敏一次。
+  （pattern/entropy）；命中 skip/redact + `index_errors`；`read`/`recall`/`digest`
+  出口再脱敏一次。`metadata_json` 是派生元数据；artifact `provenance_json` 写入前
+  redact，W7 read API surfacing 前必须再过 redact 或显式 raw 语义。
 
 > **W6a v2 delta（2026-10-29）。** 在 2026-10-25 approved v1 上做 additive 扩展：
 > ① `source_kind` 增加 `control`，承载 task/artifact/review/verification/merge
@@ -64,7 +66,7 @@ evidence_items(
   )),
   title TEXT NOT NULL,
   summary TEXT,
-  keywords TEXT,
+  keywords TEXT,                        -- U+001F separated; legacy whitespace accepted on read
   content TEXT,
   source_kind TEXT NOT NULL CHECK (source_kind IN ('file','control')),
   source_ref TEXT NOT NULL,              -- file:<repo-relative-path> | task:<id> | artifact:<id> | ...
@@ -165,11 +167,16 @@ CREATE INDEX idx_index_errors_run ON index_errors(run_id);
   `.env*|*.pem|*.key|*.p12|*.pfx|id_rsa*|credentials*|secrets*`。
 - 内容级 secret 扫描：pattern + entropy；命中整条 skip 或 redact 占位（默认
   skip），`index_errors.kind='secret_redacted'`；detail 只记 pattern 名，不记值；
-  `memory_read`/`memory_recall` 出口再脱敏一次。
+  `memory_read`/`memory_recall`/`memory_digest` 出口再脱敏一次；artifact
+  `provenance_json` 进 `metadata_json` 前也 redact。
 - 换 embedding model = 全量重嵌；`passage_vectors.model`/`model_revision` 变更时
   先清空 vector 再重建，不混模型。v1 不写 vector，不伪造 semantic 命中。
 - `memory_read` not_found 必须带 `coverage=indexed_scope_only` + stale 标志；
   索引内不存在 ≠ 源不存在。
+- `keywords` 用 U+001F 分隔以保留含空格的 keyword；读取对 legacy whitespace 回退。
+- `digest` 是即时 canonical 投影，不写 memory.db；其 `verifications[].command`、
+  `task.title`/`why` 同属 redaction 出口。CLI `recall`/`digest` 的 not-found 是
+  成功查询（exit 0），调用方必须读 JSON `coverage`/`found`。
 - FTS 零命中 + stale 同时显示；CLI/MCP 文案两条都保留。
 
 [宪宪/deepseek-flash🐾]

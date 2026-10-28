@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -118,6 +119,15 @@ function seedControl(dataDir: string): void {
 		provenance: { sourceMessageId: "msg-2" },
 		createdAt: NOW + 1,
 	});
+	store.artifacts.put({
+		id: "artifact-provenance",
+		taskId: "task-1",
+		kind: "log",
+		mediaType: "text/plain",
+		content: Buffer.from("benign provenance fixture\n"),
+		provenance: { sourceMessageId: "msg-3", token: "ghp_abcdefghijklmnopqrstuvwxyz0123456789" },
+		createdAt: NOW + 2,
+	});
 	store.database.exec("PRAGMA foreign_keys = OFF");
 	store.database
 		.prepare(
@@ -208,7 +218,7 @@ describe("control evidence adapter", () => {
 		expect(summary.controlTables).toEqual(
 			expect.arrayContaining(["tasks", "artifacts", "reviews", "findings", "verifications", "merges"]),
 		);
-		expect(summary.counts.control).toBe(5);
+		expect(summary.counts.control).toBe(6);
 		const audit = memory.database
 			.prepare("SELECT source_path, detail FROM index_errors ORDER BY source_path")
 			.all() as unknown as { source_path: string; detail: string }[];
@@ -228,6 +238,11 @@ describe("control evidence adapter", () => {
 		const byAnchor = new Map(rows.map((row) => [row.anchor, row]));
 		expect(byAnchor.get("task:task-1")).toMatchObject({ kind: "task", status: "done", title: "W6a task" });
 		expect(byAnchor.get("artifact:artifact-1")?.content).toContain("All 42 tests pass");
+		const provenanceMetadata = memory.database
+			.prepare("SELECT metadata_json FROM evidence_items WHERE anchor = ?")
+			.get("artifact:artifact-provenance") as { metadata_json: string };
+		expect(provenanceMetadata.metadata_json).not.toContain("ghp_");
+		expect(provenanceMetadata.metadata_json).toContain("[REDACTED:github_token]");
 		expect(byAnchor.get("review:review-1")?.content).toContain("Secret scanner must skip values");
 		expect(byAnchor.get("verification:verify-1")?.content).toContain("pnpm test memory");
 		expect(byAnchor.get("merge:merge-1")?.content).toContain(MERGE);
@@ -260,6 +275,35 @@ describe("control evidence adapter", () => {
 				stale: true,
 				reasons: ["source_missing"],
 			});
+		} finally {
+			reader!.close();
+		}
+	});
+
+	it("does not read an artifact outside the artifact root during stale checks", () => {
+		const dataDir = tempDir();
+		seedControl(dataDir);
+		const outside = tempDir();
+		const outsidePath = join(outside, "outside.txt");
+		writeFileSync(outsidePath, "outside");
+		const sha = createHash("sha256").update("outside").digest("hex");
+		store!.database
+			.prepare(
+				"INSERT INTO artifacts (id, task_id, kind, sha256, path, media_type, bytes, provenance_json, created_at) VALUES (?, ?, 'log', ?, ?, 'text/plain', 7, '{}', ?)",
+			)
+			.run("artifact-outside", "task-1", sha, outsidePath, NOW);
+		const reader = ControlEvidenceReader.open({ path: join(dataDir, "control.db") });
+		try {
+			expect(
+				reader!.isStale({
+					kind: "control",
+					ref: "artifact:artifact-outside",
+					table: "artifacts",
+					id: "artifact-outside",
+					sha256: sha,
+					updatedAt: NOW,
+				}),
+			).toEqual({ stale: true, reasons: ["source_missing"] });
 		} finally {
 			reader!.close();
 		}

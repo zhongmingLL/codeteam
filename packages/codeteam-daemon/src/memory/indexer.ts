@@ -6,6 +6,7 @@ import type { EvidenceSourceRef } from "./contract.ts";
 import { type MemoryDatabase, resolveMemoryMaxFileBytes } from "./database.ts";
 import { MemoryError } from "./errors.ts";
 import { sha256Hex } from "./hash.ts";
+import { encodeKeywords } from "./keywords.ts";
 import { MemoryIndexLock, memoryLockPath } from "./lock.ts";
 import { redactSecrets, scanSecrets } from "./redaction.ts";
 import { type ControlEvidenceDocument, ControlEvidenceReader } from "./sources/control.ts";
@@ -176,7 +177,7 @@ export class MemoryIndexer {
 							document.status,
 							document.title,
 							document.summary,
-							document.keywords.join(" "),
+							encodeKeywords(document.keywords),
 							document.content,
 							document.source.kind,
 							document.source.ref,
