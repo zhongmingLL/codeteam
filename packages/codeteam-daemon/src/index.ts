@@ -114,6 +114,19 @@ export type {
 export { type InstallationIdentity, resolveInstallation } from "./installation.ts";
 export * from "./lifecycle/index.ts";
 export * from "./managed-work/index.ts";
+export * from "./memory/contract.ts";
+export { type MemoryDatabase, openMemoryDatabase, resolveMemoryDatabasePath } from "./memory/database.ts";
+export { buildSessionDigest } from "./memory/digest.ts";
+export { MemoryError, type MemoryErrorCode } from "./memory/errors.ts";
+export { type IndexRunSummary, MemoryIndexer, type MemoryIndexOptions } from "./memory/indexer.ts";
+export { MemoryRecall, type MemoryRecallOptions } from "./memory/recall.ts";
+export { MemoryService } from "./memory/service.ts";
+export {
+	buildTriggerRequest,
+	renderTriggerContext,
+	retrieveForTrigger,
+	triggerKinds,
+} from "./memory/triggers.ts";
 export { type MergeExecuteInput, type MergeExecuteResult, MergeExecutor } from "./merge/executor.ts";
 export { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
 export {
