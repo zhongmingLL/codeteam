@@ -1,9 +1,9 @@
 ---
 feature_ids: [codeteam/F011]
 title: "F011: W5d daemon lifecycle / deployment wait / managed work"
-status: done
+status: in_review
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
+reviewers: [砚砚 (GLM 5.3 Flash), 烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
 ---
@@ -68,7 +68,7 @@ passing tests 冒充。
 - 未完成：W7 HTTP/Console、W8 revert connector；relaunch CLI 的 external
   start；W6 episode store。不得用本 slice 的 tests 冒充。
 
-## Close record（2026-10-28）
+## Merge record / post-merge review（2026-10-28）
 
 - PR #56 squash merged at `168e67dd0`（reviewed HEAD
   `dfb872d9c36c62e476f2e11fcfd3d2f37575e1f1`，base `7adc30ee4`）。
@@ -76,13 +76,15 @@ passing tests 冒充。
   `0001793202850007-003779`，2×P2 + 3×P3 全闭合）；墨墨
   SOP/process/Product approved @ `dfb872d9c`（msg
   `0001793202985338-003781`，无 P1/P2）。CI 4/4。
+- **post-merge review pending**：operator 已把烁烁拉入工作 thread，其
+  W5/session-interface lane（lifecycle / boot ledger / observation /
+  recovery）正在对已合入代码复核，verdict 未出。此前“routableNotJoined、
+  由砚砚合票覆盖”的表述已作废。
+- 状态口径：**代码已合入 ≠ W5d 已完成独立复核**。烁烁无 P1/P2 后本
+  feature 才转 `done`；若报 P1/P2，保持 `in_review` 并开 follow-up fix
+  PR；P3/备忘进 residual。
 - Post-merge acceptance：`build:offline` 后 daemon 包 52 files passed
   + 2 skipped，378 tests passed + 2 skipped。
-- 烁烁 W5/session-interface lane：本 thread 中 `cat-u12wt5ln` 为
-  `routableNotJoined`，无法投递；砚砚的 code/security review 实质覆盖
-  同一 focus（lifecycle / boot ledger / observation / recovery），以
-  reviewer 合票方式消费，不再另开 lane。若后续需要独立 session-interface
-  复核，由 operator 另派。
 
 ## Out of scope
 

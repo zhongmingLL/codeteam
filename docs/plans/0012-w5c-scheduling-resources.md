@@ -340,5 +340,7 @@ W5d 必须重新读 `0004` §W5、`docs/reuse/managed-work.md`、
   墨墨 SOP/process/Product approved（msg `0001793199744633-003740-f7c64992`）。
 - CI 4/4；post-merge acceptance 47 files passed + 2 skipped，349 tests
   passed + 2 skipped。
-- W5c core closed；W5d 仍为 F011/planned，不得由本计划 evidence 冒充完成。
+- W5c core closed；W5d 见 F011/`0013`（已合入 `168e67dd0`，post-merge
+  W5/session-interface review 未出 verdict），不得由本计划 evidence 冒充，
+  也不把 W5d 合入算作本计划完成。
 
