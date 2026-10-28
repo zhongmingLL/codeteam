@@ -1,6 +1,7 @@
 export type DaemonErrorCode =
 	| "data_dir_missing"
 	| "invalid_installation_root"
+	| "invalid_deployment_id"
 	| "already_running"
 	| "listen_failed"
 	| "ledger_corrupt"

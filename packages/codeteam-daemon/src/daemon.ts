@@ -10,6 +10,7 @@ import { type DaemonState, type DaemonStateFile, writeStateFile } from "./state.
 export interface StartDaemonOptions {
 	installationRoot: string;
 	dataDir?: string;
+	deploymentId?: string;
 	runningRevision: string;
 	services?: string[];
 	port?: number;
@@ -18,6 +19,7 @@ export interface StartDaemonOptions {
 export interface DaemonBoot {
 	bootId: string;
 	bootSequence: number;
+	deploymentId: string;
 	installationId: string;
 	runningRevision: string;
 }
@@ -25,9 +27,26 @@ export interface DaemonBoot {
 export interface DaemonHealth {
 	status: DaemonState;
 	bootId: string;
+	bootSequence: number;
+	deploymentId: string;
+	pid: number;
 	installationId: string;
 	runningRevision: string;
 	services: string[];
+	startedAt: string;
+}
+
+const DEPLOYMENT_ID = /^[a-z][a-z0-9._-]{0,63}$/;
+
+function validateDeploymentId(value: string | undefined): string {
+	const deploymentId = value ?? process.env.CODETEAM_DEPLOYMENT_ID ?? "local";
+	if (!DEPLOYMENT_ID.test(deploymentId)) {
+		throw new DaemonError(
+			"invalid_deployment_id",
+			`deploymentId must match ${DEPLOYMENT_ID.source}: ${deploymentId}`,
+		);
+	}
+	return deploymentId;
 }
 
 export interface DaemonHandle {
@@ -42,6 +61,7 @@ export interface DaemonHandle {
 export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHandle> {
 	const paths = resolveDaemonPaths(options.dataDir);
 	const installation = resolveInstallation(options.installationRoot);
+	const deploymentId = validateDeploymentId(options.deploymentId);
 	const bootId = randomUUID();
 	const bootSequence = nextBootSequence(paths.ledgerFile);
 	const declaredServices = [...(options.services ?? [])];
@@ -52,6 +72,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 
 	const stateSnapshot = (): DaemonStateFile => ({
 		schemaVersion: 1,
+		deploymentId,
 		installationId: installation.installationId,
 		installationRoot: installation.realRoot,
 		pid: process.pid,
@@ -65,25 +86,35 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		updatedAt: new Date().toISOString(),
 	});
 	const persist = (): void => writeStateFile(paths.stateFile, stateSnapshot());
-	const record = (event: Parameters<typeof appendBootRecord>[1]["event"], detail?: string): void => {
+	const record = (
+		event: Parameters<typeof appendBootRecord>[1]["event"],
+		detail?: string,
+		exitKind?: "clean" | "startup_failed",
+	): void => {
 		appendBootRecord(paths.ledgerFile, {
 			schemaVersion: 1,
 			bootId,
 			bootSequence,
+			deploymentId,
 			installationId: installation.installationId,
 			runningRevision: options.runningRevision,
 			event,
 			recordedAt: new Date().toISOString(),
 			detail,
+			exitKind,
 		});
 	};
 
 	const health = (): DaemonHealth => ({
 		status: state,
 		bootId,
+		bootSequence,
+		deploymentId,
+		pid: process.pid,
 		installationId: installation.installationId,
 		runningRevision: options.runningRevision,
 		services: [...declaredServices],
+		startedAt,
 	});
 
 	const fence = acquireFence(paths.lockFile, bootId);
@@ -119,7 +150,8 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	} catch (error) {
 		state = "failed";
 		persist();
-		record("failed", error instanceof Error ? error.message : String(error));
+		record("failed", error instanceof Error ? error.message : String(error), "startup_failed");
+		record("exited", "startup_failed", "startup_failed");
 		releaseFence(paths.lockFile, bootId);
 		throw new DaemonError(
 			"listen_failed",
@@ -165,6 +197,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 			state = "stopped";
 			persist();
 			record("stopped");
+			record("exited", "clean", "clean");
 			releaseFence(paths.lockFile, bootId);
 		});
 		return stopPromise;
@@ -174,6 +207,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		boot: {
 			bootId,
 			bootSequence,
+			deploymentId,
 			installationId: installation.installationId,
 			runningRevision: options.runningRevision,
 		},

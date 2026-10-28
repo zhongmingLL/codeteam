@@ -95,6 +95,7 @@ export {
 	type StartDaemonOptions,
 	startDaemon,
 } from "./daemon.ts";
+export * from "./deployment-wait/index.ts";
 export * from "./dispatch/index.ts";
 export { DaemonError, type DaemonErrorCode } from "./errors.ts";
 export { acquireFence, type FenceRecord, isProcessAlive, readFence, releaseFence } from "./fence.ts";
@@ -111,6 +112,8 @@ export type {
 	RiskLane,
 } from "./gates/types.ts";
 export { type InstallationIdentity, resolveInstallation } from "./installation.ts";
+export * from "./lifecycle/index.ts";
+export * from "./managed-work/index.ts";
 export { type MergeExecuteInput, type MergeExecuteResult, MergeExecutor } from "./merge/executor.ts";
 export { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
 export {

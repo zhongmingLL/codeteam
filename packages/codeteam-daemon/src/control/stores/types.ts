@@ -912,6 +912,24 @@ export interface WorkRunBinding {
 	boundAt: number;
 }
 
+export type ManagedWorkRunPreflight =
+	| { kind: "unmanaged"; reason: "not_work" | "not_primary_implementer" | "no_admission" }
+	| {
+			kind: "managed";
+			workId: string;
+			attemptId: string;
+			executorProfileId: string | null;
+			matchesRequested: boolean;
+	  }
+	| {
+			kind: "conflict";
+			workId: string;
+			attemptId: string | null;
+			executorProfileId: string | null;
+			requestedProfileId: string;
+			reason: "executor_conflict" | "partial";
+	  };
+
 export interface WorkTaskBinding {
 	taskId: string;
 	workId: string;
