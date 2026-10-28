@@ -1,7 +1,7 @@
 ---
 title: "W5b RPC Worker Runtime 验收报告"
 doc_kind: report
-status: draft
+status: closed
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -171,4 +171,19 @@ skip，CI 不依赖。真实 pi 进程链已由 mock-provider E2E 覆盖。
 - 烁烁：A2A/session/worker 语义、sticky/re-attach、worker lifecycle。
 - 砚砚：code/security、token/policy/socket、crash/drain 边界。
 - Feature close 的愿景守护另找既非作者也非 reviewer 的猫。
+
+## 合并与 close（2026-10-28）
+
+- PR #53 squash merged into `codeteam-work` at
+  `aeb1bf834094975963b6f5bc4626f780430a3ac3`; reviewed HEAD
+  `028785a137b0a1b9c0603332acbde3051e691641`; base `c30f9aafb`。
+  Squashed tree 与 reviewed tree 同为 `8ff2cb656…`，kernel packages 零 diff。
+- Reviews: 烁烁 approved `0001793195829430-003692-995023f1`; 砚砚 approved
+  `0001793195864326-003694-85321350`; both cover final HEAD, no open P1/P2.
+- Vision guard: 墨墨（non-author, non-reviewer）approved
+  `0001793196631830-003697-9e8006eb`; independently reverified tree hash,
+  daemon 316+2, W5b 25+1, and Biome.
+- Post-merge acceptance on the merged tree: 40 files passed + 2 skipped,
+  316 tests passed + 2 skipped; W5b targeted 25+1; PR CI 4/4 green
+  (run 40700930998).
 
