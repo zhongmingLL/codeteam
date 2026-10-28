@@ -30,6 +30,7 @@ import { StageStore } from "./stores/stages.ts";
 import { TaskStore } from "./stores/tasks.ts";
 import { ThreadEventStore } from "./stores/thread-events.ts";
 import { ThreadStore } from "./stores/threads.ts";
+import { ToolUsageStore } from "./stores/tool-usage.ts";
 import type {
 	CutoverQueueEntryInput,
 	CutoverQueueEntryResult,
@@ -65,6 +66,7 @@ export class ControlStore {
 	readonly tasks: TaskStore;
 	readonly stages: StageStore;
 	readonly runs: RunStore;
+	readonly toolUsage: ToolUsageStore;
 	readonly threadEvents: ThreadEventStore;
 	readonly credentials: InvocationCredentialStore;
 	readonly workers: WorkerStore;
@@ -102,6 +104,7 @@ export class ControlStore {
 		this.tasks = new TaskStore(control.database, this.transaction, clock);
 		this.stages = new StageStore(control.database, this.transaction, clock);
 		this.runs = new RunStore(control.database, this.transaction, clock);
+		this.toolUsage = new ToolUsageStore(control.database, this.transaction, clock);
 		this.threadEvents = new ThreadEventStore(control.database, this.transaction, clock);
 		this.credentials = new InvocationCredentialStore(control.database, this.transaction, clock);
 		this.workers = new WorkerStore(control.database, this.transaction, clock);

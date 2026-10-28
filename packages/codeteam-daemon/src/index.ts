@@ -115,6 +115,7 @@ export { type InstallationIdentity, resolveInstallation } from "./installation.t
 export * from "./lifecycle/index.ts";
 export * from "./managed-work/index.ts";
 export { type MergeExecuteInput, type MergeExecuteResult, MergeExecutor } from "./merge/executor.ts";
+export * from "./observability/index.ts";
 export { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
 export {
 	assertAllowedCwd,

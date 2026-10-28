@@ -68,6 +68,7 @@ export { StageStore } from "./stores/stages.ts";
 export { TaskStore } from "./stores/tasks.ts";
 export { ThreadEventStore } from "./stores/thread-events.ts";
 export { ThreadStore } from "./stores/threads.ts";
+export { ToolUsageStore } from "./stores/tool-usage.ts";
 export type * from "./stores/types.ts";
 export { WaitStore } from "./stores/waits.ts";
 export { WorkAdmissionStore } from "./stores/work-admissions.ts";

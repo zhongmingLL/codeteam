@@ -46,6 +46,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0004-w5-w8-scale-product.md`](0004-w5-w8-scale-product.md) | W5 调度/RPC、W6 memory/eval、W7 Console、W8 GitHub | 烁烁（W5）+ 墨墨（W7）+ 砚砚（W8） |
 | [`0010-w5a-a2a-dispatch-custody.md`](0010-w5a-a2a-dispatch-custody.md) | W5a A2A 投递与球权内核实施计划、投影契约、AC 映射 | 烁烁（A2A/session/custody）+ 砚砚（code/security） |
 | [`0011-w5b-rpc-worker-runtime.md`](0011-w5b-rpc-worker-runtime.md) | W5b RPC worker harness、worker registry/sticky/re-attach、失败重试与 AC 映射 | 烁烁（A2A/session/worker）+ 砚砚（code/security） |
+| [`0015-w6c-observability-trajectory.md`](0015-w6c-observability-trajectory.md) | W6c observability/trajectory、F150/F130 parity、redaction/trace/log 契约冻结、AC 映射 | 砚砚（security/redaction/provenance）+ 墨墨（reuse/真实路径/可解释性） |
 
 ## W0–W8 一览
 

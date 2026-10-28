@@ -5,6 +5,7 @@ import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import type { AgentExecutionResult, AgentExecutor, DispatchExecutionRequest } from "../dispatch/types.ts";
 import { InterruptedExecutionError, RetryableExecutionError } from "../dispatch/types.ts";
+import type { ObservabilityRuntime } from "../observability/runtime.ts";
 import { WorkerEventSink } from "./event-sink.ts";
 import { type WorkerHarness, WorkerStartError } from "./harness.ts";
 import { buildWorkerPrompt } from "./prompt.ts";
@@ -16,6 +17,7 @@ export interface RpcAgentExecutorOptions {
 	readonly harness: WorkerHarness;
 	readonly dataDir: string;
 	readonly clock?: () => number;
+	readonly observability?: ObservabilityRuntime | null;
 }
 
 export class RpcAgentExecutor implements AgentExecutor {
@@ -23,12 +25,14 @@ export class RpcAgentExecutor implements AgentExecutor {
 	readonly harness: WorkerHarness;
 	readonly dataDir: string;
 	private readonly clock: () => number;
+	private readonly observability: ObservabilityRuntime | null;
 
 	constructor(options: RpcAgentExecutorOptions) {
 		this.store = options.store;
 		this.harness = options.harness;
 		this.dataDir = options.dataDir;
 		this.clock = options.clock ?? Date.now;
+		this.observability = options.observability ?? null;
 	}
 
 	async execute(request: DispatchExecutionRequest, signal: AbortSignal): Promise<AgentExecutionResult> {
@@ -69,7 +73,14 @@ export class RpcAgentExecutor implements AgentExecutor {
 			tokenDir,
 			toolPolicy: { allowedTools: [...allowedToolsForRole(session.role)] },
 		});
-		const sink = new WorkerEventSink(this.store, run.id);
+		const runSpan = this.observability?.tracer.startRunSpan(run) ?? null;
+		const startedAt = this.clock();
+		const sink = new WorkerEventSink(this.store, run.id, {
+			profileId: run.recipientProfileId,
+			toolUsage: this.store.toolUsage,
+			observability: this.observability,
+			parentSpan: runSpan?.context,
+		});
 		const off = handle.connection.onEvent((event) => sink.handle(event));
 		try {
 			if (ensured.degradedReason) {
@@ -106,6 +117,14 @@ export class RpcAgentExecutor implements AgentExecutor {
 					args: { writeErrors: sink.eventWriteErrors },
 				});
 			}
+			if (sink.toolUsageWriteErrors > 0) {
+				this.store.audit.append({
+					actor: "system:worker",
+					action: "tool_usage_write_degraded",
+					subject: `run:${run.id}`,
+					args: { writeErrors: sink.toolUsageWriteErrors },
+				});
+			}
 			const latest = this.store.sessions.get(session.id);
 			if (latest) {
 				this.store.sessions.updateRuntimeBinding(session.id, {
@@ -113,12 +132,19 @@ export class RpcAgentExecutor implements AgentExecutor {
 					lastUsage: summary.usage,
 				});
 			}
+			runSpan?.setAttribute("run.execution", "completed");
+			runSpan?.setStatus("ok");
+			this.recordRunMetrics(run, "executed", startedAt);
 			return {
 				bodyMd,
 				usage: summary.usage,
 				toolCalls: summary.toolCalls,
 			};
 		} catch (error) {
+			const code = executionErrorCode(error);
+			runSpan?.setAttribute("run.execution", "failed");
+			runSpan?.setStatus("error", code);
+			this.recordRunMetrics(run, "failed", startedAt);
 			if (signal.aborted) throw error;
 			if (error instanceof RpcProcessExitError) {
 				throw new InterruptedExecutionError("worker_crashed", error.message, { cause: error });
@@ -135,6 +161,8 @@ export class RpcAgentExecutor implements AgentExecutor {
 			throw error;
 		} finally {
 			off();
+			sink.close();
+			if (runSpan && !runSpan.isEnded()) runSpan.end();
 			if (minted.tokenPath) {
 				try {
 					unlinkSync(minted.tokenPath);
@@ -150,4 +178,34 @@ export class RpcAgentExecutor implements AgentExecutor {
 			});
 		}
 	}
+
+	private recordRunMetrics(
+		run: DispatchExecutionRequest["run"],
+		status: "executed" | "failed",
+		startedAt: number,
+	): void {
+		const metrics = this.observability?.metrics;
+		if (!metrics) return;
+		metrics
+			.counter("codeteam_run_executions_total", {
+				role: run.role,
+				provider: run.provider,
+				model: run.model,
+				status,
+			})
+			.add();
+		metrics
+			.histogram("codeteam_run_execution_duration_ms", {
+				role: run.role,
+				provider: run.provider,
+				model: run.model,
+			})
+			.observe(Math.max(0, this.clock() - startedAt));
+	}
+}
+
+function executionErrorCode(error: unknown): string {
+	if (error instanceof InterruptedExecutionError || error instanceof RetryableExecutionError) return error.code;
+	if (error instanceof ControlError) return error.code;
+	return "execution_error";
 }
