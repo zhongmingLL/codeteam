@@ -60,6 +60,26 @@ model family）、拿到的上下文是否盲、finding 是否能被可执行证
   墨墨 eval/可理解性 Approved。15 条 inline findings 全部处置并 resolve。
 - 合入：PR #43 merge `b66b8be43cc87cc2ba53cc5d5c971aeb2b14885`（`codeteam-work`）；
   CI 4/4 pass。F006 完成状态仍留 operator/vision close，不把 merge 当 accepted。
+- 独立愿景守护（烁烁，非作者非 reviewer）：有条件放行——唯一条件为 F006
+  follow-up ledger 固化 residual；条件已折入下方 ledger。
+
+### Follow-up ledger（W4）
+
+| # | 项 | 去向 |
+|---|---|---|
+| 1 | envelope free-text 故意子串嵌入（二阶对抗；等值匹配防不住；主作弊通道已由 risk 派生封死） | W4 test vectors / W5–W7 运行时隔离 |
+| 2 | 盲评的「reviewer 实际没看过 transcript」只能靠声明 + free-text 精确匹配；结构构造不冒充盲评自证 | W5/W7 独立 session/上下文载体 |
+| 3 | `not_current` / `not_executable` disposition 未落 durable audit | W4/W5 audit |
+| 4 | live corpus 接线：`sandbox=true` 且 seeded `decided>0` 才允许 survival 计入门槛；fixture 不能下模型家族结论 | W4/W6 live corpus（n≥20 重跑） |
+| 5 | blocked 到期扫描 / 升级 human 的调度未接（已持久化 `blockedExpiresAt` + `isBlockedExpired`） | W4 gate / W5 scheduler |
+| 6 | 高风险 human gate 只是 policy 输出，不是 approval/merge 执行器 | W4/W7 approval 接线 |
+| 7 | verify 只接受当前 worktree HEAD；不自动创建 disposable verification checkout | W4/W5 disposable verification worktree |
+| 8 | migration 007/008 不回填旧 reviews 的 base/profile/round/envelope（旧数据 legacy 读，freshness fail closed） | 需要时单独 migration；不猜测回填 |
+| 9 | 新 worktree 初始缺 generated model data（根级 build/tsc 需 hydrate/copy pinned 基线） | bootstrap 流程；本次已复验 |
+
+### close 条件
+
+- [ ] operator 确认 F006 accepted/done：「F006（W3 独立 Review 证据链）：代码合入并通过两轮独立 review（砚砚 code/security/falsifier Approved @ `c0c7a6c3`，墨墨 eval/可理解性 Approved，15/15 resolved，CI 4/4）；0003 §W3 验收逐条达成；eval 为 synthetic fixture smoke（n=10，不作模型家族结论，live 挂 W4/W6 n≥20）；盲评为结构构造 + 泄漏检查，运行时隔离由 W5/W7 加强；已知缺口与 residual 按 F006 follow-up ledger 挂账。」
 
 ## Timeline
 
