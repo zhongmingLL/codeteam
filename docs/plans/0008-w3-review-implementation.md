@@ -86,7 +86,8 @@ source: "docs/plans/0003-w3-w4-review-sop.md §W3"
 
 - `packages/codeteam-daemon/test/fixtures/review-corpus/cases.json`：5 clean + 5 seeded。
 - 每个 case 有 glm / qwen 两个 reviewer family 的 fixture observation。
-- harness 用真实 verifier policy 执行每条 finding 的 falsifier，计算 FP / recall / survival。
+- harness 用真实 verifier policy 执行每条 finding 的 falsifier；survival 只计
+  seeded findings，clean confirmed FP 不进 survival，避免指标互相污染。
 - 预注册门槛：clean FP ≤ 20%、seeded recall ≥ 60%、survival ≥ 80%。
 - n=10 cases（20 family-case observations）只作 smoke；报告明确不能据此下模型家族结论。
 

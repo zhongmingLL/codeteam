@@ -169,7 +169,7 @@ interface Finding {
 - 首轮独立 review Changes Requested（15 findings）；P1 #1–#3、P2
   #4/#6/#8/#15 与 P3 #5/#7/#9–#14 已在本修订处置，待复验。
 - Eval smoke：5 clean + 5 seeded、glm/qwen 两族 fixture observation；
-  overall FP 10%、recall 90%、survival 90.9%，预注册门槛通过；n=10 cases
+  overall FP 10%、recall 90%、seeded survival 90%，预注册门槛通过；n=10 cases
   只作 smoke，不作模型家族结论。
 - 证据报告：`reports/2026-10-28-w3-review-evidence.md`。
 - 以上是本地实现证据，不替代非作者 review、merge 或 operator acceptance。

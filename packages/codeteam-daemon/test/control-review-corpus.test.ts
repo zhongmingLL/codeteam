@@ -47,14 +47,20 @@ describe("W3 review eval corpus", () => {
 		expect(metrics.overall.seededDetected).toBe(9);
 		expect(metrics.overall.confirmed).toBe(10);
 		expect(metrics.overall.rejected).toBe(1);
+		expect(metrics.overall.seededConfirmed).toBe(9);
+		expect(metrics.overall.seededRejected).toBe(1);
 		expect(metrics.overall.blocked).toBe(0);
-		expect(metrics.overall.survival).toBeCloseTo(10 / 11, 6);
+		expect(metrics.overall.survival).toBeCloseTo(0.9, 6);
 
 		expect(metrics.families.glm!.cleanFpRate).toBeCloseTo(0.2, 6);
 		expect(metrics.families.glm!.seededRecall).toBe(1);
+		expect(metrics.families.glm!.seededConfirmed).toBe(5);
+		expect(metrics.families.glm!.seededRejected).toBe(0);
 		expect(metrics.families.glm!.survival).toBe(1);
 		expect(metrics.families.qwen!.cleanFpRate).toBe(0);
 		expect(metrics.families.qwen!.seededRecall).toBeCloseTo(0.8, 6);
+		expect(metrics.families.qwen!.seededConfirmed).toBe(4);
+		expect(metrics.families.qwen!.seededRejected).toBe(1);
 		expect(metrics.families.qwen!.survival).toBeCloseTo(0.8, 6);
 	});
 
@@ -84,5 +90,37 @@ describe("W3 review eval corpus", () => {
 				createPolicy,
 			}),
 		).rejects.toThrow(/traverse/i);
+		await expect(
+			runReviewCorpus({
+				corpus: {
+					...corpus,
+					cases: [
+						{ ...corpus.cases[0]!, observations: [corpus.cases[0]!.observations[0]!] },
+						...corpus.cases.slice(1),
+					],
+				},
+				rootDir,
+				createPolicy,
+			}),
+		).rejects.toThrow(/cover every declared family/i);
+		await expect(
+			runReviewCorpus({
+				corpus: {
+					...corpus,
+					cases: [
+						{
+							...corpus.cases[0]!,
+							observations: [
+								{ ...corpus.cases[0]!.observations[0]!, reviewerModel: "qwen-fixture" },
+								corpus.cases[0]!.observations[1]!,
+							],
+						},
+						...corpus.cases.slice(1),
+					],
+				},
+				rootDir,
+				createPolicy,
+			}),
+		).rejects.toThrow(/belongs to family/i);
 	});
 });

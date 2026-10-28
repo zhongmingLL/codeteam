@@ -18,7 +18,7 @@
 | Schema 接线 | `migrations/007-review-evidence.ts` + `008-review-round-decision.ts` + `ReviewStore` | reviews 增 base/profile/risk/policy + round/stage/previous_review_id/envelope/decision；verifications 增 blocked_expires_at；新写入要求 session 的 profile/model/family/task 与 `agent_sessions` 一致（author 须为 coder session）；旧行 additive 兼容 |
 | 公共入口 | `src/review/service.ts` | `recordReview` 校验 diff artifact 与 impactSurface 一致后派生 risk；`verifyFinding` 返回 typed `verified/not_executable/not_current`；`assessFreshness` → 失效判断 |
 | Audit | `policy/exec.ts` + `policy/git.ts` | verifier 命令 audit 带 `producingReviewId`；commit audit 强制 taskId/runId，head 证据可做任务级绑定 |
-| Eval corpus | `test/fixtures/review-corpus/cases.json` + `src/review/eval.ts` | 5 clean + 5 seeded；glm/qwen 两族 fixture observation；真实 falsifier 执行；case id/file key 做 traversal 校验 |
+| Eval corpus | `test/fixtures/review-corpus/cases.json` + `src/review/eval.ts` | 5 clean + 5 seeded；`synthetic: true` + glm-fixture/qwen-fixture 两族 observation；真实 falsifier 执行；case id/file key/家族完整性/reviewerModel-family 一致性校验 |
 
 ## 2. 验证证据
 
@@ -84,21 +84,28 @@ npm run check:browser-smoke
 预注册门槛（写在 `cases.json`）：clean FP ≤ 20%、seeded recall ≥ 60%、
 survival ≥ 80%。n=10 cases / 20 family-case observations，**只作 smoke**。
 
-| Family | clean obs | clean FP | FP rate | seeded obs | detected | recall | confirmed | rejected | blocked | survival |
+| Family | clean obs | clean FP | FP rate | seeded obs | detected | recall | seeded confirmed | seeded rejected | survival | confirmed (all) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| glm | 5 | 1 | 20% | 5 | 5 | 100% | 6 | 0 | 0 | 100% |
-| qwen | 5 | 0 | 0% | 5 | 4 | 80% | 4 | 1 | 0 | 80% |
-| overall | 10 | 1 | 10% | 10 | 9 | 90% | 10 | 1 | 0 | 90.9% |
+| glm | 5 | 1 | 20% | 5 | 5 | 100% | 5 | 0 | 100% | 6 |
+| qwen | 5 | 0 | 0% | 5 | 4 | 80% | 4 | 1 | 80% | 4 |
+| overall | 10 | 1 | 10% | 10 | 9 | 90% | 9 | 1 | 90% | 10 |
 
 - 结论：harness 按预注册门槛通过。clean 误报是通过 **confirmed** 被计入（glm
   clean-5 的 `grep -q TODO` 在含 TODO 的文件上退出 0，被 confirm），不是被
   reject；qwen seeded-5 的错误 falsifier 被 reject。
-- **survival 口径**：`confirmed / (confirmed + rejected)`。confirmed FP 也进入
-  分子，所以 survival 不能单独当 precision 使用，必须与 clean FP 一起读。本次
-  glm survival 100% 包含 1 个 confirmed FP；overall 90.9% 也包含该 FP。
-- **限制**：observation 是 fixture/corpus 数据，不是 live model reviewer 输出。
-  不能据此得出 glm 优于 qwen 或任意模型家族能力结论；n≥20 的真实 reviewer 运行
-  才进入下一档结论。harness 已可直接接真实 reviewer finding 输出。
+- **survival 口径**：只统计 seeded findings，
+  `seeded confirmed / (seeded confirmed + seeded rejected)`。clean confirmed FP
+  只进入 `clean FP`，不进入 survival。`confirmed (all)` 包含该 FP，便于对账。
+- **限制 1（合成数据）**：corpus 顶层 `synthetic: true`，reviewerModel 使用
+  `glm-fixture` / `qwen-fixture`；observation 不是 live model reviewer 输出。
+  不能据此得出 glm 优于 qwen 或任意模型家族能力结论。
+- **限制 2（测量力）**：5 条 seeded 都是注释标记型、falsifier 与 claim 同义的
+  fixture（`grep BUG` 验证 `// BUG` 注释）；recall 100% 只说明执行管线通，
+  不代表判断质量。n=5/family 时 FP 只有 0/20/40% 三档，1 条 FP 即 20% 门槛擦线。
+- **限制 3（live 接线时序）**：本轮修订前 `runReviewCorpus` 与真实 reviewer
+  输出共用未 sandbox/未严格校验的 falsifier 路径，当时不应接真实输出。修订后
+  #2/#3 已修复，harness 具备 sandbox 与结构化校验；live run 仍需 n≥20 + 真实
+  provider，且本轮 corpus 没有任何 envelope/policy/降级边界 case。
 
 复现：
 
@@ -140,7 +147,7 @@ NODE_ENV=development npx vitest run test/control-review-corpus.test.ts \
 | P2 #4 verify 未 pin head | 新增 current-head resolver；worktree HEAD 与 review head 不一致 → `not_current`，不落 verification |
 | P2 #6 降级 finding 不可验证 | `verifyFinding` 返回 typed `not_executable`，不抛异常、不落错误证据 |
 | P2 #8 blockedExpiresAt 未持久化 | migration 008 增 `verifications.blocked_expires_at`；store/service 转发；`isBlockedExpired` 优先读持久化值 |
-| P2 #15 报告 FP/survival 语义写反 | 已改写：clean FP 由 confirmed 计入；survival 分子含 confirmed FP，不能单独当 precision |
+| P2 #15 / E-P1 报告 FP/survival 语义写反 | 已改写：clean FP 由 confirmed 计入；survival 改为只统计 seeded findings，clean confirmed FP 不进 survival；`confirmed (all)` 保留对账 |
 | P3 #5 task binding 死代码 | `commitWithAudit` 强制 taskId/runId；`assertHeadTraceable` 对 taskId 要求 audit 绑定 |
 | P3 #7 双引号 backslash | 按 POSIX 语义只转义 `\\`、`"`、`$`、`` ` ``、换行 |
 | P3 #9/#10 isCurrent/head trace 不一致 | `isCurrent` 对 undefined/null base fail closed；store 复用 `assertHeadTraceable` |
@@ -148,12 +155,14 @@ NODE_ENV=development npx vitest run test/control-review-corpus.test.ts \
 | P3 #12 previousFindings 零校验 | round>1 必须有 `previousReviewId`，previous findings 从存储 review 派生并与调用方声明精确对账 |
 | P3 #13 envelope/round/decision 未持久化 | migration 008 增 round/stage/previous_review_id/envelope_json/decision_json；`Review` 可回读 |
 | P3 #14 corpus 路径逃逸 | case id 白名单 + file key 绝对路径/`..` 校验 |
+| E-P2 corpus 可理解性 | 顶层 `synthetic: true`；reviewerModel 改为 `glm-fixture`/`qwen-fixture`；校验每 case 覆盖全部 family、无重复 family、reviewerModel 与 family 一致；报告明确标注 5 条 seeded 为注释标记型、n=5/family 的 FP 粒度 |
+| E-P3 envelope 自证/覆盖 | 报告改为“结构构造 + free-text 精确身份匹配”，不声称 envelope 自证盲评；envelope/policy/降级边界 case 挂 W4 test vectors |
 
 ## 6. 已知缺口与后续
 
 | 缺口 | 影响 | 去向 |
 |---|---|---|
-| 盲评的“reviewer 实际没看过 transcript”只能靠 `reviewerContext.blind/fresh/transcriptExcluded` 声明 + envelope 值泄漏检查 | 运行时上下文隔离不是 W3 单独能证明的 | W5/W7 接线时用独立 session/上下文载体继续加强 |
+| 盲评的“reviewer 实际没看过 transcript”只能靠 `reviewerContext.blind/fresh/transcriptExcluded` 声明 + envelope free-text 精确身份匹配；结构构造不冒充盲评自证 | 运行时上下文隔离不是 W3 单独能证明的 | W5/W7 接线时用独立 session/上下文载体继续加强 |
 | eval corpus 是 fixture observation | 不能下模型家族结论 | 接真实 reviewer 输出，n≥20 后重跑 |
 | blocked 到期扫描/升级 human 的调度未接 | 目前持久化 `blockedExpiresAt` 并提供 `isBlockedExpired` | W4 gate / W5 scheduler |
 | 高风险 human gate 只是 policy 输出 | 不是 approval/merge 执行器 | W4/W7 approval 接线 |

@@ -5,6 +5,7 @@ import type { CreateFindingInput } from "../control/stores/types.ts";
 import type { ToolPolicy } from "../policy/types.ts";
 import { executeFalsifier } from "./falsifier.ts";
 import { normalizeFindings } from "./findings.ts";
+import { assertModelFamilyClaim } from "./model-family.ts";
 
 export interface ReviewCorpusObservation {
 	readonly modelFamily: string;
@@ -27,6 +28,7 @@ export interface ReviewCorpusThresholds {
 
 export interface ReviewCorpus {
 	readonly version: number;
+	readonly synthetic: true;
 	readonly families: readonly string[];
 	readonly thresholds: ReviewCorpusThresholds;
 	readonly cases: readonly ReviewCorpusCase[];
@@ -39,6 +41,8 @@ export interface ReviewCorpusFamilyMetrics {
 	readonly seededObservations: number;
 	readonly seededDetected: number;
 	readonly reportedFindings: number;
+	readonly seededConfirmed: number;
+	readonly seededRejected: number;
 	readonly confirmed: number;
 	readonly rejected: number;
 	readonly blocked: number;
@@ -72,6 +76,8 @@ interface MutableMetrics {
 	seededObservations: number;
 	seededDetected: number;
 	reportedFindings: number;
+	seededConfirmed: number;
+	seededRejected: number;
 	confirmed: number;
 	rejected: number;
 	blocked: number;
@@ -84,6 +90,8 @@ function emptyMetrics(): MutableMetrics {
 		seededObservations: 0,
 		seededDetected: 0,
 		reportedFindings: 0,
+		seededConfirmed: 0,
+		seededRejected: 0,
 		confirmed: 0,
 		rejected: 0,
 		blocked: 0,
@@ -95,8 +103,8 @@ function rate(numerator: number, denominator: number): number {
 }
 
 function survivalRate(metrics: MutableMetrics): number {
-	const decided = metrics.confirmed + metrics.rejected;
-	return decided === 0 ? 1 : metrics.confirmed / decided;
+	const decided = metrics.seededConfirmed + metrics.seededRejected;
+	return decided === 0 ? 1 : metrics.seededConfirmed / decided;
 }
 
 function finalize(family: string, metrics: MutableMetrics): ReviewCorpusFamilyMetrics {
@@ -111,6 +119,9 @@ function finalize(family: string, metrics: MutableMetrics): ReviewCorpusFamilyMe
 
 function validateCorpus(corpus: ReviewCorpus): void {
 	if (corpus.version !== 1) throw new ControlError("invalid_input", "review corpus version must be 1");
+	if (corpus.synthetic !== true) {
+		throw new ControlError("invalid_input", "review corpus must declare synthetic: true");
+	}
 	if (corpus.families.length < 2) throw new ControlError("invalid_input", "review corpus needs at least two families");
 	const clean = corpus.cases.filter((entry) => entry.kind === "clean").length;
 	const seeded = corpus.cases.filter((entry) => entry.kind === "seeded").length;
@@ -122,10 +133,22 @@ function validateCorpus(corpus: ReviewCorpus): void {
 			throw new ControlError("invalid_input", `invalid corpus case id: ${entry.id}`);
 		}
 		for (const path of Object.keys(entry.files)) assertSafeCorpusPath(path);
+		const seenFamilies = new Set<string>();
 		for (const observation of entry.observations) {
 			if (!corpus.families.includes(observation.modelFamily)) {
 				throw new ControlError("invalid_input", `unknown corpus family: ${observation.modelFamily}`);
 			}
+			if (seenFamilies.has(observation.modelFamily)) {
+				throw new ControlError(
+					"invalid_input",
+					`duplicate corpus observation for ${entry.id}/${observation.modelFamily}`,
+				);
+			}
+			seenFamilies.add(observation.modelFamily);
+			assertModelFamilyClaim(observation.reviewerModel, observation.modelFamily);
+		}
+		if (seenFamilies.size !== corpus.families.length) {
+			throw new ControlError("invalid_input", `corpus case ${entry.id} must cover every declared family`);
 		}
 	}
 }
@@ -169,10 +192,10 @@ export async function runReviewCorpus(options: RunReviewCorpusOptions): Promise<
 			overall.reportedFindings += executable.length;
 
 			let detected = false;
-			for (const finding of executable) {
+			for (const [findingIndex, finding] of executable.entries()) {
 				const result = await executeFalsifier({
 					finding: {
-						id: `${entry.id}:${observation.modelFamily}:${metrics.reportedFindings}`,
+						id: `${entry.id}:${observation.modelFamily}:${findingIndex}`,
 						severity: finding.severity,
 						evidenceKind: finding.evidenceKind,
 						falsifier: finding.falsifier,
@@ -185,10 +208,18 @@ export async function runReviewCorpus(options: RunReviewCorpusOptions): Promise<
 				if (result.status === "confirmed") {
 					metrics.confirmed += 1;
 					overall.confirmed += 1;
+					if (entry.kind === "seeded") {
+						metrics.seededConfirmed += 1;
+						overall.seededConfirmed += 1;
+					}
 					detected = true;
 				} else if (result.status === "rejected") {
 					metrics.rejected += 1;
 					overall.rejected += 1;
+					if (entry.kind === "seeded") {
+						metrics.seededRejected += 1;
+						overall.seededRejected += 1;
+					}
 				} else {
 					metrics.blocked += 1;
 					overall.blocked += 1;
