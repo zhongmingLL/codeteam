@@ -25,6 +25,7 @@ function pool(
 		maxLeases: 2,
 		minFreeBytes: 100,
 		leaseTtlMs: 1_000,
+		reclaimGraceMs: 10,
 		releasedTtlMs: 10,
 		orphanTtlMs: 10,
 		diskFree: { availableBytes: () => 1_000 },
@@ -96,6 +97,46 @@ describe("W5c worktree pool and GC", () => {
 		const report = service.gc({ now: base.now(), dryRun: false });
 		expect(report.entries).toContainEqual(expect.objectContaining({ id: null, reason: "orphan_ttl" }));
 		expect(existsSync(orphan)).toBe(false);
+	});
+
+	it("reclaims an expired lease for an inactive non-done task after the grace period", () => {
+		const base = fixture();
+		const service = pool(base);
+		base.store.tasks.setStatus("task-1", "doing");
+		const lease = service.acquire({ taskId: "task-1", ttlMs: 1, now: base.now() });
+
+		expect(service.gc({ now: base.now() + 5, dryRun: false }).entries.some((entry) => entry.id === lease.id)).toBe(
+			false,
+		);
+		const collected = service.gc({ now: base.now() + 12, dryRun: false });
+		expect(collected.entries).toContainEqual(
+			expect.objectContaining({ id: lease.id, reason: "expired_task_inactive" }),
+		);
+		expect(base.store.worktreeLeases.get(lease.id)?.status).toBe("collected");
+		expect(service.checkCapacity()).toMatchObject({ ok: true, activeLeases: 0 });
+	});
+
+	it("protects an expired non-done lease while a run is active", () => {
+		const base = fixture();
+		const service = pool(base);
+		base.store.tasks.setStatus("task-1", "doing");
+		const lease = service.acquire({ taskId: "task-1", ttlMs: 1, now: base.now() });
+		const run = base.createRun({
+			id: "run-active-lease",
+			sessionId: "session-coder",
+			profileId: "profile:coder",
+			role: "coder",
+			sourceId: base.createSourceMessage("active lease").id,
+		});
+
+		expect(service.gc({ now: base.now() + 100, dryRun: false }).entries.some((entry) => entry.id === lease.id)).toBe(
+			false,
+		);
+		expect(existsSync(lease.path)).toBe(true);
+		base.store.runs.terminal(run.id, { status: "interrupted" });
+		expect(service.gc({ now: base.now() + 100, dryRun: false }).entries).toContainEqual(
+			expect.objectContaining({ id: lease.id, reason: "expired_task_inactive" }),
+		);
 	});
 
 	it("refuses to remove a lease path outside the pool root", () => {

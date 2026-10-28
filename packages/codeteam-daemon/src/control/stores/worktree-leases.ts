@@ -82,12 +82,23 @@ export class WorktreeLeaseStore {
 		return row?.count ?? 0;
 	}
 
-	create(input: CreateWorktreeLeaseInput): WorktreeLease {
+	create(input: CreateWorktreeLeaseInput, options: { maxActive?: number } = {}): WorktreeLease {
 		const id = input.id ?? `wt_${newId()}`;
 		const path = nonEmpty(input.path, "path");
 		const now = this.clock();
 		try {
 			return this.transaction.run(() => {
+				if (options.maxActive !== undefined) {
+					if (!Number.isSafeInteger(options.maxActive) || options.maxActive <= 0) {
+						throw new ControlError("invalid_input", "maxActive must be a positive integer");
+					}
+					if (this.countActive() >= options.maxActive) {
+						throw new ControlError(
+							"worktree_capacity_exhausted",
+							`worktree pool has ${this.countActive()}/${options.maxActive} active leases`,
+						);
+					}
+				}
 				const task = this.database.prepare("SELECT id FROM tasks WHERE id = ?").get(input.taskId) as
 					| { id?: string }
 					| undefined;

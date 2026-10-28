@@ -24,6 +24,7 @@ export type ReadinessReasonCode =
 	| "dependency_missing"
 	| "dependency_cycle"
 	| "budget_paused"
+	| "budget_invalid"
 	| "capacity_unknown"
 	| "capacity_exhausted"
 	| "worktree_capacity_exhausted"
@@ -230,7 +231,16 @@ export class TaskReadinessService {
 	}
 
 	private appendBudgetReasons(taskId: string, reasons: ReadinessReason[]): void {
-		const status = this.budget.status(taskId);
+		let status: ReturnType<BudgetService["status"]>;
+		try {
+			status = this.budget.status(taskId);
+		} catch (error) {
+			if (error instanceof ControlError && (error.code === "invalid_state" || error.code === "not_found")) {
+				reasons.push({ code: "budget_invalid", message: error.message });
+				return;
+			}
+			throw error;
+		}
 		if (status.paused) {
 			reasons.push({
 				code: "budget_paused",

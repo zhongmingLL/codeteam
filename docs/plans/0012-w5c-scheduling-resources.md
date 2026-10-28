@@ -157,6 +157,8 @@ W5c 不新增 `workers` / `worker_heartbeats` / `worker_leases` 表。若 W5b
 - `tick(now)` 是纯调用入口，由唯一的 daemon 调度心跳/CLI 调用；不注册
   `setInterval` 或第二个 poller。单次 tick 有 catch-up 上限，剩余 occurrence
   留给下一次 tick，不风暴式补跑。
+- `schedule_runs.status='queued'` 是发生记录，不是完成真相；Queue Entry /
+  Run terminal 才是执行终态。W5d 消费者不得把 queued ledger 行当完成或失败。
 - factory 走显式白名单；W5c 内置 `task_wake` 通用工厂。CI 轮询 / stale
   清理 / repo scan 的真实 factory 由 W8/对应 owner 注册，不能绕过白名单。
 - spec paused、task 不 ready（依赖/预算）、或 target 无效时，RunLedger 记
@@ -303,7 +305,7 @@ W5c core 已实现并进入 review：
 - residual：`a2aDepth` 软上限 `CODETEAM_A2A_MAX_DEPTH=32` 已闭合。
 
 验证：`NODE_ENV=development npm run build:offline` exit 0；daemon 包
-47 files passed + 2 skipped，346 tests passed + 2 skipped；包级 `tsc` 与
+47 files passed + 2 skipped，349 tests passed + 2 skipped；包级 `tsc` 与
 `biome check` 通过。完整命令与边界见
 `docs/reports/2026-10-28-w5c-scheduling-resources.md`。
 

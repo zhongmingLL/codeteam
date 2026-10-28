@@ -37,6 +37,7 @@ export interface WorktreePoolOptions {
 	readonly maxLeases?: number;
 	readonly minFreeBytes?: number;
 	readonly leaseTtlMs?: number;
+	readonly reclaimGraceMs?: number;
 	readonly releasedTtlMs?: number;
 	readonly orphanTtlMs?: number;
 	readonly diskFree?: DiskFreeProbe;
@@ -55,7 +56,7 @@ export interface WorktreeCapacityResult {
 export interface WorktreeGcEntry {
 	readonly id: string | null;
 	readonly path: string;
-	readonly reason: "released_ttl" | "expired_task_terminal" | "orphan_ttl";
+	readonly reason: "released_ttl" | "expired_task_terminal" | "expired_task_inactive" | "orphan_ttl";
 	readonly bytes: number;
 }
 
@@ -98,6 +99,7 @@ export class WorktreePoolService {
 	private readonly maxLeases: number;
 	private readonly minFreeBytes: number;
 	private readonly leaseTtlMs: number;
+	private readonly reclaimGraceMs: number;
 	private readonly releasedTtlMs: number;
 	private readonly orphanTtlMs: number;
 	private readonly diskFree: DiskFreeProbe;
@@ -115,6 +117,11 @@ export class WorktreePoolService {
 		this.leaseTtlMs = positiveInteger(
 			options.leaseTtlMs ?? Number(process.env.CODETEAM_WORKTREE_LEASE_TTL_MS ?? String(8 * 60 * 60 * 1000)),
 			"leaseTtlMs",
+		);
+		this.reclaimGraceMs = positiveInteger(
+			options.reclaimGraceMs ??
+				Number(process.env.CODETEAM_WORKTREE_RECLAIM_GRACE_MS ?? String(48 * 60 * 60 * 1000)),
+			"reclaimGraceMs",
 		);
 		this.releasedTtlMs = positiveInteger(
 			options.releasedTtlMs ?? Number(process.env.CODETEAM_WORKTREE_RELEASED_TTL_MS ?? String(24 * 60 * 60 * 1000)),
@@ -178,13 +185,16 @@ export class WorktreePoolService {
 		const path = join(this.rootDir, id);
 		this.filesystem.createDirectory(path);
 		try {
-			const lease = this.store.worktreeLeases.create({
-				id,
-				taskId: input.taskId,
-				runId: input.runId ?? null,
-				path,
-				leaseExpiresAt: now + ttlMs,
-			});
+			const lease = this.store.worktreeLeases.create(
+				{
+					id,
+					taskId: input.taskId,
+					runId: input.runId ?? null,
+					path,
+					leaseExpiresAt: now + ttlMs,
+				},
+				{ maxActive: this.maxLeases },
+			);
 			this.store.audit.append({
 				actor: "system:worktree-pool",
 				action: "worktree_leased",
@@ -229,8 +239,19 @@ export class WorktreePoolService {
 				lease.leaseExpiresAt !== null &&
 				lease.leaseExpiresAt <= now &&
 				(task === null || task.status === "done");
-			if (!releasedExpired && !expiredTerminal) continue;
-			const reason = releasedExpired ? "released_ttl" : "expired_task_terminal";
+			const expiredInactive =
+				lease.status === "leased" &&
+				lease.leaseExpiresAt !== null &&
+				lease.leaseExpiresAt + this.reclaimGraceMs <= now &&
+				task !== null &&
+				task.status !== "done" &&
+				!this.hasRunningRun(lease.taskId);
+			if (!releasedExpired && !expiredTerminal && !expiredInactive) continue;
+			const reason = releasedExpired
+				? "released_ttl"
+				: expiredTerminal
+					? "expired_task_terminal"
+					: "expired_task_inactive";
 			this.assertLeasePathWithinRoot(lease.path);
 			entries.push({ id: lease.id, path: lease.path, reason, bytes: directoryBytes(lease.path) });
 			if (!dryRun) {
@@ -271,6 +292,10 @@ export class WorktreePoolService {
 
 	private removeLeasePath(lease: WorktreeLease): void {
 		this.removePathWithinRoot(lease.path);
+	}
+
+	private hasRunningRun(taskId: string): boolean {
+		return this.store.runs.list({ taskId, status: "running" }).length > 0;
 	}
 
 	private removePathWithinRoot(path: string): void {

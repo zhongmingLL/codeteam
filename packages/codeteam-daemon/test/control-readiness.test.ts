@@ -198,4 +198,27 @@ describe("W5c task readiness", () => {
 			expect.arrayContaining(["budget_paused", "worktree_capacity_exhausted"]),
 		);
 	});
+
+	it("degrades an ambiguous budget to a blocker instead of throwing the listing", () => {
+		const base = fixture();
+		const secondBacklog = approvedBacklog(base, "budget-backlog", "p2");
+		base.store.tasks.create({
+			id: "task-budget-invalid",
+			kind: "work",
+			threadId: "thread-1",
+			title: "ambiguous budget",
+			why: "test",
+			ownerProfileId: "profile:coder",
+			createdBy: "user-1",
+			userId: "user-1",
+			backlogItemId: secondBacklog.id,
+		});
+		base.store.budgets.create({ taskId: "task-budget-invalid", tokensLimit: 1 });
+		base.store.budgets.create({ taskId: "task-budget-invalid", tokensLimit: 2 });
+		const service = new TaskReadinessService(base.store);
+
+		const decision = service.evaluateTask("task-budget-invalid", { now: base.now() });
+		expect(decision.reasons.map((reason) => reason.code)).toContain("budget_invalid");
+		expect(() => service.listReadyBacklog({ now: base.now() })).not.toThrow();
+	});
 });

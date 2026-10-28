@@ -53,8 +53,10 @@ source: "docs/plans/0012-w5c-scheduling-resources.md"
 
 - `worktree_leases`：leased/released/collected；task/run 关联；过期时间。
 - `WorktreePoolService`：max leases、可注入 `statfs`、root 内路径校验、
-  released/expired-terminal/orphan GC；默认 dry-run；拒绝 symlink、root
-  自身和越界路径。
+  released/expired-terminal/expired-inactive/orphan GC；默认 dry-run；拒绝
+  symlink、root 自身和越界路径。过期但任务非 done 的 lease 在
+  `reclaimGraceMs`（默认 48h）后、且该 task 没有 running run 时才回收；
+  活跃 run 保护工作目录。
 - 边界：W5c 拥有 slot/lease/TTL/GC；真正的 git checkout 仍由 executor
   在 lease path 内创建（W5b）。
 - `ArtifactGCService`：v1 只删 `kind='log'` 且 task done 且过期；spec/plan/
@@ -68,6 +70,8 @@ source: "docs/plans/0012-w5c-scheduling-resources.md"
 - `tick(now)` 只由单一 daemon 调度心跳/CLI 调用；没有 `setInterval`、没有
   第二 cron/drain。
 - trigger 后只写一条 message + 一条 Queue Entry；不直接创建 Run。
+- `schedule_runs.status='queued'` 是 occurrence 发生记录，不是执行终态；
+  Queue Entry / Run terminal 才是真相，后续消费者不得把 queued 当完成。
 - factory 白名单；内置 `task_wake`。paused/任务不 ready/未知 factory 记
   skipped/failed ledger，不静默投递。
 - catch-up 有上限；同 occurrence 重放不重复入队。
@@ -95,7 +99,7 @@ F010/0012/migration 013。
 |---|---|---|
 | Install | `NODE_ENV=development npm install --ignore-scripts` | exit 0 |
 | Build | `NODE_ENV=development npm run build:offline` | exit 0 |
-| Daemon package tests | `NODE_ENV=development npm --prefix packages/codeteam-daemon test` | 47 files passed + 2 skipped；346 tests passed + 2 skipped |
+| Daemon package tests | `NODE_ENV=development npm --prefix packages/codeteam-daemon test` | 47 files passed + 2 skipped；349 tests passed + 2 skipped |
 | Typecheck | `node_modules/.bin/tsc --noEmit -p packages/codeteam-daemon/tsconfig.build.json` | exit 0 |
 | Format/lint | `node_modules/.bin/biome check packages/codeteam-daemon` | exit 0 |
 
@@ -144,4 +148,20 @@ F010/0012/migration 013。
 
 回滚到 `0827773aa`；migration 013 是新增表，代码是新增 `scheduling` 模块与
 可选 dispatch 注入。已写 audit 保留，不删除证据。
+
+## 5. Review follow-up（2026-10-28）
+
+砚砚 bounded code/security review 对 `9f8de4628` 给出 `changes_requested`
+（1×P2，3×P3，无 P1）：
+
+- **P2-1（已修）**：非 done 任务的过期 lease 可能永久占用 pool。新增
+  `reclaimGraceMs`（默认 48h，env `CODETEAM_WORKTREE_RECLAIM_GRACE_MS`）；
+  过期后仅在 task 无 running run 时回收，active run 的工作目录不会被删。
+  新增 active-run 保护测试与 inactive 回收测试。
+- **P3-1（已修）**：readiness 遇到多 budget 的 `invalid_state` 降级为
+  `budget_invalid` blocker，`listReadyBacklog` 不再整表抛错。
+- **P3-2（已修）**：`WorktreeLeaseStore.create` 在事务内检查 `maxActive`，
+  关闭 `checkCapacity → acquire` 的 check-then-act 窗口。
+- **P3-3（已记录）**：`schedule_runs.status='queued'` 只是 occurrence 记录，
+  Queue Entry / Run terminal 才是执行真相；已写入计划/报告边界。
 

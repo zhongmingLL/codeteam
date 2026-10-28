@@ -49,7 +49,7 @@ lifecycle、deployment wait、managed-work 不在本 slice 勾选。
 - 2026-10-28：W5c core 实现完成，进入 review。migration 013 + readiness/
   DAG + budget charge/pause + worktree pool/GC + F139 adapter + CLI 已落。
 - 证据：`build:offline` exit 0；daemon 包 47 files passed + 2 skipped，
-  346 tests passed + 2 skipped；`tsc` 与 `biome` 通过。命令与边界见
+  349 tests passed + 2 skipped；`tsc` 与 `biome` 通过。命令与边界见
   `docs/reports/2026-10-28-w5c-scheduling-resources.md`。
 - residual 关闭：W5a ledger 的 `a2aDepth` 无软上限已由
   `CODETEAM_A2A_MAX_DEPTH=32` 关闭。
