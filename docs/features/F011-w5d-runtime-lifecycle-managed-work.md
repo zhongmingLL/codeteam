@@ -71,6 +71,8 @@ passing tests 冒充。
 
 ## Close record（2026-10-28）
 
+- operator signoff（2026-10-28，消息
+  `0001793204552090-003817-65582a68`："确认"）：W5 整体收口确认。
 - PR #56 squash merged at `168e67dd0`（reviewed HEAD
   `dfb872d9c36c62e476f2e11fcfd3d2f37575e1f1`，base `7adc30ee4`）。
 - 砚砚 code/security approved @ `dfb872d9c`（msg

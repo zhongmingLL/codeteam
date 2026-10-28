@@ -201,6 +201,8 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
 
 ## 11. Close record
 
+- operator signoff（2026-10-28，消息
+  `0001793204552090-003817-65582a68`："确认"）：W5 整体收口确认。
 - PR #56 squash merged at `168e67dd0`（reviewed HEAD `dfb872d9c`，
   base `7adc30ee4`）；CI 4/4。
 - Post-merge acceptance：`build:offline` 后 daemon 包 52 files passed
