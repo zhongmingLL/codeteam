@@ -59,17 +59,21 @@ codeteam 的 SQLite + 本地文件边界内。
 - [ ] AC-9: 不建第二 truth store；不碰 W6a memory.db/evidence adapter。
 - [ ] AC-10: `/request-generations` 明确留 W7+。
 
-## Current progress（2026-10-29，待独立 review）
+## Current progress（2026-10-29，PR #63，待独立 review）
 
 - 代码落点：`packages/codeteam-daemon/src/observability/`（contracts/redaction/
   salt/trace-store/tracer/metrics/otlp/logs/trajectory/runtime）、
   `src/control/stores/tool-usage.ts` + migration 014、daemon `/ready` `/metrics`、
   worker event sink/executor 接线、W6b/W7a 只读契约导出。
+- PR：[`#63`](https://github.com/zhongmingLL/codeteam/pull/63)，
+  base `codeteam-work` @ `6ac622ad0`；CI 5/5 pass（`changes` /
+  `check-contributor` / `supply-chain` / `mcp-conformance` /
+  `build-check-test`）。
 - 本地验证：
   - `NODE_ENV=development npm run build:offline`：exit 0。
   - `npx tsc --noEmit`（root）：exit 0。
   - `npx biome check`（changed files）：clean。
-  - `packages/codeteam-daemon`：**62 files passed + 2 skipped；423 tests
+  - `packages/codeteam-daemon`：**62 files passed + 2 skipped；430 tests
     passed + 2 skipped**（含 11 个 W6c observability test files）。
 - 尚未完成：独立非作者 review（砚砚 security/redaction/provenance；墨墨
   reuse/真实路径/可解释性）、PR/merge、operator 可见验收。不得把本段当作
