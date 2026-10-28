@@ -37,13 +37,15 @@ function createSession(input: {
 	profileId: string;
 	role: string;
 	seq?: number;
+	model?: string;
+	modelFamily?: string;
 }) {
 	return store.sessions.create({
 		...input,
 		effectiveToolPolicy: "default",
 		provider: "test",
-		model: "model",
-		modelFamily: "family",
+		model: input.model ?? "deepseek-flash",
+		modelFamily: input.modelFamily ?? "deepseek",
 		seq: input.seq ?? 0,
 	});
 }
@@ -93,8 +95,8 @@ function baseRun() {
 		sourceId: source.id,
 		recipientProfileId: "profile-coder",
 		provider: "test",
-		model: "model",
-		modelFamily: "family",
+		model: "deepseek-flash",
+		modelFamily: "deepseek",
 	});
 	return { backlog, thread, task, session, source, queue, run };
 }
@@ -107,6 +109,8 @@ function createEvalRun(base: ReturnType<typeof baseRun>) {
 		profileId: "profile:eval",
 		role: "reviewer",
 		seq: 1,
+		model: "glm-5.3-flash",
+		modelFamily: "glm",
 	});
 	const run = store.runs.create({
 		id: "run-eval",
@@ -117,8 +121,8 @@ function createEvalRun(base: ReturnType<typeof baseRun>) {
 		sourceId: base.source.id,
 		recipientProfileId: "profile:eval",
 		provider: "test",
-		model: "model",
-		modelFamily: "family",
+		model: "glm-5.3-flash",
+		modelFamily: "glm",
 	});
 	return { session, run };
 }
@@ -433,17 +437,37 @@ describe("codeteam governance stores", () => {
 	it("records reviews, downgrades unverifiable findings, and verifies findings", () => {
 		const base = baseRun();
 		const evalRun = createEvalRun(base);
+		const sameFamilySession = createSession({
+			id: "session-eval-same-family",
+			threadId: base.thread.id,
+			taskId: base.task.id,
+			profileId: "profile:eval",
+			role: "reviewer",
+			seq: 2,
+			model: "deepseek-chat",
+			modelFamily: "deepseek",
+		});
+		store.audit.append({
+			actor: "profile:coder",
+			action: "commit_created",
+			subject: `commit:${HEAD}`,
+			args: { headSha: HEAD, taskId: base.task.id },
+		});
 		const review = store.reviews.create({
 			id: "review-1",
 			taskId: base.task.id,
 			runId: base.run.id,
 			headSha: HEAD,
+			baseSha: "b".repeat(40),
 			authorSessionId: base.session.id,
-			authorModel: "model-a",
-			authorModelFamily: "family-a",
+			authorModel: "deepseek-flash",
+			authorModelFamily: "deepseek",
 			reviewerSessionId: evalRun.session.id,
-			reviewerModel: "model-b",
-			reviewerModelFamily: "family-b",
+			reviewerModel: "glm-5.3-flash",
+			reviewerModelFamily: "glm",
+			authorProfileId: "profile-coder",
+			reviewerProfileId: "profile:eval",
+			riskClass: "code",
 			reviewMode: "cross_family",
 			verdict: "changes_requested",
 			findings: [
@@ -485,12 +509,16 @@ describe("codeteam governance stores", () => {
 				taskId: base.task.id,
 				runId: base.run.id,
 				headSha: HEAD,
+				baseSha: "b".repeat(40),
 				authorSessionId: base.session.id,
-				authorModel: "model-a",
-				authorModelFamily: "family-a",
+				authorModel: "deepseek-flash",
+				authorModelFamily: "deepseek",
 				reviewerSessionId: base.session.id,
-				reviewerModel: "model-a",
-				reviewerModelFamily: "family-a",
+				reviewerModel: "deepseek-flash",
+				reviewerModelFamily: "deepseek",
+				authorProfileId: "profile-coder",
+				reviewerProfileId: "profile-coder",
+				riskClass: "low_risk_docs",
 				reviewMode: "same_family_fresh",
 				verdict: "approve",
 				findings: [],
@@ -502,12 +530,16 @@ describe("codeteam governance stores", () => {
 				taskId: base.task.id,
 				runId: base.run.id,
 				headSha: HEAD,
+				baseSha: "b".repeat(40),
 				authorSessionId: base.session.id,
-				authorModel: "model-a",
-				authorModelFamily: "family-a",
-				reviewerSessionId: evalRun.session.id,
-				reviewerModel: "model-b",
-				reviewerModelFamily: "family-a",
+				authorModel: "deepseek-flash",
+				authorModelFamily: "deepseek",
+				reviewerSessionId: sameFamilySession.id,
+				reviewerModel: "deepseek-chat",
+				reviewerModelFamily: "deepseek",
+				authorProfileId: "profile-coder",
+				reviewerProfileId: "profile:eval",
+				riskClass: "code",
 				reviewMode: "cross_family",
 				verdict: "approve",
 				findings: [],

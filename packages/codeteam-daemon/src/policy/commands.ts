@@ -28,6 +28,39 @@ const GIT_DENIED_PREFIXES: readonly string[] = [
 	"-C",
 ];
 const READ_PATH_COMMANDS = new Set(["cat", "head", "tail", "wc", "ls"]);
+const NODE_DENIED_FLAGS = new Set([
+	"-e",
+	"--eval",
+	"-p",
+	"--print",
+	"-i",
+	"--interactive",
+	"--require",
+	"-r",
+	"--import",
+	"--loader",
+	"--experimental-loader",
+	"--inspect",
+	"--inspect-brk",
+	"--inspect-port",
+	"--inspect-wait",
+	"--watch",
+	"--watch-path",
+	"--watch-preserve-output",
+	"--env-file",
+	"--env-file-if-exists",
+	"--input-type",
+	"--experimental-policy",
+	"--experimental-network-imports",
+	"--test-reporter-destination",
+]);
+const NODE_VALUE_FLAGS = new Set([
+	"--test-name-pattern",
+	"--test-reporter",
+	"--test-timeout",
+	"--test-concurrency",
+	"--experimental-test-isolation",
+]);
 
 export interface CommandRequest {
 	readonly argv: readonly string[];
@@ -112,8 +145,10 @@ function validateNode(argv: readonly string[]): void {
 	const args = argv.slice(1);
 	if (args[0] !== "--test") throw forbidden("node is only allowed with --test");
 	for (const arg of args) {
-		if (arg === "-e" || arg === "--eval" || arg === "-p" || arg === "--print" || arg === "-i") {
-			throw forbidden(`node flag not allowed: ${arg}`);
+		const flag = arg.includes("=") ? arg.slice(0, arg.indexOf("=")) : arg;
+		if (NODE_DENIED_FLAGS.has(flag)) throw forbidden(`node flag not allowed: ${flag}`);
+		if (!arg.startsWith("--") && arg.startsWith("-r") && arg !== "-r") {
+			throw forbidden(`node flag not allowed: ${flag}`);
 		}
 	}
 }
@@ -162,6 +197,18 @@ export function collectPathTargets(command: string, argv: readonly string[]): Pa
 				skippedPattern = true;
 				continue;
 			}
+			targets.push({ arg, mode: "read" });
+		}
+	}
+	if (command === "node") {
+		const args = argv.slice(1);
+		for (let index = 1; index < args.length; index += 1) {
+			const arg = args[index]!;
+			if (NODE_VALUE_FLAGS.has(arg)) {
+				index += 1;
+				continue;
+			}
+			if (arg.startsWith("-")) continue;
 			targets.push({ arg, mode: "read" });
 		}
 	}

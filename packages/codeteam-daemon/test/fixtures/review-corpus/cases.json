@@ -1,0 +1,267 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "families": ["glm", "qwen"],
+  "thresholds": {
+    "cleanFpMax": 0.2,
+    "seededRecallMin": 0.6,
+    "survivalMin": 0.8
+  },
+  "cases": [
+    {
+      "id": "clean-1",
+      "kind": "clean",
+      "files": { "src/clean.ts": "export const value = 1;\n" },
+      "observations": [
+        { "modelFamily": "glm", "reviewerModel": "glm-fixture", "findings": [] },
+        { "modelFamily": "qwen", "reviewerModel": "qwen-fixture", "findings": [] }
+      ]
+    },
+    {
+      "id": "clean-2",
+      "kind": "clean",
+      "files": { "src/clean.ts": "export function add(a: number, b: number) { return a + b; }\n" },
+      "observations": [
+        { "modelFamily": "glm", "reviewerModel": "glm-fixture", "findings": [] },
+        { "modelFamily": "qwen", "reviewerModel": "qwen-fixture", "findings": [] }
+      ]
+    },
+    {
+      "id": "clean-3",
+      "kind": "clean",
+      "files": { "src/clean.ts": "export const enabled = true;\n" },
+      "observations": [
+        { "modelFamily": "glm", "reviewerModel": "glm-fixture", "findings": [] },
+        { "modelFamily": "qwen", "reviewerModel": "qwen-fixture", "findings": [] }
+      ]
+    },
+    {
+      "id": "clean-4",
+      "kind": "clean",
+      "files": { "src/clean.ts": "export const label = \"ready\";\n" },
+      "observations": [
+        { "modelFamily": "glm", "reviewerModel": "glm-fixture", "findings": [] },
+        { "modelFamily": "qwen", "reviewerModel": "qwen-fixture", "findings": [] }
+      ]
+    },
+    {
+      "id": "clean-5",
+      "kind": "clean",
+      "files": { "src/clean.ts": "// TODO: add documentation\nexport const value = 2;\n" },
+      "observations": [
+        {
+          "modelFamily": "glm",
+          "reviewerModel": "glm-fixture",
+          "findings": [
+            {
+              "severity": "P2",
+              "file": "src/clean.ts",
+              "line": 1,
+              "claim": "TODO indicates an unfinished implementation",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q TODO src/clean.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "finish the implementation"
+            }
+          ]
+        },
+        { "modelFamily": "qwen", "reviewerModel": "qwen-fixture", "findings": [] }
+      ]
+    },
+    {
+      "id": "seeded-1",
+      "kind": "seeded",
+      "files": { "src/bug.ts": "export const value = 0; // BUG: should be 1\n" },
+      "observations": [
+        {
+          "modelFamily": "glm",
+          "reviewerModel": "glm-fixture",
+          "findings": [
+            {
+              "severity": "P2",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded wrong value",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "fix the value"
+            }
+          ]
+        },
+        {
+          "modelFamily": "qwen",
+          "reviewerModel": "qwen-fixture",
+          "findings": [
+            {
+              "severity": "P1",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded wrong value",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "fix the value"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "seeded-2",
+      "kind": "seeded",
+      "files": { "src/bug.ts": "export function parse() { return null; } // BUG: swallow error\n" },
+      "observations": [
+        {
+          "modelFamily": "glm",
+          "reviewerModel": "glm-fixture",
+          "findings": [
+            {
+              "severity": "P1",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded swallowed error",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "propagate the error"
+            }
+          ]
+        },
+        {
+          "modelFamily": "qwen",
+          "reviewerModel": "qwen-fixture",
+          "findings": [
+            {
+              "severity": "P2",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded swallowed error",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "propagate the error"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "seeded-3",
+      "kind": "seeded",
+      "files": { "src/bug.ts": "export const limit = 0; // BUG: off by one\n" },
+      "observations": [
+        {
+          "modelFamily": "glm",
+          "reviewerModel": "glm-fixture",
+          "findings": [
+            {
+              "severity": "P2",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded off-by-one",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "fix the boundary"
+            }
+          ]
+        },
+        {
+          "modelFamily": "qwen",
+          "reviewerModel": "qwen-fixture",
+          "findings": [
+            {
+              "severity": "P2",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded off-by-one",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "fix the boundary"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "seeded-4",
+      "kind": "seeded",
+      "files": { "src/bug.ts": "export const name = undefined; // BUG: missing default\n" },
+      "observations": [
+        {
+          "modelFamily": "glm",
+          "reviewerModel": "glm-fixture",
+          "findings": [
+            {
+              "severity": "P2",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded missing default",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "add a default"
+            }
+          ]
+        },
+        {
+          "modelFamily": "qwen",
+          "reviewerModel": "qwen-fixture",
+          "findings": [
+            {
+              "severity": "P2",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded missing default",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "add a default"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "seeded-5",
+      "kind": "seeded",
+      "files": { "src/bug.ts": "export const timeout = -1; // BUG: invalid timeout\n" },
+      "observations": [
+        {
+          "modelFamily": "glm",
+          "reviewerModel": "glm-fixture",
+          "findings": [
+            {
+              "severity": "P1",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded invalid timeout",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q BUG src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "reject negative timeouts"
+            }
+          ]
+        },
+        {
+          "modelFamily": "qwen",
+          "reviewerModel": "qwen-fixture",
+          "findings": [
+            {
+              "severity": "P2",
+              "file": "src/bug.ts",
+              "line": 1,
+              "claim": "seeded invalid timeout",
+              "evidenceKind": "static_check",
+              "falsifier": "grep -q FIXED src/bug.ts",
+              "falsifierExpected": "zero",
+              "requiredAction": "reject negative timeouts"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

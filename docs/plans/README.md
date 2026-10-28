@@ -40,6 +40,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0005-plan-review-resolutions.md`](0005-plan-review-resolutions.md) | 三猫评审 P1/P2 处置、已修正项、下一轮决策 | operator + 三猫 |
 | [`0006-clowder-reuse-plan.md`](0006-clowder-reuse-plan.md) | clowder feature 复用盘点：35 cell、Batch 0 归属、Batch 1 P0 卡、Drop 清单 | operator + 三猫 |
 | [`0007-architecture-plan-coverage.md`](0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵；本轮缺口修复记录 | operator + 三猫 |
+| [`0008-w3-review-implementation.md`](0008-w3-review-implementation.md) | W3 ReviewPolicy / 盲评 / falsifier / headSha / eval corpus 实施拆分与验收映射 | 砚砚（代码/安全/falsifier）+ 墨墨（eval/流程） |
 | [`0002-w0-w2-foundation.md`](0002-w0-w2-foundation.md) | W0 fork/L0、W1 数据模型、W2 权限/身份/沙箱 | 烁烁（W0）+ 砚砚（W2） |
 | [`0003-w3-w4-review-sop.md`](0003-w3-w4-review-sop.md) | W3 独立 review、W4 SOP 复用/Design Gate | 砚砚（review/security）+ 墨墨（流程/Product） |
 | [`0004-w5-w8-scale-product.md`](0004-w5-w8-scale-product.md) | W5 调度/RPC、W6 memory/eval、W7 Console、W8 GitHub | 烁烁（W5）+ 墨墨（W7）+ 砚砚（W8） |
@@ -90,7 +91,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W0 | W0a closed (F002, operator signoff) + W0c done (F003) | W0b 治理已生效；W1 runtime 启动前置已满足 |
 | W1 | closed (F004, operator confirmed) | schema + F004a–e all merged；84/84 at close（current tip 122/122）；收口清单见 F004 umbrella |
 | W2 | closed (F005, operator confirmed) | F005a–e 全合入（131/131）；真实 repo 首跑已记录；墨墨愿景守护有条件放行；operator 已显式确认 bwrap + 零 secret MVP 边界；residual 按 ledger 挂 W5/executor hardening |
-| W3 | planned | 待独立 review 实现 |
+| W3 | implemented (re-review pending) | `0008` + F006；包内 171 passed / 1 skipped；首轮 review Changes Requested 已处置；待复验/merge |
 | W4 | planned | clowder SOP 复用 + point gates + approval CLI + 最小 thread CLI；merge D / skill migration 契约已冻结 |
 | W5 | planned | 待 scheduler/RPC |
 | W6 | planned | memory/observability/harness-eval 契约已冻结；继承 + 代码 adapter |

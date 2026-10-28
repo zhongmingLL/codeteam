@@ -30,6 +30,7 @@ export interface CommandAuditContext {
 	readonly taskId?: string;
 	readonly handoffId?: string;
 	readonly agentSessionId?: string;
+	readonly producingReviewId?: string;
 }
 
 interface PathSnapshot {
@@ -110,6 +111,7 @@ function appendCommandAudit(
 	if (context.taskId) args.taskId = context.taskId;
 	if (context.handoffId) args.handoffId = context.handoffId;
 	if (context.agentSessionId) args.agentSessionId = context.agentSessionId;
+	if (context.producingReviewId) args.producingReviewId = context.producingReviewId;
 	context.store.audit.append({
 		actor: context.actorRef,
 		action: error ? "tool_command_denied" : "tool_command",
