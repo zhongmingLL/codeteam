@@ -343,6 +343,8 @@ export interface ClaimQueueEntryInput {
 	claimId: string;
 	ownerRunId?: string | null;
 	ttlMs?: number;
+	/** Queue entries to skip in this pass; lets a drain loop defer one entry without starving the rest. */
+	excludeIds?: readonly string[];
 }
 
 export type BacklogPriority = "p0" | "p1" | "p2" | "p3";

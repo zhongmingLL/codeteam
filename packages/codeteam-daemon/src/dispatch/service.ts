@@ -23,6 +23,7 @@ import { InterruptedExecutionError, RetryableExecutionError } from "./types.ts";
 
 const DEFAULT_MAX_ENTRIES = 100;
 const DEFAULT_QUEUE_CLAIM_TTL_MS = 5 * 60 * 1000;
+const MAX_DEFERRED_ENTRIES = 500;
 const TERMINAL_STATUSES = new Set(["completed", "canceled", "interrupted", "failed"]);
 const POISON_DISPATCH_ERRORS = new Set([
 	"invalid_state",
@@ -31,6 +32,9 @@ const POISON_DISPATCH_ERRORS = new Set([
 	"forbidden",
 	"schema_incomplete",
 ]);
+// Admission gates that only affect one task. Defer the entry and keep draining so a
+// budget-paused or deployment-waiting head entry cannot starve every entry behind it.
+const DEFERRABLE_DISPATCH_ERRORS = new Set(["budget_paused", "deployment_wait_pending"]);
 
 export interface DispatchServiceOptions {
 	readonly budget?: BudgetService;
@@ -243,13 +247,15 @@ export class DispatchService {
 		const runs: Run[] = [];
 		const outcomes: DispatchRunOutcome[] = [];
 		const errors: DispatchEntryError[] = [];
+		const deferredIds = new Set<string>();
 		let processed = 0;
 
 		do {
 			this.dirty = false;
 			while (processed < maxEntries) {
+				if (deferredIds.size >= MAX_DEFERRED_ENTRIES) break;
 				const claimId = `dispatch:${newId()}`;
-				const entry = this.store.queue.claimNext({ claimId, ttlMs: claimTtlMs });
+				const entry = this.store.queue.claimNext({ claimId, ttlMs: claimTtlMs, excludeIds: [...deferredIds] });
 				if (!entry) break;
 				claimedQueueEntryIds.push(entry.id);
 				try {
@@ -272,6 +278,19 @@ export class DispatchService {
 					errors.push({ queueEntryId: entry.id, code, message });
 					if (POISON_DISPATCH_ERRORS.has(code)) {
 						this.deadLetterEntry(entry.id, claimId, code, message);
+					} else if (DEFERRABLE_DISPATCH_ERRORS.has(code)) {
+						const current = this.store.queue.get(entry.id);
+						if (current?.status === "claimed" && current.claimId) {
+							this.store.queue.release(entry.id, current.claimId);
+						}
+						this.store.audit.append({
+							actor: "system:dispatch",
+							action: "dispatch_deferred",
+							subject: `queue:${entry.id}`,
+							args: { code, message },
+						});
+						deferredIds.add(entry.id);
+						continue;
 					} else {
 						const current = this.store.queue.get(entry.id);
 						if (current?.status === "claimed" && current.claimId) {

@@ -174,13 +174,19 @@ export class QueueStore {
 	}
 
 	claimNext(input: ClaimQueueEntryInput): QueueEntry | null {
+		const excludeIds = input.excludeIds ?? [];
+		if (excludeIds.length > 500) {
+			throw new ControlError("invalid_input", "excludeIds accepts at most 500 entries");
+		}
+		for (const id of excludeIds) nonEmpty(id, "excludeIds entry");
+		const exclusion = excludeIds.length === 0 ? "" : ` AND id NOT IN (${excludeIds.map(() => "?").join(", ")})`;
 		try {
 			return this.transaction.run(() => {
 				const row = this.database
 					.prepare(
-						"SELECT id FROM queue_entries WHERE status = 'queued' ORDER BY CASE priority WHEN 'urgent' THEN 0 ELSE 1 END, order_key, enqueued_at LIMIT 1",
+						`SELECT id FROM queue_entries WHERE status = 'queued'${exclusion} ORDER BY CASE priority WHEN 'urgent' THEN 0 ELSE 1 END, order_key, enqueued_at LIMIT 1`,
 					)
-					.get() as { id?: string } | undefined;
+					.get(...excludeIds) as { id?: string } | undefined;
 				if (!row?.id) return null;
 				return this.claim(row.id, input);
 			});

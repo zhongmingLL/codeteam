@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { type AgentExecutor, BudgetService, DispatchService } from "../src/index.ts";
+import { type AgentExecutor, BudgetService, ControlError, DispatchService } from "../src/index.ts";
 import { createW5AFixture, type W5AFixture } from "./helpers/w5a-fixture.ts";
 
 const fixtures: W5AFixture[] = [];
@@ -87,5 +87,102 @@ describe("W5c dispatch budget settlement", () => {
 		expect(
 			base.store.audit.listSubject(`queue:${entry.id}`).some((item) => item.action === "dispatch_deferred"),
 		).toBe(true);
+	});
+});
+
+function addSecondTask(base: W5AFixture) {
+	base.store.tasks.create({
+		id: "task-2",
+		kind: "work",
+		threadId: "thread-1",
+		title: "W5d starvation guard",
+		why: "W5d starvation guard",
+		ownerProfileId: "profile:reviewer-a",
+		createdBy: "user-1",
+		userId: "user-1",
+		backlogItemId: "backlog-1",
+	});
+	base.store.sessions.create({
+		id: "session-task-2",
+		threadId: "thread-1",
+		taskId: "task-2",
+		profileId: "profile:reviewer-a",
+		role: "reviewer",
+		effectiveToolPolicy: "default",
+		provider: "test",
+		model: "model-reviewer",
+		modelFamily: "test-family",
+		seq: 0,
+		userId: "user-1",
+	});
+}
+
+function admitFor(base: W5AFixture, input: { taskId: string; body: string; orderKey: string; target: string }) {
+	const source = base.store.messages.append({
+		threadId: "thread-1",
+		taskId: input.taskId,
+		authorKind: "user",
+		authorId: "user-1",
+		kind: "chat",
+		bodyMd: input.body,
+	});
+	return base.store.queue.admit({
+		threadId: "thread-1",
+		sourceId: source.id,
+		sourceKind: "conversation_input",
+		targets: [input.target],
+		sourceCategory: "test",
+		orderKey: input.orderKey,
+	});
+}
+
+describe("W5d dispatch deferral does not starve the queue", () => {
+	it("keeps draining past a budget-paused head entry", async () => {
+		const base = fixture();
+		addSecondTask(base);
+		const budget = new BudgetService(base.store, base.now);
+		budget.setLimits({ taskId: "task-1", tokensLimit: 0, actorRef: "user:user-1" });
+		const paused = admitFor(base, { taskId: "task-1", body: "paused", orderKey: "1", target: "profile:coder" });
+		const ready = admitFor(base, { taskId: "task-2", body: "ready", orderKey: "2", target: "profile:reviewer-a" });
+		const service = new DispatchService(base.store, executor, base.now, {}, { budget });
+
+		const result = await service.drain();
+
+		expect(result.errors).toContainEqual(expect.objectContaining({ code: "budget_paused" }));
+		expect(result.runs.map((run) => run.taskId)).toEqual(["task-2"]);
+		expect(base.store.queue.get(paused.id)?.status).toBe("queued");
+		expect(base.store.queue.get(ready.id)).toBeNull();
+	});
+
+	it("keeps draining past a deployment-wait head entry", async () => {
+		const base = fixture();
+		addSecondTask(base);
+		const waiting = admitFor(base, { taskId: "task-1", body: "waiting", orderKey: "1", target: "profile:coder" });
+		const ready = admitFor(base, { taskId: "task-2", body: "ready", orderKey: "2", target: "profile:reviewer-a" });
+		const service = new DispatchService(
+			base.store,
+			executor,
+			base.now,
+			{},
+			{
+				deploymentWaitGuard: {
+					assertCanStart(taskId: string) {
+						if (taskId === "task-1") {
+							throw new ControlError(
+								"deployment_wait_pending",
+								"deployment wait is still pending for task task-1",
+							);
+						}
+					},
+				},
+			},
+		);
+
+		const result = await service.drain();
+
+		expect(result.errors).toContainEqual(expect.objectContaining({ code: "deployment_wait_pending" }));
+		expect(result.runs.map((run) => run.taskId)).toEqual(["task-2"]);
+		expect(base.store.queue.get(waiting.id)?.status).toBe("queued");
+		expect(base.store.queue.get(ready.id)).toBeNull();
 	});
 });

@@ -90,7 +90,7 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
 | B2 register/state | `src/deployment-wait/service.ts` + `TaskStore.setDeploymentWait` | 原 Task await/json；replay idempotent | store/service tests |
 | B3 predicate/sweep | 同上 | revision/new boot 命中；unknown 保持 waiting | unit |
 | B4 delivery | 同上 | message + queue entry 幂等；不直接起 run | integration |
-| B5 start guard | `DeploymentWaitStartGuard` + dispatch option | waiting 拒绝 cutover；delivered 放行 | dispatch tests |
+| B5 start guard | `DeploymentWaitStartGuard` + dispatch option | waiting 拒绝 cutover、release + skip 该 entry 后继续 drain；delivered 放行 | dispatch tests |
 
 ## 4. W5d-C daemon lifecycle
 
@@ -138,6 +138,7 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
 - `control-managed-retry.test.ts`：same profile、different profile 消费 target + blocker、review/verify 不绑、非 managed fallback。
 - `control-deployment-wait.test.ts`：register replay、revision/new boot、unknown retain、outcome 幂等、wrong deployment/port、start guard。
 - `control-daemon-lifecycle.test.ts`：六态顺序、failed/stale、签名、executor independence、frozen identity、health 复验、boot exit。
+- `control-dispatch-budget.test.ts`：队头 `budget_paused`/`deployment_wait_pending` 不阻塞后续 entry（`claimNext.excludeIds` skip-set）。
 - CLI tests：daemon status/stop/restart（fake process/health）、deployment wait register/status/sweep。
 
 ## 7. 依赖与顺序

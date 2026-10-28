@@ -49,6 +49,11 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
   起 Run。`sweep(now)` 是唯一恢复入口，没有每猫 timer。
 - `DispatchService` 可注入 `deploymentWaitGuard`；waiting / outcome pending
   时释放 claim、记 `dispatch_deferred`、不启动 run。
+- 单任务级 admission gate（`budget_paused`、`deployment_wait_pending`）不再
+  `break` 整轮 drain：defer 后把 entry 放入本轮 skip-set（`claimNext.excludeIds`），
+  继续处理后续 entry。此前队头一个 long-running deployment wait 会饿死整条
+  queue（wait 可持续数天），属真实 P2；`budget_paused` 同根因一并修。未知
+  错误仍保守 `break`。
 - CLI：`codeteam deployment wait register/status/sweep`。
 
 ### 1.3 W5d-C daemon lifecycle
@@ -79,7 +84,7 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
 | Check | Command | Result |
 |---|---|---|
 | Build | `NODE_ENV=development npm run build:offline` | exit 0 |
-| Daemon package tests | `NODE_ENV=development npm --prefix packages/codeteam-daemon test` | 52 files passed + 2 skipped；370 tests passed + 2 skipped |
+| Daemon package tests | `NODE_ENV=development npm --prefix packages/codeteam-daemon test` | 52 files passed + 2 skipped；372 tests passed + 2 skipped |
 | Root typecheck | `node_modules/.bin/tsc --noEmit` | exit 0 |
 | Format/lint | `node_modules/.bin/biome check packages/codeteam-daemon` | exit 0 |
 
@@ -94,6 +99,9 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
 - `control-daemon-lifecycle.test.ts`：六态顺序、签名、executor containment、
   frozen identity、relaunch/reverify、stale clear、boot exit evidence。
 - `cli-daemon.test.ts`：operator `daemon status` 真实 CLI 子进程。
+- `control-dispatch-budget.test.ts`：队头 `budget_paused` / `deployment_wait_pending`
+  时后续 ready entry 仍被 dispatch，deferred entry 保持 `queued`。回归验证：
+  临时关掉 deferrable 分支时两条新测试均 RED。
 
 ## 3. 边界 / unknown
 
