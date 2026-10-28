@@ -86,7 +86,7 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
 
 | 单元 | 落点 | 可见结果 | 验证 |
 |---|---|---|---|
-| B1 types/observation | `src/deployment-wait/{types,observation}.ts` | state/boot ledger → observation；unknown fail closed | unit |
+| B1 types/observation | `src/deployment-wait/{types,observation}.ts` | state/boot ledger + pid 活性 → observation；unknown fail closed（SIGTERM 后 state 仍 ready 也必须 unknown） | unit |
 | B2 register/state | `src/deployment-wait/service.ts` + `TaskStore.setDeploymentWait` | 原 Task await/json；replay idempotent | store/service tests |
 | B3 predicate/sweep | 同上 | revision/new boot 命中；unknown 保持 waiting | unit |
 | B4 delivery | 同上 | message + queue entry 幂等；不直接起 run | integration |
@@ -208,4 +208,17 @@ W5d 拆成三个可独立 review 的切片，仍属于同一 F011 workstream：
   + 2 skipped，378 tests passed + 2 skipped。
 - **Pending**：烁烁 post-merge W5/session-interface review 未出 verdict；
   代码已合入不等于 W5d 已完成独立复核。close 声明等其 verdict 后补。
+- **烁烁 verdict（2026-10-28）**：1×P2（observation 缺 pid 活性，dead
+  window 可误唤醒 `revision_included`）+ 2×备忘（M1 restart↔`WorkerRuntime
+  .recover()` 契约未接线，归 W6；M2 descendants SIGTERM 与 recover 语义
+  自洽）。P2 修复在 `fix/w5d-observation-liveness` follow-up PR；合入后
+  由烁烁按 exact 新 HEAD 复审增量，通过才 close。
+
+## 12. Residual ledger（W5d）
+
+| ID | 内容 | owner / 下一棒 |
+|---|---|---|
+| W5d-M1 | 外部 executor 重启后必须在 `markReady` 前跑 `WorkerRuntime.recover()`；W5d lifecycle 与 W5b recovery 零耦合，漏接会让 `running` runs / `attached` sessions 等 lease 过期 | W6 接线 checklist |
+| W5d-M2 | 未来接线后 `executeStop` 重推导 descendants 会 SIGTERM worker 子进程，与 recover() 的 `interrupted/"daemon_restarted"` 语义自洽；M1 必须成立 | W6，与 M1 同段 |
+| W5d-R1 | `revision_included` 用精确 runningRevision（非 ancestry），需配合 observation pid 活性 fail-closed | 已修（follow-up PR） |
 
