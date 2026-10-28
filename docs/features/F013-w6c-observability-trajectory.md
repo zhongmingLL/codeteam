@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F013]
 title: "F013: W6c Observability / Trajectory"
-status: in_review
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-29
@@ -41,25 +41,25 @@ codeteam 的 SQLite + 本地文件边界内。
 
 ## Acceptance
 
-- [ ] AC-1: trace ring 默认 10k/24h，可查询；Prometheus 快照可渲染；
+- [x] AC-1: trace ring 默认 10k/24h，可查询；Prometheus 快照可渲染；
       `/ready` 与 `/metrics` 可用。
-- [ ] AC-2: OTLP 默认关；启用需显式 endpoint；HMAC salt 0600；权限不符
+- [x] AC-2: OTLP 默认关；启用需显式 endpoint；HMAC salt 0600；权限不符
       fail closed。
-- [ ] AC-3: trajectory 只读 canonical 四表；`inv:`=`runs.id`；trace
+- [x] AC-3: trajectory 只读 canonical 四表；`inv:`=`runs.id`；trace
       命中/`ring_miss`/`telemetry_disabled` 三态明确。
-- [ ] AC-4: A-D redaction + metric/tool span allowlist；raw prompt/diff/
+- [x] AC-4: A-D redaction + metric/tool span allowlist；raw prompt/diff/
       file content/credential 不进 trace/log；有 leak tests。
-- [ ] AC-5: 同一 `run_events.id` 重复记录 tool usage 只计一次；retention
+- [x] AC-5: 同一 `run_events.id` 重复记录 tool usage 只计一次；retention
       可清理；report 可按时间/profile/category 聚合。
-- [ ] AC-6: JSONL 日志 0600、rotation、retention、tail；A/B redaction。
-- [ ] AC-7: W6b 可消费的只读契约冻结并有 contract tests；W7a 未提前接
+- [x] AC-6: JSONL 日志 0600、rotation、retention、tail；A/B redaction；strict fields 默认。
+- [x] AC-7: W6b 可消费的只读契约冻结并有 contract tests；W7a 未提前接
       HTTP/Console。
-- [ ] AC-8: telemetry init 失败只降级，不阻塞 daemon；`/ready` 不把未初始化
+- [x] AC-8: telemetry init 失败只降级，不阻塞 daemon；`/ready` 不把未初始化
       报成 healthy。
-- [ ] AC-9: 不建第二 truth store；不碰 W6a memory.db/evidence adapter。
-- [ ] AC-10: `/request-generations` 明确留 W7+。
+- [x] AC-9: 不建第二 truth store；不碰 W6a memory.db/evidence adapter。
+- [x] AC-10: `/request-generations` 明确留 W7+。
 
-## Current progress（2026-10-29，PR #63，待独立 review）
+## Implementation（2026-10-29，PR #63）
 
 - 代码落点：`packages/codeteam-daemon/src/observability/`（contracts/redaction/
   salt/trace-store/tracer/metrics/otlp/logs/trajectory/runtime）、
@@ -77,10 +77,6 @@ codeteam 的 SQLite + 本地文件边界内。
   - `npx biome check`（changed files）：clean。
   - `packages/codeteam-daemon`：**62 files passed + 2 skipped；437 tests
     passed + 2 skipped**（含 11 个 W6c observability test files）。
-- 尚未完成：独立非作者 review（砚砚 security/redaction/provenance；墨墨
-  reuse/真实路径/可解释性）、PR/merge、operator 可见验收。不得把本段当作
-  feature close。
-
 ## Review follow-up（2026-10-29）
 
 砚砚 approved at `65ed9ff49`（1 non-blocking P2 + 6 P3）；墨墨 conditional
@@ -97,6 +93,22 @@ return at the same HEAD（1 P1 + 6 P3）。Follow-up 已收口：
   count；trajectory `usage` 仅保留 bounded token/cost metadata；删除不可达
   `MAX_STRING_LENGTH` 分支；salt `lstat` 拒绝 symlink；计划文档同步
   `otlp:"degraded"`、测试文件名、OTLP composition 语义。
+
+## Close record（2026-10-29）
+
+- PR #63 squash merged into `codeteam-work` at
+  `12c54685439a3b8cb92142bbac7a5d88764e1cea`（base `6ac622ad0`）。
+- Final reviewed HEAD `04d3f9382298e35c4bbecc4de39da378fd4564b5`。
+- 独立 verdict：砚砚 approved at `04d3f9382`（security/redaction/provenance，
+  P2 + 6 P3 全部收口，无新增安全问题）；墨墨 approved at `04d3f9382`
+  （reuse/真实路径/可解释性，P1 composition + P3 收口，无遗留）。
+- Post-merge acceptance at `12c546854`：`build:offline` exit 0；
+  `packages/codeteam-daemon` 62 files passed + 2 skipped，**437 tests
+  passed + 2 skipped**；root `tsc` / biome clean。
+- Residual optional P3（不阻塞）：`droppedSeriesCount` / `droppedSpanCount`
+  目前仅程序化可读，W7a Console 可顺带展示。
+- Feature close：**done**。W6a（memory/evidence）与 W6b（eval/harness-eval）
+  是独立 slice，不随本 close 宣告完成。
 
 ## Dependencies
 
