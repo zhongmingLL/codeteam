@@ -1,6 +1,12 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
-import { type AgentExecutor, DispatchService, RetryableExecutionError } from "../src/index.ts";
+import {
+	type AgentExecutor,
+	createObservabilityRuntime,
+	DispatchService,
+	type ObservabilityRuntime,
+	RetryableExecutionError,
+} from "../src/index.ts";
 import { createW5BFixture, type W5BFixture } from "./helpers/w5b-fixture.ts";
 
 let fixture: W5BFixture | null = null;
@@ -11,6 +17,28 @@ afterEach(async () => {
 });
 
 describe("W5b RPC executor", () => {
+	it("emits a run span, tool spans, tool usage, and metrics through the executor", async () => {
+		let observability: ObservabilityRuntime | null = null;
+		fixture = createW5BFixture({
+			observabilityFactory: (dataDir) => {
+				observability = createObservabilityRuntime({ dataDir, env: {} });
+				return observability;
+			},
+		});
+		await fixture.runtime.start();
+		const source = fixture.createSource("Observe this run.");
+		fixture.enqueue({ sourceId: source.id });
+		const drain = await fixture.dispatch.drain({ maxEntries: 1 });
+		expect(drain.outcomes[0]?.status).toBe("completed");
+		const run = fixture.store.runs.get(drain.runs[0]!.id)!;
+		const traces = observability!.traces.query({ invocationId: run.id });
+		expect(traces.availability).toBe("available");
+		expect(traces.spans.map((span) => span.name)).toEqual(expect.arrayContaining(["codeteam.run", "codeteam.tool"]));
+		expect(observability!.metrics.renderPrometheus()).toContain("codeteam_run_executions_total");
+		expect(fixture.store.toolUsage.report({ days: 0 }).summary.totalCalls).toBeGreaterThan(0);
+		await observability!.close();
+	});
+
 	it("executes through the dispatch chain, sticks the session, and isolates per-run tokens", async () => {
 		fixture = createW5BFixture();
 		await fixture.runtime.start();

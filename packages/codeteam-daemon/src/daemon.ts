@@ -4,6 +4,12 @@ import { appendBootRecord, nextBootSequence } from "./boot-ledger.ts";
 import { DaemonError } from "./errors.ts";
 import { acquireFence, releaseFence } from "./fence.ts";
 import { resolveInstallation } from "./installation.ts";
+import type { ReadyStatus } from "./observability/contracts.ts";
+import {
+	createObservabilityRuntime,
+	disabledObservabilityRuntime,
+	type ObservabilityRuntime,
+} from "./observability/runtime.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { type DaemonState, type DaemonStateFile, writeStateFile } from "./state.ts";
 
@@ -14,6 +20,8 @@ export interface StartDaemonOptions {
 	runningRevision: string;
 	services?: string[];
 	port?: number;
+	/** Defaults to a local observability runtime; pass false to disable telemetry. */
+	observability?: ObservabilityRuntime | false;
 }
 
 export interface DaemonBoot {
@@ -52,6 +60,7 @@ function validateDeploymentId(value: string | undefined): string {
 export interface DaemonHandle {
 	boot: DaemonBoot;
 	healthUrl: string;
+	observability: ObservabilityRuntime;
 	state(): DaemonState;
 	health(): DaemonHealth;
 	markReady(input?: { services?: string[] }): void;
@@ -121,6 +130,20 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	if (fence.reclaimedPid !== null) record("fence_reclaimed", String(fence.reclaimedPid));
 	record("started");
 	persist();
+	const observability = createRuntime(options, paths.dataDir);
+
+	const readyStatus = (): ReadyStatus => {
+		if (state === "failed") return "failed";
+		if (state === "stopping" || state === "stopped") return "stopping";
+		if (state !== "ready") return "starting";
+		return observability.readiness().status === "ready" ? "ready" : "degraded";
+	};
+
+	const ready = () => ({
+		...health(),
+		status: readyStatus(),
+		telemetry: observability.readiness(),
+	});
 
 	let server: Server;
 	try {
@@ -129,6 +152,22 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 			if (request.method === "GET" && url.pathname === "/health") {
 				response.writeHead(state === "ready" ? 200 : 503, { "content-type": "application/json" });
 				response.end(JSON.stringify(health()));
+				return;
+			}
+			if (request.method === "GET" && url.pathname === "/ready") {
+				response.writeHead(state === "ready" ? 200 : 503, { "content-type": "application/json" });
+				response.end(JSON.stringify(ready()));
+				return;
+			}
+			if (request.method === "GET" && url.pathname === "/metrics") {
+				const readiness = observability.readiness();
+				if (readiness.metrics.status !== "ready") {
+					response.writeHead(503, { "content-type": "application/json" });
+					response.end(JSON.stringify({ error: "metrics_unavailable", reason: readiness.metrics.reason }));
+					return;
+				}
+				response.writeHead(200, { "content-type": "text/plain; version=0.0.4; charset=utf-8" });
+				response.end(observability.metrics.renderPrometheus());
 				return;
 			}
 			response.writeHead(404, { "content-type": "application/json" });
@@ -153,6 +192,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		record("failed", error instanceof Error ? error.message : String(error), "startup_failed");
 		record("exited", "startup_failed", "startup_failed");
 		releaseFence(paths.lockFile, bootId);
+		await observability.close();
 		throw new DaemonError(
 			"listen_failed",
 			`daemon failed to listen on 127.0.0.1:${options.port ?? 0}: ${error instanceof Error ? error.message : String(error)}`,
@@ -199,6 +239,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 			record("stopped");
 			record("exited", "clean", "clean");
 			releaseFence(paths.lockFile, bootId);
+			return observability.close();
 		});
 		return stopPromise;
 	};
@@ -212,9 +253,20 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 			runningRevision: options.runningRevision,
 		},
 		healthUrl: `http://127.0.0.1:${healthPort ?? 0}/health`,
+		observability,
 		state: () => state,
 		health,
 		markReady,
 		stop,
 	};
+}
+
+function createRuntime(options: StartDaemonOptions, dataDir: string): ObservabilityRuntime {
+	if (options.observability === false) return disabledObservabilityRuntime("disabled_by_option");
+	if (options.observability) return options.observability;
+	try {
+		return createObservabilityRuntime({ dataDir });
+	} catch (error) {
+		return disabledObservabilityRuntime(error instanceof Error ? error.message : String(error));
+	}
 }

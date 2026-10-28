@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ControlStore, DispatchService, openControlStore } from "../../src/index.ts";
+import { type ControlStore, DispatchService, type ObservabilityRuntime, openControlStore } from "../../src/index.ts";
 import { WorkerRuntime } from "../../src/workers/index.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -40,6 +40,7 @@ export function createW5BFixture(
 		sessionProvider?: string;
 		sessionModelForRole?: Record<string, string>;
 		offline?: boolean;
+		observabilityFactory?: (dataDir: string) => ObservabilityRuntime;
 	} = {},
 ): W5BFixture {
 	const dataDir = mkdtempSync(join(tmpdir(), "codeteam-w5b-"));
@@ -146,6 +147,7 @@ export function createW5BFixture(
 		env,
 		promptTimeoutMs: 5_000,
 		offline: options.offline ?? true,
+		observability: options.observabilityFactory?.(dataDir) ?? null,
 	});
 	const dispatch = new DispatchService(store, runtime.executor, clock, runtime.dispatchHooks);
 	return {

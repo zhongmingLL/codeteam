@@ -7,7 +7,7 @@ operator_signoff: "DP-OBS-1=A, DP-OBS-2=A, DP-OBS-3=B (2026-10-25)"
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-29
 ---
 
 # P1 复用卡：Observability / Trajectory
@@ -43,6 +43,35 @@ updated: 2026-10-25
 - 红action：A-D 边界在 telemetry init；不把 raw prompt/credential/token 写入 trace/log；invocationId HMAC 后再进 trace store。
 - F150/F130：W6 建独立 `tool_usage_counters` + `/api/tool-usage`；日志走 JSON/Pino 文件 + rotation/retention + `REDACT_PATHS` + `/api/logs/tail`；保持独立 store/redaction，只按 correlation key join。
 - 失败：telemetry init 失败只降级 observability，不阻塞 control plane；`/ready` 必须明确 telemetry 状态，不能把“没初始化”报成 healthy。
+
+### W6c implementation status（2026-10-29，F013 / plan 0015）
+
+- **F153 适配**：不引入 `@opentelemetry/*`；按 pi 的 vendor-neutral telemetry 语义
+  （显式 context、无全局 span）实现本地 OTel-shaped DTO + 10k/24h ring +
+  Prometheus 文本快照；pi-telemetry 包不成为运行时依赖（callback 适配器不提供
+  ring 投影/淘汰）。A-D redaction、metric label
+  allowlist、tool span metadata allowlist 在 ingest 边界；OTLP/HTTP JSON exporter
+  默认关，启用需显式 endpoint，且 runtime 的 tracer 已实际持有 exporter（否则
+  readiness 报 `degraded`，不报 `enabled`）。HMAC salt 为
+  `<dataDir>/telemetry-salt`（0600，symlink 拒绝）。
+- **F299 适配**：`TrajectoryService` 只读 `runs`/`run_events`/`messages`/
+  `queue_entries`；`inv:`=`runs.id`；ring miss 返回 `trace_unavailable:ring_miss`，
+  telemetry 关闭返回 `telemetry_disabled`。轨迹步骤只带 allowlist 元数据与内容
+  digest+bytes，不内联正文。
+- **F150 适配**：SQLite `tool_usage_events`（幂等键=`run_events.id`）+
+  `tool_usage_counters`（day/profile/category/tool 主键）；`toolUsage.report()`
+  冻结为 W6b/W7a 可消费契约；retention 默认 90 天。无 Redis 依赖。
+- **F130 适配**：0600 JSONL `logs/daemon.log` + 大小轮转 + 天数/文件数保留 +
+  `tail()`；字段为 Pino-compatible JSON，但不引入 `pino` 依赖。默认 strict
+  fields：未知 key 一律 contentRef，只有 operational allowlist 透传；日志保留
+  本地 correlation id；trace 的 Class C 标识才 HMAC。
+- **readiness**：daemon `GET /ready` 同时报告 control-plane 与 telemetry 组件；
+  telemetry degraded 时仍 200 + `status:"degraded"`；control-plane 未 ready 才 503。
+  `GET /metrics` 提供 Prometheus 快照；`/health` 保持 W5d 契约。
+- **明确后置**：`/api/telemetry/traces`、`/api/invocations/:id/trajectory`、
+  `/api/tool-usage`、`/api/logs/tail` 的 operator auth/HTTP/Console 面归 W7a；
+  `/request-generations` 归 W7+。契约冻结在
+  `packages/codeteam-daemon/src/observability/contracts.ts`。
 
 ## 风险与回滚
 

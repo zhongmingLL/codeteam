@@ -1,4 +1,9 @@
 import type { ControlStore } from "../control/store.ts";
+import type { ToolUsageStore } from "../control/stores/tool-usage.ts";
+import type { RunEvent } from "../control/stores/types.ts";
+import type { ObservabilityRuntime } from "../observability/runtime.ts";
+import { classifyTool } from "../observability/tool-classification.ts";
+import type { SpanContext, SpanHandle } from "../observability/tracer.ts";
 import type { RpcEvent } from "./rpc-client.ts";
 
 const MAX_EVENT_TEXT = 16 * 1024;
@@ -15,18 +20,30 @@ interface AssistantContentPart {
 	readonly name?: unknown;
 }
 
+export interface WorkerEventSinkOptions {
+	readonly profileId: string;
+	readonly toolUsage?: Pick<ToolUsageStore, "record">;
+	readonly observability?: ObservabilityRuntime | null;
+	readonly parentSpan?: SpanContext;
+}
+
 export class WorkerEventSink {
 	private readonly store: ControlStore;
 	private readonly runId: string;
+	private readonly options: WorkerEventSinkOptions;
 	private readonly toolNames: string[] = [];
+	private readonly toolSpans = new Map<string, SpanHandle>();
+	private readonly recordedToolCalls = new Set<string>();
 	private readonly assistantTexts: string[] = [];
 	private usage: Record<string, unknown> | null = null;
 	private lastError: string | null = null;
 	private writeErrors = 0;
+	private toolUsageErrors = 0;
 
-	constructor(store: ControlStore, runId: string) {
+	constructor(store: ControlStore, runId: string, options: WorkerEventSinkOptions) {
 		this.store = store;
 		this.runId = runId;
+		this.options = options;
 	}
 
 	handle(event: RpcEvent): void {
@@ -35,14 +52,10 @@ export class WorkerEventSink {
 				this.handleMessageEnd(event);
 				return;
 			case "tool_execution_start":
-				this.appendTool("tool_call", event, { phase: "start" });
+				this.handleToolStart(event);
 				return;
 			case "tool_execution_end":
-				this.appendTool("tool_result", event, {
-					phase: "end",
-					isError: event.isError === true,
-					durationMs: typeof event.durationMs === "number" ? event.durationMs : null,
-				});
+				this.handleToolEnd(event);
 				return;
 			case "agent_settled":
 				this.append("message", { phase: "settled", aborted: event.aborted === true });
@@ -78,8 +91,21 @@ export class WorkerEventSink {
 		return this.writeErrors;
 	}
 
+	get toolUsageWriteErrors(): number {
+		return this.toolUsageErrors;
+	}
+
 	get errorMessage(): string | null {
 		return this.lastError;
+	}
+
+	close(): void {
+		for (const span of this.toolSpans.values()) {
+			span.setAttribute("tool.result.status", "unknown");
+			span.setStatus("error", "aborted");
+			span.end();
+		}
+		this.toolSpans.clear();
 	}
 
 	private handleMessageEnd(event: RpcEvent): void {
@@ -120,23 +146,90 @@ export class WorkerEventSink {
 		}
 	}
 
-	private appendTool(kind: "tool_call" | "tool_result", event: RpcEvent, extra: Record<string, unknown>): void {
+	private handleToolStart(event: RpcEvent): void {
 		const toolName = typeof event.toolName === "string" ? event.toolName : "unknown";
+		const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : null;
 		if (!this.toolNames.includes(toolName)) this.toolNames.push(toolName);
-		this.append(kind, {
-			...extra,
+		const input = asObject(event.args);
+		const appended = this.append("tool_call", {
+			phase: "start",
 			toolName,
-			toolCallId: typeof event.toolCallId === "string" ? event.toolCallId : null,
+			toolCallId,
+			...(input ? { inputKeys: Object.keys(input).slice(0, 32) } : {}),
 		});
+		const classification = classifyTool(toolName, input ?? undefined);
+		const recordable = !toolCallId || !this.recordedToolCalls.has(toolCallId);
+		if (appended && recordable) {
+			if (toolCallId) this.recordedToolCalls.add(toolCallId);
+			try {
+				this.options.toolUsage?.record({
+					eventId: appended.id,
+					runId: this.runId,
+					profileId: this.options.profileId,
+					toolName,
+					...(input ? { toolInput: input } : {}),
+				});
+			} catch {
+				this.toolUsageErrors += 1;
+			}
+		}
+		const observability = this.options.observability;
+		if (observability && this.options.parentSpan && toolCallId && !this.toolSpans.has(toolCallId)) {
+			const span = observability.tracer.startToolSpan(this.options.parentSpan, {
+				toolName,
+				category: classification.category,
+				toolCallId,
+				inputKeys: input ? Object.keys(input).slice(0, 32) : undefined,
+				invocationId: this.runId,
+			});
+			this.toolSpans.set(toolCallId, span);
+		}
+		observability?.metrics
+			.counter("codeteam_tool_calls_total", {
+				"tool.category": classification.category,
+				"tool.name": classification.toolName,
+				status: "started",
+			})
+			.add();
 	}
 
-	private append(kind: Parameters<ControlStore["runs"]["appendEvent"]>[1], payload: unknown): void {
+	private handleToolEnd(event: RpcEvent): void {
+		const toolName = typeof event.toolName === "string" ? event.toolName : "unknown";
+		const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : null;
+		const isError = event.isError === true;
+		const durationMs = typeof event.durationMs === "number" ? event.durationMs : null;
+		this.append("tool_result", { phase: "end", toolName, toolCallId, isError, durationMs });
+		const classification = classifyTool(toolName);
+		const span = toolCallId ? this.toolSpans.get(toolCallId) : undefined;
+		if (span) {
+			span.setAttribute("tool.result.status", isError ? "error" : "ok");
+			if (durationMs !== undefined && durationMs !== null) span.setAttribute("tool.duration_ms", durationMs);
+			span.setStatus(isError ? "error" : "ok");
+			span.end();
+			if (toolCallId) this.toolSpans.delete(toolCallId);
+		}
+		this.options.observability?.metrics
+			.counter("codeteam_tool_calls_total", {
+				"tool.category": classification.category,
+				"tool.name": classification.toolName,
+				status: isError ? "error" : "ok",
+			})
+			.add();
+	}
+
+	private append(kind: Parameters<ControlStore["runs"]["appendEvent"]>[1], payload: unknown): RunEvent | null {
 		try {
-			this.store.runs.appendEvent(this.runId, kind, payload);
+			return this.store.runs.appendEvent(this.runId, kind, payload);
 		} catch {
 			this.writeErrors += 1;
+			return null;
 		}
 	}
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	return value as Record<string, unknown>;
 }
 
 function textOf(content: unknown): string {
