@@ -1,7 +1,7 @@
 ---
 title: "W4 SOP 复用与点状 Gate 实施计划"
 doc_kind: plan
-status: implemented
+status: closed
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -266,7 +266,7 @@ NODE_ENV=development npm run build:offline
 - 墨墨：SOP 告示牌是否仍可读、operator CLI 体验、design gate/fast lane、
   dogfood 路径是否真的不需要 Web。
 
-## Results（2026-10-28，merged；follow-up/close pending）
+## Results（2026-10-28，accepted/closed）
 
 - 实现落点：SOP catalog/evidence/service、gates、approval/backlog/thread/task CLI、
   local MergeExecutor、gate telemetry；详见
@@ -286,6 +286,8 @@ NODE_ENV=development npm run build:offline
 - Follow-up 抓到并修复：`suggested` 换 profile 的 error code 应为 `conflict`；
   store completion gate 漏 backlog `done` 检查；`MergeExecuteResult` 增 `reviewRef`。
 - W7a residuals：store 层 evidenceRef 解析下沉；HTTP requester 从鉴权派生。
-- 待 follow-up PR merge → 愿景守护（非作者非 reviewer）→ operator close；尚未
-  accepted/closed。
+- PR #48 **merged** at `772dd1741`；vision guard 烁烁（非作者非 reviewer）
+  **approve**；operator close 已确认（message
+  `0001793185812278-003600-f076c296`）；22/22 W4 AC 勾验。
+- W7a residuals 继续由 F007 ledger 承接；本切片 **accepted/closed**。
 

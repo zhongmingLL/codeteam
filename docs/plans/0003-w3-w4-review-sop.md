@@ -1,9 +1,9 @@
 ---
 title: "W3–W4 审查与 SOP 计划：独立 review、design gate"
 doc_kind: plan
-status: reviewed
+status: closed
 created: 2026-10-21
-updated: 2026-10-25
+updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 ---
@@ -327,28 +327,32 @@ behavior / data / security / contract / irreversible。
 
 ### Acceptance
 
-- [ ] `WorkflowSop` 以 `backlogItemId` 为 key；stage 写入不做迁移校验（告示牌）。
-- [ ] `checks.*=verified` 无 `sop_check_evidence` 证据 → 422；agent/operator 只能写 `attested|unknown`；stale evidence 读为 `unknown`。
-- [ ] `sop_check_evidence` 的 `check_name × evidence_kind` 由 SQL CHECK + 应用层双重校验；`evidence_ref` 可解析到 review/merge/verification。
-- [ ] `check_verified` 同事务写 audit；W7a 订阅 audit，不用 `workflow_sops.version` 当失效信号；`BacklogItem.audit` 带 `audit_truncated`+cursor。
-- [ ] `stage=completion` 缺 backlog done + completion gate → 422；`markDone` 不能从 open/suggested 直接跳，operator override 有 audit。
-- [ ] `sop_check_evidence` 只存 SOP check 的 verified 证据；不复制 A3-3 的 review/merge/verification 表。
-- [ ] `roles` 是动态 registry：内置 4 + 前端自定义 writer 等；未知/禁用 role fail closed；`human` 不是 Role。
-- [ ] 不存在引用 clowder 专属 repo/port/command/globs 的 predicate；每条改写有 diff 说明。
-- [ ] task 只能绑定已存在的 backlog item；task done 不自动改 `workflow_sops.stage=completion`。
-- [ ] backlog CLI 能创建/dispatch；`task create` 缺 backlog item 时 fail closed，不隐式造 item。
-- [ ] docs/小改动按 clowder 风险车道走，不被完整 SOP 拖慢。
-- [ ] design gate 机器默认；critical/spec_change 才 human。
-- [ ] review/verify/merge gates 有 exact HEAD evidence；P1/P2 closed。
-- [ ] merge gate 校验 declared lane/risk vs diff stats；不一致升级或 block。
-- [ ] merge-gate 5 条只作证据清单；routine merge 由 merge-owner capability 执行，普通 agent/run token 不能自行 merge。
-- [ ] completion 需要 vision guard + acceptance + merge receipt。
-- [ ] resume capsule 冷启动可读；CAS 冲突可检测。
-- [ ] approval materialize CAS service：claim 预留 `effect_reservation_ref`、owner receipt `approval_id` UNIQUE、recovery 按 reservation 对账；run token/agent-key 对 materialize 403。
-- [ ] approval 只写 `approvals`；不存在 CLI 直接改 task/lane 状态的旁路。
-- [ ] gate 通过率/block 原因可查询；有剪枝候选报告。
-- [ ] operator 能用 backlog create/dispatch 建 thread，再用 `codeteam thread list/show/post/tail` 发消息并看到 agent 回复；不新增第二建 thread 通路。
-- [ ] dogfood 交互路径可走通：backlog dispatch 建 thread → thread post → thread tail 看回复 → approval/merge CLI；operator 不需要 Web 也能完成一轮对话。
+> Close evidence（2026-10-28）：PR #47 `4743137c9` + PR #48 `772dd1741`；
+> vision guard 烁烁 approve；operator close message
+> `0001793185812278-003600-f076c296`；证据报告 `reports/2026-10-28-w4-sop-gates.md`。
+
+- [x] `WorkflowSop` 以 `backlogItemId` 为 key；stage 写入不做迁移校验（告示牌）。
+- [x] `checks.*=verified` 无 `sop_check_evidence` 证据 → 422；agent/operator 只能写 `attested|unknown`；stale evidence 读为 `unknown`。
+- [x] `sop_check_evidence` 的 `check_name × evidence_kind` 由 SQL CHECK + 应用层双重校验；`evidence_ref` 可解析到 review/merge/verification。
+- [x] `check_verified` 同事务写 audit；W7a 订阅 audit，不用 `workflow_sops.version` 当失效信号；`BacklogItem.audit` 带 `audit_truncated`+cursor。
+- [x] `stage=completion` 缺 backlog done + completion gate → 422；`markDone` 不能从 open/suggested 直接跳，operator override 有 audit。
+- [x] `sop_check_evidence` 只存 SOP check 的 verified 证据；不复制 A3-3 的 review/merge/verification 表。
+- [x] `roles` 是动态 registry：内置 4 + 前端自定义 writer 等；未知/禁用 role fail closed；`human` 不是 Role。
+- [x] 不存在引用 clowder 专属 repo/port/command/globs 的 predicate；每条改写有 diff 说明。
+- [x] task 只能绑定已存在的 backlog item；task done 不自动改 `workflow_sops.stage=completion`。
+- [x] backlog CLI 能创建/dispatch；`task create` 缺 backlog item 时 fail closed，不隐式造 item。
+- [x] docs/小改动按 clowder 风险车道走，不被完整 SOP 拖慢。
+- [x] design gate 机器默认；critical/spec_change 才 human。
+- [x] review/verify/merge gates 有 exact HEAD evidence；P1/P2 closed。
+- [x] merge gate 校验 declared lane/risk vs diff stats；不一致升级或 block。
+- [x] merge-gate 5 条只作证据清单；routine merge 由 merge-owner capability 执行，普通 agent/run token 不能自行 merge。
+- [x] completion 需要 vision guard + acceptance + merge receipt。
+- [x] resume capsule 冷启动可读；CAS 冲突可检测。
+- [x] approval materialize CAS service：claim 预留 `effect_reservation_ref`、owner receipt `approval_id` UNIQUE、recovery 按 reservation 对账；run token/agent-key 对 materialize 403。
+- [x] approval 只写 `approvals`；不存在 CLI 直接改 task/lane 状态的旁路。
+- [x] gate 通过率/block 原因可查询；有剪枝候选报告。
+- [x] operator 能用 backlog create/dispatch 建 thread，再用 `codeteam thread list/show/post/tail` 发消息并看到 agent 回复；不新增第二建 thread 通路。
+- [x] dogfood 交互路径可走通：backlog dispatch 建 thread → thread post → thread tail 看回复 → approval/merge CLI；operator 不需要 Web 也能完成一轮对话。
 
 ### Risks
 
@@ -368,7 +372,7 @@ behavior / data / security / contract / irreversible。
 - 砚砚：点状 gate、五轴风险、review exact HEAD、approval 权限域。
 - 墨墨：Design Gate/operator 体验、resume capsule、fast lane 可理解性。
 
-### W4 Results（2026-10-28，merged；follow-up/close pending）
+### W4 Results（2026-10-28，accepted/closed）
 
 - 实施计划：`plans/0009-w4-sop-gates-implementation.md`（含 AC 映射与两个显式
   scope 决定：CLI-first；agent runner 归 W5）。
@@ -389,7 +393,10 @@ behavior / data / security / contract / irreversible。
 - PR #47 **merged** at `4743137c9`；CI 4/4 green。
 - Follow-up 矩阵抓到并修复两个真实缺口：`suggested` 换 profile 应 `conflict`；
   store completion gate 漏了 backlog `done` 检查。follow-up docs/矩阵/CLI 失败路径/
-  标准车道 E2E 完成后做愿景守护 + operator close；尚未 accepted/closed。
+  标准车道 E2E 完成；PR #48 **merged** at `772dd1741`，CI 5/5 green。
+- 愿景守护：烁烁（非作者非 reviewer）**approve** @ `772dd1741`；operator close
+  已确认（message `0001793185812278-003600-f076c296`）。22/22 W4 AC 勾验；
+  W7a residuals 由 F007 ledger 承接。W4 **accepted/closed**。
 
 ---
 
