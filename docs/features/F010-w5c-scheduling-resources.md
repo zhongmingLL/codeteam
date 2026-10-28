@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F010]
 title: "F010: W5c 运营调度与资源"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-28
@@ -55,6 +55,18 @@ lifecycle、deployment wait、managed-work 不在本 slice 勾选。
   `CODETEAM_A2A_MAX_DEPTH=32` 关闭。
 - 明确未做：W5d 的 daemon lifecycle、deployment wait、managed-work/PR
   binding/sticky retry；见 F011。
+
+## Close record（2026-10-28）
+
+- PR #52 squash merged at `959ef7e760ee5227e0d125b2235bf75e36395d91`；
+  reviewed HEAD `15b7009c3c59594f13987e40ab0f9855d4056688`；base
+  `0827773aa`。
+- 砚砚 code/security approved（msg `0001793199344123-003737-a8c073df`）；
+  墨墨 SOP/process/Product approved（msg `0001793199744633-003740-f7c64992`）。
+- CI 4/4；post-merge daemon acceptance 47 files passed + 2 skipped，
+  349 tests passed + 2 skipped。
+- W5d（daemon lifecycle/deployment wait/managed work）仍为 F011 / planned，
+  本 feature 不包含。
 
 ## Out of scope
 

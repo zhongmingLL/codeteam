@@ -1,7 +1,7 @@
 ---
 title: "W5c 运营调度与资源实施计划"
 doc_kind: plan
-status: active
+status: closed
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -330,4 +330,15 @@ W5d 必须重新读 `0004` §W5、`docs/reuse/managed-work.md`、
 `docs/architecture/reuse-review/{runtime-deployment,managed-work}.md` 和
 `docs/reuse/runtime-deployment.md`，先写实施计划与 AC 映射，不得直接
 复用本 slice 的 evidence 宣布完成。
+
+## 11. Close（2026-10-28）
+
+- PR #52 squash merged at `959ef7e760ee5227e0d125b2235bf75e36395d91`；
+  reviewed HEAD `15b7009c3c59594f13987e40ab0f9855d4056688`；base
+  `0827773aa`。
+- 砚砚 code/security approved（msg `0001793199344123-003737-a8c073df`）；
+  墨墨 SOP/process/Product approved（msg `0001793199744633-003740-f7c64992`）。
+- CI 4/4；post-merge acceptance 47 files passed + 2 skipped，349 tests
+  passed + 2 skipped。
+- W5c core closed；W5d 仍为 F011/planned，不得由本计划 evidence 冒充完成。
 
