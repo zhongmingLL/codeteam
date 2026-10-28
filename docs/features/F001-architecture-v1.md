@@ -117,7 +117,9 @@ codeteam 已经有一个能跑的控制面、pi SDK adapter、review/verifier/ev
 - [ ] 明确 GitHub/GitLab 是 Forge connector，不是 IM 网关。
 - [ ] 明确 Console M0 = 看 + 聊 + 批；M1 = 建 + 配 + 控。
 - [ ] 明确 `Message` 持久化与 operator chat → typed inbox 的转换；A2A 讨论用 Message，责任转移仍只走 typed handoff。
-- [ ] W4 approval CLI 覆盖 critical design / spec_change / merge，且审批只写 `approvals`。
+- [x] W4 approval CLI 覆盖 critical design / spec_change / merge，且审批只写 `approvals`。
+  （`approval request/list/show/approve/reject`；decide operator-only；agent request
+  走 `--requester profile:<id>`；证据 `reports/2026-10-28-w4-sop-gates.md` / F007）
 - [ ] W7 前端载体按 C（dogfood）→ A（产品），W7a headless 先于 W7b。
 - [ ] 明确所有进控制面的 GitHub issue/comment 仅 maintainer/collaborator 可入；label/mention 只是叠加 opt-in，不单独放行。
 - [ ] 明确 v1 只做 issue/PR/CI/comment 的只读 evidence + 人工 merge。

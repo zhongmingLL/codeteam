@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initOperatorCredential } from "../src/auth/index.ts";
 import { openControlStore } from "../src/index.ts";
 
 const CLI = join(process.cwd(), "dist/cli.js");
@@ -68,7 +67,6 @@ function createMergeRepo(): { repo: string; featureSha: string } {
 beforeEach(() => {
 	dataDir = mkdtempSync(join(tmpdir(), "codeteam-dogfood-data-"));
 	dirs.push(dataDir);
-	initOperatorCredential({ dataDir });
 });
 
 afterEach(() => {
@@ -77,6 +75,7 @@ afterEach(() => {
 
 describe("codeteam W4 CLI dogfood", () => {
 	it("runs backlog -> thread -> agent reply -> approval -> merge -> SOP completion without Web", () => {
+		cli(["auth", "init"]);
 		cli(["profile", "seed"]);
 		const profiles = cliJson<Array<{ id: string }>>(["profile", "list"]);
 		expect(profiles.some((profile) => profile.id === "profile:eval")).toBe(true);

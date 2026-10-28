@@ -368,7 +368,7 @@ behavior / data / security / contract / irreversible。
 - 砚砚：点状 gate、五轴风险、review exact HEAD、approval 权限域。
 - 墨墨：Design Gate/operator 体验、resume capsule、fast lane 可理解性。
 
-### W4 Results（2026-10-28，implemented，pending independent review）
+### W4 Results（2026-10-28，merged；follow-up/close pending）
 
 - 实施计划：`plans/0009-w4-sop-gates-implementation.md`（含 AC 映射与两个显式
   scope 决定：CLI-first；agent runner 归 W5）。
@@ -376,16 +376,20 @@ behavior / data / security / contract / irreversible。
   worktree/design/review/verify/risk-consistency/merge/completion gates；
   approval/backlog/thread/task CLI；local `MergeExecutor` + merge receipt
   migration 010；gate telemetry。
-- 测试：daemon **204 passed / 1 skipped**；W4 新增 33 条；真实 CLI dogfood
-  跑通 backlog→dispatch→thread→agent cutover 回复→approval→merge→SOP
-  completion；adapter 15 passed / 1 skipped；skills 15 passed。
+- 测试：W4 主 PR **204 passed / 1 skipped**；follow-up 增至 **264 passed /
+  1 skipped**（W4 合计 93 条）；真实 CLI dogfood 跑通
+  auth init→profile seed→backlog→dispatch→thread→agent cutover 回复→approval→
+  merge→SOP completion；adapter 15 passed / 1 skipped；skills 15 passed。
 - 类型/构建：`build:offline`、根级 tsc、Biome、静态检查通过。
 - 证据报告：`reports/2026-10-28-w4-sop-gates.md`。
 - 砚砚 code/security/gate review **Approved** @ `5b3eba634`，delta **Approved**
   @ `90761ab5e`（7 P3）；P3-2/3/4/5/6/7 已修，P3-1 留 W7a 前置 residual。
-- 墨墨 SOP/process/Product review **changes_requested**（P2-1 bootstrap / P2-2
-  global flags / P2-3 agent approval request）；已补 `profile seed`、前置全局 flag、
-  agent `approval request --requester`，待墨墨 delta 复审。尚未 merged/accepted。
+- 墨墨 SOP/process/Product review **changes_requested** → delta **Approved** @
+  `0a8eb2b99`（P2-1 bootstrap / P2-2 global flags / P2-3 agent approval request 均实测通过）。
+- PR #47 **merged** at `4743137c9`；CI 4/4 green。
+- Follow-up 矩阵抓到并修复两个真实缺口：`suggested` 换 profile 应 `conflict`；
+  store completion gate 漏了 backlog `done` 检查。follow-up docs/矩阵/CLI 失败路径/
+  标准车道 E2E 完成后做愿景守护 + operator close；尚未 accepted/closed。
 
 ---
 

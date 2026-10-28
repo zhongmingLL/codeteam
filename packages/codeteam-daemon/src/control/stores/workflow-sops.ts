@@ -182,7 +182,7 @@ export class WorkflowSopStore {
 						throw new ControlError("version_conflict", `workflow SOP version is ${existing.version}`);
 					}
 					if (stage === "completion") {
-						this.assertCompletionGate(input.backlogItemId, input, existing.updatedBy);
+						this.assertCompletionGate(input.backlogItemId, input, backlog.status);
 					}
 					const result = this.database
 						.prepare(
@@ -218,7 +218,7 @@ export class WorkflowSopStore {
 					return this.get(input.backlogItemId)!;
 				}
 				if (stage === "completion") {
-					this.assertCompletionGate(input.backlogItemId, input, null);
+					this.assertCompletionGate(input.backlogItemId, input, backlog.status);
 				}
 				const definitionId = validateDefinitionId(input.sopDefinitionId, "development");
 				this.database
@@ -305,8 +305,11 @@ export class WorkflowSopStore {
 	private assertCompletionGate(
 		backlogItemId: string,
 		input: UpsertWorkflowSopInput,
-		previousUpdatedBy: string | null,
+		backlogStatus: string | undefined,
 	): void {
+		if (backlogStatus !== "done") {
+			throw new ControlError("invalid_state", "completion_gate_required: backlog item is not done");
+		}
 		const actor = nonEmpty(input.updatedBy, "updatedBy");
 		if (!actor.startsWith("operator:")) {
 			throw new ControlError(
@@ -340,8 +343,6 @@ export class WorkflowSopStore {
 				"completion_gate_required: fresh visionGuardDone evidence is required",
 			);
 		}
-		// Keep the parameter for future re-open/audit checks without pretending it is evidence.
-		void previousUpdatedBy;
 	}
 }
 

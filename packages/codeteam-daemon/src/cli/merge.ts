@@ -56,6 +56,10 @@ export function runMergeCommand(args: ParsedArgs, context: CliContext): number {
 }
 
 function recordMerge(args: ParsedArgs, context: CliContext): number {
+	const status = option(args, "status") ?? "succeeded";
+	if (status !== "succeeded" && status !== "failed" && status !== "unknown") {
+		throw new ControlError("invalid_input", "--status must be succeeded, failed, or unknown");
+	}
 	const request = mergeRequest(args);
 	const service = new GateService(context.store);
 	const evaluated = service.merge(request);
@@ -84,10 +88,6 @@ function recordMerge(args: ParsedArgs, context: CliContext): number {
 		});
 	}
 	const gateEvidenceRef = service.record(evaluated.result, request.taskId);
-	const status = option(args, "status") ?? "succeeded";
-	if (status !== "succeeded" && status !== "failed" && status !== "unknown") {
-		throw new ControlError("invalid_input", "--status must be succeeded, failed, or unknown");
-	}
 	const mergeSha =
 		status === "succeeded" ? requireOption(args, "merge-sha") : (option(args, "merge-sha") ?? evaluated.baseSha);
 	if (status === "succeeded") {

@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { initOperatorCredential, loadOperatorPrivateKey, loadOperatorPublicKey } from "../src/auth/index.ts";
-import { type ControlStore, MergeExecutor, openControlStore } from "../src/index.ts";
+import {
+	type AssuranceLevel,
+	type ControlStore,
+	MergeExecutor,
+	openControlStore,
+	type RiskAxis,
+	type RiskLane,
+} from "../src/index.ts";
 
 const dirs: string[] = [];
 let store: ControlStore;
@@ -64,11 +71,92 @@ function createWork() {
 		threadId: thread.id,
 		title: "Merge work",
 		why: "test merge executor",
+		ownerProfileId: "profile-coder",
 		createdBy: "operator:test",
 		userId: "user-1",
 		backlogItemId: backlog.id,
 	});
 	return { backlog, thread, task };
+}
+
+function createApprovedReview(taskId: string, threadId: string, headSha: string, baseSha: string) {
+	const suffix = Math.random().toString(16).slice(2);
+	const source = store.messages.append({
+		threadId,
+		authorKind: "user",
+		authorId: "user-1",
+		kind: "chat",
+		bodyMd: "standard lane review source",
+	});
+	const queue = store.queue.admit({
+		threadId,
+		sourceId: source.id,
+		sourceKind: "conversation_input",
+		targets: ["profile-coder"],
+		sourceCategory: "a2a",
+		orderKey: "1",
+	});
+	const authorSession = store.sessions.create({
+		id: `session-author-${suffix}`,
+		threadId,
+		taskId,
+		profileId: "profile-coder",
+		role: "coder",
+		effectiveToolPolicy: "default",
+		provider: "test",
+		model: "deepseek-flash",
+		modelFamily: "deepseek",
+		seq: 0,
+	});
+	const reviewerSession = store.sessions.create({
+		id: `session-reviewer-${suffix}`,
+		threadId,
+		taskId,
+		profileId: "profile:eval",
+		role: "reviewer",
+		effectiveToolPolicy: "default",
+		provider: "test",
+		model: "glm-5.3-flash",
+		modelFamily: "glm",
+		seq: 1,
+	});
+	const run = store.runs.create({
+		id: `run-author-${suffix}`,
+		taskId,
+		queueEntryId: queue.id,
+		role: "coder",
+		agentSessionId: authorSession.id,
+		sourceId: source.id,
+		recipientProfileId: "profile-coder",
+		provider: "test",
+		model: "deepseek-flash",
+		modelFamily: "deepseek",
+	});
+	store.audit.append({
+		actor: "profile:coder",
+		action: "commit_created",
+		subject: `commit:${headSha}`,
+		args: { headSha, taskId },
+	});
+	return store.reviews.create({
+		id: `review-${suffix}`,
+		taskId,
+		runId: run.id,
+		headSha,
+		baseSha,
+		authorSessionId: authorSession.id,
+		authorModel: "deepseek-flash",
+		authorModelFamily: "deepseek",
+		reviewerSessionId: reviewerSession.id,
+		reviewerModel: "glm-5.3-flash",
+		reviewerModelFamily: "glm",
+		authorProfileId: "profile-coder",
+		reviewerProfileId: "profile:eval",
+		riskClass: "code",
+		reviewMode: "cross_family",
+		verdict: "approve",
+		findings: [],
+	});
 }
 
 function execute(input: {
@@ -77,6 +165,9 @@ function execute(input: {
 	hardGate?: boolean;
 	approvalId?: string | null;
 	prRef?: string;
+	declaredLane?: RiskLane;
+	declaredAssurance?: AssuranceLevel;
+	declaredAxes?: RiskAxis[];
 }) {
 	return new MergeExecutor(store).execute({
 		taskId: input.taskId,
@@ -88,6 +179,9 @@ function execute(input: {
 		allowUnsyncedBase: true,
 		hardGate: input.hardGate,
 		approvalId: input.approvalId ?? null,
+		declaredLane: input.declaredLane,
+		declaredAssurance: input.declaredAssurance,
+		declaredAxes: input.declaredAxes,
 		operatorId: "operator:test",
 		operatorPrivateKey: loadOperatorPrivateKey(dataDir),
 		operatorPublicKey: loadOperatorPublicKey(dataDir),
@@ -100,6 +194,19 @@ beforeEach(() => {
 	dirs.push(dataDir);
 	initOperatorCredential({ dataDir });
 	store = openControlStore({ dataDir });
+	store.seedIdentity({
+		eval: { provider: "test", model: "glm-5.3-flash", modelFamily: "glm" },
+		compress: { provider: "test", model: "qwen3.8-flash", modelFamily: "qwen" },
+	});
+	store.profiles.create({
+		id: "profile-coder",
+		role: "coder",
+		displayName: "Coder",
+		provider: "test",
+		model: "deepseek-flash",
+		modelFamily: "deepseek",
+		toolPolicyProfile: "default",
+	});
 });
 
 afterEach(() => {
@@ -164,6 +271,29 @@ describe("local MergeExecutor", () => {
 		const before = git(repo, ["rev-parse", "main"]);
 		expect(() => execute({ taskId: task.id, headSha: featureSha })).toThrow(/merge_gate_blocked/);
 		expect(git(repo, ["rev-parse", "main"])).toBe(before);
+	});
+
+	it("executes a standard code-lane merge with an approving review at exact HEAD/base", () => {
+		const { task, thread } = createWork();
+		git(repo, ["checkout", "-b", "feature-standard", "-q"]);
+		mkdirSync(join(repo, "packages/codeteam-daemon/src/control"), { recursive: true });
+		const featureSha = commitFile(
+			"packages/codeteam-daemon/src/control/foo.ts",
+			"export const standardLane = true;\n",
+		);
+		git(repo, ["checkout", "main", "-q"]);
+		const review = createApprovedReview(task.id, thread.id, featureSha, git(repo, ["rev-parse", "main"]));
+		const result = execute({
+			taskId: task.id,
+			headSha: featureSha,
+			declaredLane: "standard",
+			declaredAssurance: "high",
+			declaredAxes: ["contract", "behavior"],
+		});
+		expect(result.gate.status).not.toBe("block");
+		expect(result.receipt.status).toBe("succeeded");
+		expect(result.reviewRef).toBe(review.id);
+		expect(result.receipt.reviewRef).toBe(review.id);
 	});
 
 	it("requires an accepted hard-gate approval and then executes", () => {

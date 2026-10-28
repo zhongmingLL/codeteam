@@ -211,7 +211,10 @@ export class BacklogStore {
 		try {
 			return this.transaction.run(() => {
 				const current = this.require(id);
-				if (current.status === "suggested" && current.suggestion?.catId === input.catId) return current;
+				if (current.status === "suggested") {
+					if (current.suggestion?.catId === input.catId) return current;
+					throw new ControlError("conflict", `backlog item ${id} already has another suggestion`);
+				}
 				if (current.status !== "open") {
 					throw new ControlError("invalid_state", `backlog item ${id} cannot be suggested from ${current.status}`);
 				}
