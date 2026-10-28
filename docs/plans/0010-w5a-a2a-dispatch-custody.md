@@ -1,7 +1,7 @@
 ---
 title: "W5a A2A 投递与球权内核实施计划"
 doc_kind: plan
-status: in_progress
+status: closed
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -302,3 +302,18 @@ DB（无生产数据）。
   re-attach、readiness/DAG、预算、worktree pool、F139、daemon lifecycle、
   deployment wait、PR tracking/managed-work。W5b/W5c 不得由本 slice 的测试
   冒充完成。
+
+## Close（2026-10-28）
+
+- PR #50 merged into `codeteam-work` at
+  `d9d3d96639db57579bcd712a8fdec8d1839b2722`; reviewed HEAD
+  `4892da95edad883619a314fc243298fc414f84db`; base `aa0840f8c`.
+- Reviews: 烁烁 A2A/session/custody approve; 砚砚 code/security approve; both
+  cover the final HEAD. P1 cross-task custody hijack and P2 poison/multi-target
+  regression were closed with negative tests.
+- Vision guard: 墨墨 approved the merged state (non-author, non-reviewer).
+- Post-merge daemon acceptance: 35 files passed + 1 skipped, 291 tests passed
+  + 1 skipped; CI 4/4 green.
+- W5a contract is frozen. W5b RPC worker runtime and W5c operational scheduling
+  remain out of scope and should be proposed from the source thread, not inferred
+  from this slice.
