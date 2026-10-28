@@ -1,7 +1,7 @@
 ---
 title: "W5b RPC Worker Runtime 实施计划"
 doc_kind: plan
-status: active
+status: closed
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -385,4 +385,18 @@ DB（无生产数据）。
 | 6 | 超长 dataDir 时 control socket fallback 到 `/tmp` 可预测名；0600 + fail-closed 已验证 | W7a transport 硬化 |
 | 7 | `RpcConnection.start()` 固定 50ms 启动探测；更慢启动崩溃由后续 `getState` 捕获 | 必要时改 readiness handshake |
 | 8 | `event-sink` 16KiB 截断按 UTF-16 code unit，边界可能切断代理对 | 后续硬化，不影响控制面安全 |
+
+## Close（2026-10-28）
+
+- PR #53 squash merged into `codeteam-work` at
+  `aeb1bf834094975963b6f5bc4626f780430a3ac3`; reviewed HEAD
+  `028785a137b0a1b9c0603332acbde3051e691641`; base `c30f9aafb`.
+- Reviews: 烁烁 A2A/session/worker approve; 砚砚 code/security approve; both
+  cover the final HEAD. P2-1/P2-2/P2-3 closed with regression tests.
+- Vision guard: 墨墨（non-author, non-reviewer）approved the merged state,
+  independently verifying tree hash, daemon 316+2, W5b 25+1, and Biome.
+- Post-merge daemon acceptance: 40 files passed + 2 skipped, 316 tests passed
+  + 2 skipped; W5b targeted 25+1; CI 4/4 green on reviewed HEAD.
+- W5b contract is frozen. W5c readiness/DAG/budget/worktree pool/daemon
+  lifecycle and W7a HTTP/MCP transport remain out of scope.
 

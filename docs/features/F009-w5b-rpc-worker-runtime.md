@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F009]
 title: "F009: W5b RPC Worker Runtime"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 created: 2026-10-28
@@ -64,6 +64,29 @@ slice-specific 证据，不把 W5c/W7a 项冒充完成。
   `401 Missing Authentication header` 未跑通；默认 skip，不作为 CI 门禁。
 - 计划中的 residual ledger 见 `0011`。
 - 验证报告：[`docs/reports/2026-10-28-w5b-rpc-worker-runtime.md`](../reports/2026-10-28-w5b-rpc-worker-runtime.md)。
+
+## Close record（2026-10-28）
+
+- **Merge**：PR #53 squash merged into `codeteam-work` at
+  `aeb1bf834094975963b6f5bc4626f780430a3ac3`；reviewed HEAD
+  `028785a137b0a1b9c0603332acbde3051e691641`，base `c30f9aafb`。
+  Squashed tree 与 reviewed tree 同为 `8ff2cb656…`，kernel packages
+  （coding-agent / ai / agent）零 diff。
+- **Review**：烁烁 A2A/session/worker approve
+  （`0001793195829430-003692-995023f1`）；砚砚 code/security approve
+  （`0001793195864326-003694-85321350`）。P2-1（lease freshness）、
+  P2-2（degraded 可见性）、P2-3（残留帧 max-frame 保护）均在最终 HEAD 闭合；
+  无 open P1/P2。
+- **Vision guard**：墨墨（非作者非 reviewer）approve
+  （`0001793196631830-003697-9e8006eb`）；独立核实 tree-hash 一致、daemon
+  316+2、W5b 25+1、Biome 干净，未发现 overclaim 或 W5c/W7a 冒领。
+- **Post-merge acceptance**：merged tree 隔离环境 daemon 40 files passed +
+  2 skipped，316 tests passed + 2 skipped；W5b 定向 25+1；Biome、scoped
+  TSC、`build:offline` 通过；PR CI 4/4 green（run 40700930998）。
+- **Boundary**：W5b 交付真实 `pi --mode rpc` executor、worker
+  registry/sticky/re-attach、control plane/tool policy、retry/dead-letter；
+  W5c readiness/DAG/预算/worktree pool/daemon lifecycle 与 W7a HTTP/MCP
+  transport 仍不在本 feature。residual ledger 见 `0011`。
 
 ## Out of scope
 
