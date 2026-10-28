@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SOP_CHECK_EVIDENCE_KIND, SOP_CHECK_NAME_VALUES } from "../src/control/stores/sop-check-evidence.ts";
 import { SOP_CATALOG, SOP_STAGE_IDS } from "../src/index.ts";
@@ -50,5 +52,13 @@ describe("codeteam SOP catalog", () => {
 			expect(text).not.toMatch(/REDIS_URL|:6398|:6399/);
 			expect(text).not.toMatch(/pnpm check:features|pnpm convention-graph|cat-cafe-runtime/);
 		}
+	});
+
+	it("keeps the generated catalog in sync with the YAML source", () => {
+		const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+		const script = fileURLToPath(new URL("../../../scripts/sop-definitions.mjs", import.meta.url));
+		expect(() =>
+			execFileSync(process.execPath, [script, "--check"], { cwd: repoRoot, encoding: "utf8", stdio: "pipe" }),
+		).not.toThrow();
 	});
 });

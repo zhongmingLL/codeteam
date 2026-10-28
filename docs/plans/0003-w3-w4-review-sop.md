@@ -376,7 +376,7 @@ behavior / data / security / contract / irreversible。
   worktree/design/review/verify/risk-consistency/merge/completion gates；
   approval/backlog/thread/task CLI；local `MergeExecutor` + merge receipt
   migration 010；gate telemetry。
-- 测试：daemon **198 passed / 1 skipped**；W4 新增 27 条；真实 CLI dogfood
+- 测试：daemon **199 passed / 1 skipped**；W4 新增 28 条；真实 CLI dogfood
   跑通 backlog→dispatch→thread→agent cutover 回复→approval→merge→SOP
   completion；adapter 15 passed / 1 skipped；skills 15 passed。
 - 类型/构建：`build:offline`、根级 tsc、Biome、静态检查通过。

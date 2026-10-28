@@ -74,8 +74,8 @@ W4 dogfood 测试使用测试内的 agent executor 调 `cutoverQueueEntry` 写�
 - predicate 参数去 clowder 化：不出现 `cat-cafe`、Redis 6398/6399、
   `pnpm check:features`、clowder docs globs；换成 codeteam 路径/命令或
   显式 `unknown`。
-- codegen 输出可重复生成；`npm run generate:sop-definitions` 检查
-  drift（生成后不改手写文件）。
+- codegen 输出可重复生成；`node scripts/sop-definitions.mjs --check` 检查
+  drift（生成后不改手写文件）；daemon catalog test 直接跑该检查。
 
 ### 2. checks 写权与证据
 
@@ -233,6 +233,7 @@ W4 dogfood 测试使用测试内的 agent executor 调 `cutoverQueueEntry` 写�
 ```bash
 # 定向
 NODE_ENV=development npm --prefix packages/codeteam-daemon test -- control-sop control-gate cli-dogfood
+NODE_ENV=development node scripts/sop-definitions.mjs --check
 
 # 包内全量
 NODE_ENV=development npm --prefix packages/codeteam-daemon test
@@ -270,7 +271,7 @@ NODE_ENV=development npm run build:offline
 - 实现落点：SOP catalog/evidence/service、gates、approval/backlog/thread/task CLI、
   local MergeExecutor、gate telemetry；详见
   [`../reports/2026-10-28-w4-sop-gates.md`](../reports/2026-10-28-w4-sop-gates.md)。
-- 验证：daemon **198 passed / 1 skipped**；W4 新增 27 条测试；CLI dogfood
+- 验证：daemon **199 passed / 1 skipped**；W4 新增 28 条测试；CLI dogfood
   1 条真实端到端；adapter 15 passed / 1 skipped；skills 15 passed；
   `build:offline`、根级 tsc、Biome、静态检查全通过。
 - 独立 review 尚未发生；本切片不宣称 merged/accepted。

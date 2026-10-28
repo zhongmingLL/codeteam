@@ -40,7 +40,7 @@ merges 的 schema 与 store；W3 已有独立 review/falsifier 证据链。W4 �
 ## 当前进展
 
 - 2026-10-28：W4 kickoff；实施计划与 F007 建立。
-- 2026-10-28：W4a/b/c 实现完成；daemon 198 passed / 1 skipped；
+- 2026-10-28：W4a/b/c 实现完成；daemon 199 passed / 1 skipped；
   CLI dogfood 真实跑通 backlog→dispatch→thread→agent cutover 回复→approval→
   merge execute→SOP completion；build/tsc/Biome/静态检查通过。
 - 证据报告：`docs/reports/2026-10-28-w4-sop-gates.md`。
