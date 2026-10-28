@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F011]
 title: "F011: W5d daemon lifecycle / deployment wait / managed work"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-28
@@ -58,7 +58,8 @@ passing tests 冒充。
   cancel 后可 `generation+1` 重注册，已投递的 wait 拒绝重注册。
 - W5d-C daemon lifecycle：文件型 `StopOperationRecord` 六态、operator
   签名、claim、frozen identity、executor containment、health 复验、
-  boot exit evidence；CLI status/halt。execute 时从 identity-verified
+  boot exit evidence；CLI `daemon status` / `daemon stop`（`halt` 是签名
+  action，不是子命令）。execute 时从 identity-verified
   pid 重新推导 descendants，避免 signal 已回收/复用的 pid。relaunch 的
   新 daemon 启动仍归 external executor。
 - 验证：`build:offline` exit 0；daemon 包 52 files passed + 2 skipped，
@@ -66,6 +67,22 @@ passing tests 冒充。
   `docs/reports/2026-10-28-w5d-runtime-lifecycle-managed-work.md`。
 - 未完成：W7 HTTP/Console、W8 revert connector；relaunch CLI 的 external
   start；W6 episode store。不得用本 slice 的 tests 冒充。
+
+## Close record（2026-10-28）
+
+- PR #56 squash merged at `168e67dd0`（reviewed HEAD
+  `dfb872d9c36c62e476f2e11fcfd3d2f37575e1f1`，base `7adc30ee4`）。
+- 砚砚 code/security approved @ `dfb872d9c`（msg
+  `0001793202850007-003779`，2×P2 + 3×P3 全闭合）；墨墨
+  SOP/process/Product approved @ `dfb872d9c`（msg
+  `0001793202985338-003781`，无 P1/P2）。CI 4/4。
+- Post-merge acceptance：`build:offline` 后 daemon 包 52 files passed
+  + 2 skipped，378 tests passed + 2 skipped。
+- 烁烁 W5/session-interface lane：本 thread 中 `cat-u12wt5ln` 为
+  `routableNotJoined`，无法投递；砚砚的 code/security review 实质覆盖
+  同一 focus（lifecycle / boot ledger / observation / recovery），以
+  reviewer 合票方式消费，不再另开 lane。若后续需要独立 session-interface
+  复核，由 operator 另派。
 
 ## Out of scope
 
