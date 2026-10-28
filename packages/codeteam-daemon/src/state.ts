@@ -4,6 +4,7 @@ export type DaemonState = "requested" | "ready" | "stopping" | "stopped" | "fail
 
 export interface DaemonStateFile {
 	schemaVersion: 1;
+	deploymentId?: string;
 	installationId: string;
 	installationRoot: string;
 	pid: number;

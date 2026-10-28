@@ -343,6 +343,8 @@ export interface ClaimQueueEntryInput {
 	claimId: string;
 	ownerRunId?: string | null;
 	ttlMs?: number;
+	/** Queue entries to skip in this pass; lets a drain loop defer one entry without starving the rest. */
+	excludeIds?: readonly string[];
 }
 
 export type BacklogPriority = "p0" | "p1" | "p2" | "p3";
@@ -911,6 +913,24 @@ export interface WorkRunBinding {
 	attemptId: string;
 	boundAt: number;
 }
+
+export type ManagedWorkRunPreflight =
+	| { kind: "unmanaged"; reason: "not_work" | "not_primary_implementer" | "no_admission" }
+	| {
+			kind: "managed";
+			workId: string;
+			attemptId: string;
+			executorProfileId: string | null;
+			matchesRequested: boolean;
+	  }
+	| {
+			kind: "conflict";
+			workId: string;
+			attemptId: string | null;
+			executorProfileId: string | null;
+			requestedProfileId: string;
+			reason: "executor_conflict" | "partial";
+	  };
 
 export interface WorkTaskBinding {
 	taskId: string;

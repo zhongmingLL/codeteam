@@ -165,8 +165,9 @@ describe("codeteam daemon lifecycle", () => {
 		expect(() => daemon.markReady()).toThrow(expect.objectContaining({ code: "invalid_state" }));
 		await daemon.stop();
 
-		const events = readBootLedger(join(dataDir, "boot-ledger.jsonl")).map((record) => record.event);
-		expect(events).toEqual(["started", "ready", "stopping", "stopped"]);
+		const records = readBootLedger(join(dataDir, "boot-ledger.jsonl"));
+		expect(records.map((record) => record.event)).toEqual(["started", "ready", "stopping", "stopped", "exited"]);
+		expect(records.at(-1)?.exitKind).toBe("clean");
 	});
 
 	it("records a failed boot and releases the fence when the port is taken", async () => {

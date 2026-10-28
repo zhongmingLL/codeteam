@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { ControlError } from "../errors.ts";
 import type { ControlTransaction } from "../transaction.ts";
 import { type Clock, changesOf, mapStoreError, nonEmpty } from "./helpers.ts";
-import type { WorkAdmission, WorkAttempt, WorkRunBinding, WorkTaskBinding } from "./types.ts";
+import type { ManagedWorkRunPreflight, WorkAdmission, WorkAttempt, WorkRunBinding, WorkTaskBinding } from "./types.ts";
 
 interface WorkAdmissionRow {
 	work_id: string;
@@ -62,6 +62,13 @@ export class WorkAdmissionStore {
 		return row ? mapAdmission(row) : null;
 	}
 
+	getAdmissionByProducer(producerRef: string): WorkAdmission | null {
+		const row = this.database
+			.prepare("SELECT * FROM work_admissions WHERE producer_ref = ? ORDER BY admitted_at, work_id LIMIT 1")
+			.get(producerRef) as WorkAdmissionRow | undefined;
+		return row ? mapAdmission(row) : null;
+	}
+
 	getAttempt(attemptId: string): WorkAttempt | null {
 		const row = this.database.prepare("SELECT * FROM work_attempts WHERE attempt_id = ?").get(attemptId) as
 			| WorkAttemptRow
@@ -74,6 +81,54 @@ export class WorkAdmissionStore {
 			.prepare("SELECT * FROM work_attempts WHERE work_id = ? ORDER BY attempt_number")
 			.all(workId) as unknown as WorkAttemptRow[];
 		return rows.map(mapAttempt);
+	}
+
+	preflightRunBinding(input: { taskId: string; role: string; profileId: string }): ManagedWorkRunPreflight {
+		const task = this.database.prepare("SELECT kind, backlog_item_id FROM tasks WHERE id = ?").get(input.taskId) as
+			| { kind?: string; backlog_item_id?: string | null }
+			| undefined;
+		if (!task) throw new ControlError("not_found", `task ${input.taskId} not found`);
+		if (task.kind !== "work" || !task.backlog_item_id) return { kind: "unmanaged", reason: "not_work" };
+		if (input.role !== "coder") return { kind: "unmanaged", reason: "not_primary_implementer" };
+		const admission = this.getAdmissionByProducer(task.backlog_item_id);
+		if (!admission) return { kind: "unmanaged", reason: "no_admission" };
+		const attempt = this.getAttempt(admission.initialAttemptId);
+		if (!attempt || attempt.workId !== admission.workId) {
+			return {
+				kind: "conflict",
+				workId: admission.workId,
+				attemptId: null,
+				executorProfileId: null,
+				requestedProfileId: input.profileId,
+				reason: "partial",
+			};
+		}
+		if (attempt.executorProfileId === null) {
+			return {
+				kind: "managed",
+				workId: admission.workId,
+				attemptId: attempt.attemptId,
+				executorProfileId: null,
+				matchesRequested: false,
+			};
+		}
+		if (attempt.executorProfileId === input.profileId) {
+			return {
+				kind: "managed",
+				workId: admission.workId,
+				attemptId: attempt.attemptId,
+				executorProfileId: attempt.executorProfileId,
+				matchesRequested: true,
+			};
+		}
+		return {
+			kind: "conflict",
+			workId: admission.workId,
+			attemptId: attempt.attemptId,
+			executorProfileId: attempt.executorProfileId,
+			requestedProfileId: input.profileId,
+			reason: "executor_conflict",
+		};
 	}
 
 	bindAttempt(attemptId: string, profileId: string): WorkAttempt {

@@ -1,8 +1,8 @@
 ---
 feature_ids: [codeteam/F011]
 title: "F011: W5d daemon lifecycle / deployment wait / managed work"
-status: planned
-owner: "待排期"
+status: in_progress
+owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-28
 updated: 2026-10-28
@@ -14,7 +14,7 @@ updated: 2026-10-28
 > （F010）已完成 readiness/DAG、预算、worktree pool/GC、F139；本 feature
 > 未开始，不继承 F010 的完成声明。W5 总契约以
 > [`docs/plans/0004-w5-w8-scale-product.md`](../plans/0004-w5-w8-scale-product.md)
-> §W5 为准，详细冻结见 `docs/plans/0012-w5c-scheduling-resources.md` §W5d。
+> §W5 为准，详细冻结见 `docs/plans/0013-w5d-runtime-lifecycle-managed-work.md`。
 
 ## Why
 
@@ -46,6 +46,26 @@ W5c core 已能决定“哪条 task 可以开始”和“资源是否足够”�
 待下一轮实施计划冻结。必须逐条映射 `0004` §W5 中 W5c 未勾选的 daemon
 lifecycle、deployment wait、PR tracking/managed-work AC；不得用 F010 的
 passing tests 冒充。
+
+## 当前进展（2026-10-28）
+
+- W5d-A managed work：`ManagedWorkService` register/attribution/lifecycle
+  evidence、preflight sticky retry、DispatchService conflict 消费 +
+  operator inbox；merge evidence 已接 `MergeExecutor`。
+- W5d-B deployment wait：原 Task JSON、observation/predicate/sweep、
+  start guard、queue 投递、CLI register/status/sweep/cancel；无第二等待表。
+  operator cancel 提供不可匹配 wait 的退出路径（terminal + audit），
+  cancel 后可 `generation+1` 重注册，已投递的 wait 拒绝重注册。
+- W5d-C daemon lifecycle：文件型 `StopOperationRecord` 六态、operator
+  签名、claim、frozen identity、executor containment、health 复验、
+  boot exit evidence；CLI status/halt。execute 时从 identity-verified
+  pid 重新推导 descendants，避免 signal 已回收/复用的 pid。relaunch 的
+  新 daemon 启动仍归 external executor。
+- 验证：`build:offline` exit 0；daemon 包 52 files passed + 2 skipped，
+  378 tests passed + 2 skipped；`tsc` / `biome` 通过。证据见
+  `docs/reports/2026-10-28-w5d-runtime-lifecycle-managed-work.md`。
+- 未完成：W7 HTTP/Console、W8 revert connector；relaunch CLI 的 external
+  start；W6 episode store。不得用本 slice 的 tests 冒充。
 
 ## Out of scope
 

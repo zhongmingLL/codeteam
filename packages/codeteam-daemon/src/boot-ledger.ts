@@ -1,17 +1,19 @@
 import { appendFileSync, chmodSync, existsSync, readFileSync } from "node:fs";
 import { DaemonError } from "./errors.ts";
 
-export type BootEvent = "started" | "ready" | "stopping" | "stopped" | "failed" | "fence_reclaimed";
+export type BootEvent = "started" | "ready" | "stopping" | "stopped" | "exited" | "failed" | "fence_reclaimed";
 
 export interface BootRecord {
 	schemaVersion: 1;
 	bootId: string;
 	bootSequence: number;
+	deploymentId?: string;
 	installationId: string;
 	runningRevision: string;
 	event: BootEvent;
 	recordedAt: string;
 	detail?: string;
+	exitKind?: "clean" | "startup_failed";
 }
 
 export function readBootLedger(ledgerFile: string): BootRecord[] {

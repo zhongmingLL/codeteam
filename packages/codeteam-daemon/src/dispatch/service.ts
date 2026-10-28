@@ -2,7 +2,8 @@ import { observeMissingA2AToolCall } from "../a2a/observation.ts";
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import { newId } from "../control/stores/helpers.ts";
-import type { Run } from "../control/stores/types.ts";
+import type { ManagedWorkRunPreflight, Run } from "../control/stores/types.ts";
+import type { ManagedWorkService } from "../managed-work/service.ts";
 import type { BudgetService } from "../scheduling/budget.ts";
 import { routeParallel } from "./route.ts";
 import { settleRunTerminal } from "./settle.ts";
@@ -22,6 +23,7 @@ import { InterruptedExecutionError, RetryableExecutionError } from "./types.ts";
 
 const DEFAULT_MAX_ENTRIES = 100;
 const DEFAULT_QUEUE_CLAIM_TTL_MS = 5 * 60 * 1000;
+const MAX_DEFERRED_ENTRIES = 500;
 const TERMINAL_STATUSES = new Set(["completed", "canceled", "interrupted", "failed"]);
 const POISON_DISPATCH_ERRORS = new Set([
 	"invalid_state",
@@ -30,9 +32,18 @@ const POISON_DISPATCH_ERRORS = new Set([
 	"forbidden",
 	"schema_incomplete",
 ]);
+// Admission gates that only affect one task. Defer the entry and keep draining so a
+// budget-paused or deployment-waiting head entry cannot starve every entry behind it.
+const DEFERRABLE_DISPATCH_ERRORS = new Set([
+	"budget_paused",
+	"deployment_wait_pending",
+	"deployment_wait_outcome_pending",
+]);
 
 export interface DispatchServiceOptions {
 	readonly budget?: BudgetService;
+	readonly managedWork?: ManagedWorkService;
+	readonly deploymentWaitGuard?: { assertCanStart(taskId: string): void };
 }
 
 function objectOrEmpty(value: unknown): Record<string, unknown> {
@@ -54,6 +65,8 @@ export class DispatchService {
 	readonly store: ControlStore;
 	readonly executor: AgentExecutor;
 	private readonly budget: BudgetService | undefined;
+	private readonly managedWork: ManagedWorkService | undefined;
+	private readonly deploymentWaitGuard: { assertCanStart(taskId: string): void } | undefined;
 	private readonly clock: () => number;
 	private readonly hooks: DispatchServiceHooks;
 	private readonly controllers = new Map<string, AbortController>();
@@ -72,6 +85,8 @@ export class DispatchService {
 		this.clock = clock;
 		this.hooks = hooks;
 		this.budget = options.budget;
+		this.managedWork = options.managedWork;
+		this.deploymentWaitGuard = options.deploymentWaitGuard;
 	}
 
 	requestDrain(): void {
@@ -236,13 +251,15 @@ export class DispatchService {
 		const runs: Run[] = [];
 		const outcomes: DispatchRunOutcome[] = [];
 		const errors: DispatchEntryError[] = [];
+		const deferredIds = new Set<string>();
 		let processed = 0;
 
 		do {
 			this.dirty = false;
 			while (processed < maxEntries) {
+				if (deferredIds.size >= MAX_DEFERRED_ENTRIES) break;
 				const claimId = `dispatch:${newId()}`;
-				const entry = this.store.queue.claimNext({ claimId, ttlMs: claimTtlMs });
+				const entry = this.store.queue.claimNext({ claimId, ttlMs: claimTtlMs, excludeIds: [...deferredIds] });
 				if (!entry) break;
 				claimedQueueEntryIds.push(entry.id);
 				try {
@@ -265,6 +282,19 @@ export class DispatchService {
 					errors.push({ queueEntryId: entry.id, code, message });
 					if (POISON_DISPATCH_ERRORS.has(code)) {
 						this.deadLetterEntry(entry.id, claimId, code, message);
+					} else if (DEFERRABLE_DISPATCH_ERRORS.has(code)) {
+						const current = this.store.queue.get(entry.id);
+						if (current?.status === "claimed" && current.claimId) {
+							this.store.queue.release(entry.id, current.claimId);
+						}
+						this.store.audit.append({
+							actor: "system:dispatch",
+							action: "dispatch_deferred",
+							subject: `queue:${entry.id}`,
+							args: { code, message },
+						});
+						deferredIds.add(entry.id);
+						continue;
 					} else {
 						const current = this.store.queue.get(entry.id);
 						if (current?.status === "claimed" && current.claimId) {
@@ -295,6 +325,7 @@ export class DispatchService {
 			throw new ControlError("invalid_state", `queue source message ${source.id} has no task`);
 		}
 		this.assertBudgetAdmission(source.taskId);
+		this.deploymentWaitGuard?.assertCanStart(source.taskId);
 		const targets = [...entry.targets];
 		return this.store.transaction.run(() => {
 			let activeClaimId = claimId;
@@ -333,6 +364,27 @@ export class DispatchService {
 					});
 					continue;
 				}
+				const managed = this.managedWork?.preflightRun({
+					taskId: source.taskId!,
+					role: route.role,
+					profileId: route.targetProfileId,
+				});
+				if (managed?.kind === "conflict") {
+					this.consumeManagedConflict({
+						queueEntryId: entry.id,
+						claimId: activeClaimId,
+						targetProfileId: route.targetProfileId,
+						taskId: source.taskId!,
+						preflight: managed,
+					});
+					failures.push({
+						queueEntryId: entry.id,
+						targetProfileId: route.targetProfileId,
+						code: "managed_work_executor_conflict",
+						message: `managed work conflict: ${managed.reason}`,
+					});
+					continue;
+				}
 				const result = this.store.cutoverQueueEntry({
 					queueEntryId: entry.id,
 					claimId: activeClaimId,
@@ -363,6 +415,47 @@ export class DispatchService {
 				`budget for task ${taskId} is paused: ${status.limitsHit.join(", ") || "operator approval open"}`,
 			);
 		}
+	}
+
+	private consumeManagedConflict(input: {
+		queueEntryId: string;
+		claimId: string;
+		targetProfileId: string;
+		taskId: string;
+		preflight: Extract<ManagedWorkRunPreflight, { kind: "conflict" }>;
+	}): void {
+		this.store.queue.withdrawTarget(input.queueEntryId, {
+			targetProfileId: input.targetProfileId,
+			actorRef: "system:dispatch",
+			reason: `managed_work_${input.preflight.reason}`,
+			expectedClaimId: input.claimId,
+		});
+		const inbox = this.store.inbox.create({
+			taskId: input.taskId,
+			kind: "humanGuidance",
+			payload: {
+				kind: "managed_work_binding_conflict",
+				workId: input.preflight.workId,
+				attemptId: input.preflight.attemptId,
+				boundProfileId: input.preflight.executorProfileId,
+				requestedProfileId: input.preflight.requestedProfileId,
+				reason: input.preflight.reason,
+			},
+		});
+		this.store.audit.append({
+			actor: "system:dispatch",
+			action: "work_binding_conflict",
+			subject: `task:${input.taskId}`,
+			args: {
+				workId: input.preflight.workId,
+				attemptId: input.preflight.attemptId,
+				boundProfileId: input.preflight.executorProfileId,
+				requestedProfileId: input.preflight.requestedProfileId,
+				reason: input.preflight.reason,
+				queueEntryId: input.queueEntryId,
+				inboxId: inbox.id,
+			},
+		});
 	}
 
 	private deadLetterEntry(queueEntryId: string, claimId: string, code: string, message: string): void {

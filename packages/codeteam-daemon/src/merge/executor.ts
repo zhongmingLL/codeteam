@@ -10,6 +10,7 @@ import type { Merge } from "../control/stores/types.ts";
 import { requireGit, runGit } from "../gates/git.ts";
 import { GateService, type MergeGateRequest } from "../gates/service.ts";
 import { type GateResult, gateCodes } from "../gates/types.ts";
+import { ManagedWorkService } from "../managed-work/service.ts";
 
 export interface MergeExecuteInput extends MergeGateRequest {
 	readonly operatorId: string;
@@ -128,7 +129,7 @@ export class MergeExecutor {
 		readonly executedAt: number;
 	}): Merge {
 		try {
-			return this.store.merges.create({
+			const receipt = this.store.merges.create({
 				taskId: input.input.taskId,
 				baseSha: requireGit(["rev-parse", input.input.baseRef], input.input.repoPath),
 				headSha: input.input.headSha,
@@ -151,6 +152,16 @@ export class MergeExecutor {
 				prRef: input.input.prRef ?? null,
 				mergedAt: input.status === "succeeded" ? input.executedAt : null,
 			});
+			const task = this.store.tasks.get(input.input.taskId);
+			if (task?.kind === "pr_tracking") {
+				new ManagedWorkService(this.store).recordLifecycleEvidence({
+					taskId: task.id,
+					evidenceKind: "merge",
+					evidenceRef: `merge:${receipt.id}`,
+					actorRef: MERGE_SERVICE_ACTOR,
+				});
+			}
+			return receipt;
 		} catch (error) {
 			this.store.audit.append({
 				actor: MERGE_SERVICE_ACTOR,

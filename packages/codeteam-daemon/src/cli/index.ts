@@ -6,6 +6,8 @@ import { flag, option, parseArgs } from "./args.ts";
 import { runBacklogCommand } from "./backlog.ts";
 import { runBudgetCommand } from "./budget.ts";
 import { openCliContext } from "./context.ts";
+import { runDaemonCommand } from "./daemon.ts";
+import { runDeploymentCommand } from "./deployment.ts";
 import { runGateCommand } from "./gate.ts";
 import { runMergeCommand } from "./merge.ts";
 import { writeJson, writeLine } from "./output.ts";
@@ -24,7 +26,17 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 	}
 	const args = parseArgs(
 		[...rest, ...globals],
-		["json", "follow", "help", "hard-gate", "spec-change", "allow-unsynced-base", "allow-primary-worktree", "clear"],
+		[
+			"json",
+			"follow",
+			"help",
+			"hard-gate",
+			"spec-change",
+			"allow-unsynced-base",
+			"allow-primary-worktree",
+			"clear",
+			"new-boot",
+		],
 	);
 	if (flag(args, "help")) {
 		writeUsage();
@@ -38,6 +50,8 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 		if (command === "task") return runTaskCommand(args, context);
 		if (command === "approval") return runApprovalCommand(args, context);
 		if (command === "budget") return runBudgetCommand(args, context);
+		if (command === "deployment") return runDeploymentCommand(args, context);
+		if (command === "daemon") return await runDaemonCommand(args, context);
 		if (command === "schedule") return runScheduleCommand(args, context);
 		if (command === "profile") return runProfileCommand(args, context);
 		if (command === "gate") return runGateCommand(args, context);
@@ -94,6 +108,8 @@ function writeUsage(): void {
 	writeLine("  task <create|list|status|readiness>");
 	writeLine("  approval <request|list|show|approve|reject>");
 	writeLine("  budget <set|show> <taskId>");
+	writeLine("  deployment wait <register|status|sweep> ...");
+	writeLine("  daemon <status|stop>");
 	writeLine("  schedule <add|list|show|pause|resume|tick>");
 	writeLine("  profile <seed|add|list>");
 	writeLine("  gate <check|telemetry>");
@@ -111,6 +127,7 @@ function writeUsage(): void {
 	writeLine("approval request: --task --thread --kind --idempotency-key [--requester profile:<id>]");
 	writeLine("merge execute: --task --repo --worktree --base --head [--hard-gate --approval <id>]");
 	writeLine("budget set: <taskId> [--tokens N] [--cost N] [--wall-time-ms N]");
+	writeLine("deployment wait register: <taskId> (--revision <sha> | --new-boot) --to <profile> [--services daemon]");
 	writeLine("schedule add: --task --thread [--factory task_wake] [--every-ms N] [--to <profile> ...] [--body]");
 	writeLine("task create budget: [--budget-tokens N] [--budget-cost N] [--budget-wall-time-ms N]");
 }

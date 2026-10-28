@@ -141,6 +141,54 @@ export class TaskStore {
 		return row ? mapTask(row) : null;
 	}
 
+	findBySubjectKey(kind: TaskKind, subjectKey: string): Task | null {
+		const row = this.database
+			.prepare("SELECT * FROM tasks WHERE kind = ? AND subject_key = ? ORDER BY created_at, id LIMIT 1")
+			.get(kind, subjectKey) as TaskRow | undefined;
+		return row ? mapTask(row) : null;
+	}
+
+	listWithDeploymentWait(): Task[] {
+		const rows = this.database
+			.prepare("SELECT * FROM tasks WHERE deployment_wait_json IS NOT NULL ORDER BY created_at, id")
+			.all() as unknown as TaskRow[];
+		return rows.map(mapTask);
+	}
+
+	setDeploymentWait(
+		id: string,
+		value: Record<string, unknown> | null,
+		options: { expectedUpdatedAt?: number } = {},
+	): Task {
+		const now = this.clock();
+		try {
+			return this.transaction.run(() => {
+				const result =
+					options.expectedUpdatedAt === undefined
+						? this.database
+								.prepare("UPDATE tasks SET deployment_wait_json = ?, updated_at = ? WHERE id = ?")
+								.run(value === null ? null : jsonObject(value, "deploymentWait"), now, id)
+						: this.database
+								.prepare(
+									"UPDATE tasks SET deployment_wait_json = ?, updated_at = ? WHERE id = ? AND updated_at = ?",
+								)
+								.run(
+									value === null ? null : jsonObject(value, "deploymentWait"),
+									now,
+									id,
+									options.expectedUpdatedAt,
+								);
+				if (changesOf(result) === 0) {
+					if (!this.get(id)) throw new ControlError("not_found", `task ${id} not found`);
+					throw new ControlError("version_conflict", `task ${id} changed since the expected revision`);
+				}
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
 	create(input: CreateTaskInput): Task {
 		const id = input.id ?? newId();
 		const kind = input.kind;

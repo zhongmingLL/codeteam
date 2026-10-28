@@ -29,6 +29,18 @@ export type ControlErrorCode =
 	| "schedule_unknown_factory"
 	| "path_outside_root"
 	| "a2a_depth_exceeded"
+	| "deployment_wait_pending"
+	| "deployment_wait_outcome_pending"
+	| "deployment_wait_conflict"
+	| "deployment_wait_invalid"
+	| "lifecycle_unauthorized"
+	| "lifecycle_claim_held"
+	| "lifecycle_state_invalid"
+	| "lifecycle_identity_mismatch"
+	| "lifecycle_executor_inside_target"
+	| "lifecycle_record_invalid"
+	| "lifecycle_health_failed"
+	| "process_tree_unreadable"
 	| "command_failed";
 
 export class ControlError extends Error {
