@@ -362,6 +362,46 @@ describe("W5a dispatch queue adapter", () => {
 		expect(base.store.runs.list({ taskId: "task-1" })[0]?.status).toBe("completed");
 	});
 
+	it("keeps earlier good targets when a later target is poisoned", async () => {
+		const base = fixture();
+		base.store.profiles.create({
+			id: "profile:no-session",
+			role: "reviewer",
+			displayName: "No Session",
+			provider: "test",
+			model: "model-reviewer",
+			modelFamily: "test-family",
+			toolPolicyProfile: "default",
+		});
+		const source = base.createSourceMessage("mixed targets");
+		const entry = base.store.queue.admit({
+			threadId: "thread-1",
+			sourceId: source.id,
+			sourceKind: "conversation_input",
+			targets: ["profile:reviewer-a", "profile:no-session"],
+			sourceCategory: "a2a",
+			orderKey: "1",
+		});
+		const executor = new ManualExecutor();
+		const service = new DispatchService(base.store, executor, base.now);
+		const draining = service.drain();
+		await waitFor(() => executor.started.length === 1);
+		executor.resolve(executor.started[0]!, "good target done");
+		const result = await draining;
+		expect(base.store.queue.get(entry.id)?.status).toBe("withdrawn");
+		expect(result.errors).toContainEqual(
+			expect.objectContaining({
+				queueEntryId: entry.id,
+				targetProfileId: "profile:no-session",
+				code: "invalid_state",
+			}),
+		);
+		const runs = base.store.runs.list({ taskId: "task-1" });
+		expect(runs).toHaveLength(1);
+		expect(runs[0]?.recipientProfileId).toBe("profile:reviewer-a");
+		expect(runs[0]?.status).toBe("completed");
+	});
+
 	it("persists A2A depth in run chain metadata", async () => {
 		const base = fixture();
 		const source = base.createSourceMessage();

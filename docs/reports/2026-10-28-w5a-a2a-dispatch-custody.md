@@ -38,13 +38,13 @@ feature: "codeteam/F008"
 ```bash
 NODE_ENV=development npm --prefix packages/codeteam-daemon test
 # 35 passed | 1 skipped test files
-# 290 passed | 1 skipped tests
+# 291 passed | 1 skipped tests
 
 NODE_ENV=development npx vitest --run \
   packages/codeteam-daemon/test/control-dispatch.test.ts \
   packages/codeteam-daemon/test/control-a2a-tools.test.ts \
   packages/codeteam-daemon/test/control-custody-wait.test.ts
-# 3 files / 26 tests passed
+# 3 files / 27 tests passed
 
 NODE_ENV=development npx tsc --noEmit -p packages/codeteam-daemon/tsconfig.build.json
 # pass
@@ -80,6 +80,10 @@ node packages/ai/scripts/hydrate-model-catalog.ts /tmp/pi-catalog-w5a.json
 - P2 已修：drain 对 route/target 类失败逐 target `withdrawn`，不再无条件
   release；整 entry data/routing poison 走 `dispatch_dead_lettered` audit；
   新增“坏 target + 后续好 entry 正常执行”测试。
+- P2 回归已修（砚砚 round 2 探针）：per-target 失败处理器使用 claim 后的
+  `activeClaimId`，不再用循环开头的 stale `current.status` 推导；新增
+  “好 target 在前、坏 target 在后 → 好 target run 保留”负面测试。该测试在
+  修复前实测 RED（首个 good target 被整 entry dead-letter 回滚），修复后 GREEN。
 - P3 已收：disabled / cross-thread target 负测；`handoff.created` custody
   event 归因到发起 agent；observation 异常写 audit 不再裸吞。
 - W7a residual：`WaitContractService.arm` 与 `stopRun/interruptRun/guideRun/

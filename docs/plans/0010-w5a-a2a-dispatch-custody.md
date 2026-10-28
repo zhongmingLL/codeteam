@@ -294,9 +294,9 @@ DB（无生产数据）。
   correlation）已落。
 - `DispatchService` / route primitives / A2A tool handlers / custody projection
   / wait contract 已实现。
-- 定向测试：`control-dispatch` 11、`control-a2a-tools` 9、
-  `control-custody-wait` 6（26/26）；包内全量 35 files passed + 1 skipped，
-  290 tests passed + 1 skipped；根级 `tsc` 与 `build:offline` 通过。证据见
+- 定向测试：`control-dispatch` 12、`control-a2a-tools` 9、
+  `control-custody-wait` 6（27/27）；包内全量 35 files passed + 1 skipped，
+  291 tests passed + 1 skipped；根级 `tsc` 与 `build:offline` 通过。证据见
   `docs/reports/2026-10-28-w5a-a2a-dispatch-custody.md`。
 - 明确未做：真实 pi kernel executor、RPC harness、worker registry/sticky/
   re-attach、readiness/DAG、预算、worktree pool、F139、daemon lifecycle、

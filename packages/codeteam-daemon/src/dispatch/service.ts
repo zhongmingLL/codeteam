@@ -323,7 +323,7 @@ export class DispatchService {
 						targetProfileId: target,
 						actorRef: "system:dispatch",
 						reason: `dispatch_route_${code}`,
-						expectedClaimId: current.status === "claimed" ? activeClaimId : undefined,
+						expectedClaimId: activeClaimId,
 					});
 					continue;
 				}
