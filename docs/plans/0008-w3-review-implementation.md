@@ -1,7 +1,7 @@
 ---
 title: "W3 独立 Review 证据链实施计划"
 doc_kind: plan
-status: implemented
+status: merged
 created: 2026-10-28
 updated: 2026-10-28
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -219,7 +219,8 @@ NODE_ENV=development npx biome check packages/codeteam-daemon
 - 2026-10-28：包内 **171 passed / 1 skipped**；新增 W3 测试 40 条；Biome clean；
   `build:offline` 与根级 `tsc --noEmit` 通过。证据报告：
   [`docs/reports/2026-10-28-w3-review-evidence.md`](../reports/2026-10-28-w3-review-evidence.md)。
-- 待独立 review（砚砚代码/安全/falsifier；墨墨 eval/流程）覆盖 exact HEAD；未声明
-  merged / accepted。
+- 砚砚代码/安全/falsifier 复验 Approved；墨墨 eval/流程复看 Approved。
+- PR #43 merged（`b66b8be43cc87cc2ba53cc5d5c971aeb2b14885`）；CI 4/4。
+  F006 accepted/close 仍待 operator/vision 确认。
 
 [宪宪/deepseek-flash🐾]

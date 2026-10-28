@@ -56,8 +56,16 @@ model family）、拿到的上下文是否盲、finding 是否能被可执行证
 - Eval smoke（fixture observation，非 live 模型结论）：glm FP 20% / recall
   100% / survival 100%；qwen FP 0% / recall 80% / survival 80%；overall
   FP 10% / recall 90% / seeded survival 90%；预注册门槛通过。
-- 独立 review 待砚砚（代码/安全/falsifier）与墨墨（eval/流程可理解性）覆盖
-  exact HEAD；尚未 merge / accepted。
+- 独立 review：砚砚在 `c0c7a6c3` Approved（PR comment `#issuecomment-6458628666`）；
+  墨墨 eval/可理解性 Approved。15 条 inline findings 全部处置并 resolve。
+- 合入：PR #43 merge `b66b8be43cc87cc2ba53cc5d5c971aeb2b14885`（`codeteam-work`）；
+  CI 4/4 pass。F006 完成状态仍留 operator/vision close，不把 merge 当 accepted。
+
+## Timeline
+
+| 日期 | 事件 |
+|---|---|
+| 2026-10-28 | W3 merged (PR #43, `b66b8be43`) |
 
 ## Out of scope
 
