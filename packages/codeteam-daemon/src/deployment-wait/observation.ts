@@ -1,6 +1,7 @@
 import { type BootRecord, readBootLedger } from "../boot-ledger.ts";
 import { ControlError } from "../control/errors.ts";
 import { DaemonError } from "../errors.ts";
+import { isProcessAlive } from "../fence.ts";
 import { resolveInstallation } from "../installation.ts";
 import { resolveDaemonPaths } from "../paths.ts";
 import { readStateFile } from "../state.ts";
@@ -54,6 +55,11 @@ export class DeploymentObservationService implements DeploymentObserver {
 		if (!state || state.state !== "ready" || !state.bootId || !Number.isSafeInteger(state.bootSequence)) {
 			return null;
 		}
+		// A SIGTERM stop leaves the state file at "ready" because the daemon never got a
+		// chance to write a terminal state. Without a liveness check a dead deployment
+		// would still look ready and an exact `revision_included` wait could match and
+		// wake work onto it. Observation must not assume a graceful exit.
+		if (!Number.isSafeInteger(state.pid) || !isProcessAlive(state.pid)) return null;
 		let ledger: BootRecord[];
 		try {
 			ledger = readBootLedger(paths.ledgerFile);

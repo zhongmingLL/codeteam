@@ -1,16 +1,21 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type AgentExecutor,
+	appendBootRecord,
 	type DeploymentObservation,
 	DeploymentObservationService,
 	type DeploymentObserver,
 	DeploymentWaitService,
 	DispatchService,
 	readBootLedger,
+	resolveDaemonPaths,
+	resolveInstallation,
 	startDaemon,
+	writeStateFile,
 } from "../src/index.ts";
 import { createW5AFixture, type W5AFixture } from "./helpers/w5a-fixture.ts";
 
@@ -333,5 +338,66 @@ describe("W5d deployment wait operator cancel", () => {
 				actorRef: "user:user-1",
 			}),
 		).toThrow(/already delivered/);
+	});
+});
+
+function writeReadyState(dataDir: string, installationRoot: string, pid: number): void {
+	const installation = resolveInstallation(installationRoot);
+	const paths = resolveDaemonPaths(dataDir);
+	writeStateFile(paths.stateFile, {
+		schemaVersion: 1,
+		deploymentId: "local",
+		installationId: installation.installationId,
+		installationRoot: installation.realRoot,
+		pid,
+		bootId: "boot-1",
+		bootSequence: 1,
+		runningRevision: "a".repeat(40),
+		state: "ready",
+		services: ["daemon"],
+		healthPort: 1234,
+		startedAt: "2026-10-28T00:00:00.000Z",
+		updatedAt: "2026-10-28T00:00:00.000Z",
+	});
+	appendBootRecord(paths.ledgerFile, {
+		schemaVersion: 1,
+		bootId: "boot-1",
+		bootSequence: 1,
+		deploymentId: "local",
+		installationId: installation.installationId,
+		runningRevision: "a".repeat(40),
+		event: "ready",
+		recordedAt: "2026-10-28T00:00:00.000Z",
+		detail: "daemon",
+	});
+}
+
+describe("W5d deployment observation liveness", () => {
+	it("returns unknown when the state file says ready but the process is gone", () => {
+		const root = mkdtempSync(join(tmpdir(), "codeteam-deployment-observe-"));
+		dirs.push(root);
+		const dataDir = join(root, "data");
+		const installationRoot = join(root, "install");
+		mkdirSync(installationRoot);
+		const exited = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+		expect(exited.pid).toBeTypeOf("number");
+		writeReadyState(dataDir, installationRoot, exited.pid!);
+		const observer = new DeploymentObservationService({ dataDir, installationRoot, deploymentId: "local" });
+		expect(observer.observe()).toBeNull();
+	});
+
+	it("still observes a ready state whose process is alive", () => {
+		const root = mkdtempSync(join(tmpdir(), "codeteam-deployment-observe-"));
+		dirs.push(root);
+		const dataDir = join(root, "data");
+		const installationRoot = join(root, "install");
+		mkdirSync(installationRoot);
+		writeReadyState(dataDir, installationRoot, process.pid);
+		const observer = new DeploymentObservationService({ dataDir, installationRoot, deploymentId: "local" });
+		expect(observer.observe()).toMatchObject({
+			bootId: "boot-1",
+			bootSequence: 1,
+			runningRevision: "a".repeat(40),
+		});
 	});
 });

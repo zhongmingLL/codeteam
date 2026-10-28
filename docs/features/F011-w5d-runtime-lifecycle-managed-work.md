@@ -83,6 +83,20 @@ passing tests 冒充。
 - 状态口径：**代码已合入 ≠ W5d 已完成独立复核**。烁烁无 P1/P2 后本
   feature 才转 `done`；若报 P1/P2，保持 `in_review` 并开 follow-up fix
   PR；P3/备忘进 residual。
+- **烁烁 verdict（已出）**：1×P2（observation 缺 pid 活性，真实 SIGTERM
+  后 state 仍 `ready`，精确 `revision_included` 可在 dead window 误唤醒）
+  + 2×备忘（restart↔`WorkerRuntime.recover()` 契约未接线，归 W6；
+  descendants SIGTERM 与 recover 语义自洽）。P2 修复走
+  `fix/w5d-observation-liveness` follow-up PR；合入后由烁烁按 exact 新
+  HEAD 复审增量，通过后本 feature 才转 `done`。
+
+## Residual ledger（W5d）
+
+| ID | 内容 | owner |
+|---|---|---|
+| W5d-M1 | 外部 executor 重启后必须在 `markReady` 前跑 `WorkerRuntime.recover()`；否则 SIGTERM 遗留的 `running` runs / `attached` sessions 要等 lease 过期才被惰性收拾，而 lifecycle 已显示 `reverified` | W6 接线 checklist |
+| W5d-M2 | 未来接线后 `executeStop` 重推导 descendants 会一并 SIGTERM worker 子进程，与 `interrupted/"daemon_restarted"` 语义自洽；这正是 M1 必须成立的原因 | W6，与 M1 同段 |
+| W5d-R1 | 精确 `revision_included` 需配合 observation 的 pid 活性 fail-closed | 已修（follow-up PR，待烁烁复审） |
 - Post-merge acceptance：`build:offline` 后 daemon 包 52 files passed
   + 2 skipped，378 tests passed + 2 skipped。
 

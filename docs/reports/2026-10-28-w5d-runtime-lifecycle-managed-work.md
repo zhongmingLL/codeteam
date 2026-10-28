@@ -40,7 +40,11 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
 
 - 等待状态只写原 Task `deployment_wait_json`；没有 `deployment_waits` 表。
 - `DeploymentObservationService` 只读 daemon state + boot ledger；state
-  非 ready、boot 未 ready、ledger 损坏均返回 unknown，不误唤醒。
+  非 ready、**state.pid 已不存活**、boot 未 ready、ledger 损坏均返回
+  unknown，不误唤醒。pid 活性用 `fence.isProcessAlive` 交叉验证：真实
+  SIGTERM 会让 state 停在 `ready` 且 ledger 无 exit 证据，只看文件会把
+  死 deployment 当活，导致精确 `revision_included` 在 dead window 误唤醒
+  （烁烁 post-merge review P2，见 §6）。
 - 支持 `new_ready_boot` 与 `revision_included`。v1 的
   `revision_included` 使用 runningRevision 精确匹配（比 git ancestry 更严格），
   `new_ready_boot` 只比较 bootSequence 基线。
@@ -136,6 +140,16 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
    只是 occurrence 记录。已写入 W5d task/报告。
 6. **platform**：process identity/health 依赖 POSIX `/proc` + loopback；
    Windows adapter 后置；不可读 fail closed。
+7. **restart ↔ worker recovery 契约（M1，未接线）**：W5d `authorizeRestart →
+   recordRestart → reverify` 只校验 boot identity 与 health body，与 W5b
+   `WorkerRuntime.recover()` 零耦合；`recover()` 当前只在测试 fixture 被
+   调用。**外部 executor 重启后必须在 `markReady` 前跑 recover()** 这一
+   契约 W5d 未实现也未强制，接线归 W6；漏接时 SIGTERM 留下的 `running`
+   runs / `attached` sessions 要等 lease 过期才被惰性收拾，而 lifecycle
+   已显示 `reverified`。
+8. **M2**：未来接线后 `executeStop` 重推导的 descendants 会把 worker
+   子进程一并 SIGTERM，与 recover() 的 `interrupted/"daemon_restarted"`
+   语义自洽——这正是 M1 必须成立的原因；两者同段记录。
 
 ## 4. 风险与回滚
 
@@ -185,3 +199,23 @@ source: "docs/plans/0013-w5d-runtime-lifecycle-managed-work.md"
 - Close-out 文档项（墨墨 4 条）：0013 §10 数字/CLI 列表、`status/halt` →
   `status/stop` 命名统一、烁烁 lane 处置、merge 前 re-pin 要求——本 PR
   一并处理。
+
+### 6.1 烁烁 post-merge W5/session-interface review（2026-10-28）
+
+- Verdict：**1×P2（latent，条件触发）+ 2×备忘**；三条 focus 其余干净。
+- **P2**：observation 未做 pid 活性校验，真实 SIGTERM 后 state 仍为
+  `ready`、ledger 无 exit 证据 → 死 deployment 仍被观察为 ready，
+  精确 `revision_included`（典型为 cancel 后 `generation+1` 重注册）
+  可在 dead window 立即 match → deliver → 把 work 投到死 deployment。
+  修复：`observe()` 增加 `isProcessAlive(state.pid)` fail-closed，并补
+  「state=ready 但 pid 已退出 → unknown」「pid 存活 → 正常观察」两例。
+- **Focus 1（W5b registry/capacity 消费）**：干净——未造第二 registry/
+  liveness；capacity 只读 `workers` 表；lifecycle store 是文件型进程 op
+  记录，不触碰 worker 状态；两个平面无串线。
+- **Focus 2（stop/restart × run/lease/`re_attach_pending`）**：1×备忘
+  M1（见 §3.7），非本 slice 代码 bug，属 W6 接线契约缺口。
+- **Focus 3（boot ledger vs worker 记录）**：干净——JSONL ledger 与
+  SQLite worker 记录完全分离；fence reclaim 覆盖 SIGTERM 后重启；
+  `recordRestart` 对 boot/deployment/installation 不匹配 fail-closed。
+- 收口条件：follow-up 合入后由烁烁按 exact 新 HEAD 复审该增量，通过
+  后 F011 才转 `done`、W5 才 `closed`。
