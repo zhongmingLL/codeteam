@@ -266,17 +266,26 @@ NODE_ENV=development npm run build:offline
 - 墨墨：SOP 告示牌是否仍可读、operator CLI 体验、design gate/fast lane、
   dogfood 路径是否真的不需要 Web。
 
-## Results（2026-10-28，implemented；砚砚 approved，墨墨 changes_requested/delta pending）
+## Results（2026-10-28，merged；follow-up/close pending）
 
 - 实现落点：SOP catalog/evidence/service、gates、approval/backlog/thread/task CLI、
   local MergeExecutor、gate telemetry；详见
   [`../reports/2026-10-28-w4-sop-gates.md`](../reports/2026-10-28-w4-sop-gates.md)。
-- 验证：daemon **204 passed / 1 skipped**；W4 新增 33 条测试；CLI dogfood
+- 验证：daemon **264 passed / 1 skipped**（W4 合计 93 条，follow-up 新增 60 条）；
+  CLI dogfood
   1 条真实端到端；adapter 15 passed / 1 skipped；skills 15 passed；
   `build:offline`、根级 tsc、Biome、静态检查全通过。
 - 砚砚 code/security/gate review **Approved** @ `5b3eba634`，delta **Approved** @ `90761ab5e`
   （7 P3 non-blocking）；P3-2/3/4/5/6/7 已修，P3-1 留 W7a 前置 residual；
-  墨墨 SOP/process/Product review **changes_requested**（P2-1/P2-2/P2-3）；已补
-  `profile seed`、全局 flag 前置解析、agent `approval request --requester`，待
-  墨墨同风险面 delta 复审；本切片不宣称 merged/accepted。
+  墨墨 SOP/process/Product review **changes_requested → delta Approved** @
+  `0a8eb2b99`；P2-1/P2-2/P2-3 已补并实测。
+- PR #47 **merged** at `4743137c9`（reviewed HEAD `0a8eb2b99`），CI 4/4 green。
+- Follow-up 新增：backlog 5×操作矩阵 35、SOP completion 17 组合、标准代码车道
+  review→merge E2E 1、CLI 失败路径 7、dogfood `auth init` 也 spawn CLI；
+  daemon 从 204 增至 264 passed。
+- Follow-up 抓到并修复：`suggested` 换 profile 的 error code 应为 `conflict`；
+  store completion gate 漏 backlog `done` 检查；`MergeExecuteResult` 增 `reviewRef`。
+- W7a residuals：store 层 evidenceRef 解析下沉；HTTP requester 从鉴权派生。
+- 待 follow-up PR merge → 愿景守护（非作者非 reviewer）→ operator close；尚未
+  accepted/closed。
 

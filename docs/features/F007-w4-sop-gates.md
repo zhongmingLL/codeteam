@@ -47,13 +47,24 @@ merges 的 schema 与 store；W3 已有独立 review/falsifier 证据链。W4 �
 - 砚砚 code/security/gate review **Approved** @ `5b3eba634`，delta **Approved**
   @ `90761ab5e`；P3-2/3/4/5/6/7 已修，P3-1 留 W7a residual。
 - 墨墨 SOP/process/Product review **changes_requested**（P2-1 bootstrap、P2-2
-  global flags、P2-3 agent approval request）；已修，待墨墨 delta 复审。
+  global flags、P2-3 agent approval request）；已修；delta **Approved** @
+  `0a8eb2b99`。
+- 2026-10-28：PR #47 **merged** at `4743137c9`（reviewed HEAD `0a8eb2b99`，
+  base `1669f50f4`），CI 4/4 green。
+- Follow-up（`test/w4-followup`）：backlog 5 状态 × 操作矩阵 35 格、SOP
+  completion 17 组合、标准代码车道 review→merge E2E、CLI 7 条失败路径、
+  dogfood `auth init` 也 spawn CLI；daemon **264 passed / 1 skipped**。
+- Follow-up 抓到并修复两个真实缺口：`suggested` 换 profile 应为 `conflict`；
+  store completion gate 漏了 backlog `done` 检查。
+- 待 follow-up PR merge → 愿景守护（非作者非 reviewer）→ operator close。
 
-### Residual ledger（W7a）
+### Residual ledger（W7a 前置）
 
 | # | 项 | 去向 |
 |---|---|---|
 | 1 | `SopCheckEvidenceStore.record` 本身不解析 evidenceRef；解析仅在 `SopService` | W7a 暴露 HTTP 前下沉 store 或收窄 store 写入面；W4 生产路径全走 service |
+| 2 | `approval request --requester profile:<id>` 是本地 CLI 的声明身份 | W7a 暴露 HTTP 时必须从鉴权 principal 派生 requester，不接受 flag 自选；decide 仍 operator-only |
+| 3 | backlog/CLI 失败矩阵与标准车道 E2E | 已在 follow-up 补齐；后续新增状态/操作时必须更新 `control-transition-matrix.test.ts` |
 
 ## Out of scope
 

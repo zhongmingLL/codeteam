@@ -21,6 +21,7 @@ export interface MergeExecuteInput extends MergeGateRequest {
 export interface MergeExecuteResult {
 	readonly gate: GateResult;
 	readonly gateEvidenceRef: string;
+	readonly reviewRef: string | null;
 	readonly receipt: Merge;
 	readonly credentialFingerprint: string;
 }
@@ -87,7 +88,13 @@ export class MergeExecutor {
 				executedAt: Date.now(),
 			});
 			this.consumeCredential(credentialFingerprint, resolvedInput, "failed");
-			return { gate: evaluation.result, gateEvidenceRef, receipt, credentialFingerprint };
+			return {
+				gate: evaluation.result,
+				gateEvidenceRef,
+				reviewRef: evaluation.reviewRef,
+				receipt,
+				credentialFingerprint,
+			};
 		}
 		const mergeSha = requireGit(["rev-parse", "HEAD"], resolvedInput.repoPath);
 		const receipt = this.recordReceipt({
@@ -101,7 +108,13 @@ export class MergeExecutor {
 			executedAt: Date.now(),
 		});
 		this.consumeCredential(credentialFingerprint, resolvedInput, "succeeded");
-		return { gate: evaluation.result, gateEvidenceRef, receipt, credentialFingerprint };
+		return {
+			gate: evaluation.result,
+			gateEvidenceRef,
+			reviewRef: evaluation.reviewRef,
+			receipt,
+			credentialFingerprint,
+		};
 	}
 
 	private recordReceipt(input: {

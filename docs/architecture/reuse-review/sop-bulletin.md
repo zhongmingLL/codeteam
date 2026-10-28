@@ -54,6 +54,10 @@ production runner 仍归 W5；W4 dogfood 用 W1 的 `messages` / `queue_entries`
 实现计划与证据见 `plans/0009-w4-sop-gates-implementation.md` 与
 `reports/2026-10-28-w4-sop-gates.md`。
 
+W7a 前置 residual：`SopCheckEvidenceStore` 的 evidenceRef 解析必须下沉到 store
+边界或收窄 store 写入面；HTTP requester 必须从鉴权 principal 派生，不接受
+`--requester` 这类声明身份。二者在 W7a 动 HTTP 前复核。
+
 ## 2. clowder 架构
 
 ### 2.1 架构图
