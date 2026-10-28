@@ -4,11 +4,11 @@ import {
 	closeSync,
 	fchmodSync,
 	fsyncSync,
+	lstatSync,
 	mkdirSync,
 	openSync,
 	readFileSync,
 	type Stats,
-	statSync,
 	writeSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -65,13 +65,16 @@ export function loadOrCreateTelemetrySalt(options: TelemetrySaltOptions): Teleme
 function readSalt(path: string): Buffer | null {
 	let stat: Stats;
 	try {
-		stat = statSync(path);
+		stat = lstatSync(path);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
 		throw new Error(`telemetry_salt_stat_failed: ${error instanceof Error ? error.message : String(error)}`, {
 			cause: error,
 		});
 	}
+	// lstat rejects the easy symlink vector. A same-user stat/read race remains
+	// out of scope for the single-user threat model; the file mode is still checked.
+	if (stat.isSymbolicLink()) throw new Error("telemetry_salt_symlink_forbidden");
 	if (!stat.isFile()) throw new Error("telemetry_salt_not_a_file");
 	if (process.platform !== "win32" && (stat.mode & 0o077) !== 0) {
 		throw new Error("telemetry_salt_permissions_invalid: expected 0600");

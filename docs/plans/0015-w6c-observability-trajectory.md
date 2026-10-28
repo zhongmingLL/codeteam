@@ -94,13 +94,15 @@ interface TraceQueryResult {
 interface InvocationTrajectory {
   inv: `inv:${string}`;                  // canonical runs.id
   run: { id; taskId; status; role; agentSessionId; provider; model;
-         modelFamily; attempt; startedAt; terminalAt; usage };
+         modelFamily; attempt; startedAt; terminalAt;
+         usage: bounded token/cost metadata | null };
   task: { id; title; status } | null;
   thread: { id; title } | null;
   queueEntry: { id; sourceKind; priority; status; enqueuedAt } | null;
   sourceMessage: TrajectoryMessageRef | null;
   responseMessage: TrajectoryMessageRef | null;
   steps: readonly TrajectoryStep[];
+  /** true 是“可能截断”信号（命中 MAX_STEPS），不是缺数证明。 */
   stepsTruncated: boolean;
   trace: TraceQueryResult;
 }
@@ -152,6 +154,9 @@ interface LogTailResult { entries: readonly LogEntry[]; truncated: boolean; scan
 
 - entries 按时间升序返回；`truncated=true` 表示还有更多匹配未返回。
 - 日志文件位置 `<dataDir>/logs/daemon.log`，轮转 `.1`…`.N`，0600。
+- `JsonlLogStore` 默认 **strict fields**：只有 allowlist 的 operational key
+  （id/role/status/token/count 等）透传；未知 key 一律 contentRef。调用方不得
+  依赖未知 key 携带 prompt/diff/file content；显式 compat 模式只用于受控迁移。
 
 ### 2.5 Readiness
 
@@ -162,7 +167,7 @@ interface TelemetryReadiness {
   trace: { status; spanCount; maxSpans; maxAgeMs; reason? };
   metrics: { status; seriesCount; reason? };
   logs: { status; fileCount; reason? };
-  otlp: { status: "disabled" | "enabled"; reason? };
+  otlp: { status: "disabled" | "enabled" | "degraded"; reason? };
 }
 ```
 
@@ -179,7 +184,7 @@ W7a 在 operator auth 下暴露。
 | **D3** | trace 的 Class C 标识 HMAC；本地日志保留 Class C 关联 id，但 A/B 仍 redact | trace 可能 OTLP 外发；日志 0600 且本地排障需要 join key |
 | **D4** | trace attributes 采用 **allowlist**（未知键丢弃并计数），不是 D 类透传 | 防止未来调用方误塞 raw content |
 | **D5** | metric labels 只允许 bounded enum；未知 label 丢弃 | Prometheus cardinality/泄密边界 |
-| **D6** | OTLP 默认关；启用需显式 endpoint；export 失败只降级不抛错 | local-first；telemetry 不阻塞 control plane |
+| **D6** | OTLP 默认关；启用需显式 endpoint；runtime tracer 必须实际持有 exporter 才报 `enabled`，否则 `degraded`；export 失败只降级不抛错 | local-first；不把“配置存在”谎报成“已接线”；telemetry 不阻塞 control plane |
 | **D7** | `tool_usage_counters` 与 `run_events` 在同一次 tool_call 写入后记录；以 `run_events.id` 幂等 | F150 parity；独立 store、correlation key join |
 | **D8** | trajectory 只读；`/request-generations` 不在本 slice | W6c 冻结投影，W7+ 再做 generation 视图 |
 
@@ -210,7 +215,7 @@ init 失败不得阻止 daemon 启动；`/ready` 不得把未初始化报成 hea
 | AC（`0004` §W6 6E + kickoff） | 实现落点 | 验证 |
 |---|---|---|
 | AC-1 local trace ring 10k/24h；Prometheus snapshot；`/ready` | `observability/trace-store.ts`、`metrics.ts`、`runtime.ts`；`daemon.ts` `/ready` `/metrics` | unit + daemon HTTP test |
-| AC-2 OTLP 默认关；HMAC salt 0600 | `observability/otlp.ts`、`salt.ts` | unit（默认零请求；0600/权限失败） |
+| AC-2 OTLP 默认关；启用后 runtime tracer→exporter 真接线；HMAC salt 0600 | `observability/otlp.ts`、`runtime.ts`、`salt.ts` | unit（默认零请求；runtime fetch-boundary；600/权限失败） |
 | AC-3 trajectory 只读 canonical 表；`inv:`=`runs.id`；ring miss `trace_unavailable` | `observability/trajectory.ts` | projection test + no-write assertion |
 | AC-4 A-D redaction + metric allowlist + tool span allowlist；raw content 不进 trace/log | `observability/redaction.ts`、`metrics.ts`、`tracer.ts`、`logs.ts` | redaction matrix + leak tests |
 | AC-5 F150 parity：`tool_usage_counters` 幂等 + retention + report | migration `014`、`stores/tool-usage.ts`、event-sink 接线 | idempotency/retention/report tests |
@@ -225,13 +230,16 @@ init 失败不得阻止 daemon 启动；`/ready` 不得把未初始化报成 hea
 | 测试 | 覆盖 |
 |---|---|
 | `observability-redaction.test.ts` | A/B/C/D；嵌套对象；depth/size；salt 缺失 fail closed；tool keys allowlist |
-| `observability-trace-ring.test.ts` | 10k cap、24h TTL、query by raw invocationId→HMAC、truncated、disabled/miss 区分 |
-| `observability-metrics.test.ts` | counter/gauge/histogram、label allowlist、Prometheus escaping、snapshot |
-| `observability-otlp.test.ts` | 默认关零请求；启用后 payload 是 redacted DTO；失败降级 |
+| `observability-trace.test.ts` | 10k cap、24h TTL、query by raw invocationId→HMAC、truncated、store 边界再校验、disabled/miss 区分 |
+| `observability-metrics.test.ts` | counter/gauge/histogram、label allowlist、Prometheus escaping、snapshot、series cap |
+| `observability-otlp.test.ts` | 默认关零请求；runtime tracer→exporter 集成；runtime fetch boundary；启用后 payload 是 redacted DTO；pending cap；失败降级 |
 | `observability-trajectory.test.ts` | canonical 投影、步骤顺序、正文不内联、trace available/miss/disabled、只读 |
 | `observability-tool-usage.test.ts` | 同 eventId 幂等、并发/事务、UTC 日界、retention、report 过滤 |
-| `observability-logs.test.ts` | 0600、rotation、retention、tail 顺序/过滤/截断、A/B redaction |
+| `observability-logs.test.ts` | 0600、rotation、retention、tail 顺序/过滤/截断、A/B redaction、strict fields |
+| `observability-salt.test.ts` | 0600/0700、权限漂移 fail closed、symlink 拒绝、竞态回读 |
+| `observability-worker-sink.test.ts` | tool usage 幂等、tool span 元数据白名单、降级不抛 |
 | `observability-ready.test.ts` | `/ready` ready/degraded/503；`/metrics`；`/health` 不回归 |
+| `control-worker-executor.test.ts` | executor → run span / tool span / metrics 集成 |
 | `control-schema.test.ts` 更新 | migration 014、表名 |
 
 ## 7. 风险与回滚

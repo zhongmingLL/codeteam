@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -47,5 +47,14 @@ describe("W6c telemetry salt", () => {
 		const path = join(dataDir, "telemetry-salt");
 		mkdirSync(path);
 		expect(() => loadOrCreateTelemetrySalt({ dataDir })).toThrowError("telemetry_salt_not_a_file");
+	});
+
+	it("rejects a symlinked salt path", () => {
+		if (process.platform === "win32") return;
+		const dataDir = tempDir();
+		const real = loadOrCreateTelemetrySalt({ dataDir });
+		const other = tempDir();
+		symlinkSync(real.path, join(other, "telemetry-salt"));
+		expect(() => loadOrCreateTelemetrySalt({ dataDir: other })).toThrowError("telemetry_salt_symlink_forbidden");
 	});
 });

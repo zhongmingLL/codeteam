@@ -51,7 +51,9 @@ updated: 2026-10-29
   Prometheus 文本快照；pi-telemetry 包不成为运行时依赖（callback 适配器不提供
   ring 投影/淘汰）。A-D redaction、metric label
   allowlist、tool span metadata allowlist 在 ingest 边界；OTLP/HTTP JSON exporter
-  默认关，启用需显式 endpoint。HMAC salt 为 `<dataDir>/telemetry-salt`（0600）。
+  默认关，启用需显式 endpoint，且 runtime 的 tracer 已实际持有 exporter（否则
+  readiness 报 `degraded`，不报 `enabled`）。HMAC salt 为
+  `<dataDir>/telemetry-salt`（0600，symlink 拒绝）。
 - **F299 适配**：`TrajectoryService` 只读 `runs`/`run_events`/`messages`/
   `queue_entries`；`inv:`=`runs.id`；ring miss 返回 `trace_unavailable:ring_miss`，
   telemetry 关闭返回 `telemetry_disabled`。轨迹步骤只带 allowlist 元数据与内容
@@ -60,8 +62,9 @@ updated: 2026-10-29
   `tool_usage_counters`（day/profile/category/tool 主键）；`toolUsage.report()`
   冻结为 W6b/W7a 可消费契约；retention 默认 90 天。无 Redis 依赖。
 - **F130 适配**：0600 JSONL `logs/daemon.log` + 大小轮转 + 天数/文件数保留 +
-  `tail()`；字段为 Pino-compatible JSON，但不引入 `pino` 依赖。日志保留本地
-  correlation id；trace 的 Class C 标识才 HMAC。
+  `tail()`；字段为 Pino-compatible JSON，但不引入 `pino` 依赖。默认 strict
+  fields：未知 key 一律 contentRef，只有 operational allowlist 透传；日志保留
+  本地 correlation id；trace 的 Class C 标识才 HMAC。
 - **readiness**：daemon `GET /ready` 同时报告 control-plane 与 telemetry 组件；
   telemetry degraded 时仍 200 + `status:"degraded"`；control-plane 未 ready 才 503。
   `GET /metrics` 提供 Prometheus 快照；`/health` 保持 W5d 契约。

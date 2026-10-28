@@ -13,7 +13,13 @@ afterEach(() => {
 });
 
 function store(
-	options: { maxBytes?: number; maxRotatedFiles?: number; retentionDays?: number; now?: () => number } = {},
+	options: {
+		maxBytes?: number;
+		maxRotatedFiles?: number;
+		retentionDays?: number;
+		now?: () => number;
+		strictFields?: boolean;
+	} = {},
 ) {
 	const dataDir = mkdtempSync(join(tmpdir(), "codeteam-logs-"));
 	dirs.push(dataDir);
@@ -88,5 +94,20 @@ describe("W6c JSONL logs", () => {
 		expect(logs.tail({ level: "error" }).entries.map((entry) => entry.event)).toEqual(["error.event"]);
 		expect(() => logs.append("info", "Bad Event")).toThrowError("invalid_log_event: Bad Event");
 		logs.close();
+	});
+
+	it("defaults to strict fields and allows an explicit compat mode", () => {
+		const strict = store();
+		strict.append("info", "strict.event", { detail: "short prompt", runId: "run-1", attempt: 1 });
+		const strictEntry = strict.tail().entries[0]!;
+		expect(strictEntry.fields.detail).toMatch(/^\[content:sha256:/);
+		expect(strictEntry.fields.runId).toBe("run-1");
+		expect(strictEntry.fields.attempt).toBe(1);
+		strict.close();
+
+		const compat = store({ strictFields: false });
+		compat.append("info", "compat.event", { detail: "short prompt" });
+		expect(compat.tail().entries[0]?.fields.detail).toBe("short prompt");
+		compat.close();
 	});
 });

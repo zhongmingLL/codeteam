@@ -2,13 +2,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TraceSpanDTO } from "../src/observability/contracts.ts";
 import { OtlpHttpExporter, resolveOtlpConfig } from "../src/observability/otlp.ts";
 import { createRedactor } from "../src/observability/redaction.ts";
 import { createObservabilityRuntime } from "../src/observability/runtime.ts";
 import { LocalTraceStore } from "../src/observability/trace-store.ts";
 import { Tracer } from "../src/observability/tracer.ts";
+import { createW5AFixture } from "./helpers/w5a-fixture.ts";
 
 const servers: Server[] = [];
 
@@ -16,6 +17,7 @@ afterEach(async () => {
 	for (const server of servers.splice(0)) {
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 	}
+	vi.unstubAllGlobals();
 });
 
 const dto: TraceSpanDTO = {
@@ -98,11 +100,41 @@ describe("W6c OTLP exporter", () => {
 			enabled: true,
 			endpoint: "http://127.0.0.1:1",
 			timeoutMs: 100,
+			maxPending: 1000,
 			serviceName: "test",
 		});
 		exporter.export(dto);
 		await exporter.flush();
 		expect(exporter.failureCount).toBe(1);
+	});
+
+	it("drops exports above the pending cap", async () => {
+		let release: (value: Response) => void = () => {};
+		const fetchStub = vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					release = resolve;
+				}),
+		);
+		vi.stubGlobal("fetch", fetchStub);
+		try {
+			const exporter = new OtlpHttpExporter({
+				enabled: true,
+				endpoint: "http://127.0.0.1:1",
+				timeoutMs: 1000,
+				maxPending: 1,
+				serviceName: "test",
+			});
+			exporter.export(dto);
+			exporter.export(dto);
+			expect(exporter.droppedSpanCount).toBe(1);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			release(new Response("{}", { status: 200 }));
+			await exporter.flush();
+			expect(fetchStub).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("integrates with the tracer without leaking raw content", async () => {
@@ -132,5 +164,46 @@ describe("W6c OTLP exporter", () => {
 		expect(body).not.toContain("raw prompt");
 		expect(store.stats().spanCount).toBe(1);
 		await exporter.shutdown();
+	});
+
+	it("wires the runtime tracer to the OTLP exporter", () => {
+		const base = createW5AFixture();
+		try {
+			const telemetry = createObservabilityRuntime({
+				dataDir: base.dataDir,
+				env: { CODETEAM_OTLP_ENABLED: "1", CODETEAM_OTLP_ENDPOINT: "http://127.0.0.1:1" },
+			});
+			const exportSpy = vi.spyOn(telemetry.otlp!, "export");
+			telemetry.tracer.startSpan({ name: "codeteam.runtime.test", attributes: { role: "coder" } }).end();
+			expect(exportSpy).toHaveBeenCalledTimes(1);
+			expect(telemetry.readiness().otlp.status).toBe("enabled");
+			telemetry.logs?.close();
+			telemetry.otlp?.shutdown?.().catch(() => {});
+		} finally {
+			base.cleanup();
+		}
+	});
+
+	it("sends runtime-produced spans through the OTLP fetch boundary", async () => {
+		const fetchStub = vi.fn(
+			async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) =>
+				new Response("{}", { status: 200 }),
+		);
+		vi.stubGlobal("fetch", fetchStub);
+		const base = createW5AFixture();
+		try {
+			const telemetry = createObservabilityRuntime({
+				dataDir: base.dataDir,
+				env: { CODETEAM_OTLP_ENABLED: "1", CODETEAM_OTLP_ENDPOINT: "http://127.0.0.1:4318" },
+			});
+			telemetry.tracer.startSpan({ name: "codeteam.runtime.fetch", attributes: { role: "coder" } }).end();
+			await telemetry.otlp?.shutdown?.();
+			expect(fetchStub).toHaveBeenCalledTimes(1);
+			const [url] = fetchStub.mock.calls[0]!;
+			expect(String(url)).toBe("http://127.0.0.1:4318/v1/traces");
+			telemetry.logs?.close();
+		} finally {
+			base.cleanup();
+		}
 	});
 });

@@ -23,6 +23,25 @@ export interface TrajectoryServiceOptions {
 const MAX_STEPS = 500;
 const SAFE_METADATA = /^[a-zA-Z0-9_.:/@+-]{1,200}$/;
 const SAFE_CODE = /^[a-zA-Z0-9_.:-]{1,120}$/;
+const SAFE_USAGE_KEYS = new Set([
+	"inputTokens",
+	"outputTokens",
+	"totalTokens",
+	"promptTokens",
+	"completionTokens",
+	"cacheReadTokens",
+	"cacheWriteTokens",
+	"cacheCreationTokens",
+	"reasoningTokens",
+	"cachedTokens",
+	"requestCount",
+	"costUsd",
+	"cost",
+	"durationMs",
+	"model",
+	"provider",
+	"stopReason",
+]);
 
 /**
  * Read-only projection of a single invocation from the canonical control
@@ -62,7 +81,7 @@ export class TrajectoryService {
 				attempt: run.attempt,
 				startedAt: run.startedAt,
 				terminalAt: run.terminalAt,
-				usage: run.usage,
+				usage: sanitizeUsage(run.usage),
 			},
 			task: task ? { id: task.id, title: task.title, status: task.status } : null,
 			thread: thread ? { id: thread.id, title: thread.title } : null,
@@ -200,4 +219,24 @@ function finiteNumber(value: unknown): number | undefined {
 
 function digest(value: string): string {
 	return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
+function sanitizeUsage(usage: Record<string, unknown> | null): Record<string, string | number | boolean> | null {
+	if (!usage) return null;
+	const result: Record<string, string | number | boolean> = {};
+	for (const [key, value] of Object.entries(usage)) {
+		if (!SAFE_USAGE_KEYS.has(key)) continue;
+		if (typeof value === "number" && Number.isFinite(value)) {
+			result[key] = value;
+			continue;
+		}
+		if (typeof value === "boolean") {
+			result[key] = value;
+			continue;
+		}
+		if (typeof value === "string" && SAFE_METADATA.test(value)) {
+			result[key] = value;
+		}
+	}
+	return Object.keys(result).length > 0 ? result : null;
 }

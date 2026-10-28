@@ -64,20 +64,39 @@ codeteam 的 SQLite + 本地文件边界内。
 - 代码落点：`packages/codeteam-daemon/src/observability/`（contracts/redaction/
   salt/trace-store/tracer/metrics/otlp/logs/trajectory/runtime）、
   `src/control/stores/tool-usage.ts` + migration 014、daemon `/ready` `/metrics`、
-  worker event sink/executor 接线、W6b/W7a 只读契约导出。
+  worker event sink/executor 接线、W6b/W7a 只读契约导出。W6c 交付到**代码
+  接缝**；生产 bootstrap（`startDaemon` / `new WorkerRuntime` 的 composition）
+  随 W7a 接线，数据不是今天就在流动。
 - PR：[`#63`](https://github.com/zhongmingLL/codeteam/pull/63)，
-  base `codeteam-work` @ `6ac622ad0`；CI 5/5 pass（`changes` /
-  `check-contributor` / `supply-chain` / `mcp-conformance` /
-  `build-check-test`）。
+  base `codeteam-work` @ `6ac622ad0`；exact-HEAD checks 4/4 pass
+  （`changes` / `supply-chain` / `mcp-conformance` / `build-check-test`），
+  另有 PR-open 一次性 `check-contributor` gate success。
 - 本地验证：
   - `NODE_ENV=development npm run build:offline`：exit 0。
   - `npx tsc --noEmit`（root）：exit 0。
   - `npx biome check`（changed files）：clean。
-  - `packages/codeteam-daemon`：**62 files passed + 2 skipped；430 tests
+  - `packages/codeteam-daemon`：**62 files passed + 2 skipped；437 tests
     passed + 2 skipped**（含 11 个 W6c observability test files）。
 - 尚未完成：独立非作者 review（砚砚 security/redaction/provenance；墨墨
   reuse/真实路径/可解释性）、PR/merge、operator 可见验收。不得把本段当作
   feature close。
+
+## Review follow-up（2026-10-29）
+
+砚砚 approved at `65ed9ff49`（1 non-blocking P2 + 6 P3）；墨墨 conditional
+return at the same HEAD（1 P1 + 6 P3）。Follow-up 已收口：
+
+- **P1 OTLP composition**：`createObservabilityRuntime` 先解析 OTLP 配置，再在
+  salt 成功后构造 exporter 并把同一个 exporter 传给 `Tracer`；salt 失败时
+  OTLP 报 `degraded` 而不是 `enabled`。新增 runtime 级 spy + fetch-boundary
+  测试，证明 `runtime.tracer` 产出的 span 真到 exporter/HTTP 边界。
+- **P2 strict log fields**：`JsonlLogStore` 默认 `strictFields: true`，未知 key
+  一律 contentRef；only operational allowlist 透传。契约 `LogEntry.fields`
+  写明消费纪律；compat 模式显式 opt-out。
+- **P3**：metrics max-series cap + dropped count；OTLP pending cap + dropped
+  count；trajectory `usage` 仅保留 bounded token/cost metadata；删除不可达
+  `MAX_STRING_LENGTH` 分支；salt `lstat` 拒绝 symlink；计划文档同步
+  `otlp:"degraded"`、测试文件名、OTLP composition 语义。
 
 ## Dependencies
 

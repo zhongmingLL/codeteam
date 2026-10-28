@@ -4,6 +4,7 @@ export interface OtlpConfig {
 	readonly enabled: boolean;
 	readonly endpoint?: string;
 	readonly timeoutMs: number;
+	readonly maxPending: number;
 	readonly serviceName: string;
 }
 
@@ -11,9 +12,10 @@ export function resolveOtlpConfig(env: NodeJS.ProcessEnv = process.env): OtlpCon
 	const enabled = ["1", "true", "yes", "on"].includes((env.CODETEAM_OTLP_ENABLED ?? "").toLowerCase());
 	const endpoint = env.CODETEAM_OTLP_ENDPOINT?.trim();
 	const timeoutMs = parsePositiveInteger(env.CODETEAM_OTLP_TIMEOUT_MS, 2000);
+	const maxPending = parsePositiveInteger(env.CODETEAM_OTLP_MAX_PENDING, 1000);
 	const serviceName = env.CODETEAM_OTLP_SERVICE_NAME?.trim() || "codeteam-daemon";
 	if (enabled && !endpoint) throw new Error("otlp_endpoint_missing");
-	return { enabled, endpoint, timeoutMs, serviceName };
+	return { enabled, endpoint, timeoutMs, maxPending, serviceName };
 }
 
 /**
@@ -23,14 +25,18 @@ export function resolveOtlpConfig(env: NodeJS.ProcessEnv = process.env): OtlpCon
 export class OtlpHttpExporter implements SpanExporter {
 	readonly endpoint: string;
 	private readonly timeoutMs: number;
+	private readonly maxPending: number;
 	private readonly serviceName: string;
 	private pending: Promise<void> = Promise.resolve();
+	private pendingCount = 0;
 	private failures = 0;
+	private dropped = 0;
 
 	constructor(config: OtlpConfig) {
 		if (!config.enabled || !config.endpoint) throw new Error("otlp_not_configured");
 		this.endpoint = config.endpoint.replace(/\/$/, "");
 		this.timeoutMs = config.timeoutMs;
+		this.maxPending = Math.max(1, config.maxPending);
 		this.serviceName = config.serviceName;
 	}
 
@@ -38,11 +44,23 @@ export class OtlpHttpExporter implements SpanExporter {
 		return this.failures;
 	}
 
+	get droppedSpanCount(): number {
+		return this.dropped;
+	}
+
 	export(span: TraceSpanDTO): void {
+		if (this.pendingCount >= this.maxPending) {
+			this.dropped += 1;
+			return;
+		}
+		this.pendingCount += 1;
 		this.pending = this.pending
 			.then(() => this.send(span))
 			.catch(() => {
 				this.failures += 1;
+			})
+			.finally(() => {
+				this.pendingCount -= 1;
 			});
 	}
 

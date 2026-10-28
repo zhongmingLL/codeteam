@@ -39,6 +39,7 @@ function seedRun(base: W5AFixture) {
 		model: "model-coder",
 		modelFamily: "test-family",
 		responseMessageId: response.id,
+		usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15, detail: "raw prompt" },
 	});
 	base.store.runs.appendEvent(run.id, "message", { phase: "assistant", text: "raw assistant text" });
 	base.store.runs.appendEvent(run.id, "tool_call", { phase: "start", toolName: "bash", toolCallId: "call-1" });
@@ -70,6 +71,7 @@ describe("W6c invocation trajectory", () => {
 
 		expect(trajectory.inv).toBe("inv:run-1");
 		expect(trajectory.run.status).toBe("completed");
+		expect(trajectory.run.usage).toEqual({ inputTokens: 12, outputTokens: 3, totalTokens: 15 });
 		expect(trajectory.task?.id).toBe("task-1");
 		expect(trajectory.thread?.id).toBe("thread-1");
 		expect(trajectory.sourceMessage?.id).toBe(seeded.source.id);

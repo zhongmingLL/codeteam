@@ -31,6 +31,8 @@ export interface JsonlLogStoreOptions {
 	readonly maxRotatedFiles?: number;
 	readonly retentionDays?: number;
 	readonly now?: () => number;
+	/** Default true. Unknown field keys are redacted rather than passed through. */
+	readonly strictFields?: boolean;
 }
 
 export interface JsonlLogStoreStats {
@@ -53,6 +55,7 @@ export class JsonlLogStore {
 	private readonly maxRotatedFiles: number;
 	private readonly retentionDays: number;
 	private readonly now: () => number;
+	private readonly strictFields: boolean;
 	private fd: number;
 	private writeErrors = 0;
 
@@ -64,6 +67,7 @@ export class JsonlLogStore {
 		this.maxRotatedFiles = Math.max(1, options.maxRotatedFiles ?? DEFAULT_LOG_MAX_ROTATED_FILES);
 		this.retentionDays = Math.max(0, options.retentionDays ?? DEFAULT_LOG_RETENTION_DAYS);
 		this.now = options.now ?? Date.now;
+		this.strictFields = options.strictFields ?? true;
 		mkdirSync(this.dir, { recursive: true, mode: 0o700 });
 		chmodSync(this.dir, 0o700);
 		this.fd = this.openLogFile();
@@ -77,7 +81,7 @@ export class JsonlLogStore {
 			ts: new Date(this.now()).toISOString(),
 			level,
 			event,
-			fields: this.redactor.redactLogFields(fields),
+			fields: this.redactor.redactLogFields(fields, { strict: this.strictFields }),
 		};
 		const line = this.serialize(entry);
 		try {

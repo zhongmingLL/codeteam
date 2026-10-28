@@ -1,7 +1,7 @@
 import type { SpanExporter, TelemetryComponentStatus, TelemetryReadiness } from "./contracts.ts";
 import { JsonlLogStore } from "./logs.ts";
 import { MetricsRegistry } from "./metrics.ts";
-import { OtlpHttpExporter, resolveOtlpConfig } from "./otlp.ts";
+import { type OtlpConfig, OtlpHttpExporter, resolveOtlpConfig } from "./otlp.ts";
 import { createRedactor, type Redactor } from "./redaction.ts";
 import { loadOrCreateTelemetrySalt } from "./salt.ts";
 import { LocalTraceStore } from "./trace-store.ts";
@@ -37,34 +37,59 @@ export function createObservabilityRuntime(options: ObservabilityRuntimeOptions)
 	const metrics = new MetricsRegistry();
 	let redactor = createRedactor();
 	let traces = new LocalTraceStore({ disabledReason: "telemetry_salt_missing", now });
-	let tracer = new Tracer({ store: traces, redactor, now });
 	let traceReason: string | undefined;
-	let otlp: SpanExporter | null = null;
+	let otlpConfig: OtlpConfig | null = null;
 	let otlpStatus: TelemetryReadiness["otlp"] = { status: "disabled" };
 	let logs: JsonlLogStore | null = null;
 	let logReason: string | undefined;
 
 	try {
-		const salt = loadOrCreateTelemetrySalt({ dataDir: options.dataDir });
-		redactor = createRedactor({ salt: salt.salt });
-		traces = new LocalTraceStore({ now, hmacId: (id) => redactor.hmacId(id) });
-		tracer = new Tracer({ store: traces, redactor, now });
-	} catch (error) {
-		traceReason = error instanceof Error ? error.message : String(error);
-	}
-
-	try {
 		const config = resolveOtlpConfig(env);
-		if (config.enabled) {
-			otlp = new OtlpHttpExporter({ ...config, serviceName: options.serviceName ?? config.serviceName });
-			otlpStatus = { status: "enabled" };
-		}
+		if (config.enabled) otlpConfig = config;
 	} catch (error) {
 		otlpStatus = {
 			status: "degraded",
 			reason: error instanceof Error ? error.message : String(error),
 		};
 	}
+
+	try {
+		const salt = loadOrCreateTelemetrySalt({ dataDir: options.dataDir });
+		redactor = createRedactor({ salt: salt.salt });
+		traces = new LocalTraceStore({ now, hmacId: (id) => redactor.hmacId(id) });
+	} catch (error) {
+		traceReason = error instanceof Error ? error.message : String(error);
+	}
+
+	let otlp: SpanExporter | null = null;
+	if (otlpConfig) {
+		if (traceReason) {
+			otlpStatus = { status: "degraded", reason: "trace_unavailable" };
+		} else {
+			try {
+				otlp = new OtlpHttpExporter({
+					...otlpConfig,
+					serviceName: options.serviceName ?? otlpConfig.serviceName,
+				});
+				otlpStatus = { status: "enabled" };
+			} catch (error) {
+				otlpStatus = {
+					status: "degraded",
+					reason: error instanceof Error ? error.message : String(error),
+				};
+			}
+		}
+	}
+
+	// "enabled" in readiness means the tracer below actually holds the exporter.
+	// Parsing the config alone is not enough; a runtime that reports enabled
+	// while exporting nothing is a false readiness claim.
+	const tracer = new Tracer({
+		store: traces,
+		redactor,
+		now,
+		...(otlp ? { exporter: otlp } : {}),
+	});
 
 	try {
 		logs = new JsonlLogStore({

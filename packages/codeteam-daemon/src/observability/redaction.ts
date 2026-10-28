@@ -140,10 +140,94 @@ export const METRIC_LABEL_ALLOWLIST: ReadonlySet<string> = new Set([
 	"event.kind",
 ]);
 
+/**
+ * Strict log field mode (the JsonlLogStore default). Unknown keys are treated
+ * as content and replaced with a digest marker; only these operational fields
+ * pass through. This closes the "short unknown string" gap that a key-based
+ * denylist alone cannot cover.
+ */
+export const STRICT_LOG_FIELD_ALLOWLIST: ReadonlySet<string> = new Set([
+	"runid",
+	"run_id",
+	"threadid",
+	"thread_id",
+	"taskid",
+	"task_id",
+	"sessionid",
+	"session_id",
+	"messageid",
+	"message_id",
+	"invocationid",
+	"invocation_id",
+	"callid",
+	"call_id",
+	"clientmessageid",
+	"client_message_id",
+	"sourceid",
+	"source_id",
+	"queueentryid",
+	"queue_entry_id",
+	"handoffid",
+	"handoff_id",
+	"approvalid",
+	"approval_id",
+	"artifactid",
+	"artifact_id",
+	"reviewid",
+	"review_id",
+	"mergeid",
+	"merge_id",
+	"userid",
+	"user_id",
+	"role",
+	"status",
+	"provider",
+	"model",
+	"modelfamily",
+	"model_family",
+	"attempt",
+	"durationms",
+	"duration_ms",
+	"iserror",
+	"is_error",
+	"count",
+	"bytes",
+	"size",
+	"level",
+	"event",
+	"toolname",
+	"tool_name",
+	"category",
+	"phase",
+	"errorcode",
+	"error_code",
+	"code",
+	"pid",
+	"bootid",
+	"boot_id",
+	"deploymentid",
+	"deployment_id",
+	"installationid",
+	"installation_id",
+	"revision",
+	"headsha",
+	"head_sha",
+	"basesha",
+	"base_sha",
+	"mergesha",
+	"merge_sha",
+	"traceid",
+	"trace_id",
+	"spanid",
+	"span_id",
+	"parentspanid",
+	"parent_span_id",
+	"__truncated_keys",
+]);
+
 const SAFE_NAME = /^[a-zA-Z0-9_.:/@+,-]{1,256}$/;
 const SAFE_EVENT_NAME = /^[a-z0-9_.-]{1,64}$/;
 const SAFE_STATUS_MESSAGE = /^[a-zA-Z0-9_.:-]{1,120}$/;
-const MAX_STRING_LENGTH = 2048;
 const MAX_SAFE_STRING_LENGTH = 512;
 const MAX_ARRAY_ITEMS = 32;
 const MAX_OBJECT_KEYS = 64;
@@ -152,6 +236,11 @@ const MAX_DEPTH = 6;
 export interface RedactorOptions {
 	/** HMAC salt. Required for trace pseudonymization; logs can run without it. */
 	readonly salt?: string | Buffer | null;
+}
+
+export interface RedactLogFieldsOptions {
+	/** Default false for the low-level helper; JsonlLogStore defaults to true. */
+	readonly strict?: boolean;
 }
 
 export class Redactor {
@@ -180,8 +269,8 @@ export class Redactor {
 		return `[content:sha256:${digest} len:${value.length}]`;
 	}
 
-	redactLogFields(fields: Record<string, unknown>): Record<string, unknown> {
-		return redactLogFields(fields, this);
+	redactLogFields(fields: Record<string, unknown>, options?: RedactLogFieldsOptions): Record<string, unknown> {
+		return redactLogFields(fields, this, options);
 	}
 }
 
@@ -208,12 +297,17 @@ export function isClassCKey(key: string): boolean {
 	return CLASS_C_KEYS.has(key.toLowerCase());
 }
 
-export function redactLogFields(fields: Record<string, unknown>, redactor: Redactor): Record<string, unknown> {
+export function redactLogFields(
+	fields: Record<string, unknown>,
+	redactor: Redactor,
+	options: RedactLogFieldsOptions = {},
+): Record<string, unknown> {
+	const strict = options.strict ?? false;
 	const result: Record<string, unknown> = {};
 	let count = 0;
 	for (const [key, value] of Object.entries(fields)) {
 		if (count >= MAX_OBJECT_KEYS) break;
-		result[key] = redactLogValue(key, value, redactor, 0);
+		result[key] = redactLogValue(key, value, redactor, 0, strict);
 		count += 1;
 	}
 	if (Object.keys(fields).length > MAX_OBJECT_KEYS)
@@ -221,28 +315,36 @@ export function redactLogFields(fields: Record<string, unknown>, redactor: Redac
 	return result;
 }
 
-function redactLogValue(key: string, value: unknown, redactor: Redactor, depth: number): unknown {
+function redactLogValue(key: string, value: unknown, redactor: Redactor, depth: number, strict: boolean): unknown {
 	if (isClassAKey(key)) return "[REDACTED]";
 	if (isClassBKey(key)) {
 		if (typeof value === "string") return redactor.contentRef(value);
 		return `[content:${typeOf(value)}]`;
 	}
-	return boundValue(value, redactor, depth);
+	if (strict) {
+		if (!STRICT_LOG_FIELD_ALLOWLIST.has(key.toLowerCase())) return contentMarker(value, redactor);
+		if (value !== null && typeof value === "object") return `[content:${typeOf(value)}]`;
+	}
+	return boundValue(value, redactor, depth, strict);
 }
 
-function boundValue(value: unknown, redactor: Redactor, depth: number): unknown {
+function contentMarker(value: unknown, redactor: Redactor): string {
+	return typeof value === "string" ? redactor.contentRef(value) : `[content:${typeOf(value)}]`;
+}
+
+function boundValue(value: unknown, redactor: Redactor, depth: number, strict: boolean): unknown {
 	if (value === null) return null;
 	if (depth > MAX_DEPTH) return "[max_depth]";
 	if (typeof value === "string") {
 		if (value.length > MAX_SAFE_STRING_LENGTH) return redactor.contentRef(value);
-		return value.length > MAX_STRING_LENGTH ? `${value.slice(0, MAX_STRING_LENGTH)}…[truncated]` : value;
+		return value;
 	}
 	if (typeof value === "number") return Number.isFinite(value) ? value : "[non_finite_number]";
 	if (typeof value === "boolean") return value;
 	if (typeof value === "bigint") return value.toString();
 	if (typeof value === "undefined" || typeof value === "function" || typeof value === "symbol") return "[unsupported]";
 	if (Array.isArray(value)) {
-		const items = value.slice(0, MAX_ARRAY_ITEMS).map((item) => boundValue(item, redactor, depth + 1));
+		const items = value.slice(0, MAX_ARRAY_ITEMS).map((item) => boundValue(item, redactor, depth + 1, strict));
 		if (value.length > MAX_ARRAY_ITEMS) items.push(`[truncated ${value.length - MAX_ARRAY_ITEMS}]`);
 		return items;
 	}
@@ -250,7 +352,7 @@ function boundValue(value: unknown, redactor: Redactor, depth: number): unknown 
 		const result: Record<string, unknown> = {};
 		const entries = Object.entries(value as Record<string, unknown>);
 		for (const [key, item] of entries.slice(0, MAX_OBJECT_KEYS)) {
-			result[key] = redactLogValue(key, item, redactor, depth + 1);
+			result[key] = redactLogValue(key, item, redactor, depth + 1, strict);
 		}
 		if (entries.length > MAX_OBJECT_KEYS) result.__truncated_keys = entries.length - MAX_OBJECT_KEYS;
 		return result;

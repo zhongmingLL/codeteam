@@ -32,6 +32,12 @@ interface Series {
 const METRIC_NAME = /^codeteam_[a-z][a-z0-9_]{0,63}$/;
 const DEFAULT_BUCKETS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
 const MAX_LABEL_VALUE_LENGTH = 128;
+const DEFAULT_MAX_SERIES = 5000;
+
+export interface MetricsRegistryOptions {
+	/** Default 5000; new series above the cap are detached and counted as dropped. */
+	readonly maxSeries?: number;
+}
 
 /**
  * Bounded metric registry with a Prometheus text snapshot. Labels are
@@ -40,7 +46,13 @@ const MAX_LABEL_VALUE_LENGTH = 128;
 export class MetricsRegistry {
 	private readonly series = new Map<string, Series>();
 	private readonly kinds = new Map<string, MetricKind>();
+	private readonly maxSeries: number;
 	private droppedLabels = 0;
+	private droppedSeries = 0;
+
+	constructor(options: MetricsRegistryOptions = {}) {
+		this.maxSeries = Math.max(1, options.maxSeries ?? DEFAULT_MAX_SERIES);
+	}
 
 	counter(name: string, labels: MetricLabels = {}): CounterHandle {
 		const series = this.getOrCreate(name, "counter", labels);
@@ -94,6 +106,10 @@ export class MetricsRegistry {
 		return this.droppedLabels;
 	}
 
+	droppedSeriesCount(): number {
+		return this.droppedSeries;
+	}
+
 	renderPrometheus(): string {
 		const groups = new Map<string, Series[]>();
 		for (const series of this.series.values()) {
@@ -138,7 +154,11 @@ export class MetricsRegistry {
 		let series = this.series.get(key);
 		if (!series) {
 			series = { name, kind, labels: sanitized, value: 0 };
-			this.series.set(key, series);
+			if (this.series.size >= this.maxSeries) {
+				this.droppedSeries += 1;
+			} else {
+				this.series.set(key, series);
+			}
 		}
 		return series;
 	}

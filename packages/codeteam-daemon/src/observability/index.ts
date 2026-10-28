@@ -13,11 +13,12 @@ export type {
 	MetricKind,
 	MetricLabels,
 	MetricLabelValue,
+	MetricsRegistryOptions,
 } from "./metrics.ts";
 export { MetricsRegistry } from "./metrics.ts";
 export type { OtlpConfig } from "./otlp.ts";
 export { OtlpHttpExporter, resolveOtlpConfig } from "./otlp.ts";
-export type { RedactorOptions, TraceAttributeClassification } from "./redaction.ts";
+export type { RedactLogFieldsOptions, RedactorOptions, TraceAttributeClassification } from "./redaction.ts";
 export {
 	createRedactor,
 	isClassAKey,
@@ -27,6 +28,7 @@ export {
 	Redactor,
 	redactLogFields,
 	redactTraceAttributes,
+	STRICT_LOG_FIELD_ALLOWLIST,
 	TRACE_ATTRIBUTE_ALLOWLIST,
 } from "./redaction.ts";
 export type { ObservabilityRuntime, ObservabilityRuntimeOptions } from "./runtime.ts";

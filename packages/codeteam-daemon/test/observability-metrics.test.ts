@@ -31,4 +31,14 @@ describe("W6c metrics snapshot", () => {
 		expect(metrics.renderPrometheus()).toContain('status="a\\"b\\\\c"');
 		expect(() => metrics.counter("bad-name", {})).toThrowError("invalid_metric_name");
 	});
+
+	it("caps series growth and counts dropped series", () => {
+		const metrics = new MetricsRegistry({ maxSeries: 2 });
+		metrics.counter("codeteam_events_total", { role: "coder" }).add(1);
+		metrics.counter("codeteam_events_total", { role: "reviewer" }).add(1);
+		metrics.counter("codeteam_events_total", { role: "verifier" }).add(1);
+		expect(metrics.seriesCount()).toBe(2);
+		expect(metrics.droppedSeriesCount()).toBe(1);
+		expect(metrics.renderPrometheus()).not.toContain('role="verifier"');
+	});
 });

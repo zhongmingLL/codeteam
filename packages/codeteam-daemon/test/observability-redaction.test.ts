@@ -147,4 +147,21 @@ describe("W6c A-D redaction", () => {
 		expect(serialized).not.toContain("short body");
 		expect(serialized).not.toContain("short prompt");
 	});
+
+	it("strict mode redacts unknown short strings and keeps operational metadata", () => {
+		const result = redactor.redactLogFields(
+			{
+				detail: "short prompt",
+				runId: "run-1",
+				attempt: 1,
+				nested: { ok: true },
+			},
+			{ strict: true },
+		);
+		expect(result.detail).toMatch(/^\[content:sha256:/);
+		expect(result.runId).toBe("run-1");
+		expect(result.attempt).toBe(1);
+		expect(result.nested).toBe("[content:object]");
+		expect(JSON.stringify(result)).not.toContain("short prompt");
+	});
 });

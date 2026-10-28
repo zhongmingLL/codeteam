@@ -101,7 +101,8 @@ export interface InvocationTrajectory {
 		readonly attempt: number;
 		readonly startedAt: number;
 		readonly terminalAt: number | null;
-		readonly usage: Record<string, unknown> | null;
+		/** Bounded token/cost metadata; unknown usage keys are dropped by the projection. */
+		readonly usage: Readonly<Record<string, string | number | boolean>> | null;
 	};
 	readonly task: { readonly id: string; readonly title: string; readonly status: string } | null;
 	readonly thread: { readonly id: string; readonly title: string | null } | null;
@@ -115,6 +116,7 @@ export interface InvocationTrajectory {
 	readonly sourceMessage: TrajectoryMessageRef | null;
 	readonly responseMessage: TrajectoryMessageRef | null;
 	readonly steps: readonly TrajectoryStep[];
+	/** True is a possible-truncation signal (hit MAX_STEPS), not proof that data is missing. */
 	readonly stepsTruncated: boolean;
 	readonly trace: TraceQueryResult;
 }
@@ -171,6 +173,11 @@ export interface LogEntry {
 	readonly ts: string;
 	readonly level: LogLevel;
 	readonly event: string;
+	/**
+	 * JsonlLogStore defaults to strict field mode: unknown keys are redacted.
+	 * Callers must use the allowlisted operational keys (ids, role/status,
+	 * tokens/counts) and must never rely on an unknown key carrying content.
+	 */
 	readonly fields: Record<string, unknown>;
 }
 
@@ -208,4 +215,9 @@ export interface TelemetryReadiness {
 	};
 }
 
+/**
+ * Top-level readiness combines the control plane and telemetry. Telemetry may be
+ * intentionally disabled while the top level is "degraded"; consumers (W7a
+ * Console) must render `telemetry.*` rather than infer health from this alone.
+ */
 export type ReadyStatus = "starting" | "ready" | "degraded" | "stopping" | "failed";
