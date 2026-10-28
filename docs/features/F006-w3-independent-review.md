@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F006]
 title: "F006: W3 独立 Review 证据链"
-status: in-progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-28
@@ -79,7 +79,20 @@ model family）、拿到的上下文是否盲、finding 是否能被可执行证
 
 ### close 条件
 
-- [ ] operator 确认 F006 accepted/done：「F006（W3 独立 Review 证据链）：代码合入并通过两轮独立 review（砚砚 code/security/falsifier Approved @ `c0c7a6c3`，墨墨 eval/可理解性 Approved，15/15 resolved，CI 4/4）；0003 §W3 验收逐条达成；eval 为 synthetic fixture smoke（n=10，不作模型家族结论，live 挂 W4/W6 n≥20）；盲评为结构构造 + 泄漏检查，运行时隔离由 W5/W7 加强；已知缺口与 residual 按 F006 follow-up ledger 挂账。」
+- [x] operator 确认 F006 accepted/done（2026-10-28，消息
+  `0001793157685891-003518-01d06537`："确认"）：「F006（W3 独立 Review 证据链）：
+  代码合入并通过两轮独立 review（砚砚 code/security/falsifier Approved @
+  `c0c7a6c3`，墨墨 eval/可理解性 Approved，15/15 resolved，CI 4/4）；0003 §W3
+  验收逐条达成；eval 为 synthetic fixture smoke（n=10，不作模型家族结论，live
+  挂 W4/W6 n≥20）；盲评为结构构造 + 泄漏检查，运行时隔离由 W5/W7 加强；已知
+  缺口与 residual 按 F006 follow-up ledger 挂账。」
+
+### 关闭记录（2026-10-28）
+
+operator 确认后 F006 → `done`，W3 收口完成。vision guard 烁烁有条件放行，唯一
+条件（三条 residual + 报告 §6 七行去向固化为 W4 follow-up ledger）已由 PR #45
+（merge `06f6af63c`）折入并复核；砚砚 code/security/falsifier 与墨墨 eval 均
+Approved，PR #43 merge `b66b8be43`，CI 4/4。
 
 ## Timeline
 
