@@ -1417,6 +1417,146 @@ export interface CreateBudgetInput {
 	wallTimeUsedMs?: number;
 }
 
+export type BudgetLimitKind = "tokens" | "cost" | "wall_time";
+
+export interface BudgetCharge {
+	id: string;
+	budgetId: string;
+	runId: string;
+	tokens: number;
+	cost: number;
+	wallTimeMs: number;
+	createdAt: number;
+}
+
+export interface ChargeBudgetInput {
+	budgetId: string;
+	runId: string;
+	tokens?: number;
+	cost?: number;
+	wallTimeMs?: number;
+}
+
+export interface ChargeBudgetResult {
+	charge: BudgetCharge;
+	budget: Budget;
+	inserted: boolean;
+}
+
+export interface UpdateBudgetLimitsInput {
+	taskId: string;
+	tokensLimit?: number | null;
+	costLimit?: number | null;
+	wallTimeLimitMs?: number | null;
+}
+
+export interface WorktreeLease {
+	id: string;
+	taskId: string;
+	runId: string | null;
+	path: string;
+	status: "leased" | "released" | "collected";
+	leaseExpiresAt: number | null;
+	releasedAt: number | null;
+	collectedAt: number | null;
+	lastUsedAt: number;
+	createdAt: number;
+}
+
+export interface CreateWorktreeLeaseInput {
+	id?: string;
+	taskId: string;
+	runId?: string | null;
+	path: string;
+	leaseExpiresAt?: number | null;
+}
+
+export interface WorktreeLeaseListFilter {
+	taskId?: string;
+	status?: WorktreeLease["status"];
+}
+
+export interface ScheduleTriggerTimer {
+	kind: "timer";
+	everyMs: number;
+	firstRunAt?: number | null;
+}
+
+export interface ScheduleTriggerManual {
+	kind: "manual";
+}
+
+export type ScheduleTrigger = ScheduleTriggerTimer | ScheduleTriggerManual;
+
+export interface ScheduleAdmission {
+	targets: string[];
+	priority: QueuePriority;
+}
+
+export interface ScheduleRunSpec {
+	bodyMd: string;
+	messageKind?: MessageKind;
+	authorKind?: MessageAuthorKind;
+	authorId?: string;
+}
+
+export interface ScheduleState {
+	nextRunAt: number | null;
+	lastRunAt: number | null;
+	generation: number;
+}
+
+export interface ScheduleSpec {
+	id: string;
+	taskId: string;
+	threadId: string;
+	factoryId: string;
+	status: "active" | "paused";
+	trigger: ScheduleTrigger;
+	admission: ScheduleAdmission;
+	runSpec: ScheduleRunSpec;
+	state: ScheduleState;
+	outcome: Record<string, unknown>;
+	version: number;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface CreateScheduleSpecInput {
+	id?: string;
+	taskId: string;
+	threadId: string;
+	factoryId: string;
+	trigger: ScheduleTrigger;
+	admission: ScheduleAdmission;
+	runSpec: ScheduleRunSpec;
+	state?: Partial<ScheduleState>;
+}
+
+export type ScheduleRunStatus = "queued" | "skipped" | "failed";
+
+export interface ScheduleRun {
+	id: string;
+	specId: string;
+	occurrenceKey: string;
+	scheduledFor: number;
+	status: ScheduleRunStatus;
+	queueEntryId: string | null;
+	sourceMessageId: string | null;
+	reason: Record<string, unknown> | null;
+	createdAt: number;
+}
+
+export interface RecordScheduleRunInput {
+	specId: string;
+	occurrenceKey: string;
+	scheduledFor: number;
+	status: ScheduleRunStatus;
+	queueEntryId?: string | null;
+	sourceMessageId?: string | null;
+	reason?: Record<string, unknown> | null;
+}
+
 export interface Eval {
 	id: string;
 	taskId: string;

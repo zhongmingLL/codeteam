@@ -95,7 +95,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W2 | closed (F005, operator confirmed) | F005a–e 全合入（131/131）；真实 repo 首跑已记录；墨墨愿景守护有条件放行；operator 已显式确认 bwrap + 零 secret MVP 边界；residual 按 ledger 挂 W5/executor hardening |
 | W3 | closed (F006, operator confirmed) | `0008` + F006；包内 171 passed / 1 skipped；砚砚 code/security + 墨墨 eval 均 Approved；CI 4/4；烁烁愿景守护有条件放行，follow-up ledger（W4）已补；operator 已确认 F006 accepted/done |
 | W4 | closed (F007, operator confirmed) | PR #47 `4743137c9` + PR #48 `772dd1741`；264 passed / 1 skipped；22/22 AC；vision guard 烁烁 approve；W7a residuals tracked（`0009` / F007） |
-| W5 | in_progress (W5a/W5b closed; W5c next) | F008 + `0010`、F009 + `0011` 均已 closed；W5b RPC worker runtime 已合入 `codeteam-work`；W5c readiness/预算/worktree pool/daemon lifecycle 待 source thread 提议 |
+| W5 | in_progress (W5a/W5b closed; W5c core review) | F008/`0010` + F009/`0011`（W5b closed）+ F010/`0012`（W5c core 待 review）；W5d lifecycle/deployment/managed-work 见 F011 |
 | W6 | planned | memory/observability/harness-eval 契约已冻结；继承 + 代码 adapter |
 | W7 | planned | W7a headless → W7b Console（C → A）；前端复用基线 `DP-WEB-1=B`（classic）；`thread-chat-surface`/`thread-navigation` 在 W7b 前补卡 |
 | W8 | planned | github-signals W8 契约已冻结；待 Forge connector |

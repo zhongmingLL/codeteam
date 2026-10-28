@@ -17,6 +17,14 @@ import { assertHandoffDirection } from "../policy/handoffs.ts";
 import type { RunPrincipal } from "./principal.ts";
 
 const A2A_MESSAGE_KINDS = new Set(["question", "answer", "proposal", "finding", "status"]);
+export const DEFAULT_MAX_A2A_DEPTH = 32;
+
+function configuredMaxA2ADepth(): number {
+	const configured = Number(process.env.CODETEAM_A2A_MAX_DEPTH ?? String(DEFAULT_MAX_A2A_DEPTH));
+	return Number.isSafeInteger(configured) && configured > 0 ? configured : DEFAULT_MAX_A2A_DEPTH;
+}
+
+export const MAX_A2A_DEPTH = configuredMaxA2ADepth();
 const HANDOFF_KINDS = new Set<HandoffKind>([
 	"handoff",
 	"review_request",
@@ -152,6 +160,12 @@ function nextDepth(principal: RunPrincipal): number {
 	return typeof depth === "number" && Number.isSafeInteger(depth) && depth >= 0 ? depth + 1 : 1;
 }
 
+function assertDepth(depth: number): void {
+	if (depth > MAX_A2A_DEPTH) {
+		throw new ControlError("a2a_depth_exceeded", `A2A depth ${depth} exceeds the configured limit ${MAX_A2A_DEPTH}`);
+	}
+}
+
 export class A2AToolHandlers {
 	private readonly store: ControlStore;
 	private readonly principal: RunPrincipal;
@@ -174,6 +188,8 @@ export class A2AToolHandlers {
 		const targets = this.deliverableTargets(uniqueTargets(raw.targets));
 		const replyTo = raw.replyTo === undefined || raw.replyTo === null ? null : nonEmptyString(raw.replyTo, "replyTo");
 		if (replyTo) this.assertReplyTarget(replyTo);
+		const depth = nextDepth(this.principal);
+		assertDepth(depth);
 		return this.store.transaction.run(() => {
 			const message = this.store.messages.append({
 				threadId: this.principal.threadId,
@@ -195,7 +211,7 @@ export class A2AToolHandlers {
 						target.profile.id,
 						{
 							intent: "next_work",
-							chainMetadata: { a2aDepth: nextDepth(this.principal), parentRunId: this.principal.runId },
+							chainMetadata: { a2aDepth: depth, parentRunId: this.principal.runId },
 						},
 					]),
 				),
@@ -292,6 +308,7 @@ export class A2AToolHandlers {
 		if (replyTo) this.assertReplyTarget(replyTo);
 		const bodyMd = raw.bodyMd === undefined ? subject : nonEmptyString(raw.bodyMd, "bodyMd");
 		const depth = nextDepth(this.principal);
+		assertDepth(depth);
 		const canonicalActionKey = `${subjectRef}:${actionFamily}:${successorSlot}`;
 		const existing = this.store.handoffs.getByTaskIdempotencyKey(this.principal.taskId, idempotencyKey);
 		if (existing) {

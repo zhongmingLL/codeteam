@@ -17,8 +17,10 @@ export {
 	type A2AToolName,
 	type A2AToolSpec,
 	createA2AHandlers,
+	DEFAULT_MAX_A2A_DEPTH,
 	describeA2ATools,
 	type HandoffClaimResult,
 	type HandoffCreateInput,
 	type HandoffCreateResult,
+	MAX_A2A_DEPTH,
 } from "./tools.ts";

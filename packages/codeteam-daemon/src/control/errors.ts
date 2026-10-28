@@ -16,14 +16,33 @@ export type ControlErrorCode =
 	| "invalid_token"
 	| "forbidden"
 	| "backlog_not_imported"
+	| "admission_blocked"
+	| "dependency_missing"
+	| "dependency_unmet"
+	| "dependency_cycle"
+	| "budget_paused"
+	| "capacity_unknown"
+	| "capacity_exhausted"
+	| "worktree_capacity_exhausted"
+	| "worktree_disk_low"
+	| "worktree_disk_unknown"
+	| "schedule_unknown_factory"
+	| "path_outside_root"
+	| "a2a_depth_exceeded"
 	| "command_failed";
 
 export class ControlError extends Error {
 	readonly code: ControlErrorCode;
+	readonly details: Record<string, unknown> | null;
 
-	constructor(code: ControlErrorCode, message: string, options?: ErrorOptions) {
+	constructor(
+		code: ControlErrorCode,
+		message: string,
+		options?: ErrorOptions & { details?: Record<string, unknown> },
+	) {
 		super(message, options);
 		this.name = "ControlError";
 		this.code = code;
+		this.details = options?.details ?? null;
 	}
 }

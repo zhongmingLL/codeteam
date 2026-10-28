@@ -1,5 +1,9 @@
+import { join } from "node:path";
 import { ControlError } from "../control/errors.ts";
 import type { Message, MessageKind, ThreadPhase } from "../control/stores/types.ts";
+import { BudgetService } from "../scheduling/budget.ts";
+import { TaskReadinessService } from "../scheduling/readiness.ts";
+import { WorktreePoolService } from "../scheduling/worktree-pool.ts";
 import { SopService } from "../sop/service.ts";
 import { flag, numberOption, option, options, type ParsedArgs, requireOption } from "./args.ts";
 import { type CliContext, requireOperator } from "./context.ts";
@@ -189,19 +193,48 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 	const subcommand = args.positionals[0];
 	if (subcommand === "create") {
 		const operator = requireOperator(context);
-		const task = context.store.tasks.create({
-			kind: "work",
-			threadId: requireOption(args, "thread"),
-			title: requireOption(args, "title"),
-			why: requireOption(args, "why"),
-			ownerProfileId: option(args, "owner") ?? null,
-			createdBy: operator.id,
-			userId: option(args, "user") ?? operator.id,
-			backlogItemId: requireOption(args, "backlog"),
+		const task = context.store.transaction.run(() => {
+			const created = context.store.tasks.create({
+				kind: "work",
+				threadId: requireOption(args, "thread"),
+				title: requireOption(args, "title"),
+				why: requireOption(args, "why"),
+				ownerProfileId: option(args, "owner") ?? null,
+				createdBy: operator.id,
+				userId: option(args, "user") ?? operator.id,
+				backlogItemId: requireOption(args, "backlog"),
+			});
+			const tokensLimit = budgetNumber(args, "budget-tokens");
+			const costLimit = budgetNumber(args, "budget-cost");
+			const wallTimeLimitMs = budgetNumber(args, "budget-wall-time-ms");
+			if (tokensLimit !== undefined || costLimit !== undefined || wallTimeLimitMs !== undefined) {
+				new BudgetService(context.store).setLimits({
+					taskId: created.id,
+					tokensLimit: tokensLimit ?? null,
+					costLimit: costLimit ?? null,
+					wallTimeLimitMs: wallTimeLimitMs ?? null,
+					actorRef: `user:${operator.id}`,
+				});
+			}
+			return created;
 		});
 		if (context.json) writeJson(task);
 		else writeLine(`created task ${task.id} thread=${task.threadId} backlog=${task.backlogItemId}`);
 		return 0;
+	}
+	if (subcommand === "readiness") {
+		const taskId = args.positionals[1];
+		if (!taskId) throw new ControlError("invalid_input", "usage: codeteam task readiness <taskId>");
+		const service = new TaskReadinessService(context.store, {
+			worktree: new WorktreePoolService(context.store, { rootDir: join(context.dataDir, "worktrees") }),
+		});
+		const decision = service.evaluateTask(taskId, { role: option(args, "role") });
+		if (context.json) writeJson(decision);
+		else {
+			writeLine(`${decision.id} ready=${decision.ready} role=${decision.role} priority=${decision.priority}`);
+			for (const reason of decision.reasons) writeLine(`  ${reason.code}: ${reason.message}`);
+		}
+		return decision.ready ? 0 : 3;
 	}
 	if (subcommand === "list") {
 		const tasks = context.store.tasks.list({ threadId: option(args, "thread") });
@@ -228,5 +261,15 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 		else writeLine(`updated task ${task.id} status=${task.status}`);
 		return 0;
 	}
-	throw new ControlError("invalid_input", "usage: codeteam task <create|list|status>");
+	throw new ControlError("invalid_input", "usage: codeteam task <create|list|status|readiness>");
+}
+
+function budgetNumber(args: ParsedArgs, name: string): number | undefined {
+	const raw = option(args, name);
+	if (raw === undefined) return undefined;
+	const value = Number(raw);
+	if (!Number.isFinite(value) || value < 0) {
+		throw new ControlError("invalid_input", `--${name} must be a non-negative number`);
+	}
+	return value;
 }

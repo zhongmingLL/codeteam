@@ -4,6 +4,7 @@ import {
 	createA2AHandlers,
 	describeA2ATools,
 	type HandoffCreateInput,
+	MAX_A2A_DEPTH,
 	observeMissingA2AToolCall,
 	resolveRunPrincipal,
 } from "../src/index.ts";
@@ -51,6 +52,28 @@ function handoffInput(overrides: Partial<HandoffCreateInput> = {}): HandoffCreat
 }
 
 describe("W5a A2A tool surface", () => {
+	it("rejects A2A sends beyond the configured depth budget", () => {
+		const base = fixture();
+		const message = base.createSourceMessage("deep chain");
+		const run = base.createRun({
+			id: "run-deep",
+			profileId: "profile:coder",
+			role: "coder",
+			sessionId: "session-coder",
+			sourceId: message.id,
+			chainMetadata: { a2aDepth: MAX_A2A_DEPTH },
+		});
+		const handlers = createA2AHandlers({
+			store: base.store,
+			principal: resolveRunPrincipal(base.store, run.id),
+			clock: base.now,
+		});
+		expect(() =>
+			handlers.send({ kind: "question", targets: ["profile:reviewer-a"], bodyMd: "too deep" }),
+		).toThrowError(expect.objectContaining({ code: "a2a_depth_exceeded" }));
+		expect(base.store.queue.listPending()).toHaveLength(0);
+	});
+
 	it("describes the complete typed A2A tool surface", () => {
 		const tools = describeA2ATools();
 		expect(tools.map((tool) => tool.name)).toEqual([

@@ -17,6 +17,7 @@ export interface W5AFixture {
 		sourceId: string;
 		status?: "running" | "completed" | "canceled" | "interrupted" | "failed";
 		chainMetadata?: Record<string, unknown>;
+		workerId?: string;
 	}): ReturnType<ControlStore["runs"]["create"]>;
 	createSourceMessage(bodyMd?: string): ReturnType<ControlStore["messages"]["append"]>;
 }
@@ -116,6 +117,7 @@ export function createW5AFixture(): W5AFixture {
 				model: `model-${input.role}`,
 				modelFamily: "test-family",
 				chainMetadata: input.chainMetadata,
+				workerId: input.workerId,
 			});
 			if (input.status && input.status !== "running") {
 				store.runs.terminal(run.id, { status: input.status });
