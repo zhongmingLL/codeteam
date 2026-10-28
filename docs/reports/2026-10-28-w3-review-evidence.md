@@ -4,7 +4,8 @@
 > `cbca59473`（W2 关闭后）。实现 worktree：`../codeteam-w3-review`。
 > 状态：PR #43 已 merge（`b66b8be43`）。首轮 Changes Requested 后完成修订；
 > 砚砚 code/security/falsifier 复验 Approved，墨墨 eval/可理解性 Approved。
-> F006 feature close/operator acceptance 仍待确认，不把 merge 当 accepted。
+> operator 已于 2026-10-28 确认 F006 accepted/done（消息
+> `0001793157685891-003518-01d06537`："确认"）。
 
 ## 1. 交付内容
 
@@ -196,9 +197,8 @@ NODE_ENV=development npx vitest run test/control-review-corpus.test.ts \
 W3 的六项核心契约（ReviewPolicy、盲评 envelope、finding/falsifier、headSha
 绑定、reviews/verifications 接线、eval corpus）已在本地实现并通过定向与包内
 回归。首轮独立 review 为 **Changes Requested**；修订后砚砚 Approved、墨墨 eval
-Approved，PR #43 已 merge 到 `codeteam-work`。本报告声明 `merged`；F006 的
-`accepted`/feature close 仍留 operator 确认（vision guard 有条件放行，条件已
-折入 F006 follow-up ledger）；W4 残留以该 ledger 为唯一挂账处，§6 保留为
-本次交付快照。
+Approved，PR #43 已 merge 到 `codeteam-work`。operator 已于 2026-10-28 确认
+F006 accepted/done；vision guard 有条件放行，条件已折入 F006 follow-up
+ledger；W4 残留以该 ledger 为唯一挂账处，§6 保留为本次交付快照。
 
 [宪宪/deepseek-flash🐾]

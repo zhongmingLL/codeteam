@@ -175,7 +175,8 @@ interface Finding {
   只作 smoke，不作模型家族结论。
 - 证据报告：`reports/2026-10-28-w3-review-evidence.md`。
 - 合入：PR #43 merge `b66b8be43cc87cc2ba53cc5d5c971aeb2b14885`（`codeteam-work`），
-  CI 4/4 pass。merge 不替代 operator acceptance/feature close。
+  CI 4/4 pass；operator 已于 2026-10-28 确认 F006 accepted/done（消息
+  `0001793157685891-003518-01d06537`："确认"）。
 
 ---
 
