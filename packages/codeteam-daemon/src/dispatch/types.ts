@@ -1,0 +1,82 @@
+import type { AgentProfile, AgentSession, Message, Run, Task } from "../control/stores/types.ts";
+
+export interface DispatchRoute {
+	readonly targetProfileId: string;
+	readonly taskId: string;
+	readonly role: string;
+	readonly agentSessionId: string;
+	readonly provider: string;
+	readonly model: string;
+	readonly modelFamily: string;
+	readonly l0Revision: string | null;
+	readonly chainMetadata: Record<string, unknown>;
+}
+
+export interface DispatchExecutionRequest {
+	readonly run: Run;
+	readonly task: Task;
+	readonly session: AgentSession;
+	readonly target: AgentProfile;
+	readonly sourceMessage: Message;
+	readonly responseMessage: Message;
+	readonly route: DispatchRoute;
+}
+
+export interface AgentExecutionResult {
+	readonly bodyMd: string;
+	readonly usage?: Record<string, unknown> | null;
+	readonly toolCalls?: readonly string[];
+}
+
+export interface AgentExecutor {
+	execute(request: DispatchExecutionRequest, signal: AbortSignal): Promise<AgentExecutionResult>;
+}
+
+export type DispatchTerminalStatus = "completed" | "canceled" | "failed" | "interrupted";
+
+export interface DispatchRunOutcome {
+	readonly runId: string;
+	readonly targetProfileId: string;
+	readonly status: DispatchTerminalStatus;
+	readonly responseMessageId: string | null;
+	readonly error?: string;
+	readonly schemaCorrection?: string;
+}
+
+export interface DispatchEntryError {
+	readonly queueEntryId: string;
+	readonly code: string;
+	readonly message: string;
+}
+
+export interface DispatchDrainResult {
+	readonly claimedQueueEntryIds: readonly string[];
+	readonly runs: readonly Run[];
+	readonly outcomes: readonly DispatchRunOutcome[];
+	readonly errors: readonly DispatchEntryError[];
+}
+
+export interface DispatchDrainOptions {
+	readonly maxEntries?: number;
+	readonly claimTtlMs?: number;
+}
+
+export interface DispatchSettleInput {
+	readonly status: DispatchTerminalStatus;
+	readonly bodyMd?: string;
+	readonly usage?: Record<string, unknown> | null;
+	readonly reason?: string;
+	readonly actorRef?: string;
+}
+
+export interface GuideRunInput {
+	readonly runId: string;
+	readonly kind: "steer" | "followUp" | "humanGuidance";
+	readonly payload: Record<string, unknown>;
+	readonly actorRef: string;
+}
+
+export interface InterruptRunResult {
+	readonly canceledRun: Run;
+	readonly retryQueueEntryId: string | null;
+}

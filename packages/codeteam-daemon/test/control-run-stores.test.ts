@@ -413,7 +413,7 @@ describe("codeteam run / task / credential stores", () => {
 		});
 		expect(evalCutover.run.status).toBe("running");
 		expect(evalCutover.queueEntry).toBeNull();
-		expect(store.runs.get(evalCutover.run.id)?.queueEntryId).toBeNull();
+		expect(store.runs.get(evalCutover.run.id)?.queueEntryId).toBe(queue.id);
 		expect(store.messages.get(source.id)?.dispatchRefs).toHaveLength(2);
 		expect(store.messages.listThread(thread.id).map((message) => message.seq)).toEqual([1, 2, 3]);
 		expect(store.runs.list({ taskId: task.id })).toHaveLength(2);

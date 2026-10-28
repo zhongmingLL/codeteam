@@ -243,7 +243,7 @@ export interface MessageMutationOptions {
 }
 
 export type QueuePriority = "urgent" | "normal";
-export type QueueStatus = "queued" | "claimed" | "processing";
+export type QueueStatus = "queued" | "claimed" | "processing" | "withdrawn";
 export type QueueSourceKind = "conversation_input" | "message_wake" | "private_input" | "backlog_dispatch";
 
 export interface QueueEntry {

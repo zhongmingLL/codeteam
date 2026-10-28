@@ -208,6 +208,13 @@ export class HandoffStore {
 		return row ? mapHandoff(row) : null;
 	}
 
+	getByTaskIdempotencyKey(taskId: string, idempotencyKey: string): Handoff | null {
+		const row = this.database
+			.prepare("SELECT * FROM handoffs WHERE task_id = ? AND idempotency_key = ?")
+			.get(taskId, idempotencyKey) as HandoffRow | undefined;
+		return row ? mapHandoff(row) : null;
+	}
+
 	list(filter: HandoffListFilter = {}): Handoff[] {
 		const clauses: string[] = [];
 		const params: string[] = [];
@@ -370,6 +377,44 @@ export class HandoffStore {
 					action: "handoff_claimed",
 					subject: `handoff:${current.id}`,
 					args: { runId: input.runId },
+				});
+				return this.get(current.id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
+	markDispatched(input: { handoffId: string; messageId: string; queueEntryId: string; actorRef: string }): Handoff {
+		try {
+			return this.transaction.run(() => {
+				const current = this.require(input.handoffId);
+				if (current.status !== "pending" && current.status !== "claimed") {
+					throw new ControlError("invalid_state", `handoff ${current.id} is ${current.status}`);
+				}
+				if (!this.database.prepare("SELECT id FROM messages WHERE id = ?").get(input.messageId)) {
+					throw new ControlError("not_found", `message ${input.messageId} not found`);
+				}
+				const now = this.clock();
+				this.database
+					.prepare(
+						"UPDATE handoffs SET dispatch_delivery_state = 'delivered', dispatch_delivery_attempt_count = COALESCE(dispatch_delivery_attempt_count, 0) + 1, dispatch_delivery_last_attempt_at = ?, dispatch_delivered_message_id = ?, dispatch_failure_reason = NULL, dispatch_failure_evidence_ref = NULL, revision = revision + 1 WHERE id = ?",
+					)
+					.run(now, input.messageId, current.id);
+				this.appendCustodyEvent({
+					handoffId: current.id,
+					subjectRef: current.subjectRef,
+					generation: current.generation,
+					classification: "informational",
+					kind: "handoff.dispatched",
+					actorRef: input.actorRef,
+					payload: { messageId: input.messageId, queueEntryId: input.queueEntryId },
+				});
+				this.audit.append({
+					actor: input.actorRef,
+					action: "handoff_dispatched",
+					subject: `handoff:${current.id}`,
+					args: { messageId: input.messageId, queueEntryId: input.queueEntryId },
 				});
 				return this.get(current.id)!;
 			});

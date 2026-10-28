@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { ControlError } from "../errors.ts";
 import type { ControlTransaction } from "../transaction.ts";
+import type { AuditStore } from "./audit.ts";
 import {
 	type Clock,
 	changesOf,
@@ -74,11 +75,13 @@ export class QueueStore {
 	private readonly database: DatabaseSync;
 	private readonly transaction: ControlTransaction;
 	private readonly clock: Clock;
+	private readonly audit: AuditStore;
 
-	constructor(database: DatabaseSync, transaction: ControlTransaction, clock: Clock) {
+	constructor(database: DatabaseSync, transaction: ControlTransaction, clock: Clock, audit: AuditStore) {
 		this.database = database;
 		this.transaction = transaction;
 		this.clock = clock;
+		this.audit = audit;
 	}
 
 	get(id: string): QueueEntry | null {
@@ -227,6 +230,55 @@ export class QueueStore {
 					if (!existing) throw new ControlError("not_found", `queue entry ${id} not found`);
 					throw new ControlError("claim_conflict", `queue entry ${id} is not claimed by ${claim}`);
 				}
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
+	withdrawTarget(id: string, input: { targetProfileId?: string; actorRef: string; reason: string }): QueueEntry {
+		const actorRef = nonEmpty(input.actorRef, "actorRef");
+		const reason = nonEmpty(input.reason, "reason");
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `queue entry ${id} not found`);
+				if (current.status === "withdrawn") return current;
+				if (current.status !== "queued") {
+					throw new ControlError("invalid_state", `queue entry ${id} is ${current.status}`);
+				}
+				const target = input.targetProfileId;
+				const remaining = target === undefined ? [] : current.targets.filter((candidate) => candidate !== target);
+				if (target !== undefined && !current.targets.includes(target)) {
+					throw new ControlError("invalid_input", `target ${target} is not queued`);
+				}
+				const now = this.clock();
+				if (target !== undefined && remaining.length > 0) {
+					const result = this.database
+						.prepare(
+							"UPDATE queue_entries SET targets_json = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND status = 'queued'",
+						)
+						.run(jsonArray(remaining, "targets"), now, id);
+					if (changesOf(result) === 0) {
+						throw new ControlError("claim_conflict", `queue entry ${id} changed during withdrawal`);
+					}
+				} else {
+					const result = this.database
+						.prepare(
+							"UPDATE queue_entries SET status = 'withdrawn', claim_id = NULL, claim_owner_run_id = NULL, claim_expires_at = NULL, revision = revision + 1, updated_at = ? WHERE id = ? AND status = 'queued'",
+						)
+						.run(now, id);
+					if (changesOf(result) === 0) {
+						throw new ControlError("claim_conflict", `queue entry ${id} changed during withdrawal`);
+					}
+				}
+				this.audit.append({
+					actor: actorRef,
+					action: "queue_withdrawn",
+					subject: `queue:${id}`,
+					args: { targetProfileId: target ?? null, reason },
+				});
 				return this.get(id)!;
 			});
 		} catch (error) {
