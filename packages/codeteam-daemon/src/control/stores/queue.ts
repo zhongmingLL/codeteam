@@ -237,7 +237,10 @@ export class QueueStore {
 		}
 	}
 
-	withdrawTarget(id: string, input: { targetProfileId?: string; actorRef: string; reason: string }): QueueEntry {
+	withdrawTarget(
+		id: string,
+		input: { targetProfileId?: string; actorRef: string; reason: string; expectedClaimId?: string },
+	): QueueEntry {
 		const actorRef = nonEmpty(input.actorRef, "actorRef");
 		const reason = nonEmpty(input.reason, "reason");
 		try {
@@ -245,8 +248,18 @@ export class QueueStore {
 				const current = this.get(id);
 				if (!current) throw new ControlError("not_found", `queue entry ${id} not found`);
 				if (current.status === "withdrawn") return current;
-				if (current.status !== "queued") {
+				if (current.status !== "queued" && current.status !== "claimed") {
 					throw new ControlError("invalid_state", `queue entry ${id} is ${current.status}`);
+				}
+				if (current.status === "claimed" && input.expectedClaimId === undefined) {
+					throw new ControlError("invalid_state", `queue entry ${id} is claimed; expectedClaimId is required`);
+				}
+				if (
+					input.expectedClaimId !== undefined &&
+					current.status === "claimed" &&
+					current.claimId !== input.expectedClaimId
+				) {
+					throw new ControlError("claim_conflict", `queue entry ${id} is not claimed by ${input.expectedClaimId}`);
 				}
 				const target = input.targetProfileId;
 				const remaining = target === undefined ? [] : current.targets.filter((candidate) => candidate !== target);
@@ -257,7 +270,7 @@ export class QueueStore {
 				if (target !== undefined && remaining.length > 0) {
 					const result = this.database
 						.prepare(
-							"UPDATE queue_entries SET targets_json = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND status = 'queued'",
+							"UPDATE queue_entries SET targets_json = ?, status = 'queued', claim_id = NULL, claim_owner_run_id = NULL, claim_expires_at = NULL, revision = revision + 1, updated_at = ? WHERE id = ? AND status IN ('queued', 'claimed')",
 						)
 						.run(jsonArray(remaining, "targets"), now, id);
 					if (changesOf(result) === 0) {
@@ -266,7 +279,7 @@ export class QueueStore {
 				} else {
 					const result = this.database
 						.prepare(
-							"UPDATE queue_entries SET status = 'withdrawn', claim_id = NULL, claim_owner_run_id = NULL, claim_expires_at = NULL, revision = revision + 1, updated_at = ? WHERE id = ? AND status = 'queued'",
+							"UPDATE queue_entries SET status = 'withdrawn', claim_id = NULL, claim_owner_run_id = NULL, claim_expires_at = NULL, revision = revision + 1, updated_at = ? WHERE id = ? AND status IN ('queued', 'claimed')",
 						)
 						.run(now, id);
 					if (changesOf(result) === 0) {

@@ -249,6 +249,7 @@ export class HandoffStore {
 			throw new ControlError("invalid_input", "parallel handoff requires at least two holders");
 		}
 		const id = input.id ?? newId();
+		const createdByActorRef = input.createdByActorRef ?? `user:${input.ownerUserId}`;
 		const now = this.clock();
 		try {
 			return this.transaction.run(() => {
@@ -292,11 +293,11 @@ export class HandoffStore {
 					generation: 1,
 					classification: "state-changing",
 					kind: "handoff.created",
-					actorRef: `user:${input.ownerUserId}`,
+					actorRef: createdByActorRef,
 					payload: { actionFamily: input.actionFamily, holderProfileIds: holders },
 				});
 				this.audit.append({
-					actor: `user:${input.ownerUserId}`,
+					actor: createdByActorRef,
 					action: "handoff_created",
 					subject: `handoff:${id}`,
 					args: { actionFamily: input.actionFamily, successorSlot: input.successorSlot },
@@ -322,10 +323,8 @@ export class HandoffStore {
 				if (!current.holderProfileIds.includes(input.profileId)) {
 					throw new ControlError("invalid_input", `profile ${input.profileId} is not a handoff holder`);
 				}
-				const run = this.database.prepare("SELECT status FROM runs WHERE id = ?").get(input.runId) as
-					| { status?: string }
-					| undefined;
-				if (!run || run.status !== "running") {
+				const run = this.requireRunForHandoff(input.runId, current.taskId, current.holderThreadId);
+				if (run.status !== "running") {
 					throw new ControlError("invalid_input", `run ${input.runId} is not running`);
 				}
 				const existing = this.getClaim(current.id, input.profileId, current.generation);
@@ -431,6 +430,7 @@ export class HandoffStore {
 				if (!claim || claim.status !== "active" || claim.runId !== runId) {
 					throw new ControlError("claim_conflict", `handoff ${handoffId} is not claimed by ${runId}`);
 				}
+				this.requireRunForHandoff(runId, current.taskId, current.holderThreadId);
 				const now = this.clock();
 				const leaseUntil = now + leaseMs;
 				this.database
@@ -461,6 +461,7 @@ export class HandoffStore {
 				if (!claim || claim.status !== "active" || claim.runId !== input.runId) {
 					throw new ControlError("claim_conflict", `handoff ${input.handoffId} is not claimed by ${input.runId}`);
 				}
+				this.requireRunForHandoff(input.runId, current.taskId, current.holderThreadId);
 				const candidates = { ...current.completionCandidates };
 				candidates[input.runId] = {
 					runId: input.runId,
@@ -504,10 +505,15 @@ export class HandoffStore {
 				if (current.status !== "claimed") {
 					throw new ControlError("invalid_state", `handoff ${input.handoffId} is ${current.status}`);
 				}
+				const claim = this.getClaim(input.handoffId, input.profileId, current.generation);
+				if (!claim || claim.status !== "active" || claim.runId !== input.runId) {
+					throw new ControlError("claim_conflict", `handoff ${input.handoffId} is not claimed by ${input.runId}`);
+				}
 				const candidate = current.completionCandidates[input.runId] as Record<string, unknown> | undefined;
 				if (!candidate) {
 					throw new ControlError("invalid_state", "handoff has no completion candidate for this run");
 				}
+				this.requireRunForHandoff(input.runId, current.taskId, current.holderThreadId);
 				const now = this.clock();
 				const outcomes = { ...current.holderOutcomes };
 				outcomes[input.profileId] = { outcome: "succeeded", evidenceRef: input.evidenceRef, at: now };
@@ -701,6 +707,20 @@ export class HandoffStore {
 			)
 			.get(handoffId, generation) as { count?: number } | undefined;
 		return row?.count ?? 0;
+	}
+
+	private requireRunForHandoff(runId: string, taskId: string, threadId: string): { status: string } {
+		const row = this.database
+			.prepare("SELECT r.status, r.task_id, t.thread_id FROM runs r JOIN tasks t ON t.id = r.task_id WHERE r.id = ?")
+			.get(runId) as { status?: string; task_id?: string; thread_id?: string } | undefined;
+		if (!row) throw new ControlError("invalid_input", `run ${runId} not found`);
+		if (row.task_id !== taskId) {
+			throw new ControlError("invalid_input", `run ${runId} is not bound to handoff task ${taskId}`);
+		}
+		if (row.thread_id !== threadId) {
+			throw new ControlError("invalid_input", `run ${runId} is not bound to handoff thread ${threadId}`);
+		}
+		return { status: row.status ?? "unknown" };
 	}
 
 	private getClaim(handoffId: string, profileId: string, generation: number): HandoffHolderClaim | null {

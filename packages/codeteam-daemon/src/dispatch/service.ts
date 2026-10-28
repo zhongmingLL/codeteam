@@ -19,6 +19,13 @@ import type {
 const DEFAULT_MAX_ENTRIES = 100;
 const DEFAULT_QUEUE_CLAIM_TTL_MS = 5 * 60 * 1000;
 const TERMINAL_STATUSES = new Set(["completed", "canceled", "interrupted", "failed"]);
+const POISON_DISPATCH_ERRORS = new Set([
+	"invalid_state",
+	"not_found",
+	"invalid_input",
+	"forbidden",
+	"schema_incomplete",
+]);
 
 function objectOrEmpty(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -240,26 +247,31 @@ export class DispatchService {
 				if (!entry) break;
 				claimedQueueEntryIds.push(entry.id);
 				try {
-					const created = this.cutoverEntry(entry.id, claimId);
-					runs.push(...created);
-					const settled = await routeParallel(created, (run) => this.executeRun(run));
-					for (const result of settled) {
-						if (result.status === "fulfilled") outcomes.push(result.value);
-						else {
-							const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
-							errors.push({ queueEntryId: entry.id, code: "executor_error", message });
+					const cutover = this.cutoverEntry(entry.id, claimId);
+					runs.push(...cutover.runs);
+					errors.push(...cutover.failures);
+					if (cutover.runs.length > 0) {
+						const settled = await routeParallel(cutover.runs, (run) => this.executeRun(run));
+						for (const result of settled) {
+							if (result.status === "fulfilled") outcomes.push(result.value);
+							else {
+								const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+								errors.push({ queueEntryId: entry.id, code: "executor_error", message });
+							}
 						}
 					}
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
-					errors.push({
-						queueEntryId: entry.id,
-						code: error instanceof ControlError ? error.code : "dispatch_error",
-						message,
-					});
-					const current = this.store.queue.get(entry.id);
-					if (current?.status === "claimed" && current.claimId) {
-						this.store.queue.release(entry.id, current.claimId);
+					const code = error instanceof ControlError ? error.code : "dispatch_error";
+					errors.push({ queueEntryId: entry.id, code, message });
+					if (POISON_DISPATCH_ERRORS.has(code)) {
+						this.deadLetterEntry(entry.id, claimId, code, message);
+					} else {
+						const current = this.store.queue.get(entry.id);
+						if (current?.status === "claimed" && current.claimId) {
+							this.store.queue.release(entry.id, current.claimId);
+						}
+						break;
 					}
 				}
 				processed += 1;
@@ -269,7 +281,7 @@ export class DispatchService {
 		return { claimedQueueEntryIds, runs, outcomes, errors };
 	}
 
-	private cutoverEntry(queueEntryId: string, claimId: string): Run[] {
+	private cutoverEntry(queueEntryId: string, claimId: string): { runs: Run[]; failures: DispatchEntryError[] } {
 		const entry = this.store.queue.get(queueEntryId);
 		if (!entry) throw new ControlError("not_found", `queue entry ${queueEntryId} not found`);
 		const source = this.store.messages.get(entry.sourceId);
@@ -277,23 +289,14 @@ export class DispatchService {
 		if (!source.taskId) {
 			throw new ControlError("invalid_state", `queue source message ${source.id} has no task`);
 		}
-		const routes = entry.targets.map((target) =>
-			this.resolveRoute(
-				source.taskId!,
-				target,
-				chainMetadataFor(entry.authorIntent[target], {
-					sourceKind: entry.sourceKind,
-					queueEntryId: entry.id,
-				}),
-			),
-		);
+		const targets = [...entry.targets];
 		return this.store.transaction.run(() => {
 			let activeClaimId = claimId;
-			return routes.map((route) => {
+			const runs: Run[] = [];
+			const failures: DispatchEntryError[] = [];
+			for (const target of targets) {
 				const current = this.store.queue.get(entry.id);
-				if (!current) {
-					throw new ControlError("claim_conflict", `queue entry ${entry.id} disappeared during cutover`);
-				}
+				if (!current || current.status === "withdrawn") break;
 				if (current.status === "queued") {
 					activeClaimId = `dispatch:${newId()}`;
 					this.store.queue.claim(entry.id, { claimId: activeClaimId, ttlMs: DEFAULT_QUEUE_CLAIM_TTL_MS });
@@ -301,6 +304,28 @@ export class DispatchService {
 					activeClaimId = current.claimId;
 				} else {
 					throw new ControlError("invalid_state", `queue entry ${entry.id} is ${current.status} during cutover`);
+				}
+				let route: DispatchRoute;
+				try {
+					route = this.resolveRoute(
+						source.taskId!,
+						target,
+						chainMetadataFor(entry.authorIntent[target], {
+							sourceKind: entry.sourceKind,
+							queueEntryId: entry.id,
+						}),
+					);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					const code = error instanceof ControlError ? error.code : "dispatch_route_error";
+					failures.push({ queueEntryId: entry.id, targetProfileId: target, code, message });
+					this.store.queue.withdrawTarget(entry.id, {
+						targetProfileId: target,
+						actorRef: "system:dispatch",
+						reason: `dispatch_route_${code}`,
+						expectedClaimId: current.status === "claimed" ? activeClaimId : undefined,
+					});
+					continue;
 				}
 				const result = this.store.cutoverQueueEntry({
 					queueEntryId: entry.id,
@@ -316,8 +341,32 @@ export class DispatchService {
 					responseBody: "",
 					chainMetadata: route.chainMetadata,
 				});
-				return result.run;
-			});
+				runs.push(result.run);
+			}
+			return { runs, failures };
+		});
+	}
+
+	private deadLetterEntry(queueEntryId: string, claimId: string, code: string, message: string): void {
+		const current = this.store.queue.get(queueEntryId);
+		if (current && current.status !== "withdrawn") {
+			try {
+				this.store.queue.withdrawTarget(queueEntryId, {
+					actorRef: "system:dispatch",
+					reason: `dispatch_poison_${code}`,
+					expectedClaimId: current.status === "claimed" ? (current.claimId ?? claimId) : undefined,
+				});
+			} catch {
+				if (current.status === "claimed" && current.claimId) {
+					this.store.queue.release(queueEntryId, current.claimId);
+				}
+			}
+		}
+		this.store.audit.append({
+			actor: "system:dispatch",
+			action: "dispatch_dead_lettered",
+			subject: `queue:${queueEntryId}`,
+			args: { code, message },
 		});
 	}
 
@@ -377,8 +426,18 @@ export class DispatchService {
 					bodyMd: result.bodyMd,
 					toolCalls: result.toolCalls ?? [],
 				})?.correction;
-			} catch {
+			} catch (error) {
 				schemaCorrection = undefined;
+				try {
+					this.store.audit.append({
+						actor: "system:dispatch",
+						action: "a2a_observation_failed",
+						subject: `run:${run.id}`,
+						args: { message: error instanceof Error ? error.message : String(error) },
+					});
+				} catch {
+					// Observation is best-effort and must not change run terminal state.
+				}
 			}
 			const settled = this.settleRun(run.id, {
 				status: "completed",

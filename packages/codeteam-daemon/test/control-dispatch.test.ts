@@ -315,6 +315,53 @@ describe("W5a dispatch queue adapter", () => {
 		expect(audit).toHaveLength(1);
 	});
 
+	it("dead-letters a bad target instead of starving later queue entries", async () => {
+		const base = fixture();
+		base.store.profiles.create({
+			id: "profile:no-session",
+			role: "reviewer",
+			displayName: "No Session",
+			provider: "test",
+			model: "model-reviewer",
+			modelFamily: "test-family",
+			toolPolicyProfile: "default",
+		});
+		const badSource = queueMessage(base, ["profile:no-session"], "bad");
+		const badEntry = base.store.queue.admit({
+			threadId: "thread-1",
+			sourceId: badSource.id,
+			sourceKind: "conversation_input",
+			targets: ["profile:no-session"],
+			sourceCategory: "a2a",
+			orderKey: "1",
+		});
+		const goodSource = queueMessage(base, ["profile:reviewer-a"], "good");
+		base.store.queue.admit({
+			threadId: "thread-1",
+			sourceId: goodSource.id,
+			sourceKind: "conversation_input",
+			targets: ["profile:reviewer-a"],
+			sourceCategory: "a2a",
+			orderKey: "2",
+		});
+		const executor = new ManualExecutor();
+		const service = new DispatchService(base.store, executor, base.now);
+		const draining = service.drain();
+		await waitFor(() => executor.started.length === 1);
+		executor.resolve(executor.started[0]!, "good done");
+		const result = await draining;
+		expect(base.store.queue.get(badEntry.id)?.status).toBe("withdrawn");
+		expect(result.errors).toContainEqual(
+			expect.objectContaining({
+				queueEntryId: badEntry.id,
+				targetProfileId: "profile:no-session",
+				code: "invalid_state",
+			}),
+		);
+		expect(base.store.runs.list({ taskId: "task-1" })).toHaveLength(1);
+		expect(base.store.runs.list({ taskId: "task-1" })[0]?.status).toBe("completed");
+	});
+
 	it("persists A2A depth in run chain metadata", async () => {
 		const base = fixture();
 		const source = base.createSourceMessage();

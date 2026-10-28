@@ -114,6 +114,49 @@ describe("W5a A2A tool surface", () => {
 		expect(() => handlers.send({ kind: "question", targets: ["profile:missing"], bodyMd: "x" })).toThrow(/not found/);
 	});
 
+	it("rejects disabled and cross-thread targets", () => {
+		const base = fixture();
+		const source = sourceRun(base);
+		base.store.profiles.create({
+			id: "profile:disabled",
+			role: "reviewer",
+			displayName: "Disabled",
+			provider: "test",
+			model: "model-reviewer",
+			modelFamily: "test-family",
+			toolPolicyProfile: "default",
+			status: "disabled",
+		});
+		base.store.profiles.create({
+			id: "profile:outsider",
+			role: "reviewer",
+			displayName: "Outsider",
+			provider: "test",
+			model: "model-reviewer",
+			modelFamily: "test-family",
+			toolPolicyProfile: "default",
+		});
+		base.store.threads.create({ id: "thread-2", title: "Other thread" });
+		base.store.sessions.create({
+			id: "session-outsider",
+			threadId: "thread-2",
+			taskId: "task-1",
+			profileId: "profile:outsider",
+			role: "reviewer",
+			effectiveToolPolicy: "default",
+			provider: "test",
+			model: "model-reviewer",
+			modelFamily: "test-family",
+			seq: 0,
+			userId: "user-1",
+		});
+		const handlers = createA2AHandlers({ store: base.store, principal: source.principal, clock: base.now });
+		expect(() => handlers.send({ kind: "question", targets: ["profile:disabled"], bodyMd: "x" })).toThrow(/disabled/);
+		expect(() => handlers.send({ kind: "question", targets: ["profile:outsider"], bodyMd: "x" })).toThrow(
+			/not in the same thread/,
+		);
+	});
+
 	it("creates a typed handoff with message control_ref and custody dispatch events", () => {
 		const base = fixture();
 		const source = sourceRun(base);
@@ -129,6 +172,7 @@ describe("W5a A2A tool surface", () => {
 			"handoff.created",
 			"handoff.dispatched",
 		]);
+		expect(base.store.handoffs.custodyEvents(created.handoff.id)[0]?.actorRef).toContain("profile:coder");
 		expect(base.store.queue.listPending()).toHaveLength(1);
 		const replay = handlers.createHandoff(handoffInput());
 		expect(replay.handoff.id).toBe(created.handoff.id);
@@ -191,6 +235,103 @@ describe("W5a A2A tool surface", () => {
 		expect(withdrawn.status).toBe("withdrawn");
 		expect(base.store.handoffs.custodyEvents(created.handoff.id).map((event) => event.kind)).toContain(
 			"handoff.withdrawn",
+		);
+	});
+
+	it("rejects cross-task handoff claim and withdrawal", () => {
+		const base = fixture();
+		const source = sourceRun(base);
+		const coder = createA2AHandlers({ store: base.store, principal: source.principal, clock: base.now });
+		const created = coder.createHandoff(handoffInput());
+		base.store.tasks.create({
+			id: "task-2",
+			kind: "work",
+			threadId: "thread-1",
+			title: "Other task",
+			why: "scope probe",
+			ownerProfileId: "profile:coder",
+			createdBy: "user-1",
+			userId: "user-1",
+			backlogItemId: "backlog-1",
+		});
+		base.store.sessions.create({
+			id: "session-reviewer-a-task2",
+			threadId: "thread-1",
+			taskId: "task-2",
+			profileId: "profile:reviewer-a",
+			role: "reviewer",
+			effectiveToolPolicy: "default",
+			provider: "test",
+			model: "model-reviewer",
+			modelFamily: "test-family",
+			seq: 0,
+			userId: "user-1",
+		});
+		const crossMessage = base.store.messages.append({
+			threadId: "thread-1",
+			taskId: "task-2",
+			authorKind: "user",
+			authorId: "user-1",
+			kind: "chat",
+			bodyMd: "cross task",
+		});
+		const crossRun = base.store.runs.create({
+			id: "run-reviewer-task2",
+			taskId: "task-2",
+			role: "reviewer",
+			agentSessionId: "session-reviewer-a-task2",
+			sourceId: crossMessage.id,
+			recipientProfileId: "profile:reviewer-a",
+			provider: "test",
+			model: "model-reviewer",
+			modelFamily: "test-family",
+		});
+		const crossReviewer = createA2AHandlers({
+			store: base.store,
+			principal: resolveRunPrincipal(base.store, crossRun.id),
+			clock: base.now,
+		});
+		const claim = crossReviewer.claimHandoff(created.handoff.id);
+		expect(claim.status).toBe("safe_wait");
+		if (claim.status === "safe_wait") expect(claim.reason).toBe("task_scope_mismatch");
+		expect(() =>
+			base.store.handoffs.claim({
+				handoffId: created.handoff.id,
+				profileId: "profile:reviewer-a",
+				runId: crossRun.id,
+			}),
+		).toThrow(/handoff task/);
+		base.store.sessions.create({
+			id: "session-coder-task2",
+			threadId: "thread-1",
+			taskId: "task-2",
+			profileId: "profile:coder",
+			role: "coder",
+			effectiveToolPolicy: "default",
+			provider: "test",
+			model: "model-coder",
+			modelFamily: "test-family",
+			seq: 0,
+			userId: "user-1",
+		});
+		const crossCoderRun = base.store.runs.create({
+			id: "run-coder-task2",
+			taskId: "task-2",
+			role: "coder",
+			agentSessionId: "session-coder-task2",
+			sourceId: crossMessage.id,
+			recipientProfileId: "profile:coder",
+			provider: "test",
+			model: "model-coder",
+			modelFamily: "test-family",
+		});
+		const crossCoder = createA2AHandlers({
+			store: base.store,
+			principal: resolveRunPrincipal(base.store, crossCoderRun.id),
+			clock: base.now,
+		});
+		expect(() => crossCoder.withdrawHandoff(created.handoff.id, "cross task")).toThrow(
+			/outside the caller task scope/,
 		);
 	});
 

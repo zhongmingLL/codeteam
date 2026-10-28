@@ -252,7 +252,37 @@ describe("codeteam control plane recovery", () => {
 
 	it("keeps a parallel handoff claimed when only one holder is interrupted", () => {
 		const coder = baseRun();
-		const reviewer = baseRun("profile-reviewer", "reviewer");
+		const reviewerSession = store.sessions.create({
+			id: "session-reviewer-parallel",
+			threadId: coder.thread.id,
+			taskId: coder.task.id,
+			profileId: "profile-reviewer",
+			role: "reviewer",
+			effectiveToolPolicy: "default",
+			provider: "test",
+			model: "model",
+			modelFamily: "family",
+			seq: 0,
+		});
+		const reviewerSource = store.messages.append({
+			threadId: coder.thread.id,
+			taskId: coder.task.id,
+			authorKind: "user",
+			authorId: "user-1",
+			kind: "chat",
+			bodyMd: "parallel review",
+		});
+		const reviewerRun = store.runs.create({
+			id: "run-reviewer-parallel",
+			taskId: coder.task.id,
+			role: "reviewer",
+			agentSessionId: reviewerSession.id,
+			sourceId: reviewerSource.id,
+			recipientProfileId: "profile-reviewer",
+			provider: "test",
+			model: "model",
+			modelFamily: "family",
+		});
 		const handoff = store.handoffs.create(
 			handoffInput(coder, {
 				mode: "parallel",
@@ -261,9 +291,9 @@ describe("codeteam control plane recovery", () => {
 			}),
 		);
 		store.handoffs.claim({ handoffId: handoff.id, profileId: "profile-coder", runId: coder.run.id });
-		store.handoffs.claim({ handoffId: handoff.id, profileId: "profile-reviewer", runId: reviewer.run.id });
+		store.handoffs.claim({ handoffId: handoff.id, profileId: "profile-reviewer", runId: reviewerRun.id });
 
-		const report = recoverControlPlane(store, { now, activeRunIds: [reviewer.run.id] });
+		const report = recoverControlPlane(store, { now, activeRunIds: [reviewerRun.id] });
 
 		expect(report.interruptedRuns.map((entry) => entry.runId)).toEqual([coder.run.id]);
 		expect(store.handoffs.get(handoff.id)?.status).toBe("claimed");

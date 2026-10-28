@@ -45,8 +45,8 @@ slice-specific 证据。W5b/W5c 项不在本 feature 冒充完成。
 
 - 2026-10-28：W5a kickoff；`0010` 与 F008 建立。
 - 2026-10-28：migration 011 + dispatch queue adapter + A2A tool handlers +
-  custody projection + wait contract 实现；定向测试 23/23。
-- 包内全量 287 passed / 1 skipped，根级 `tsc` 与 `build:offline` 通过；
+  custody projection + wait contract 实现；定向测试 26/26。
+- 包内全量 290 passed / 1 skipped，根级 `tsc` 与 `build:offline` 通过；
   命令与边界见 `docs/reports/2026-10-28-w5a-a2a-dispatch-custody.md`。review
   与 merge 尚未发生，不声称 W5a 已关闭。
 

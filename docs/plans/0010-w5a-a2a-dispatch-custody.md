@@ -265,6 +265,14 @@ NODE_ENV=development npx biome check packages/codeteam-daemon
 5. W5a 完成后先做非作者 review：烁烁 A2A/session/custody，砚砚
    code/security。W5a 契约冻结后才由 source thread 提议 W5b/W5c。
 
+## Review residual ledger
+
+| # | 项 | 去向 |
+|---|---|---|
+| 1 | `WaitContractService.arm` 与 stop/interrupt/guide/cancel 的 actor 仍是调用方字符串；W5a in-process 可接受 | W7a 必须与 per-run token → principal 一起绑定 |
+| 2 | `a2aDepth` 只持久化，无软上限 | W5c 预算/DAG 前加上限或准入 |
+| 3 | observation 意图正则为启发式，可能误触发一次 correction | W6 eval 调优 |
+
 ## 风险与回滚
 
 | 风险 | 路 | 处置 |
@@ -286,9 +294,9 @@ DB（无生产数据）。
   correlation）已落。
 - `DispatchService` / route primitives / A2A tool handlers / custody projection
   / wait contract 已实现。
-- 定向测试：`control-dispatch` 10、`control-a2a-tools` 7、
-  `control-custody-wait` 6（23/23）；包内全量 35 files passed + 1 skipped，
-  287 tests passed + 1 skipped；根级 `tsc` 与 `build:offline` 通过。证据见
+- 定向测试：`control-dispatch` 11、`control-a2a-tools` 9、
+  `control-custody-wait` 6（26/26）；包内全量 35 files passed + 1 skipped，
+  290 tests passed + 1 skipped；根级 `tsc` 与 `build:offline` 通过。证据见
   `docs/reports/2026-10-28-w5a-a2a-dispatch-custody.md`。
 - 明确未做：真实 pi kernel executor、RPC harness、worker registry/sticky/
   re-attach、readiness/DAG、预算、worktree pool、F139、daemon lifecycle、

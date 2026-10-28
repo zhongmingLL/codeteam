@@ -38,13 +38,13 @@ feature: "codeteam/F008"
 ```bash
 NODE_ENV=development npm --prefix packages/codeteam-daemon test
 # 35 passed | 1 skipped test files
-# 287 passed | 1 skipped tests
+# 290 passed | 1 skipped tests
 
 NODE_ENV=development npx vitest --run \
   packages/codeteam-daemon/test/control-dispatch.test.ts \
   packages/codeteam-daemon/test/control-a2a-tools.test.ts \
   packages/codeteam-daemon/test/control-custody-wait.test.ts
-# 3 files / 23 tests passed
+# 3 files / 26 tests passed
 
 NODE_ENV=development npx tsc --noEmit -p packages/codeteam-daemon/tsconfig.build.json
 # pass
@@ -68,16 +68,35 @@ node packages/ai/scripts/hydrate-model-catalog.ts /tmp/pi-catalog-w5a.json
 # pass；check:model-data 在 build:offline 中输出 "Generated model data is valid."
 ```
 
+## Review 修复（砚砚 request-changes）
+
+- P1 已修：`A2AToolHandlers.claimHandoff` / `withdrawHandoff` 校验
+  `handoff.taskId === principal.taskId` 与 `holderThreadId === principal.threadId`；
+  `HandoffStore.claim` / `heartbeat` / `recordCompletionCandidate` /
+  `commitCompletion` 再用 run→task→thread 反查做 defense-in-depth，且
+  `commitCompletion` 必须命中 exact active holder claim。新增
+  “跨 task claim → safe_wait；直接 store claim 拒绝；跨 task withdraw
+  forbidden”负面测试。
+- P2 已修：drain 对 route/target 类失败逐 target `withdrawn`，不再无条件
+  release；整 entry data/routing poison 走 `dispatch_dead_lettered` audit；
+  新增“坏 target + 后续好 entry 正常执行”测试。
+- P3 已收：disabled / cross-thread target 负测；`handoff.created` custody
+  event 归因到发起 agent；observation 异常写 audit 不再裸吞。
+- W7a residual：`WaitContractService.arm` 与 `stopRun/interruptRun/guideRun/
+  cancelQueued` 的 actor 必须由 per-run token principal 派生，不接受自由字符串。
+- W5c residual：`a2aDepth` 只有持久化、无软上限；预算/DAG 阶段再加。
+
 ## 测试覆盖
 
 - `control-dispatch.test.ts`：single Queue Entry + multi recipient parallel；
   one response bubble per run；重复 terminal 幂等；guide；stop；interrupt
   （canceled + retry run）；cancel queued（withdrawn）；executor failure；
-  A2A depth；missing tool schema correction；routeSerial。
+  A2A depth；missing tool schema correction；routeSerial；bad target
+  dead-letter + 后续 entry 不被饿死。
 - `control-a2a-tools.test.ts`：a2a_send 消息/queue/marker；forge/controlRef
-  拒绝；handoff create + control_ref + custody dispatched；idempotency replay；
-  per-holder claim / safe_wait / candidate / withdraw；missing observation
-  只一次且不路由。
+  拒绝；disabled/cross-thread target；handoff create + control_ref + custody
+  dispatched；idempotency replay；per-holder claim / safe_wait / candidate /
+  withdraw；跨 task claim/withdraw 拒绝；missing observation 只一次且不路由。
 - `control-custody-wait.test.ts`：single/parallel custody replay；returned；
   expired；blocked 两态；wait source/SLA/signal/fence fail closed；owner
   cancel；wait 不裁决 handoff expiry。

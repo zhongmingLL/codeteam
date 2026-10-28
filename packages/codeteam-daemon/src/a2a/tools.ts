@@ -337,6 +337,7 @@ export class A2AToolHandlers {
 				mode,
 				parallelIntent,
 				ownerUserId: this.principal.userId,
+				createdByActorRef: `profile:${this.principal.profileId}`,
 				canonicalActionKey,
 				holderProfileIds: targets.map((target) => target.profile.id),
 				holderThreadId: this.principal.threadId,
@@ -396,6 +397,9 @@ export class A2AToolHandlers {
 	claimHandoff(handoffId: string): HandoffClaimResult {
 		const handoff = this.store.handoffs.get(handoffId);
 		if (!handoff) throw new ControlError("not_found", `handoff ${handoffId} not found`);
+		if (handoff.taskId !== this.principal.taskId || handoff.holderThreadId !== this.principal.threadId) {
+			return { status: "safe_wait", reason: "task_scope_mismatch", handoff };
+		}
 		if (!handoff.holderProfileIds.includes(this.principal.profileId)) {
 			return { status: "safe_wait", reason: "not_holder", handoff };
 		}
@@ -430,6 +434,9 @@ export class A2AToolHandlers {
 	withdrawHandoff(handoffId: string, reason: string): Handoff {
 		const handoff = this.store.handoffs.get(handoffId);
 		if (!handoff) throw new ControlError("not_found", `handoff ${handoffId} not found`);
+		if (handoff.taskId !== this.principal.taskId || handoff.holderThreadId !== this.principal.threadId) {
+			throw new ControlError("forbidden", "handoff is outside the caller task scope");
+		}
 		if (handoff.predecessorProfileId !== this.principal.profileId) {
 			throw new ControlError("forbidden", "only the handoff author can withdraw it");
 		}

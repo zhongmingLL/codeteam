@@ -45,6 +45,7 @@ export interface DispatchRunOutcome {
 
 export interface DispatchEntryError {
 	readonly queueEntryId: string;
+	readonly targetProfileId?: string;
 	readonly code: string;
 	readonly message: string;
 }

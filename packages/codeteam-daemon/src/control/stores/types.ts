@@ -907,6 +907,7 @@ export interface Handoff {
 	mode: HandoffMode;
 	parallelIntent: string | null;
 	ownerUserId: string;
+	createdByActorRef?: string;
 	canonicalActionKey: string;
 	holderProfileIds: string[];
 	holderThreadId: string;
@@ -954,6 +955,7 @@ export interface CreateHandoffInput {
 	mode: HandoffMode;
 	parallelIntent?: string | null;
 	ownerUserId: string;
+	createdByActorRef?: string;
 	canonicalActionKey: string;
 	holderProfileIds: string[];
 	holderThreadId: string;
