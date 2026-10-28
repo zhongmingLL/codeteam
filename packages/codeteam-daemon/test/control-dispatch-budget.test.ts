@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { type AgentExecutor, BudgetService, ControlError, DispatchService } from "../src/index.ts";
+import {
+	type AgentExecutor,
+	BudgetService,
+	ControlError,
+	type DeploymentObservation,
+	type DeploymentObserver,
+	DeploymentWaitService,
+	DispatchService,
+} from "../src/index.ts";
 import { createW5AFixture, type W5AFixture } from "./helpers/w5a-fixture.ts";
 
 const fixtures: W5AFixture[] = [];
@@ -181,6 +189,54 @@ describe("W5d dispatch deferral does not starve the queue", () => {
 		const result = await service.drain();
 
 		expect(result.errors).toContainEqual(expect.objectContaining({ code: "deployment_wait_pending" }));
+		expect(result.runs.map((run) => run.taskId)).toEqual(["task-2"]);
+		expect(base.store.queue.get(waiting.id)?.status).toBe("queued");
+		expect(base.store.queue.get(ready.id)).toBeNull();
+	});
+});
+
+class StubObserver implements DeploymentObserver {
+	observation: DeploymentObservation | null = {
+		v: 1,
+		subjectRef: `deployment:${"a".repeat(64)}:local`,
+		bootId: "boot-1",
+		bootSequence: 1,
+		runningRevision: "a".repeat(40),
+		readyServices: ["daemon"],
+		observedAt: 1,
+		inclusionProof: null,
+	};
+
+	subjectRef(): string {
+		return `deployment:${"a".repeat(64)}:local`;
+	}
+
+	observe(): DeploymentObservation | null {
+		return this.observation;
+	}
+}
+
+describe("W5d dispatch defers a matched-but-undelivered wait", () => {
+	it("keeps draining when delivery has not produced its queue entry yet", async () => {
+		const base = fixture();
+		addSecondTask(base);
+		const observer = new StubObserver();
+		const wait = new DeploymentWaitService(base.store, { observer, clock: base.now });
+		wait.register({
+			taskId: "task-1",
+			predicate: { kind: "new_ready_boot", services: ["daemon"] },
+			targetProfileIds: ["profile:coder"],
+			actorRef: "user:user-1",
+		});
+		observer.observation = { ...observer.observation!, bootId: "boot-2", bootSequence: 2 };
+		expect(wait.evaluate("task-1")?.status).toBe("matched");
+		const waiting = admitFor(base, { taskId: "task-1", body: "matched", orderKey: "1", target: "profile:coder" });
+		const ready = admitFor(base, { taskId: "task-2", body: "ready", orderKey: "2", target: "profile:reviewer-a" });
+		const service = new DispatchService(base.store, executor, base.now, {}, { deploymentWaitGuard: wait });
+
+		const result = await service.drain();
+
+		expect(result.errors).toContainEqual(expect.objectContaining({ code: "deployment_wait_outcome_pending" }));
 		expect(result.runs.map((run) => run.taskId)).toEqual(["task-2"]);
 		expect(base.store.queue.get(waiting.id)?.status).toBe("queued");
 		expect(base.store.queue.get(ready.id)).toBeNull();

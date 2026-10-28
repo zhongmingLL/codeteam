@@ -34,7 +34,11 @@ const POISON_DISPATCH_ERRORS = new Set([
 ]);
 // Admission gates that only affect one task. Defer the entry and keep draining so a
 // budget-paused or deployment-waiting head entry cannot starve every entry behind it.
-const DEFERRABLE_DISPATCH_ERRORS = new Set(["budget_paused", "deployment_wait_pending"]);
+const DEFERRABLE_DISPATCH_ERRORS = new Set([
+	"budget_paused",
+	"deployment_wait_pending",
+	"deployment_wait_outcome_pending",
+]);
 
 export interface DispatchServiceOptions {
 	readonly budget?: BudgetService;

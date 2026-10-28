@@ -62,7 +62,7 @@ passing tests 冒充。
   pid 重新推导 descendants，避免 signal 已回收/复用的 pid。relaunch 的
   新 daemon 启动仍归 external executor。
 - 验证：`build:offline` exit 0；daemon 包 52 files passed + 2 skipped，
-  377 tests passed + 2 skipped；`tsc` / `biome` 通过。证据见
+  378 tests passed + 2 skipped；`tsc` / `biome` 通过。证据见
   `docs/reports/2026-10-28-w5d-runtime-lifecycle-managed-work.md`。
 - 未完成：W7 HTTP/Console、W8 revert connector；relaunch CLI 的 external
   start；W6 episode store。不得用本 slice 的 tests 冒充。
