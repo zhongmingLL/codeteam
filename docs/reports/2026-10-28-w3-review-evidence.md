@@ -2,8 +2,9 @@
 
 > 范围：`docs/plans/0003-w3-w4-review-sop.md` §W3。基线 `codeteam-work`
 > `cbca59473`（W2 关闭后）。实现 worktree：`../codeteam-w3-review`。
-> 状态：首轮独立 review（砚砚）Changes Requested；本修订处理 P1 #1–#3、P2
-> #4/#6/#8/#15，并一并收口 P3 #5/#7/#9–#14。修订后的 exact HEAD 待复验。
+> 状态：PR #43 已 merge（`b66b8be43`）。首轮 Changes Requested 后完成修订；
+> 砚砚 code/security/falsifier 复验 Approved，墨墨 eval/可理解性 Approved。
+> F006 feature close/operator acceptance 仍待确认，不把 merge 当 accepted。
 
 ## 1. 交付内容
 
@@ -78,6 +79,16 @@ npm run check:browser-smoke
 ```
 
 均 exit 0；Biome：`Checked 101 files. No fixes applied.`
+
+### 2.4 Merge evidence
+
+- PR：https://github.com/zhongmingLL/codeteam/pull/43
+- Reviewed HEAD：`c0c7a6c3b9eb5b3cf8878293ced84294888e457a`
+- Merge commit：`b66b8be43cc87cc2ba53cc5d5c971aeb2b14885`（base `codeteam-work`）
+- 砚砚复验：Approved，PR comment `#issuecomment-6458628666`
+- 墨墨 eval 复看：Approved（E-P1/E-P2/E-P3 全部验收；2 条非阻塞观察挂 W4）
+- Conversation resolution：15/15 review threads resolved
+- CI：`changes` / `build-check-test` / `mcp-conformance` / `supply-chain` 4/4 pass
 
 ## 3. Eval corpus 结果
 
@@ -181,8 +192,8 @@ NODE_ENV=development npx vitest run test/control-review-corpus.test.ts \
 
 W3 的六项核心契约（ReviewPolicy、盲评 envelope、finding/falsifier、headSha
 绑定、reviews/verifications 接线、eval corpus）已在本地实现并通过定向与包内
-回归。首轮独立 review 为 **Changes Requested**；本修订已处置全部 P1/P2 与
-P3 findings，待砚砚在修订后的 exact HEAD 复验。本报告不声明 `reviewed`、
-`merged` 或 `accepted`。
+回归。首轮独立 review 为 **Changes Requested**；修订后砚砚 Approved、墨墨 eval
+Approved，PR #43 已 merge 到 `codeteam-work`。本报告声明 `merged`；F006 的
+`accepted`/feature close 仍留 operator/vision 确认，W4 残留按 §6 继续跟踪。
 
 [宪宪/deepseek-flash🐾]

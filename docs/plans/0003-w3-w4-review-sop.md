@@ -132,16 +132,16 @@ interface Finding {
 
 ### Acceptance
 
-- [ ] 代码 review 的 author session 与 reviewer session 不同。
-- [ ] author 与 reviewer 的 profile 不同；同一 profile 换 session 不算独立。
-- [ ] 普通代码 review 的 modelFamily 不同；低风险文档同族有 `same_family_fresh` 标记。
-- [ ] family 配置错误可被审计发现（受控枚举 + 四元组）。
-- [ ] review_request 不含 author model/identity/transcript。
-- [ ] P1/P2 无可执行 falsifier 自动降 P3。
-- [ ] clean FP ≤ 20%；seeded recall ≥ 60%；survival ≥ 80%（n≥20 前只作 smoke 门槛，不用于 model family 结论）。
-- [ ] 至少 2 个 model family 的对照数据。
-- [ ] headSha 变化使旧证据失效。
-- [ ] 每个 review_request 的 headSha 可回溯到 coder 的 commit audit。
+- [x] 代码 review 的 author session 与 reviewer session 不同。
+- [x] author 与 reviewer 的 profile 不同；同一 profile 换 session 不算独立。
+- [x] 普通代码 review 的 modelFamily 不同；低风险文档同族有 `same_family_fresh` 标记。
+- [x] family 配置错误可被审计发现（受控枚举 + 四元组）。
+- [x] review_request 不含 author model/identity/transcript。
+- [x] P1/P2 无可执行 falsifier 自动降 P3。
+- [x] clean FP ≤ 20%；seeded recall ≥ 60%；survival ≥ 80%（n≥20 前只作 smoke 门槛，不用于 model family 结论）。证据：overall FP 10% / recall 90% / seeded survival 90%。
+- [x] 至少 2 个 model family 的对照数据（glm-fixture / qwen-fixture synthetic smoke；live n≥20 待 W4/W6）。
+- [x] headSha 变化使旧证据失效。
+- [x] 每个 review_request 的 headSha 可回溯到 coder 的 commit audit。
 
 ### Risks
 
@@ -159,7 +159,7 @@ interface Finding {
 - 砚砚：ReviewPolicy、falsifier 信任边界、headSha、blocked 生命周期。
 - 墨墨：review UX/文档是否把“独立 review”讲清楚；低风险例外是否可理解。
 
-### W3 Results（2026-10-28，实现完成，独立 review 待发生）
+### W3 Results（2026-10-28，merged）
 
 - 实现计划与验收映射：`plans/0008-w3-review-implementation.md`。
 - 代码：`src/review/`（model-family / policy / envelope / findings / falsifier /
@@ -168,11 +168,14 @@ interface Finding {
   `build:offline` 与根级 tsc 通过。
 - 首轮独立 review Changes Requested（15 findings）；P1 #1–#3、P2
   #4/#6/#8/#15 与 P3 #5/#7/#9–#14 已在本修订处置，待复验。
+- 复验：砚砚 Approved @ `c0c7a6c3`（PR comment `#issuecomment-6458628666`）；
+  墨墨 eval/可理解性 Approved；15 条 conversation 已 resolve。
 - Eval smoke：5 clean + 5 seeded、glm/qwen 两族 fixture observation；
   overall FP 10%、recall 90%、seeded survival 90%，预注册门槛通过；n=10 cases
   只作 smoke，不作模型家族结论。
 - 证据报告：`reports/2026-10-28-w3-review-evidence.md`。
-- 以上是本地实现证据，不替代非作者 review、merge 或 operator acceptance。
+- 合入：PR #43 merge `b66b8be43cc87cc2ba53cc5d5c971aeb2b14885`（`codeteam-work`），
+  CI 4/4 pass。merge 不替代 operator acceptance/feature close。
 
 ---
 
