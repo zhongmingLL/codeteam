@@ -70,5 +70,6 @@ export { ThreadStore } from "./stores/threads.ts";
 export type * from "./stores/types.ts";
 export { WaitStore } from "./stores/waits.ts";
 export { WorkAdmissionStore } from "./stores/work-admissions.ts";
+export { WorkerStore } from "./stores/workers.ts";
 export { WorkflowSopStore } from "./stores/workflow-sops.ts";
 export { ControlTransaction } from "./transaction.ts";

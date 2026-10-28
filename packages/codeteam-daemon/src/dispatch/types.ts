@@ -9,6 +9,7 @@ export interface DispatchRoute {
 	readonly model: string;
 	readonly modelFamily: string;
 	readonly l0Revision: string | null;
+	readonly attempt: number;
 	readonly chainMetadata: Record<string, unknown>;
 }
 
@@ -30,6 +31,26 @@ export interface AgentExecutionResult {
 
 export interface AgentExecutor {
 	execute(request: DispatchExecutionRequest, signal: AbortSignal): Promise<AgentExecutionResult>;
+}
+
+export class InterruptedExecutionError extends Error {
+	readonly code: string;
+
+	constructor(code: string, message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "InterruptedExecutionError";
+		this.code = code;
+	}
+}
+
+export class RetryableExecutionError extends Error {
+	readonly code: string;
+
+	constructor(code: string, message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "RetryableExecutionError";
+		this.code = code;
+	}
 }
 
 export type DispatchTerminalStatus = "completed" | "canceled" | "failed" | "interrupted";
@@ -68,6 +89,10 @@ export interface DispatchSettleInput {
 	readonly usage?: Record<string, unknown> | null;
 	readonly reason?: string;
 	readonly actorRef?: string;
+}
+
+export interface DispatchServiceHooks {
+	readonly onRunTerminal?: (run: Run, input: DispatchSettleInput) => void;
 }
 
 export interface GuideRunInput {

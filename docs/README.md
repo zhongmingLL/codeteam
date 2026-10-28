@@ -28,6 +28,7 @@ updated: 2026-10-28
 | [`plans/0003-w3-w4-review-sop.md`](plans/0003-w3-w4-review-sop.md) | W3 独立 review、W4 SOP 复用/Design Gate |
 | [`plans/0004-w5-w8-scale-product.md`](plans/0004-w5-w8-scale-product.md) | W5 调度/RPC、W6 memory/observability/eval、W7 Console、W8 GitHub |
 | [`plans/0010-w5a-a2a-dispatch-custody.md`](plans/0010-w5a-a2a-dispatch-custody.md) | W5a A2A 投递与球权内核实施计划、投影契约、AC 映射 |
+| [`plans/0011-w5b-rpc-worker-runtime.md`](plans/0011-w5b-rpc-worker-runtime.md) | W5b RPC worker runtime 实施计划、worker registry/capacity 投影、AC 映射 |
 | [`features/F001-architecture-v1.md`](features/F001-architecture-v1.md) | 本次架构讨论的交付契约、验收标准和非目标 |
 | [`features/F002-w0a-foundation-gate.md`](features/F002-w0a-foundation-gate.md) | W0a 下游基线与运行时能力验证：L0/session、skill surface、沙箱/Hub 预检、CI/供应链与 W1 入场门禁 |
 | [`features/F003-w0c-daemon-lifecycle.md`](features/F003-w0c-daemon-lifecycle.md) | W0c daemon 最小生命周期：boot ledger、单写者 fence、readiness、lifecycle |
@@ -46,6 +47,7 @@ updated: 2026-10-28
 | [`features/F006-w3-independent-review.md`](features/F006-w3-independent-review.md) | F006：W3 独立 review / ReviewPolicy / falsifier / exact HEAD 证据链 |
 | [`features/F007-w4-sop-gates.md`](features/F007-w4-sop-gates.md) | F007：W4 SOP 复用与点状 gate（worktree/design/review/verify/merge/completion） |
 | [`features/F008-w5a-a2a-dispatch-custody.md`](features/F008-w5a-a2a-dispatch-custody.md) | F008：W5a A2A 投递与球权内核（dispatch queue、tool surface、custody/wait） |
+| [`features/F009-w5b-rpc-worker-runtime.md`](features/F009-w5b-rpc-worker-runtime.md) | F009：W5b RPC worker harness、worker registry/sticky/re-attach、失败策略 |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |

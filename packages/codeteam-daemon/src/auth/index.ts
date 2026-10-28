@@ -63,4 +63,5 @@ export {
 	resolveInvocationTokenDir,
 	type WriteInvocationTokenFileOptions,
 	writeInvocationTokenFile,
+	writeSecretFile,
 } from "./tokens.ts";

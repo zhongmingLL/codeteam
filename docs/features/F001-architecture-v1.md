@@ -99,7 +99,7 @@ codeteam 已经有一个能跑的控制面、pi SDK adapter、review/verifier/ev
 - [ ] MCP exposure / identity / auth 的坑写明。
 - [ ] fork patch 的触发条件和 patch 政策写明。
 - [ ] 当前 `createCodeteamSession` 的差距（L0 compiler、context capsule、custom tools）写明。
-- [ ] RPC worker 三语义（per-run policy、session 亲和、re-attach）写明。
+- [x] RPC worker 三语义（per-run policy、session 亲和、re-attach）写明。
 - [ ] per-run token 与零 secret 边界写明。
 
 ### C. 下一阶段可执行性

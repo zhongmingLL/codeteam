@@ -17,6 +17,7 @@ import type {
 	SealAgentSessionInput,
 	SessionListFilter,
 	SessionStatus,
+	WorkerBindingState,
 } from "./types.ts";
 
 interface AgentSessionRow {
@@ -46,6 +47,9 @@ interface AgentSessionRow {
 	message_count: number;
 	working_directory: string | null;
 	workspace_fingerprint: string | null;
+	worker_id: string | null;
+	worker_binding_state: WorkerBindingState;
+	worker_attached_at: number | null;
 	user_id: string | null;
 	created_at: number;
 	updated_at: number;
@@ -85,6 +89,9 @@ function mapSession(row: AgentSessionRow): AgentSession {
 		messageCount: row.message_count,
 		workingDirectory: row.working_directory,
 		workspaceFingerprint: row.workspace_fingerprint,
+		workerId: row.worker_id,
+		workerBindingState: row.worker_binding_state,
+		workerAttachedAt: row.worker_attached_at,
 		userId: row.user_id,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -143,7 +150,7 @@ export class AgentSessionStore {
 		try {
 			this.database
 				.prepare(
-					"INSERT INTO agent_sessions (id, thread_id, task_id, profile_id, role, stage_id, pi_session_id, effective_tool_policy, chain_key, provider, model, model_family, status, seq, native_session_binding_json, context_health_json, capacity_pin_json, seal_reason, cat_handoff_note_json, compression_count, continuity_capsule_json, latest_resume_session_id, last_usage_json, message_count, working_directory, workspace_fingerprint, user_id, created_at, updated_at, sealed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					"INSERT INTO agent_sessions (id, thread_id, task_id, profile_id, role, stage_id, pi_session_id, effective_tool_policy, chain_key, provider, model, model_family, status, seq, native_session_binding_json, context_health_json, capacity_pin_json, seal_reason, cat_handoff_note_json, compression_count, continuity_capsule_json, latest_resume_session_id, last_usage_json, message_count, working_directory, workspace_fingerprint, worker_id, worker_binding_state, worker_attached_at, user_id, created_at, updated_at, sealed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 				)
 				.run(
 					id,
@@ -172,6 +179,9 @@ export class AgentSessionStore {
 					input.messageCount ?? 0,
 					input.workingDirectory ?? null,
 					input.workspaceFingerprint ?? null,
+					input.workerId ?? null,
+					input.workerBindingState ?? "unbound",
+					input.workerAttachedAt ?? null,
 					input.userId ?? null,
 					now,
 					now,
@@ -181,6 +191,102 @@ export class AgentSessionStore {
 			throw mapStoreError(error, "invalid_input");
 		}
 		return this.get(id)!;
+	}
+
+	bindWorker(
+		id: string,
+		workerId: string,
+		input: { state?: WorkerBindingState; attachedAt?: number } = {},
+	): AgentSession {
+		const state = input.state ?? "attached";
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `agent session ${id} not found`);
+				if (current.status !== "active") {
+					throw new ControlError("invalid_state", `agent session ${id} is ${current.status}`);
+				}
+				const now = input.attachedAt ?? this.clock();
+				const result = this.database
+					.prepare(
+						"UPDATE agent_sessions SET worker_id = ?, worker_binding_state = ?, worker_attached_at = ?, updated_at = ? WHERE id = ?",
+					)
+					.run(workerId, state, now, now, id);
+				if (changesOf(result) === 0) throw new ControlError("not_found", `agent session ${id} not found`);
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
+	markReattachPending(id: string): AgentSession {
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `agent session ${id} not found`);
+				if (current.status !== "active") return current;
+				if (current.workerBindingState === "re_attach_pending") return current;
+				const now = this.clock();
+				const result = this.database
+					.prepare(
+						"UPDATE agent_sessions SET worker_binding_state = 're_attach_pending', updated_at = ? WHERE id = ?",
+					)
+					.run(now, id);
+				if (changesOf(result) === 0) throw new ControlError("not_found", `agent session ${id} not found`);
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
+	updateRuntimeBinding(
+		id: string,
+		input: {
+			piSessionId?: string | null;
+			nativeSessionBinding?: unknown;
+			continuityCapsule?: unknown;
+			messageCount?: number;
+			lastUsage?: unknown;
+		},
+	): AgentSession {
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `agent session ${id} not found`);
+				const sets: string[] = ["updated_at = ?"];
+				const params: (string | number | null)[] = [this.clock()];
+				if (input.piSessionId !== undefined) {
+					sets.push("pi_session_id = ?");
+					params.push(input.piSessionId);
+				}
+				if (input.nativeSessionBinding !== undefined) {
+					sets.push("native_session_binding_json = ?");
+					params.push(optionalJson(input.nativeSessionBinding, "nativeSessionBinding"));
+				}
+				if (input.continuityCapsule !== undefined) {
+					sets.push("continuity_capsule_json = ?");
+					params.push(optionalJson(input.continuityCapsule, "continuityCapsule"));
+				}
+				if (input.messageCount !== undefined) {
+					sets.push("message_count = ?");
+					params.push(input.messageCount);
+				}
+				if (input.lastUsage !== undefined) {
+					sets.push("last_usage_json = ?");
+					params.push(optionalJson(input.lastUsage, "lastUsage", true));
+				}
+				params.push(id);
+				const result = this.database
+					.prepare(`UPDATE agent_sessions SET ${sets.join(", ")} WHERE id = ?`)
+					.run(...params);
+				if (changesOf(result) === 0) throw new ControlError("not_found", `agent session ${id} not found`);
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
 	}
 
 	seal(id: string, input: SealAgentSessionInput): AgentSession {

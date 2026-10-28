@@ -12,6 +12,7 @@ export type ControlErrorCode =
 	| "invalid_state"
 	| "version_conflict"
 	| "claim_conflict"
+	| "capacity_exhausted"
 	| "invalid_token"
 	| "forbidden"
 	| "backlog_not_imported"

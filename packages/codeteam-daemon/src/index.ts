@@ -147,3 +147,4 @@ export {
 export * from "./review/index.ts";
 export { type ResolveBacklogInput, SOP_CATALOG, SOP_STAGE_IDS, SopService, type SopViewOptions } from "./sop/index.ts";
 export { type DaemonState, type DaemonStateFile, readStateFile, writeStateFile } from "./state.ts";
+export * from "./workers/index.ts";

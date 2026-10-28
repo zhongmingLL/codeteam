@@ -36,6 +36,7 @@ import type {
 } from "./stores/types.ts";
 import { WaitStore } from "./stores/waits.ts";
 import { WorkAdmissionStore } from "./stores/work-admissions.ts";
+import { WorkerStore } from "./stores/workers.ts";
 import { WorkflowSopStore } from "./stores/workflow-sops.ts";
 import { ControlTransaction } from "./transaction.ts";
 
@@ -62,6 +63,7 @@ export class ControlStore {
 	readonly runs: RunStore;
 	readonly threadEvents: ThreadEventStore;
 	readonly credentials: InvocationCredentialStore;
+	readonly workers: WorkerStore;
 	readonly audit: AuditStore;
 	readonly approvals: ApprovalStore;
 	readonly handoffs: HandoffStore;
@@ -96,6 +98,7 @@ export class ControlStore {
 		this.runs = new RunStore(control.database, this.transaction, clock);
 		this.threadEvents = new ThreadEventStore(control.database, this.transaction, clock);
 		this.credentials = new InvocationCredentialStore(control.database, this.transaction, clock);
+		this.workers = new WorkerStore(control.database, this.transaction, clock);
 		this.approvals = new ApprovalStore(control.database, this.transaction, clock, this.audit);
 		this.handoffs = new HandoffStore(control.database, this.transaction, clock, this.audit);
 		this.waits = new WaitStore(control.database, this.transaction, clock);
