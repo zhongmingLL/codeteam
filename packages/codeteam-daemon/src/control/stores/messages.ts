@@ -98,11 +98,12 @@ export class MessageStore {
 	listThread(threadId: string, options: MessageListOptions = {}): Message[] {
 		const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
 		const beforeSeq = options.beforeSeq ?? null;
+		const afterSeq = options.afterSeq ?? null;
 		const rows = this.database
 			.prepare(
-				"SELECT * FROM (SELECT * FROM messages WHERE thread_id = ? AND (? IS NULL OR seq < ?) ORDER BY seq DESC LIMIT ?) ORDER BY seq ASC",
+				"SELECT * FROM (SELECT * FROM messages WHERE thread_id = ? AND (? IS NULL OR seq < ?) AND (? IS NULL OR seq > ?) ORDER BY seq DESC LIMIT ?) ORDER BY seq ASC",
 			)
-			.all(threadId, beforeSeq, beforeSeq, limit) as unknown as MessageRow[];
+			.all(threadId, beforeSeq, beforeSeq, afterSeq, afterSeq, limit) as unknown as MessageRow[];
 		return rows.map(mapMessage);
 	}
 

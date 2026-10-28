@@ -22,6 +22,7 @@ import { ReviewStore } from "./stores/reviews.ts";
 import { RoleStore } from "./stores/roles.ts";
 import { RunStore } from "./stores/runs.ts";
 import { AgentSessionStore } from "./stores/sessions.ts";
+import { SopCheckEvidenceStore } from "./stores/sop-check-evidence.ts";
 import { StageStore } from "./stores/stages.ts";
 import { TaskStore } from "./stores/tasks.ts";
 import { ThreadEventStore } from "./stores/thread-events.ts";
@@ -72,6 +73,7 @@ export class ControlStore {
 	readonly forgeDeliveries: ForgeDeliveryStore;
 	readonly backlog: BacklogStore;
 	readonly sops: WorkflowSopStore;
+	readonly sopEvidence: SopCheckEvidenceStore;
 	readonly work: WorkAdmissionStore;
 	readonly artifacts: ArtifactStore;
 	readonly inbox: InboxStore;
@@ -104,6 +106,7 @@ export class ControlStore {
 		this.forgeDeliveries = new ForgeDeliveryStore(control.database, clock);
 		this.backlog = new BacklogStore(control.database, this.transaction, clock, this.audit);
 		this.sops = new WorkflowSopStore(control.database, this.transaction, clock, this.audit);
+		this.sopEvidence = new SopCheckEvidenceStore(control.database, this.transaction, clock, this.audit);
 		this.work = new WorkAdmissionStore(control.database, this.transaction, clock);
 		this.artifacts = new ArtifactStore(
 			control.database,

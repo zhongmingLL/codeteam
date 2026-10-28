@@ -57,6 +57,12 @@ export { ReviewStore } from "./stores/reviews.ts";
 export { RoleStore } from "./stores/roles.ts";
 export { RunStore } from "./stores/runs.ts";
 export { AgentSessionStore } from "./stores/sessions.ts";
+export {
+	SOP_CHECK_EVIDENCE_KIND,
+	SOP_CHECK_NAME_VALUES,
+	SopCheckEvidenceStore,
+	validateSubjectRevision,
+} from "./stores/sop-check-evidence.ts";
 export { StageStore } from "./stores/stages.ts";
 export { TaskStore } from "./stores/tasks.ts";
 export { ThreadEventStore } from "./stores/thread-events.ts";
