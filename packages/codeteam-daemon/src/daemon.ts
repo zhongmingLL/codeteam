@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { appendBootRecord, nextBootSequence } from "./boot-ledger.ts";
+import { DaemonControlPlane, type DaemonControlPlaneOptions } from "./daemon-runtime.ts";
 import { DaemonError } from "./errors.ts";
 import { acquireFence, releaseFence } from "./fence.ts";
 import { resolveInstallation } from "./installation.ts";
@@ -22,6 +23,8 @@ export interface StartDaemonOptions {
 	port?: number;
 	/** Defaults to a local observability runtime; pass false to disable telemetry. */
 	observability?: ObservabilityRuntime | false;
+	/** Defaults to the production control plane; pass false for health-only tests. */
+	controlPlane?: Omit<DaemonControlPlaneOptions, "dataDir"> | false;
 }
 
 export interface DaemonBoot {
@@ -61,10 +64,12 @@ export interface DaemonHandle {
 	boot: DaemonBoot;
 	healthUrl: string;
 	observability: ObservabilityRuntime;
+	controlPlane: DaemonControlPlane | null;
 	state(): DaemonState;
 	health(): DaemonHealth;
 	markReady(input?: { services?: string[] }): void;
 	stop(): Promise<void>;
+	close(): Promise<void>;
 }
 
 export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHandle> {
@@ -132,10 +137,30 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	persist();
 	const observability = createRuntime(options, paths.dataDir);
 
+	let controlPlane: DaemonControlPlane | null = null;
+	if (options.controlPlane !== false) {
+		try {
+			controlPlane = new DaemonControlPlane({ ...options.controlPlane, dataDir: paths.dataDir });
+			await controlPlane.start();
+		} catch (error) {
+			state = "failed";
+			persist();
+			record("failed", error instanceof Error ? error.message : String(error), "startup_failed");
+			record("exited", "startup_failed", "startup_failed");
+			releaseFence(paths.lockFile, bootId);
+			await observability.close();
+			throw new DaemonError(
+				"control_plane_failed",
+				`daemon control plane failed to start: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
 	const readyStatus = (): ReadyStatus => {
 		if (state === "failed") return "failed";
 		if (state === "stopping" || state === "stopped") return "stopping";
 		if (state !== "ready") return "starting";
+		if (controlPlane && !controlPlane.ready().started) return "degraded";
 		return observability.readiness().status === "ready" ? "ready" : "degraded";
 	};
 
@@ -143,6 +168,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		...health(),
 		status: readyStatus(),
 		telemetry: observability.readiness(),
+		controlPlane: controlPlane?.ready() ?? null,
 	});
 
 	let server: Server;
@@ -191,6 +217,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		persist();
 		record("failed", error instanceof Error ? error.message : String(error), "startup_failed");
 		record("exited", "startup_failed", "startup_failed");
+		await controlPlane?.close().catch(() => {});
 		releaseFence(paths.lockFile, bootId);
 		await observability.close();
 		throw new DaemonError(
@@ -230,17 +257,19 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		state = "stopping";
 		persist();
 		record("stopping");
-		stopPromise = new Promise<void>((resolve) => {
-			server.closeAllConnections();
-			server.close(() => resolve());
-		}).then(() => {
+		stopPromise = (async () => {
+			await new Promise<void>((resolve) => {
+				server.closeAllConnections();
+				server.close(() => resolve());
+			});
+			await controlPlane?.close().catch(() => {});
 			state = "stopped";
 			persist();
 			record("stopped");
 			record("exited", "clean", "clean");
 			releaseFence(paths.lockFile, bootId);
-			return observability.close();
-		});
+			await observability.close();
+		})();
 		return stopPromise;
 	};
 
@@ -254,10 +283,12 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		},
 		healthUrl: `http://127.0.0.1:${healthPort ?? 0}/health`,
 		observability,
+		controlPlane,
 		state: () => state,
 		health,
 		markReady,
 		stop,
+		close: stop,
 	};
 }
 

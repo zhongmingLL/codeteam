@@ -8,6 +8,12 @@ export {
 } from "./observation.ts";
 export { type RunPrincipal, resolveRunPrincipal } from "./principal.ts";
 export {
+	type HandoffResolution,
+	type HandoffResolutionStatus,
+	HandoffTerminalResolver,
+	type HandoffTerminalResolverOptions,
+} from "./terminal.ts";
+export {
 	A2A_TOOL_NAMES,
 	A2A_TOOL_SPECS,
 	type A2AHandlersOptions,

@@ -448,11 +448,19 @@ export interface DispatchBacklogInput {
 	title?: string;
 	repo?: string | null;
 	kickoffBody?: string;
+	taskTitle?: string;
+	taskWhy?: string;
+	baseRef?: string | null;
+	baseSha?: string | null;
+	branch?: string | null;
+	risk?: string | null;
+	lane?: StageLane | null;
 }
 
 export interface DispatchBacklogResult {
 	backlog: BacklogItem;
 	thread: Thread;
+	task: Task;
 	message: Message;
 	queueEntry: QueueEntry;
 	audit: AuditEntry | null;
@@ -1092,6 +1100,7 @@ export interface HandoffCompletionCandidateInput {
 	evidenceRef: string;
 	result: Record<string, unknown>;
 	verified?: boolean;
+	verifiedProfiles?: readonly string[];
 }
 
 export interface HandoffListFilter {

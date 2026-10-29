@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ControlStore, openControlStore } from "../../src/index.ts";
@@ -24,6 +24,8 @@ export interface W5AFixture {
 
 export function createW5AFixture(): W5AFixture {
 	const dataDir = mkdtempSync(join(tmpdir(), "codeteam-w5a-"));
+	const worktree = join(dataDir, "worktree");
+	mkdirSync(worktree, { recursive: true });
 	let current = 1_700_000_000_000;
 	const store = openControlStore({ dataDir, clock: () => current });
 	store.seedIdentity({
@@ -68,6 +70,7 @@ export function createW5AFixture(): W5AFixture {
 		createdBy: "user-1",
 		userId: "user-1",
 		backlogItemId: "backlog-1",
+		worktree,
 	});
 	for (const profile of profiles) {
 		store.sessions.create({
@@ -82,6 +85,7 @@ export function createW5AFixture(): W5AFixture {
 			modelFamily: "test-family",
 			seq: 0,
 			userId: "user-1",
+			workingDirectory: worktree,
 		});
 	}
 	const createSourceMessage = (bodyMd = "source") =>

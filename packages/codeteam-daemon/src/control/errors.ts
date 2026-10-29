@@ -29,6 +29,8 @@ export type ControlErrorCode =
 	| "schedule_unknown_factory"
 	| "path_outside_root"
 	| "a2a_depth_exceeded"
+	| "dispatch_not_ready"
+	| "loop_guard_live_handoff"
 	| "deployment_wait_pending"
 	| "deployment_wait_outcome_pending"
 	| "deployment_wait_conflict"

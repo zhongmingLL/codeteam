@@ -100,8 +100,9 @@ describe("W5a A2A tool surface", () => {
 		expect(result.message.controlRef).toBeNull();
 		expect(result.message.bodyMd).toContain("→ @Reviewer A");
 		expect(result.message.bodyMd).toContain("→ @Reviewer B");
-		expect(result.queueEntry.targets).toEqual(["profile:reviewer-a", "profile:reviewer-b"]);
-		expect(result.queueEntry.sourceId).toBe(result.message.id);
+		expect(result.queueEntry).not.toBeNull();
+		expect(result.queueEntry!.targets).toEqual(["profile:reviewer-a", "profile:reviewer-b"]);
+		expect(result.queueEntry!.sourceId).toBe(result.message.id);
 		expect(base.store.handoffs.list()).toHaveLength(0);
 		expect(base.store.queue.listPending()).toHaveLength(1);
 		expect(
@@ -206,6 +207,9 @@ describe("W5a A2A tool surface", () => {
 		);
 		expect(base.store.queue.listPending()).toHaveLength(1);
 		expect(base.store.handoffs.custodyEvents(created.handoff.id)).toHaveLength(2);
+		expect(() => handlers.createHandoff({ ...handoffInput(), terminalPredicate: { kind: "different" } })).toThrow(
+			/another intent/,
+		);
 	});
 
 	it("rejects handoff forgery and missing expected artifact", () => {
@@ -247,6 +251,7 @@ describe("W5a A2A tool surface", () => {
 		expect(claimed.handoff.claimedByRunId).toBe(reviewerRun.id);
 		const nonHolder = coder.claimHandoff(created.handoff.id);
 		expect(nonHolder.status).toBe("safe_wait");
+		if (nonHolder.status === "safe_wait") expect(nonHolder.handoff).toBeNull();
 		const candidate = reviewer.completeHandoff(created.handoff.id, "verification:1", { verdict: "approve" });
 		expect(candidate.status).toBe("claimed");
 		expect(candidate.completionCandidates[reviewerRun.id]).toMatchObject({ evidenceRef: "verification:1" });
@@ -317,6 +322,7 @@ describe("W5a A2A tool surface", () => {
 		const claim = crossReviewer.claimHandoff(created.handoff.id);
 		expect(claim.status).toBe("safe_wait");
 		if (claim.status === "safe_wait") expect(claim.reason).toBe("task_scope_mismatch");
+		if (claim.status === "safe_wait") expect(claim.handoff).toBeNull();
 		expect(() =>
 			base.store.handoffs.claim({
 				handoffId: created.handoff.id,
@@ -356,6 +362,123 @@ describe("W5a A2A tool surface", () => {
 		expect(() => crossCoder.withdrawHandoff(created.handoff.id, "cross task")).toThrow(
 			/outside the caller task scope/,
 		);
+	});
+
+	it("replays a2a_send by requestId and rejects a different intent under the same id", () => {
+		const base = fixture();
+		const source = sourceRun(base);
+		const handlers = createA2AHandlers({ store: base.store, principal: source.principal, clock: base.now });
+		const first = handlers.send({
+			kind: "question",
+			targets: ["profile:reviewer-a"],
+			bodyMd: "same intent",
+			requestId: "req-send-1",
+		});
+		const replay = handlers.send({
+			kind: "question",
+			targets: ["profile:reviewer-a"],
+			bodyMd: "same intent",
+			requestId: "req-send-1",
+		});
+		expect(replay.message.id).toBe(first.message.id);
+		expect(replay.queueEntry?.id).toBe(first.queueEntry?.id);
+		expect(
+			base.store.messages.listThread("thread-1").filter((message) => message.bodyMd.includes("same intent")),
+		).toHaveLength(1);
+		expect(() =>
+			handlers.send({
+				kind: "question",
+				targets: ["profile:reviewer-a"],
+				bodyMd: "different intent",
+				requestId: "req-send-1",
+			}),
+		).toThrow(/another intent/);
+	});
+
+	it("blocks a second live handoff for the same canonical action", () => {
+		const base = fixture();
+		const source = sourceRun(base);
+		const handlers = createA2AHandlers({ store: base.store, principal: source.principal, clock: base.now });
+		handlers.createHandoff(handoffInput());
+		expect(() => handlers.createHandoff({ ...handoffInput(), idempotencyKey: "idem-2" })).toThrow(
+			expect.objectContaining({ code: "loop_guard_live_handoff" }),
+		);
+		expect(base.store.handoffs.list({ taskId: "task-1" })).toHaveLength(1);
+		const [live] = base.store.handoffs.list({ taskId: "task-1" });
+		expect(
+			base.store.audit
+				.listSubject(`handoff:${live!.id}`, 20)
+				.some((entry) => entry.action === "handoff_loop_guard_blocked"),
+		).toBe(true);
+	});
+
+	it("requires parallelIntent for parallel handoffs", () => {
+		const base = fixture();
+		const source = sourceRun(base);
+		const handlers = createA2AHandlers({ store: base.store, principal: source.principal, clock: base.now });
+		expect(() =>
+			handlers.createHandoff(
+				handoffInput({
+					targets: ["profile:reviewer-a", "profile:reviewer-b"],
+					mode: "parallel",
+					subjectRef: "pr:owner/repo#parallel",
+				}),
+			),
+		).toThrow(/parallelIntent/);
+		const created = handlers.createHandoff(
+			handoffInput({
+				targets: ["profile:reviewer-a", "profile:reviewer-b"],
+				mode: "parallel",
+				parallelIntent: "independent review",
+				subjectRef: "pr:owner/repo#parallel",
+				idempotencyKey: "idem-parallel",
+			}),
+		);
+		expect(created.handoff.mode).toBe("parallel");
+		expect(created.handoff.holderProfileIds).toEqual(["profile:reviewer-a", "profile:reviewer-b"]);
+	});
+
+	it("uses the run execution role, not the profile primary role, for handoff direction", () => {
+		const base = fixture();
+		base.store.profiles.create({
+			id: "profile:architect-as-coder",
+			role: "architect",
+			displayName: "Architect as coder",
+			provider: "test",
+			model: "model-coder",
+			modelFamily: "test-family",
+			toolPolicyProfile: "default",
+		});
+		base.store.sessions.create({
+			id: "session-architect-as-coder",
+			threadId: "thread-1",
+			taskId: "task-1",
+			profileId: "profile:architect-as-coder",
+			role: "coder",
+			effectiveToolPolicy: "default",
+			provider: "test",
+			model: "model-coder",
+			modelFamily: "test-family",
+			seq: 1,
+			userId: "user-1",
+		});
+		const message = base.createSourceMessage("execution role");
+		const run = base.store.runs.create({
+			id: "run-architect-as-coder",
+			taskId: "task-1",
+			role: "coder",
+			agentSessionId: "session-architect-as-coder",
+			sourceId: message.id,
+			recipientProfileId: "profile:architect-as-coder",
+			provider: "test",
+			model: "model-coder",
+			modelFamily: "test-family",
+		});
+		const principal = resolveRunPrincipal(base.store, run.id);
+		expect(principal.role).toBe("coder");
+		const handlers = createA2AHandlers({ store: base.store, principal, clock: base.now });
+		const created = handlers.createHandoff({ ...handoffInput(), subjectRef: "pr:owner/repo#role" });
+		expect(created.handoff.fromRole).toBe("coder");
 	});
 
 	it("observes missing A2A tool calls once without routing text", () => {

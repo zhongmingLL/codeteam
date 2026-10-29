@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { A2A_TOOL_NAMES } from "../a2a/tool-surface.ts";
 import { ControlError } from "../control/errors.ts";
 import type { Task } from "../control/stores/types.ts";
 import { assertReadablePath, assertWritablePath, createToolPolicy, evaluateCommand } from "../policy/index.ts";
@@ -7,6 +8,13 @@ import type { ToolPolicy, ToolRole } from "../policy/types.ts";
 
 export const READ_ONLY_TOOLS: readonly string[] = ["read", "grep", "find", "ls"];
 export const CODER_TOOLS: readonly string[] = [...READ_ONLY_TOOLS, "bash", "edit", "write"];
+
+const A2A_ROLE_TOOLS: Record<string, readonly string[]> = {
+	architect: ["a2a_send", "handoff_create", "handoff_withdraw"],
+	coder: ["a2a_send", "handoff_create", "handoff_claim", "handoff_complete", "handoff_withdraw"],
+	reviewer: ["a2a_send", "handoff_claim", "handoff_complete"],
+	verifier: ["a2a_send", "handoff_claim", "handoff_complete"],
+};
 
 export interface WorkerToolPolicyContext {
 	readonly role: string;
@@ -33,7 +41,13 @@ export function toolRoleForSessionRole(role: string): ToolRole {
 }
 
 export function allowedToolsForRole(role: string): readonly string[] {
-	return toolRoleForSessionRole(role) === "coder" ? CODER_TOOLS : READ_ONLY_TOOLS;
+	const toolRole = toolRoleForSessionRole(role);
+	const fileTools = toolRole === "coder" || toolRole === "verifier" ? CODER_TOOLS : READ_ONLY_TOOLS;
+	return [...fileTools, ...a2aToolsForRole(role)];
+}
+
+export function a2aToolsForRole(role: string): readonly string[] {
+	return A2A_ROLE_TOOLS[role] ?? ["a2a_send"];
 }
 
 export function allowedToolsForToolRole(role: ToolRole): readonly string[] {
@@ -49,6 +63,16 @@ export function evaluateWorkerToolCall(
 	call: WorkerToolCall,
 ): WorkerToolPolicyDecision {
 	try {
+		if ((A2A_TOOL_NAMES as readonly string[]).includes(call.toolName)) {
+			if (!a2aToolsForRole(context.role).includes(call.toolName)) {
+				return {
+					allow: false,
+					code: "tool_not_allowed_for_role",
+					reason: `A2A tool ${call.toolName} is not allowed for role ${context.role}`,
+				};
+			}
+			return { allow: true };
+		}
 		const toolRole = toolRoleForSessionRole(context.role);
 		const allowed = allowedToolsForToolRole(toolRole);
 		if (!allowed.includes(call.toolName)) {

@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { A2ARequestStore } from "../a2a/requests.ts";
 import { resolveEvalConfig } from "../eval/config.ts";
 import { assertDependencyGraph } from "../scheduling/dependencies.ts";
 import { backlogQueuePriority } from "../scheduling/priority.ts";
@@ -69,6 +70,7 @@ export class ControlStore {
 	readonly stages: StageStore;
 	readonly runs: RunStore;
 	readonly toolUsage: ToolUsageStore;
+	readonly a2aRequests: A2ARequestStore;
 	readonly threadEvents: ThreadEventStore;
 	readonly credentials: InvocationCredentialStore;
 	readonly workers: WorkerStore;
@@ -108,6 +110,7 @@ export class ControlStore {
 		this.stages = new StageStore(control.database, this.transaction, clock);
 		this.runs = new RunStore(control.database, this.transaction, clock);
 		this.toolUsage = new ToolUsageStore(control.database, this.transaction, clock);
+		this.a2aRequests = new A2ARequestStore(control.database, this.transaction, clock);
 		this.threadEvents = new ThreadEventStore(control.database, this.transaction, clock);
 		this.credentials = new InvocationCredentialStore(control.database, this.transaction, clock);
 		this.workers = new WorkerStore(control.database, this.transaction, clock);
@@ -169,9 +172,10 @@ export class ControlStore {
 					);
 				}
 				const thread = backlog.dispatchedThreadId ? this.threads.get(backlog.dispatchedThreadId) : null;
+				const task = this.tasks.findWorkByBacklog(backlog.id);
 				const message = backlog.kickoffMessageId ? this.messages.get(backlog.kickoffMessageId) : null;
 				const queueEntry = message ? this.queue.get(`queue:${message.id}`) : null;
-				if (!thread || !message || !queueEntry) {
+				if (!thread || !task || !message || !queueEntry) {
 					throw new ControlError(
 						"conflict",
 						`dispatched backlog item ${input.backlogItemId} is missing its resources`,
@@ -189,6 +193,7 @@ export class ControlStore {
 				return {
 					backlog,
 					thread,
+					task,
 					message,
 					queueEntry,
 					audit: this.audit.latest(`backlog:${input.backlogItemId}`, "backlog_dispatched"),
@@ -212,6 +217,10 @@ export class ControlStore {
 				if (paused) {
 					throw new ControlError("budget_paused", `task ${existingWorkTask.id} is paused by budget enforcement`);
 				}
+				throw new ControlError(
+					"conflict",
+					`backlog item ${backlog.id} already has work task ${existingWorkTask.id} outside a dispatched attempt`,
+				);
 			}
 			for (const target of targets) {
 				if (!this.profiles.get(target)) {
@@ -224,8 +233,25 @@ export class ControlStore {
 				backlogItemId: backlog.id,
 				phase: input.threadPhase,
 			});
+			const task = this.tasks.create({
+				kind: "work",
+				threadId: thread.id,
+				title: input.taskTitle ?? input.title ?? backlog.title,
+				why: input.taskWhy ?? backlog.summary,
+				ownerProfileId: targets[0]!,
+				createdBy: "system:dispatch",
+				userId: backlog.userId,
+				backlogItemId: backlog.id,
+				repo: input.repo ?? null,
+				baseRef: input.baseRef ?? null,
+				baseSha: input.baseSha ?? null,
+				branch: input.branch ?? null,
+				risk: input.risk ?? null,
+				lane: input.lane ?? null,
+			});
 			const message = this.messages.append({
 				threadId: thread.id,
+				taskId: task.id,
 				authorKind: "system",
 				authorId: "system:dispatch",
 				kind: "backlog_kickoff",
@@ -254,12 +280,13 @@ export class ControlStore {
 				subject: `backlog:${backlog.id}`,
 				args: {
 					threadId: thread.id,
+					taskId: task.id,
 					messageId: message.id,
 					queueEntryId: queueEntry.id,
 					dispatchAttemptId,
 				},
 			});
-			return { backlog: updated, thread, message, queueEntry, audit };
+			return { backlog: updated, thread, task, message, queueEntry, audit };
 		});
 	}
 

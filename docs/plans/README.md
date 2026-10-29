@@ -49,6 +49,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0014-w6a-memory-evidence.md`](0014-w6a-memory-evidence.md) | W6a Memory / Evidence 回源：独立 memory.db、evidence/source-ref 契约、recall/trigger/digest、redaction、AC 映射 | 墨墨（memory/reuse/真实路径）+ 砚砚（provenance/redaction） |
 | [`0015-w6c-observability-trajectory.md`](0015-w6c-observability-trajectory.md) | W6c observability/trajectory、F150/F130 parity、redaction/trace/log 契约冻结、AC 映射 | 砚砚（security/redaction/provenance）+ 墨墨（reuse/真实路径/可解释性） |
 | [`0016-w6b-eval-outcome-harness-eval.md`](0016-w6b-eval-outcome-harness-eval.md) | W6b Eval/Outcome + Harness Eval：outcome episodes、corpus/matrix、registry、verdict/lifecycle、evals 扩展、CLI 读面、AC 映射 | 墨墨（eval/harness reuse/process）+ 砚砚（provenance/eval credibility/security） |
+| [`0017-a2a-e2e-foundation.md`](0017-a2a-e2e-foundation.md) | A2A E2E Foundation：production composition root、producer/task 绑定、session/worktree 入口、worker A2A tools、terminal resolver、requestId/loop guard、真实 CLI/daemon/worker E2E | 烁烁（A2A/session/worker）+ 砚砚（identity/custody/security）+ 墨墨（vision guard） |
 
 ## W0–W8 一览
 

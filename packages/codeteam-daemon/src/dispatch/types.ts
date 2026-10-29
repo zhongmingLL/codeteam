@@ -1,4 +1,4 @@
-import type { AgentProfile, AgentSession, Message, Run, Task } from "../control/stores/types.ts";
+import type { AgentProfile, AgentSession, Handoff, Message, Run, Task } from "../control/stores/types.ts";
 
 export interface DispatchRoute {
 	readonly targetProfileId: string;
@@ -21,6 +21,7 @@ export interface DispatchExecutionRequest {
 	readonly sourceMessage: Message;
 	readonly responseMessage: Message;
 	readonly route: DispatchRoute;
+	readonly handoff: Handoff | null;
 }
 
 export interface AgentExecutionResult {

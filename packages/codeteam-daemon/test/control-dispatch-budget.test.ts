@@ -109,6 +109,7 @@ function addSecondTask(base: W5AFixture) {
 		createdBy: "user-1",
 		userId: "user-1",
 		backlogItemId: "backlog-1",
+		worktree: base.dataDir,
 	});
 	base.store.sessions.create({
 		id: "session-task-2",

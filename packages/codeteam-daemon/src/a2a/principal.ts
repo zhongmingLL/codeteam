@@ -41,7 +41,7 @@ export function resolveRunPrincipal(store: ControlStore, runId: string): RunPrin
 		taskId: task.id,
 		threadId: task.threadId,
 		profileId: profile.id,
-		role: profile.role,
+		role: run.role,
 		userId,
 		provider: run.provider,
 		model: run.model,

@@ -260,6 +260,45 @@ export class TaskStore {
 		}
 	}
 
+	bindWorktree(
+		id: string,
+		input: {
+			worktree: string;
+			repo?: string | null;
+			baseRef?: string | null;
+			baseSha?: string | null;
+			branch?: string | null;
+		},
+	): Task {
+		const worktree = nonEmpty(input.worktree, "worktree");
+		try {
+			return this.transaction.run(() => {
+				const current = this.get(id);
+				if (!current) throw new ControlError("not_found", `task ${id} not found`);
+				if (current.worktree !== null && current.worktree !== worktree) {
+					throw new ControlError("invalid_state", `task ${id} is already bound to worktree ${current.worktree}`);
+				}
+				const result = this.database
+					.prepare(
+						"UPDATE tasks SET worktree = ?, repo = COALESCE(?, repo), base_ref = COALESCE(?, base_ref), base_sha = COALESCE(?, base_sha), branch = COALESCE(?, branch), updated_at = ? WHERE id = ?",
+					)
+					.run(
+						worktree,
+						input.repo ?? null,
+						input.baseRef ?? null,
+						input.baseSha ?? null,
+						input.branch ?? null,
+						this.clock(),
+						id,
+					);
+				if (changesOf(result) === 0) throw new ControlError("not_found", `task ${id} not found`);
+				return this.get(id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
+	}
+
 	setDisposition(id: string, disposition: TaskDisposition, options: { expectedUpdatedAt?: number } = {}): Task {
 		const current = this.get(id);
 		if (!current) throw new ControlError("not_found", `task ${id} not found`);

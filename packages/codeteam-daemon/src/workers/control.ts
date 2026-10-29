@@ -3,9 +3,13 @@ import { chmodSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { resolveRunPrincipal } from "../a2a/principal.ts";
+import { A2A_TOOL_NAMES } from "../a2a/tool-surface.ts";
+import { type A2ASendInput, A2AToolHandlers, type HandoffCreateInput } from "../a2a/tools.ts";
 import { resolveInvocationToken } from "../auth/resolver.ts";
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
+import type { AgentSession, Run, Task } from "../control/stores/types.ts";
 import type { WorkerRegistry } from "./registry.ts";
 import { evaluateWorkerToolCall, type WorkerToolCall } from "./tool-policy.ts";
 
@@ -55,7 +59,9 @@ export class WorkerControlServer {
 	async start(): Promise<string> {
 		if (this.started) return this.socketPath;
 		if (process.platform !== "win32") {
-			mkdirSync(dirname(this.socketPath), { recursive: true, mode: 0o700 });
+			const socketDir = dirname(this.socketPath);
+			mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+			chmodSync(socketDir, 0o700);
 			if (existsSync(this.socketPath)) {
 				try {
 					unlinkSync(this.socketPath);
@@ -160,30 +166,21 @@ export class WorkerControlServer {
 			return { ok: true, worker: { id: worker.id, state: worker.state, leaseExpiresAt: worker.leaseExpiresAt } };
 		}
 		if (request.type === "tool_policy") {
-			const workerId = required(request.workerId, "workerId");
-			const token = required(request.token, "token");
 			const toolName = required(request.toolName, "toolName");
-			if (
-				request.input !== undefined &&
-				(request.input === null || typeof request.input !== "object" || Array.isArray(request.input))
-			) {
-				throw new ControlError("invalid_input", "tool input must be an object");
+			const input = objectInput(request.input);
+			const { workerId, binding, run, session, task } = this.resolveWorkerBinding(request);
+			const credentialDecision = this.credentialToolDecision(binding.credentialId, toolName);
+			if (credentialDecision === "missing") {
+				throw new ControlError("forbidden", `credential has no tool allowlist; denied ${toolName}`);
 			}
-			const input = request.input ?? {};
-			const binding = resolveInvocationToken(this.store, token, { now: this.clock() });
-			const run = this.store.runs.get(binding.runId);
-			if (!run || run.status !== "running") {
-				throw new ControlError("invalid_state", `run ${binding.runId} is not running`);
+			if (credentialDecision === "denied") {
+				return {
+					ok: true,
+					allow: false,
+					code: "tool_not_allowed_for_role",
+					reason: `credential does not allow tool ${toolName}`,
+				};
 			}
-			if (run.workerId !== workerId) {
-				throw new ControlError("forbidden", `run ${run.id} is not assigned to worker ${workerId}`);
-			}
-			const session = this.store.sessions.get(binding.agentSessionId);
-			if (!session || session.workerId !== workerId) {
-				throw new ControlError("forbidden", `session ${binding.agentSessionId} is not bound to worker ${workerId}`);
-			}
-			const task = this.store.tasks.get(run.taskId);
-			if (!task) throw new ControlError("not_found", `task ${run.taskId} not found`);
 			this.registry.heartbeat(workerId);
 			const decision = evaluateWorkerToolCall({ role: session.role, task, dataDir: this.dataDir, runId: run.id }, {
 				toolName,
@@ -199,7 +196,94 @@ export class WorkerControlServer {
 			}
 			return { ok: true, allow: decision.allow, code: decision.code ?? null, reason: decision.reason ?? null };
 		}
+		if (request.type === "a2a_call") {
+			const toolName = required(request.toolName, "toolName");
+			if (!(A2A_TOOL_NAMES as readonly string[]).includes(toolName)) {
+				throw new ControlError("invalid_input", `unknown A2A tool ${toolName}`);
+			}
+			const input = objectInput(request.input);
+			const { workerId, binding, run } = this.resolveWorkerBinding(request);
+			this.assertCredentialAllowsTool(binding.credentialId, toolName);
+			this.registry.heartbeat(workerId);
+			const handlers = new A2AToolHandlers({
+				store: this.store,
+				principal: resolveRunPrincipal(this.store, run.id),
+				clock: this.clock,
+			});
+			const result = this.invokeA2ATool(handlers, toolName, input);
+			return { ok: true, result };
+		}
 		throw new ControlError("invalid_input", `unknown control request type ${String(request.type)}`);
+	}
+
+	private resolveWorkerBinding(request: ControlRequest): {
+		workerId: string;
+		binding: ReturnType<typeof resolveInvocationToken>;
+		run: Run;
+		session: AgentSession;
+		task: Task;
+	} {
+		const workerId = required(request.workerId, "workerId");
+		const token = required(request.token, "token");
+		const binding = resolveInvocationToken(this.store, token, { now: this.clock() });
+		const run = this.store.runs.get(binding.runId);
+		if (!run || run.status !== "running") {
+			throw new ControlError("invalid_state", `run ${binding.runId} is not running`);
+		}
+		if (run.workerId !== workerId) {
+			throw new ControlError("forbidden", `run ${run.id} is not assigned to worker ${workerId}`);
+		}
+		const session = this.store.sessions.get(binding.agentSessionId);
+		if (!session || session.workerId !== workerId) {
+			throw new ControlError("forbidden", `session ${binding.agentSessionId} is not bound to worker ${workerId}`);
+		}
+		const task = this.store.tasks.get(run.taskId);
+		if (!task) throw new ControlError("not_found", `task ${run.taskId} not found`);
+		return { workerId, binding, run, session, task };
+	}
+
+	private credentialToolDecision(credentialId: string, toolName: string): "allow" | "denied" | "missing" {
+		const credential = this.store.credentials.get(credentialId);
+		if (!credential) throw new ControlError("invalid_token", "invocation credential not found");
+		const allowed = credential.toolPolicy.allowedTools;
+		if (!Array.isArray(allowed) || allowed.length === 0) return "missing";
+		return allowed.some((entry) => entry === toolName) ? "allow" : "denied";
+	}
+
+	private assertCredentialAllowsTool(credentialId: string, toolName: string): void {
+		const decision = this.credentialToolDecision(credentialId, toolName);
+		if (decision !== "allow") {
+			throw new ControlError("forbidden", `credential does not allow tool ${toolName}`);
+		}
+	}
+
+	private invokeA2ATool(handlers: A2AToolHandlers, toolName: string, input: Record<string, unknown>): unknown {
+		switch (toolName) {
+			case "a2a_send":
+				return handlers.send(input as unknown as A2ASendInput);
+			case "handoff_create":
+				return handlers.createHandoff(input as unknown as HandoffCreateInput);
+			case "handoff_claim":
+				return handlers.claimHandoff(requiredInputString(input, "handoffId"));
+			case "handoff_complete": {
+				const result = input.result;
+				if (!result || typeof result !== "object" || Array.isArray(result)) {
+					throw new ControlError("invalid_input", "result must be an object");
+				}
+				return handlers.completeHandoff(
+					requiredInputString(input, "handoffId"),
+					requiredInputString(input, "evidenceRef"),
+					result as Record<string, unknown>,
+				);
+			}
+			case "handoff_withdraw":
+				return handlers.withdrawHandoff(
+					requiredInputString(input, "handoffId"),
+					requiredInputString(input, "reason"),
+				);
+			default:
+				throw new ControlError("invalid_input", `unknown A2A tool ${toolName}`);
+		}
 	}
 
 	private reply(socket: Socket, payload: Record<string, unknown>): void {
@@ -213,10 +297,27 @@ function required(value: string | undefined, field: string): string {
 	return value;
 }
 
+function objectInput(value: Record<string, unknown> | undefined): Record<string, unknown> {
+	if (value === undefined) return {};
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		throw new ControlError("invalid_input", "tool input must be an object");
+	}
+	return value;
+}
+
+function requiredInputString(input: Record<string, unknown>, field: string): string {
+	const value = input[field];
+	if (typeof value !== "string" || value.trim() === "") {
+		throw new ControlError("invalid_input", `${field} is required`);
+	}
+	return value;
+}
+
 export function defaultSocketPath(dataDir: string): string {
 	if (process.platform === "win32") return `\\\\.\\pipe\\codeteam-worker-control-${process.pid}`;
 	const preferred = join(dataDir, "wc.sock");
 	if (Buffer.byteLength(preferred, "utf8") <= 100) return preferred;
 	const hash = createHash("sha256").update(dataDir).digest("hex").slice(0, 16);
-	return join(tmpdir(), `codeteam-wc-${hash}.sock`);
+	const user = typeof process.getuid === "function" ? String(process.getuid()) : "user";
+	return join(tmpdir(), `codeteam-wc-${user}`, `wc-${hash}.sock`);
 }
