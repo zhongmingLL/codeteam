@@ -8,6 +8,7 @@ import { runBudgetCommand } from "./budget.ts";
 import { openCliContext } from "./context.ts";
 import { runDaemonCommand } from "./daemon.ts";
 import { runDeploymentCommand } from "./deployment.ts";
+import { runEvalCommand } from "./eval.ts";
 import { runGateCommand } from "./gate.ts";
 import { runMemoryCommand } from "./memory.ts";
 import { runMergeCommand } from "./merge.ts";
@@ -58,6 +59,7 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 		if (command === "profile") return runProfileCommand(args, context);
 		if (command === "gate") return runGateCommand(args, context);
 		if (command === "merge") return runMergeCommand(args, context);
+		if (command === "eval") return runEvalCommand(args, context);
 		throw new ControlError("invalid_input", `unknown command ${command}`);
 	} finally {
 		context.store.close();
@@ -116,6 +118,7 @@ function writeUsage(): void {
 	writeLine("  profile <seed|add|list>");
 	writeLine("  gate <check|telemetry>");
 	writeLine("  merge <plan|execute|record>");
+	writeLine("  eval <list|open|overdue|show|accept-sunset>");
 	writeLine("  memory <index|status|recall|read|digest|trigger>");
 	writeLine("global options: --data-dir <path> --json");
 	writeLine("  global options may precede the command");

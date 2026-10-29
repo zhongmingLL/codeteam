@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { resolveEvalConfig } from "../eval/config.ts";
 import { assertDependencyGraph } from "../scheduling/dependencies.ts";
 import { backlogQueuePriority } from "../scheduling/priority.ts";
 import { type ControlDatabase, type OpenControlDatabaseOptions, openControlDatabase } from "./database.ts";
@@ -47,6 +48,7 @@ import { ControlTransaction } from "./transaction.ts";
 
 export interface ControlStoreOptions extends OpenControlDatabaseOptions {
 	readonly clock?: Clock;
+	readonly evalBundlesDir?: string;
 }
 
 export interface SeedIdentityConfig {
@@ -86,11 +88,12 @@ export class ControlStore {
 	readonly sopEvidence: SopCheckEvidenceStore;
 	readonly work: WorkAdmissionStore;
 	readonly artifacts: ArtifactStore;
+	readonly evalArtifacts: ArtifactStore;
 	readonly inbox: InboxStore;
 	readonly readModels: ControlReadModels;
 	private readonly clock: Clock;
 
-	constructor(control: ControlDatabase, clock: Clock = Date.now) {
+	constructor(control: ControlDatabase, clock: Clock = Date.now, evalBundlesDir?: string) {
 		this.control = control;
 		this.clock = clock;
 		this.transaction = new ControlTransaction(control.database);
@@ -127,6 +130,12 @@ export class ControlStore {
 			this.transaction,
 			clock,
 			join(dirname(control.path), "artifacts"),
+		);
+		this.evalArtifacts = new ArtifactStore(
+			control.database,
+			this.transaction,
+			clock,
+			evalBundlesDir ?? join(dirname(control.path), "evals", "bundles"),
 		);
 		this.inbox = new InboxStore(control.database, this.transaction, clock);
 		this.readModels = new ControlReadModels(this);
@@ -357,10 +366,16 @@ export class ControlStore {
 }
 
 export function openControlStore(options: ControlStoreOptions = {}): ControlStore {
-	const { clock, ...databaseOptions } = options;
+	const { clock, evalBundlesDir, ...databaseOptions } = options;
 	const control = openControlDatabase(databaseOptions);
 	try {
-		return new ControlStore(control, clock);
+		const resolvedBundlesDir =
+			evalBundlesDir ??
+			resolveEvalConfig({
+				dataDir: dirname(control.path),
+				env: process.env,
+			}).bundlesDir;
+		return new ControlStore(control, clock, resolvedBundlesDir);
 	} catch (error) {
 		control.close();
 		throw error;

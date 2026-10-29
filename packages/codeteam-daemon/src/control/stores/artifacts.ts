@@ -19,7 +19,7 @@ import type { Artifact, ArtifactKind, PutArtifactInput } from "./types.ts";
 
 interface ArtifactRow {
 	id: string;
-	task_id: string;
+	task_id: string | null;
 	run_id: string | null;
 	kind: ArtifactKind;
 	sha256: string;
@@ -90,6 +90,9 @@ export class ArtifactStore {
 			return this.transaction.run(() => {
 				const current = this.get(id);
 				if (!current) throw new ControlError("not_found", `artifact ${id} not found`);
+				if (current.kind.startsWith("eval-")) {
+					throw new ControlError("forbidden", `eval artifact ${id} is immutable and cannot be deleted`);
+				}
 				this.database.prepare("DELETE FROM artifacts WHERE id = ?").run(id);
 				return current;
 			});
@@ -102,14 +105,27 @@ export class ArtifactStore {
 		if (!Buffer.isBuffer(input.content)) {
 			throw new ControlError("invalid_input", "artifact content must be a Buffer");
 		}
-		const taskId = nonEmpty(input.taskId, "taskId");
+		const taskId = input.taskId ?? null;
+		if (taskId !== null && taskId.trim() === "") {
+			throw new ControlError("invalid_input", "taskId must not be empty");
+		}
 		const mediaType = nonEmpty(input.mediaType, "mediaType");
 		const provenance = input.provenance;
 		if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
 			throw new ControlError("invalid_input", "artifact provenance must be an object");
 		}
-		if (typeof provenance.sourceMessageId !== "string" || provenance.sourceMessageId.trim() === "") {
-			throw new ControlError("invalid_input", "artifact provenance.sourceMessageId is required");
+		const evalKind = input.kind.startsWith("eval-");
+		if (taskId === null) {
+			if (!evalKind) throw new ControlError("invalid_input", "domain-level artifacts must use an eval-* kind");
+			if (input.runId) throw new ControlError("invalid_input", "domain-level eval artifacts must not bind a run");
+			if (typeof provenance.evalVerdictId !== "string" || provenance.evalVerdictId.trim() === "") {
+				throw new ControlError("invalid_input", "eval artifact provenance.evalVerdictId is required");
+			}
+		} else {
+			if (evalKind) throw new ControlError("invalid_input", "eval-* artifacts must be domain-level (taskId null)");
+			if (typeof provenance.sourceMessageId !== "string" || provenance.sourceMessageId.trim() === "") {
+				throw new ControlError("invalid_input", "artifact provenance.sourceMessageId is required");
+			}
 		}
 		const sha256 = createHash("sha256").update(input.content).digest("hex");
 		const path = join(this.artifactRoot, sha256);

@@ -31,6 +31,12 @@ const PROTECTED_KINDS = new Set<Artifact["kind"]>([
 	"review",
 	"verification",
 	"merge-receipt",
+	"eval-verdict",
+	"eval-lifecycle-root",
+	"eval-finding",
+	"eval-snapshot",
+	"eval-attribution",
+	"eval-measurement-result",
 ]);
 
 function positiveInteger(value: number, field: string): number {
@@ -69,6 +75,7 @@ export class ArtifactGCService {
 		for (const artifact of artifacts) {
 			if (PROTECTED_KINDS.has(artifact.kind)) continue;
 			if (artifact.kind !== "log") continue;
+			if (artifact.taskId === null) continue;
 			const task = this.store.tasks.get(artifact.taskId);
 			if (!task || task.status !== "done") continue;
 			if (artifact.createdAt + this.logRetentionMs > now) continue;

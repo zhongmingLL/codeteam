@@ -569,11 +569,17 @@ export type ArtifactKind =
 	| "review"
 	| "verification"
 	| "merge-receipt"
-	| "log";
+	| "log"
+	| "eval-verdict"
+	| "eval-lifecycle-root"
+	| "eval-finding"
+	| "eval-snapshot"
+	| "eval-attribution"
+	| "eval-measurement-result";
 
 export interface Artifact {
 	id: string;
-	taskId: string;
+	taskId: string | null;
 	runId: string | null;
 	kind: ArtifactKind;
 	sha256: string;
@@ -587,7 +593,7 @@ export interface Artifact {
 
 export interface PutArtifactInput {
 	id?: string;
-	taskId: string;
+	taskId?: string | null;
 	runId?: string | null;
 	kind: ArtifactKind;
 	content: Buffer;
@@ -1577,23 +1583,54 @@ export interface RecordScheduleRunInput {
 	reason?: Record<string, unknown> | null;
 }
 
+export type EvalStatus = "ok" | "insufficient" | "no_data" | "degraded";
+
 export interface Eval {
 	id: string;
-	taskId: string;
+	taskId: string | null;
 	provider: string;
 	model: string;
 	role: string;
 	metrics: Record<string, unknown>;
+	domainId: string | null;
+	bundleId: string | null;
+	verdictId: string | null;
+	windowStartMs: number | null;
+	windowEndMs: number | null;
+	measurementRef: string | null;
+	status: EvalStatus | null;
+	reasons: string[];
 	createdAt: number;
 }
 
 export interface CreateEvalInput {
 	id?: string;
-	taskId: string;
+	taskId?: string | null;
 	provider: string;
 	model: string;
 	role: string;
 	metrics: Record<string, unknown>;
+	domainId?: string | null;
+	bundleId?: string | null;
+	verdictId?: string | null;
+	windowStartMs?: number | null;
+	windowEndMs?: number | null;
+	measurementRef?: string | null;
+	status?: EvalStatus | null;
+	reasons?: readonly string[];
+	createdAt?: number;
+}
+
+export interface EvalListFilter {
+	taskId?: string;
+	domainId?: string;
+	bundleId?: string;
+	verdictId?: string;
+	status?: EvalStatus;
+	since?: number;
+	until?: number;
+	limit?: number;
+	order?: "asc" | "desc";
 }
 
 export interface ForgeDelivery {
