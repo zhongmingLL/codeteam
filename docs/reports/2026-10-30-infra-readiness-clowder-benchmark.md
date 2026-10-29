@@ -268,7 +268,7 @@ scope: "read-only infra readiness analysis; no product code changes"
   （`VACUUM INTO` 或等价）+ WAL checkpoint + artifact manifest。
 - 先定义“备份清单”再写命令：control.db 是 mandatory；memory.db 是派生
   可重建；logs/traces 可选；tokens 不应备份；credentials 必须单独处理
-  （见 §5.2）。
+  （见 §5.1 OPS-2）。
 
 ### 3.4 开发/CI/发布
 
@@ -325,7 +325,7 @@ scope: "read-only infra readiness analysis; no product code changes"
 | 6 | 日志保留/健康 | 10MB/5 文件/14 天，库内 rotation | 14/7/90/7 天 + `logs:health` + 错误率 | 无健康检查/告警 | R1 适配 | **P0** |
 | 7 | 日志聚合/shipping | 无 | 无（Clowder 也是本地文件） | 单机不阻塞；多主机才需要 | R2/P2 | **P2** |
 | 8 | metrics 抓取 | Prometheus 文本快照，无 scrape 配置 | Prometheus exporter（默认开） + optional OTLP | 无人抓取/无 dashboard | R1 适配 | **P0/P1** |
-| 9 | trace | 10k/24h ring，OTLP 默认关 | F153 local ring + optional OTLP | 无读面/无跨重启 | R1 适配 | **P1**（读面 P0） |
+| 9 | trace | 10k/24h ring，OTLP 默认关 | F153 local ring + optional OTLP | 无读面/无跨重启 | R1 适配 | **P0（读面）/ P1（持久化）** |
 | 10 | 告警/SLO | 无 | burn-rate monitor + WebSocket alert | 无主动告警 | R1 适配 | **P1** |
 | 11 | dashboard/读面 | W7a 计划只读 API；W7b 未开始 | Hub telemetry/trajectory/tool usage 面板 | operator 无法“看” | R1 适配 | **P0（API）/P1（UI）** |
 | 12 | 备份 | 无 | Redis RDB/AOF 快照 + retention + offsite + manifest | control.db 无保护 | R1 适配（SQLite） | **P0** |
@@ -335,7 +335,7 @@ scope: "read-only infra readiness analysis; no product code changes"
 | 16 | 进程/端口/worktree 清理 | worktree/artifact GC 默认 dry-run，无定时 | `process:doctor/cleanup` + worktree reaper | 磁盘/端口泄漏 | R1 适配 | **P1** |
 | 17 | 发布/版本 | 继承 pi release；codeteam `0.0.0` | release workflows + version scripts + changelog | 无 codeteam 制品/版本 | R1 适配 | **P1** |
 | 18 | runbook/incident | 无 | `SETUP.md` troubleshooting + ops notes；无正式 runbook | 首次故障靠个人记忆 | R2/P1 | **P1** |
-| 19 | 多主机/远程 worker ops | 未实现 | Clowder 也没有多主机 supervisor | 不阻塞 v1 | Drop/P2 | **P2** |
+| 19 | 多主机/远程 worker ops | 未实现 | Clowder 也没有多主机 supervisor | 不阻塞 v1 | R2/P2 | **P2** |
 | 20 | Redis 专项 | 无 Redis | Redis 备份/恢复/AOF/RDB | 不适用 | Drop | **Drop** |
 
 > 决策口径沿用 `REUSE-MATRIX`：`R1` = 适配复用契约/语义；`R2` = 只借鉴
