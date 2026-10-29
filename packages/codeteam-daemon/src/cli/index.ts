@@ -9,6 +9,7 @@ import { openCliContext } from "./context.ts";
 import { runDaemonCommand } from "./daemon.ts";
 import { runDeploymentCommand } from "./deployment.ts";
 import { runGateCommand } from "./gate.ts";
+import { runMemoryCommand } from "./memory.ts";
 import { runMergeCommand } from "./merge.ts";
 import { writeJson, writeLine } from "./output.ts";
 import { runProfileCommand } from "./profile.ts";
@@ -20,6 +21,7 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 	const { argvWithoutGlobals, globals } = extractGlobalOptions(argv);
 	const [command, ...rest] = argvWithoutGlobals;
 	if (command === "auth" && rest[0] === "init") return runAuthInit([...rest.slice(1), ...globals]);
+	if (command === "memory") return runMemoryCommand([...rest, ...globals]);
 	if (!command || command === "help" || command === "--help") {
 		writeUsage();
 		return 0;
@@ -114,6 +116,7 @@ function writeUsage(): void {
 	writeLine("  profile <seed|add|list>");
 	writeLine("  gate <check|telemetry>");
 	writeLine("  merge <plan|execute|record>");
+	writeLine("  memory <index|status|recall|read|digest|trigger>");
 	writeLine("global options: --data-dir <path> --json");
 	writeLine("  global options may precede the command");
 	writeLine("backlog create: --title --summary --tag feature:<id> [--priority p0-p3] [--project]");

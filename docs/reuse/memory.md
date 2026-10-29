@@ -64,3 +64,26 @@ updated: 2026-10-25
 | operator | v1 scope / storage / write path | 已签：A/A/A（2026-10-25） |
 
 [宪宪/deepseek-flash🐾]
+
+## W6a 实现落点（2026-10-29，review pending）
+
+- **契约**：`packages/codeteam-daemon/src/memory/contract.ts` 冻结
+  `EvidenceSourceRef` / `EvidenceItem` / `EvidenceHit` / `Coverage` /
+  `RetrievalTrigger`；W6b/W6c 从 `packages/codeteam-daemon/src/index.ts` import。
+- **存储/索引**：`memory/database.ts`（独立 `CODETEAM_MEMORY_DB`、禁 ATTACH）、
+  `memory/indexer.ts`（单写者 lock、full/incremental、FTS/passages）、
+  `memory/lock.ts`。
+- **adapter**：`memory/sources/file.ts`（repo `docs/**/*.md` + root docs）、
+  `memory/sources/control.ts`（只读 control DB 的 task/artifact/review/
+  verification/merge 投影；thread messages/run_events 仍未进入 store）。
+- **读面**：`memory/recall.ts`（FTS/BM25 + short-query fallback + passage +
+  source ref/drill-down + coverage/stale）、`memory/triggers.ts`（六 trigger）、
+  `memory/digest.ts`（canonical session/run digest）、`memory/service.ts`。
+- **安全**：`memory/redaction.ts`（pattern+entropy secret scan、high_entropy
+  按 `/` 分段 + sha 豁免、绝对前缀 deny、read/recall/digest 出口二次脱敏）。
+- **CLI**：`codeteam memory index|status|recall|read|digest|trigger`。
+- **测试**：8 个文件 / 42 个测试；daemon 全量 422 passed / 2 skipped。
+- **与卡的差异**：v1 卡写“source_kind=file only”；W6a dispatch 明确要求
+  task/artifact/review/verification/merge source refs，因此 v2 以
+  `source_kind='control'` 做派生投影，control truth 仍在 W1/W5 canonical
+  tables。个人/主动/私密记忆仍不进入。
