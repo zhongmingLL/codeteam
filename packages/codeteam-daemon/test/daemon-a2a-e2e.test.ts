@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type DaemonHandle, openControlStore, startDaemon } from "../src/index.ts";
 import { startMockAnthropic, textResponse, toolCallResponse } from "./helpers/mock-anthropic.ts";
 
-const CODETEAM_CLI_PATH = join(process.cwd(), "dist", "cli.js");
+const CODETEAM_CLI_PATH = join(import.meta.dirname, "..", "dist", "cli.js");
 const PI_CLI_PATH = join(import.meta.dirname, "..", "..", "coding-agent", "dist", "cli.js");
 const daemons: DaemonHandle[] = [];
 const dirs: string[] = [];

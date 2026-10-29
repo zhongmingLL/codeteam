@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AgentExecutor, DispatchService, openControlStore } from "../src/index.ts";
 
-const CLI = join(process.cwd(), "dist", "cli.js");
+const CLI = join(import.meta.dirname, "..", "dist", "cli.js");
 const dirs: string[] = [];
 let dataDir: string;
 

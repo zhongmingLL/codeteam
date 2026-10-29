@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ControlError } from "../control/errors.ts";
-import type { Message, MessageKind, StageLane, Task, ThreadPhase } from "../control/stores/types.ts";
+import type { Message, MessageKind, QueueEntry, StageLane, Task, ThreadPhase } from "../control/stores/types.ts";
 import { BudgetService } from "../scheduling/budget.ts";
 import { defaultWorktreeRoot, TaskProvisioningService } from "../scheduling/provisioning.ts";
 import { TaskReadinessService } from "../scheduling/readiness.ts";
@@ -122,27 +122,32 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 			}
 		}
 	}
-	const message = context.store.messages.append({
-		threadId: id,
-		taskId: boundTask?.id ?? null,
-		authorKind: "user",
-		authorId: operator.id,
-		kind,
-		bodyMd: body,
-	});
-	let queue = null;
-	if (targets.length > 0) {
-		queue = context.store.queue.admit({
+	const posted = context.store.transaction.run(() => {
+		const created = context.store.messages.append({
 			threadId: id,
-			sourceId: message.id,
-			sourceRecordId: boundTask?.id ?? null,
-			sourceKind: "conversation_input",
-			targets,
-			authorIntent: Object.fromEntries(targets.map((target) => [target, "next_work"])),
-			sourceCategory: "operator_chat",
-			orderKey: String(message.seq),
+			taskId: boundTask?.id ?? null,
+			authorKind: "user",
+			authorId: operator.id,
+			kind,
+			bodyMd: body,
 		});
-	}
+		const queueEntry: QueueEntry | null =
+			targets.length > 0
+				? context.store.queue.admit({
+						threadId: id,
+						sourceId: created.id,
+						sourceRecordId: boundTask?.id ?? null,
+						sourceKind: "conversation_input",
+						targets,
+						authorIntent: Object.fromEntries(targets.map((target) => [target, "next_work"])),
+						sourceCategory: "operator_chat",
+						orderKey: String(created.seq),
+					})
+				: null;
+		return { message: created, queue: queueEntry };
+	});
+	const message = posted.message;
+	const queue = posted.queue;
 	const directed = resolveLineMentions(context, body);
 	const task =
 		boundTask ?? context.store.tasks.list({ threadId: id }).find((candidate) => candidate.status !== "done") ?? null;
