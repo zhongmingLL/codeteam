@@ -100,7 +100,7 @@ tool usage；W6b 要把这些 canonical 数据变成可决策的 eval：
     synthetic smoke report。
 - 验证：
   - `NODE_ENV=development npm run build:offline`：exit 0。
-  - `packages/codeteam-daemon`：**76 files passed + 2 skipped；521 tests
+  - `packages/codeteam-daemon`：**77 files passed + 2 skipped；524 tests
     passed + 2 skipped**。
   - root `tsc --noEmit`：exit 0；biome changed files：clean。
   - runtime/pinned dependency、TS import、entry graph：pass。
@@ -122,6 +122,11 @@ tool usage；W6b 要把这些 canonical 数据变成可决策的 eval：
   legacy task ids 保持。
 - **P3-G**：补 raw event_type DB CHECK 测试。
 - **P3-H**：CLI `overdue` 增加 escalated case 与 open case 同屏证据。
+- **P3-I**：read-side replay 显式拒绝 seq≥1 的 raw `verdict_opened`。
+- **P3-J**：`CODETEAM_EVAL_BUNDLES_DIR` 相对路径拒绝 `..`。
+- **P3-K**：plan 记录 W7 composition 必须把 bundle cap/sample trace/SLA
+  defaults 传入 publish/registry；W6b 无生产 publish caller。
+- **P3-L**：caseId 保留 `\u001f` 分隔符并在 plan 记录抗碰撞理由。
 
 ## Dependencies
 

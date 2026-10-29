@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	appendEvalLifecycleEvent,
@@ -12,7 +13,7 @@ import {
 } from "../src/index.ts";
 import { makeMeasurement, makeVerdictPacket } from "./helpers/eval-fixture.ts";
 
-const CLI = join(process.cwd(), "dist", "cli.js");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "cli.js");
 const dirs: string[] = [];
 let dataDir: string;
 let caseId: string;

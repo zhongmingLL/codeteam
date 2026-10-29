@@ -383,6 +383,9 @@ function validateEventHistory(store: ControlStore, base: VerdictContext, events:
 		if (event.seq !== index + 1) {
 			throw new ControlError("invalid_state", `eval lifecycle seq gap at ${event.eventId}`);
 		}
+		if (event.type === "verdict_opened") {
+			throw new ControlError("invalid_state", "verdict_opened is only valid as the first event");
+		}
 		const context = contextForEvent(store, base, event, ownerProfileId);
 		assertTransition(context, status, event.type);
 		assertActorAllowed({ context, type: event.type, actor: event.actor, payload: event.payload, store });

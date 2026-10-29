@@ -95,6 +95,7 @@ interface EvalDomainRegistryEntry {
   `CODETEAM_EVAL_ENABLED=0`、`CODETEAM_EVAL_BUNDLE_MAX_BYTES=5MiB`、
   `CODETEAM_EVAL_SAMPLE_TRACE_LIMIT=20`、`CODETEAM_EVAL_ACK_HOURS_DEFAULT=24`、
   `CODETEAM_EVAL_REEVAL_HOURS_DEFAULT=72`、`CODETEAM_EVAL_RETENTION_DAYS=0`。
+  `domainsDir`/`bundlesDir` 的相对路径都做 `..` 拒绝。
   W6b 不接 scheduler；`enabled` 只作为 registry/未来 scheduler gate。
 
 ### 3.2 Eval agent invocation
@@ -300,6 +301,9 @@ Transition × actor matrix：
   追加 `verdict_cycle_observed`，不新开 case；case 未 resolved 时 conflict。
 - 并发 seq：`BEGIN IMMEDIATE` 内读 case tail、CAS expectedSequence、插
   seq+1；`UNIQUE(case_id,seq)` + `event_id PK` 是第二道防线。
+- `caseId = eval-case-v1-<sha256(domainId + "\u001f" + findingKey)>`；保留
+  `\u001f` 分隔符防 `("a","bc")`/`("ab","c")` 拼接碰撞（approved 公式的
+  shorthand，不改变 identity 语义）。
 - 读面 replay 必须对每条 history event 重跑 transition + actor authority；
   raw INSERT 绕过服务层时也 fail closed（append-only 只保护“不改”，不保护
   非法语义）。
@@ -378,6 +382,7 @@ codeteam eval accept-sunset <caseId|verdictId> --reason <text> [--expected-seq <
 |---|---|
 | `control-eval-schema.test.ts` | migration 15、evals/artifacts 约束、legacy、append-only、表清单 |
 | `control-eval-registry.test.ts` | YAML strict、evalAgent/owner/thread/model、dormancy、missing dir |
+| `control-eval-config.test.ts` | `CODETEAM_EVAL_*` 默认值、env overrides、traversal/invalid fail-closed |
 | `control-eval-episodes.test.ts` | episode 字段/幂等/reasons/sourceRefs；corpus report 2×2、synthetic/live、bundle 最新 |
 | `control-eval-lifecycle.test.ts` | publish、14 event types、actor authority、same-case cycle、并发 seq、append-only、operator-only |
 | `control-eval-redaction.test.ts` | secret 模式、消息/artifact 不落盘 |
@@ -431,11 +436,15 @@ codeteam eval accept-sunset <caseId|verdictId> --reason <text> [--expected-seq <
   migration 15；`src/cli/eval.ts`；`evals/domains/*.yaml`。
 - Artifacts：走 `artifacts` 表 + `${dataDir}/evals/bundles`；无
   `eval-artifacts/` 第二目录。
-- 测试：daemon 全量 **521 passed / 2 skipped**；eval 定向 42/42。
+- 测试：daemon 全量 **524 passed / 2 skipped**；eval 定向 45/45。
 - Root `tsc`、`build:offline`、biome、runtime/pinned dependency、TS import、
   entry graph 通过。
 - 未做：W7 HTTP/Console、W5 scheduler 接线、live corpus materialization、
   Eval Hub UI、Paw-Feel、F246 repair、run-token fix binding。
+- W7 接线时必须把 `CODETEAM_EVAL_BUNDLE_MAX_BYTES` / `SAMPLE_TRACE_LIMIT` /
+  `ACK_HOURS_DEFAULT` / `REEVAL_HOURS_DEFAULT` 传入 publish input 或 registry
+  defaults；W6b 无生产 publish caller，env 覆盖当前只在 service/config 面
+  生效，不能静默假定 composition 已接。
 - 已知限制：并发 seq 测试是双控制连接交替写入；多线程压力留给 W7/acceptance。
 - 已知规模边界：`EvalStore.list` 5000 行、materialize 默认 500 task 是 v1
   安全上限；W7 加分页。

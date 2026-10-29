@@ -50,6 +50,9 @@ export function resolveEvalConfig(options: ResolveEvalConfigOptions): EvalConfig
 		throw new ControlError("invalid_input", "CODETEAM_EVAL_DOMAINS_DIR must not traverse");
 	}
 	const bundlesDir = env.CODETEAM_EVAL_BUNDLES_DIR?.trim() || join(options.dataDir, "evals", "bundles");
+	if (isAbsolute(bundlesDir) === false && bundlesDir.split(/[\\/]+/).includes("..")) {
+		throw new ControlError("invalid_input", "CODETEAM_EVAL_BUNDLES_DIR must not traverse");
+	}
 	return {
 		domainsDir,
 		bundlesDir,

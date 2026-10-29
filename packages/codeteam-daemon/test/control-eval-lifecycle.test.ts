@@ -270,6 +270,13 @@ describe("W6b eval lifecycle", () => {
 		const transition = publishUnique(base, "verdict-raw-transition", "raw-transition");
 		rawInsert(base, transition.case!.caseId, 2, "main_landed", "system", "system:merge-owner");
 		expectCode(() => getEvalCase(base.store, transition.case!.caseId), "invalid_state");
+
+		const duplicateOpen = publishUnique(base, "verdict-raw-open", "raw-open");
+		rawInsert(base, duplicateOpen.case!.caseId, 2, "verdict_opened", "system", "system:publish-pipeline", {
+			verdictId: "verdict-raw-open",
+			reason: "raw second open",
+		});
+		expectCode(() => getEvalCase(base.store, duplicateOpen.case!.caseId), "invalid_state");
 	});
 
 	it("escalates from all six legal source states and is always overdue", () => {
