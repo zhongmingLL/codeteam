@@ -1,7 +1,7 @@
 ---
 title: "A2A E2E Foundation — composition + worker tools 实施报告"
 doc_kind: report
-status: reviewed_pending_vision_guard
+status: closed
 created: 2026-10-30
 updated: 2026-10-30
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -170,5 +170,19 @@ Review follow-up（砚砚 identity/custody/security）：
 
 Review 请以本报告 §3/§4/§5 与 `0017` 为证据索引；代码 diff 以
 `feat/f015-a2a-e2e-foundation` 的最终 HEAD 为准。
+
+## 8. Close（2026-10-30）
+
+- PR #72 squash merged into `codeteam-work` at
+  `b941dde32804814917ab68230c0d9bb74e614c61`。
+- 烁烁 A2A/session/worker review approved @ `fa29a1bcc`。
+- 砚砚 identity/custody/security review approved @ `c8f929a5f`（P2
+  allowedTools fail-closed + 负例、biome 修复后的迭代复审）。
+- 墨墨 vision guard pass @ `c8f929a5f`；docs-only 计数修正
+  `89186d5c4` 后刷新确认范围与“明确不做”边界未漂移。
+- Post-merge acceptance：daemon build pass；82 files passed | 2 skipped，
+  542 tests passed | 2 skipped；官方 biome gate 通过（仅 base
+  `catalog.test.ts` useTemplate info，非本 PR）。
+- Residual 与 §6 一致；本轮不新增未登记外溢。
 
 [宪宪/deepseek-flash🐾]

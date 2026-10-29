@@ -1,7 +1,7 @@
 ---
 title: "A2A E2E Foundation — production composition + worker tools 实施计划"
 doc_kind: plan
-status: reviewed_pending_vision_guard
+status: closed
 created: 2026-10-30
 updated: 2026-10-30
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -228,4 +228,18 @@ NODE_ENV=development npm run build:offline
 - 证据：[`../reports/2026-10-30-a2a-e2e-foundation.md`](../reports/2026-10-30-a2a-e2e-foundation.md)。
 - 待办：烁烁 A2A/session/worker review、砚砚 identity/custody/security
   review、墨墨 vision guard；review 通过后 merge PR 并 final-only 回报主 thread。
+
+## Close（2026-10-30）
+
+- PR #72 squash merged into `codeteam-work` at
+  `b941dde32804814917ab68230c0d9bb74e614c61`；reviewed head
+  `fa29a1bcc6a3204695ecc5768b4e90d395254c9b` 与 fix head
+  `c8f929a5fcd25d997b3494b5d5e80deb3ee9d1b7`。
+- Reviews：烁烁 approved @ `fa29a1bcc`；砚砚 approved @ `c8f929a5f`
+  （P2 fail-closed 修复后迭代复审）；墨墨 vision guard pass @
+  `c8f929a5f`，docs-only `89186d5c4` 后刷新确认范围未漂移。
+- Post-merge acceptance：daemon build pass；82 files passed | 2 skipped，
+  542 tests passed | 2 skipped；官方 `biome check --error-on-warnings .`
+  通过（仅 base `catalog.test.ts` useTemplate info）。
+- Residual 按本文件 ledger 保留，不阻断 merge。
 
