@@ -312,6 +312,18 @@ TSV 的 `idempotency` / `permission` 列是分类，不是对每个 route 的逐
 | `invocation-token required for structured action` | `post_message`/`cross_post`/`multi_mention` 的 action custody；agent-key 不可用 |
 | `callback principal + owner/operator; destructive explicit` | destructive 需要 owner/operator 明确授权 |
 
+### 3.4 输出契约
+
+Clowder 的 governance baseline 不保存 per-tool output schema；MCP 工具统一返回
+`content:[{type:"text", text: JSON.stringify(data)}]`，错误加 `isError:true`。
+因此本报告逐工具记录输入 schema、幂等类和权限类，输出按统一契约说明，不伪造
+逐工具 output schema：
+
+- read：bounded JSON DTO / list + `hasMore`/cursor；
+- write：JSON receipt（id/status/refs）；
+- action：JSON status + lease/refs；
+- destructive：receipt + 明确结果，不返回模糊成功。
+
 ## 4. 映射与取舍
 
 ### 4.1 命名：不加 Clowder 别名
