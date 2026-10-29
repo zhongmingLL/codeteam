@@ -8,8 +8,8 @@ import {
 	initOperatorCredential,
 	openControlStore,
 	publishEvalVerdict,
-	type VerdictHandoffPacketV1,
 } from "../src/index.ts";
+import { makeMeasurement, makeVerdictPacket } from "./helpers/eval-fixture.ts";
 
 const CLI = join(process.cwd(), "dist", "cli.js");
 const dirs: string[] = [];
@@ -41,7 +41,7 @@ beforeEach(() => {
 	initOperatorCredential({ dataDir });
 	const store = openControlStore({ dataDir });
 	store.seedIdentity({
-		eval: { profileId: "profile:eval", provider: "eval-provider", model: "glm-eval", modelFamily: "glm" },
+		eval: { profileId: "profile:eval", provider: "eval-provider", model: "eval-model", modelFamily: "glm" },
 		compress: { provider: "test", model: "glm-compress", modelFamily: "glm" },
 	});
 	store.profiles.create({
@@ -56,56 +56,59 @@ beforeEach(() => {
 	store.threads.create({ id: "thread:eval-domain", title: "Eval" });
 	const entry: EvalDomainRegistryEntry = {
 		domainId: "eval:test-domain",
+		displayName: "Test domain",
 		systemThreadId: "thread:eval-domain",
-		evalAgent: "profile:eval",
+		evalAgent: { profileId: "profile:eval", role: "eval", handle: "eval", model: "eval-model" },
 		frequency: "daily",
-		triggerPolicy: { kind: "time_only", maxDetectionDelayHours: 24 },
+		triggerPolicy: { mode: "time_only", maxDetectionDelayHours: 24 },
 		sourceAdapter: "task_outcome",
 		sourceRefsKind: "task",
-		sla: { acknowledgementHours: 24, reevaluationHours: 168 },
+		handoffTargetResolver: { featureId: "F014", ownerProfileId: "profile:owner", threadLookup: "feature-thread" },
+		sla: { acknowledgeHours: 24, reevalWithinHours: 168 },
 		enabled: true,
 	};
-	const createdAt = Date.now() - 100 * 60 * 60 * 1000;
-	const packet: VerdictHandoffPacketV1 = {
-		v: 1,
+	const createdAt = new Date(Date.now() - 100 * 60 * 60 * 1000).toISOString();
+	const packet = makeVerdictPacket({
 		id: "verdict-cli-sunset",
-		domainId: "eval:test-domain",
-		bundleId: "bundle-cli",
-		createdAt,
-		phenomenon: "candidate harness has low marginal effect",
-		harnessUnderEval: { featureId: "F014", componentId: "eval", name: "demo harness" },
-		evidencePacket: {
-			sourceRefs: ["task:task-cli"],
-			summary: "no activation in the window",
-			measurement: {
-				status: "ok",
-				method: "fixture",
-				windowStartMs: createdAt,
-				windowEndMs: createdAt + 1000,
-				measurementRef: "measurement:cli",
-				reasons: [],
-			},
-		},
-		rootCauseHypothesis: "model internalized the behavior",
-		verdict: "delete_sunset",
 		findingKey: "cli-sunset-1",
-		findings: [{ severity: "P2", claim: "low use", evidenceRefs: ["task:task-cli"] }],
-		ownerAsk: {
-			targetFeatureId: "F014",
-			targetOwnerProfileId: "profile:owner",
-			requestedAction: "start sunset trial",
+		verdict: "delete_sunset",
+		createdAt,
+		governance: { cvoAcceptRequired: true },
+		acceptanceReevalPlan: {
+			nextEvalAt: new Date(Date.parse(createdAt) + 7 * 24 * 60 * 60 * 1000).toISOString(),
+			closureCondition: "trial criteria met",
 		},
-		acceptanceReevalPlan: { nextEvalAt: createdAt + 7 * 24 * 60 * 60 * 1000, closureCondition: "trial criteria met" },
-		counterarguments: ["sample is small"],
-		governance: { cvoAcceptRequired: true, cvoSuppressed: false },
-	};
+		evidencePacket: {
+			snapshotRefs: ["snapshot:cli"],
+			attributionRefs: ["attribution:cli"],
+			metricRefs: ["metric:cli"],
+			sampleTraceRefs: ["inv:cli"],
+		},
+	});
 	const published = publishEvalVerdict(store, {
 		entry,
 		packet,
-		actor: { kind: "eval", id: "profile:eval" },
-		dataDir,
+		measurement: makeMeasurement(packet, {
+			cohort: {
+				ref: "cohort:cli",
+				sha256: "d".repeat(64),
+				window: { startMs: Date.parse(createdAt), endMs: Date.parse(createdAt) + 1000 },
+			},
+		}),
+		actor: { kind: "agent", id: "profile:eval" },
 	});
 	caseId = published.case!.caseId;
+	const observation = makeVerdictPacket({
+		id: "verdict-cli-observation",
+		findingKey: undefined,
+		verdict: "keep_observe",
+	});
+	publishEvalVerdict(store, {
+		entry,
+		packet: observation,
+		measurement: makeMeasurement(observation),
+		actor: { kind: "agent", id: "profile:eval" },
+	});
 	store.close();
 });
 
@@ -135,19 +138,22 @@ describe("W6b eval CLI", () => {
 			message: { bodyMd: string };
 			artifacts: Array<{ kind: string }>;
 			lifecycleRoot: { verdict: string };
-		}>(["eval", "show", caseId]);
+		}>(["eval", "show", "verdict-cli-sunset"]);
 		expect(detail.case).toMatchObject({ status: "open", awaitingSunsetDecision: true });
 		expect(detail.verdict).toMatchObject({ id: "verdict-cli-sunset", status: "ok" });
 		expect(detail.message.bodyMd).toContain("awaiting operator accept");
-		expect(detail.artifacts.map((artifact) => artifact.kind)).toContain("lifecycle-root");
+		expect(detail.artifacts.map((artifact) => artifact.kind)).toContain("eval-lifecycle-root");
 		expect(detail.lifecycleRoot.verdict).toBe("delete_sunset");
+		const observation = cliJson<{ case: null; verdict: { id: string } }>(["eval", "show", "verdict-cli-observation"]);
+		expect(observation.case).toBeNull();
+		expect(observation.verdict.id).toBe("verdict-cli-observation");
 	});
 
 	it("accepts sunset as operator and never deletes the harness", () => {
 		const accepted = cliJson<{ case: { status: string; awaitingSunsetDecision: boolean }; event: { type: string } }>([
 			"eval",
 			"accept-sunset",
-			caseId,
+			"verdict-cli-sunset",
 			"--reason",
 			"sunset trial accepted",
 		]);
@@ -158,7 +164,7 @@ describe("W6b eval CLI", () => {
 		expect(open).toEqual([]);
 		const detail = cliJson<{ case: { status: string } }>(["eval", "show", caseId]);
 		expect(detail.case.status).toBe("resolved");
-		const second = rawCli(["eval", "accept-sunset", caseId, "--reason", "again"]);
+		const second = rawCli(["eval", "accept-sunset", "verdict-cli-sunset", "--reason", "again"]);
 		expect(second.status).not.toBe(0);
 	});
 });

@@ -29,28 +29,53 @@ export const W6B_EVAL_SCHEMA_STATEMENTS: readonly string[] = [
 	`CREATE INDEX evals_domain_created ON evals(domain_id, created_at) WHERE domain_id IS NOT NULL`,
 	`CREATE INDEX evals_bundle_created ON evals(bundle_id, created_at) WHERE bundle_id IS NOT NULL`,
 	`CREATE UNIQUE INDEX evals_verdict_id ON evals(verdict_id) WHERE verdict_id IS NOT NULL`,
+	`CREATE TABLE artifacts_v15 (
+		id TEXT PRIMARY KEY,
+		task_id TEXT,
+		run_id TEXT,
+		kind TEXT NOT NULL CHECK (kind IN (
+			'spec', 'plan', 'diff', 'test-report', 'review', 'verification', 'merge-receipt', 'log',
+			'eval-verdict', 'eval-lifecycle-root', 'eval-finding', 'eval-snapshot',
+			'eval-attribution', 'eval-measurement-result'
+		)),
+		sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+		path TEXT NOT NULL,
+		media_type TEXT NOT NULL,
+		bytes INTEGER NOT NULL CHECK (bytes >= 0),
+		provenance_json TEXT NOT NULL CHECK (json_valid(provenance_json) AND json_type(provenance_json) = 'object'),
+		approval_id TEXT,
+		created_at INTEGER NOT NULL,
+		CHECK (task_id IS NOT NULL OR kind LIKE 'eval-%'),
+		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE RESTRICT,
+		FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE SET NULL,
+		FOREIGN KEY (approval_id) REFERENCES approvals(id) ON DELETE SET NULL
+	) STRICT`,
+	`INSERT INTO artifacts_v15 (id, task_id, run_id, kind, sha256, path, media_type, bytes, provenance_json, approval_id, created_at)
+		SELECT id, task_id, run_id, kind, sha256, path, media_type, bytes, provenance_json, approval_id, created_at FROM artifacts`,
+	`DROP TABLE artifacts`,
+	`ALTER TABLE artifacts_v15 RENAME TO artifacts`,
+	`CREATE INDEX artifacts_task_created ON artifacts(task_id, created_at)`,
+	`CREATE INDEX artifacts_run ON artifacts(run_id) WHERE run_id IS NOT NULL`,
+	`CREATE UNIQUE INDEX artifacts_approval ON artifacts(approval_id) WHERE approval_id IS NOT NULL`,
 	`CREATE TABLE eval_lifecycle_events (
-		event_id TEXT PRIMARY KEY,
+		event_id TEXT NOT NULL UNIQUE,
 		case_id TEXT NOT NULL,
 		seq INTEGER NOT NULL CHECK (seq > 0),
-		verdict_id TEXT NOT NULL,
 		domain_id TEXT NOT NULL,
-		type TEXT NOT NULL CHECK (type IN (
-			'verdict_opened', 'owner_acknowledged', 'action_planned', 'fix_landed',
-			'reeval_requested', 'reeval_passed', 'reeval_failed', 'escalated',
-			'cvo_suppressed', 'sunset_accepted', 'resolved'
+		event_type TEXT NOT NULL CHECK (event_type IN (
+			'verdict_opened', 'verdict_cycle_observed', 'owner_acknowledged', 'action_planned',
+			'fix_recorded', 'main_landed', 'reeval_requested', 'reeval_passed', 'reeval_failed',
+			'cvo_suppressed', 'sla_escalated', 'owner_reassigned', 'migration', 'sunset_accepted'
 		)),
-		actor_kind TEXT NOT NULL CHECK (actor_kind IN ('eval', 'owner', 'operator', 'system')),
+		actor_kind TEXT NOT NULL CHECK (actor_kind IN ('agent', 'operator', 'system', 'migration')),
 		actor_id TEXT NOT NULL,
-		reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
-		refs_json TEXT NOT NULL CHECK (json_valid(refs_json) AND json_type(refs_json) = 'array'),
-		created_at INTEGER NOT NULL,
-		UNIQUE (case_id, seq),
-		FOREIGN KEY (verdict_id) REFERENCES evals(id) ON DELETE RESTRICT
+		payload_json TEXT NOT NULL CHECK (json_valid(payload_json) AND json_type(payload_json) = 'object'),
+		occurred_at TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		PRIMARY KEY (case_id, seq)
 	) STRICT`,
-	`CREATE INDEX eval_lifecycle_case_seq ON eval_lifecycle_events(case_id, seq)`,
-	`CREATE INDEX eval_lifecycle_verdict ON eval_lifecycle_events(verdict_id, seq)`,
-	`CREATE INDEX eval_lifecycle_created ON eval_lifecycle_events(created_at)`,
+	`CREATE INDEX eval_lifecycle_domain_occurred ON eval_lifecycle_events(domain_id, occurred_at)`,
+	`CREATE INDEX eval_lifecycle_occurred ON eval_lifecycle_events(occurred_at)`,
 	`CREATE TRIGGER eval_lifecycle_no_update BEFORE UPDATE ON eval_lifecycle_events BEGIN SELECT RAISE(ABORT, 'append_only'); END`,
 	`CREATE TRIGGER eval_lifecycle_no_delete BEFORE DELETE ON eval_lifecycle_events BEGIN SELECT RAISE(ABORT, 'append_only'); END`,
 ];

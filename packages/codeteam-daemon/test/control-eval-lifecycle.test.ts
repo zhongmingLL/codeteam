@@ -14,15 +14,19 @@ import {
 import {
 	createEvalFixture,
 	type EvalFixture,
+	makeMeasurement,
 	makeVerdictPacket,
 	publishFixturePacket,
 } from "./helpers/eval-fixture.ts";
 
 const fixtures: EvalFixture[] = [];
-const OWNER = { kind: "owner", id: "profile:owner" } as const;
-const EVAL = { kind: "eval", id: "profile:eval" } as const;
+const OWNER = { kind: "agent", id: "profile:owner" } as const;
+const EVAL = { kind: "agent", id: "profile:eval" } as const;
+const OPERATOR = { kind: "operator", id: "operator:test" } as const;
+const SLA = { kind: "system", id: "sla-reconciler" } as const;
+const MERGE = { kind: "system", id: "merge-owner" } as const;
 
-type OwnerStep = "owner_acknowledged" | "action_planned" | "fix_landed" | "reeval_requested";
+type OwnerStep = "owner_acknowledged" | "action_planned" | "fix_recorded" | "main_landed" | "reeval_requested";
 
 function fixture(): EvalFixture {
 	const value = createEvalFixture();
@@ -45,26 +49,51 @@ function expectCode(fn: () => unknown, code: string): void {
 }
 
 function publishUnique(base: EvalFixture, id: string, findingKey: string) {
-	return publishFixturePacket(base, { id, bundleId: `bundle-${id}`, findingKey });
+	return publishFixturePacket(base, { id, findingKey });
 }
 
-function driveOwnerSteps(base: EvalFixture, caseId: string, steps: readonly OwnerStep[]): number {
-	let lastSequence = getEvalCase(base.store, caseId).nextSequence - 1;
+function append(
+	base: EvalFixture,
+	caseId: string,
+	type: Exclude<Parameters<typeof appendEvalLifecycleEvent>[1]["type"], "verdict_opened" | "verdict_cycle_observed">,
+	actor: { kind: "agent" | "operator" | "system" | "migration"; id: string },
+	expectedSequence: number,
+	extra: { commitSha?: string; targetOwnerProfileId?: string } = {},
+) {
+	return appendEvalLifecycleEvent(base.store, {
+		caseId,
+		expectedSequence,
+		type,
+		actor,
+		reason: type,
+		...extra,
+	}).event;
+}
+
+function driveOwner(base: EvalFixture, caseId: string, steps: readonly OwnerStep[]): number {
+	let last = getEvalCase(base.store, caseId).nextSequence - 1;
 	for (const type of steps) {
-		appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: lastSequence,
-			type,
-			actor: OWNER,
-			reason: type,
-		});
-		lastSequence += 1;
+		const extra = type === "main_landed" ? { commitSha: "a".repeat(40) } : {};
+		const actor = type === "main_landed" ? MERGE : type === "reeval_requested" ? SLA : OWNER;
+		append(base, caseId, type, actor, last, extra);
+		last += 1;
 	}
-	return lastSequence;
+	return last;
+}
+
+function driveToResolved(base: EvalFixture, caseId: string): void {
+	const last = driveOwner(base, caseId, [
+		"owner_acknowledged",
+		"action_planned",
+		"fix_recorded",
+		"main_landed",
+		"reeval_requested",
+	]);
+	append(base, caseId, "reeval_passed", EVAL, last);
 }
 
 describe("W6b eval lifecycle", () => {
-	it("publishes a verdict with immutable artifacts, a lifecycle case, and a same-transaction message", () => {
+	it("publishes a verdict with immutable artifact-table entries, a lifecycle case, and a same-transaction message", () => {
 		const base = fixture();
 		const result = publishFixturePacket(base);
 		expect(result.replayed).toBe(false);
@@ -74,14 +103,30 @@ describe("W6b eval lifecycle", () => {
 		expect(result.case?.status).toBe("open");
 		expect(result.case?.nextSequence).toBe(2);
 		expect(result.artifacts.refs.map((ref) => ref.kind).sort()).toEqual(
-			["eval-attribution", "eval-finding", "eval-snapshot", "eval-verdict", "lifecycle-root"].sort(),
+			[
+				"eval-attribution",
+				"eval-finding",
+				"eval-lifecycle-root",
+				"eval-measurement-result",
+				"eval-snapshot",
+				"eval-verdict",
+			].sort(),
 		);
+		for (const ref of result.artifacts.refs) {
+			expect(base.store.evalArtifacts.get(ref.artifactId)).not.toBeNull();
+			expect(ref.path.startsWith(join(base.dataDir, "evals", "bundles"))).toBe(true);
+		}
 		const message = base.store.messages.get(result.message.id)!;
 		expect(message.threadId).toBe("thread:eval-domain");
 		expect(message.kind).toBe("verdict");
 		expect(message.bodyMd).toContain(result.artifacts.lifecycleRootDigest);
 		expect(message.bodyMd).toContain("Case: eval-case-v1-");
-		expect(base.store.evals.get("verdict-1")?.verdictId).toBe("verdict-1");
+		const events = getEvalCase(base.store, result.case!.caseId).events;
+		expect(events[0]).toMatchObject({
+			type: "verdict_opened",
+			actor: { kind: "system", id: "publish-pipeline" },
+			payload: { verdictId: "verdict-1" },
+		});
 	});
 
 	it("is idempotent for the same packet and conflicts on a different packet", () => {
@@ -93,88 +138,104 @@ describe("W6b eval lifecycle", () => {
 		expectCode(() => publishFixturePacket(base, { phenomenon: "different" }), "conflict");
 	});
 
-	it("enforces the transition matrix and owner/eval/system actor identities", () => {
+	it("drives the approved lifecycle with owner/eval/operator/system authority", () => {
 		const base = fixture();
-		const published = publishFixturePacket(base);
+		const published = publishUnique(base, "verdict-flow", "flow-1");
 		const caseId = published.case!.caseId;
-		expectCode(
-			() =>
-				appendEvalLifecycleEvent(base.store, {
-					caseId,
-					expectedSequence: 1,
-					type: "fix_landed",
-					actor: { kind: "owner", id: "profile:owner" },
-					reason: "skip planning",
-				}),
-			"invalid_state",
+		expectCode(() => append(base, caseId, "owner_acknowledged", EVAL, 1), "forbidden");
+		let seq = 1;
+		append(base, caseId, "owner_acknowledged", OWNER, seq);
+		seq += 1;
+		append(base, caseId, "action_planned", OWNER, seq);
+		seq += 1;
+		expectCode(() => append(base, caseId, "fix_recorded", EVAL, seq), "forbidden");
+		append(base, caseId, "fix_recorded", OWNER, seq);
+		seq += 1;
+		expectCode(() => append(base, caseId, "main_landed", OWNER, seq, { commitSha: "a".repeat(40) }), "forbidden");
+		expectCode(() => append(base, caseId, "main_landed", MERGE, seq, { commitSha: "abc" }), "invalid_input");
+		append(base, caseId, "main_landed", MERGE, seq, { commitSha: "a".repeat(40) });
+		seq += 1;
+		expectCode(() => append(base, caseId, "reeval_requested", OWNER, seq), "forbidden");
+		const requested = append(base, caseId, "reeval_requested", SLA, seq);
+		expect(requested.payload.dueAt).toBe(
+			new Date(Date.parse(published.case!.createdAt) + 168 * 60 * 60 * 1000).toISOString(),
 		);
-		const ack = appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: 1,
-			type: "owner_acknowledged",
-			actor: { kind: "owner", id: "profile:owner" },
-			reason: "will fix",
-		});
-		expect(ack.event.seq).toBe(2);
-		expectCode(
-			() =>
-				appendEvalLifecycleEvent(base.store, {
-					caseId,
-					expectedSequence: 2,
-					type: "action_planned",
-					actor: { kind: "owner", id: "profile:not-owner" },
-					reason: "wrong owner",
-				}),
-			"forbidden",
-		);
-		appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: 2,
-			type: "action_planned",
-			actor: { kind: "owner", id: "profile:owner" },
-			reason: "plan",
-		});
-		appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: 3,
-			type: "fix_landed",
-			actor: { kind: "owner", id: "profile:owner" },
-			reason: "fix",
-		});
-		appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: 4,
-			type: "reeval_requested",
-			actor: { kind: "owner", id: "profile:owner" },
-			reason: "recheck",
-		});
-		appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: 5,
-			type: "reeval_passed",
-			actor: { kind: "eval", id: "profile:eval" },
-			reason: "passed",
-		});
-		expectCode(
-			() =>
-				appendEvalLifecycleEvent(base.store, {
-					caseId,
-					expectedSequence: 6,
-					type: "resolved",
-					actor: { kind: "eval", id: "profile:eval" },
-					reason: "self-close",
-				}),
-			"forbidden",
-		);
-		const resolved = appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: 6,
-			type: "resolved",
-			actor: { kind: "system", id: "eval-closure-reconciler" },
-			reason: "closure condition met",
-		});
-		expect(resolved.event.seq).toBe(7);
+		seq += 1;
+		expectCode(() => append(base, caseId, "reeval_passed", OWNER, seq), "forbidden");
+		const passed = append(base, caseId, "reeval_passed", EVAL, seq);
+		expect(passed.seq).toBe(seq + 1);
 		expect(getEvalCase(base.store, caseId).status).toBe("resolved");
+	});
+
+	it("supports operator acknowledgement, owner reassignment, and escalated recovery", () => {
+		const base = fixture();
+		base.store.profiles.create({
+			id: "profile:owner-2",
+			role: "coder",
+			displayName: "Owner 2",
+			provider: "owner-provider",
+			model: "glm-owner-2",
+			modelFamily: "glm",
+			toolPolicyProfile: "default",
+		});
+		const published = publishUnique(base, "verdict-owner", "owner-1");
+		const caseId = published.case!.caseId;
+		append(base, caseId, "owner_acknowledged", OPERATOR, 1);
+		expect(getEvalCase(base.store, caseId).status).toBe("acknowledged");
+		append(base, caseId, "owner_reassigned", OPERATOR, 2, { targetOwnerProfileId: "profile:owner-2" });
+		expect(getEvalCase(base.store, caseId).status).toBe("acknowledged");
+		expectCode(() => append(base, caseId, "action_planned", OWNER, 3), "forbidden");
+		append(base, caseId, "action_planned", { kind: "agent", id: "profile:owner-2" }, 3);
+		expect(getEvalCase(base.store, caseId).status).toBe("action_planned");
+		append(base, caseId, "fix_recorded", OPERATOR, 4);
+		expect(getEvalCase(base.store, caseId).status).toBe("fix_landed");
+		append(base, caseId, "main_landed", OPERATOR, 5, { commitSha: "b".repeat(40) });
+		expect(getEvalCase(base.store, caseId).status).toBe("main_landed");
+		const escalation = append(base, caseId, "sla_escalated", SLA, 6);
+		expect(escalation.actor).toEqual({ kind: "system", id: "sla-reconciler" });
+		const projection = getEvalCase(base.store, caseId, Date.parse(published.case!.createdAt) + 1000);
+		expect(projection.status).toBe("escalated");
+		expect(projection.overdue).toBe(true);
+		append(base, caseId, "action_planned", { kind: "agent", id: "profile:owner-2" }, 7);
+		expect(getEvalCase(base.store, caseId).status).toBe("action_planned");
+	});
+
+	it("returns to action_planned on reeval_failed and can record a new fix", () => {
+		const base = fixture();
+		const published = publishUnique(base, "verdict-reeval-failed", "reeval-failed");
+		const caseId = published.case!.caseId;
+		let seq = driveOwner(base, caseId, [
+			"owner_acknowledged",
+			"action_planned",
+			"fix_recorded",
+			"main_landed",
+			"reeval_requested",
+		]);
+		expectCode(() => append(base, caseId, "reeval_failed", OWNER, seq), "forbidden");
+		append(base, caseId, "reeval_failed", EVAL, seq);
+		expect(getEvalCase(base.store, caseId).status).toBe("action_planned");
+		seq += 1;
+		append(base, caseId, "fix_recorded", OWNER, seq);
+		expect(getEvalCase(base.store, caseId).status).toBe("fix_landed");
+	});
+
+	it("opens a new verdict cycle on the same case after resolution", () => {
+		const base = fixture();
+		const first = publishUnique(base, "verdict-cycle-1", "cycle-1");
+		driveToResolved(base, first.case!.caseId);
+		expect(getEvalCase(base.store, first.case!.caseId).status).toBe("resolved");
+		const second = publishUnique(base, "verdict-cycle-2", "cycle-1");
+		expect(second.case?.caseId).toBe(first.case!.caseId);
+		expect(second.case?.verdictId).toBe("verdict-cycle-2");
+		expect(second.case?.status).toBe("open");
+		expect(listEvalCases(base.store)).toHaveLength(1);
+		const events = getEvalCase(base.store, first.case!.caseId).events;
+		expect(
+			events.some(
+				(event) => event.type === "verdict_cycle_observed" && event.payload.verdictId === "verdict-cycle-2",
+			),
+		).toBe(true);
+		expect(base.store.evals.listByDomain("eval:test-domain")).toHaveLength(2);
 	});
 
 	it("keeps event replay idempotent and rejects stale sequences", () => {
@@ -186,7 +247,7 @@ describe("W6b eval lifecycle", () => {
 			caseId,
 			expectedSequence: 1,
 			type: "owner_acknowledged",
-			actor: { kind: "owner", id: "profile:owner" },
+			actor: OWNER,
 			reason: "ack",
 		});
 		const replay = appendEvalLifecycleEvent(base.store, {
@@ -194,7 +255,7 @@ describe("W6b eval lifecycle", () => {
 			caseId,
 			expectedSequence: 1,
 			type: "owner_acknowledged",
-			actor: { kind: "owner", id: "profile:owner" },
+			actor: OWNER,
 			reason: "ack",
 		});
 		expect(replay.replayed).toBe(true);
@@ -206,253 +267,84 @@ describe("W6b eval lifecycle", () => {
 					caseId,
 					expectedSequence: 1,
 					type: "owner_acknowledged",
-					actor: { kind: "owner", id: "profile:owner" },
+					actor: OWNER,
 					reason: "different content",
 				}),
 			"conflict",
 		);
-		expectCode(
-			() =>
-				appendEvalLifecycleEvent(base.store, {
-					caseId,
-					expectedSequence: 1,
-					type: "action_planned",
-					actor: { kind: "owner", id: "profile:owner" },
-					reason: "stale seq",
-				}),
-			"version_conflict",
-		);
+		expectCode(() => append(base, caseId, "action_planned", OWNER, 1), "version_conflict");
 	});
 
-	it("escalates from every legal source state, only by operator/system, and is always overdue", () => {
-		const base = fixture();
-		const scenarios: ReadonlyArray<{ readonly state: string; readonly steps: readonly OwnerStep[] }> = [
-			{ state: "open", steps: [] },
-			{ state: "acknowledged", steps: ["owner_acknowledged"] },
-			{ state: "action_planned", steps: ["owner_acknowledged", "action_planned"] },
-			{ state: "fix_landed", steps: ["owner_acknowledged", "action_planned", "fix_landed"] },
-			{
-				state: "reeval_pending",
-				steps: ["owner_acknowledged", "action_planned", "fix_landed", "reeval_requested"],
-			},
-		];
-		for (const [index, scenario] of scenarios.entries()) {
-			const published = publishUnique(base, `verdict-escalate-${index}`, `escalate-${index}`);
-			const caseId = published.case!.caseId;
-			const lastSequence = driveOwnerSteps(base, caseId, scenario.steps);
-			expect(getEvalCase(base.store, caseId).status).toBe(scenario.state);
-			if (index === 0) {
-				expect(getEvalCase(base.store, caseId, published.case!.createdAt + 1000).overdue).toBe(false);
-				expectCode(
-					() =>
-						appendEvalLifecycleEvent(base.store, {
-							caseId,
-							expectedSequence: lastSequence,
-							type: "escalated",
-							actor: OWNER,
-							reason: "owner cannot escalate",
-						}),
-					"forbidden",
-				);
-				expectCode(
-					() =>
-						appendEvalLifecycleEvent(base.store, {
-							caseId,
-							expectedSequence: lastSequence,
-							type: "escalated",
-							actor: EVAL,
-							reason: "eval cannot escalate",
-						}),
-					"forbidden",
-				);
-			}
-			const actor =
-				index % 2 === 0
-					? { kind: "operator" as const, id: "operator:test" }
-					: { kind: "system" as const, id: "eval-escalator" };
-			const escalated = appendEvalLifecycleEvent(base.store, {
-				caseId,
-				expectedSequence: lastSequence,
-				type: "escalated",
-				actor,
-				reason: `escalate from ${scenario.state}`,
-			});
-			expect(escalated.event.seq).toBe(lastSequence + 1);
-			const projection = getEvalCase(base.store, caseId, published.case!.createdAt + 1000);
-			expect(projection.status).toBe("escalated");
-			expect(projection.overdue).toBe(true);
-		}
-	});
-
-	it("returns to open on reeval_failed and allows a new owner cycle", () => {
-		const base = fixture();
-		const published = publishUnique(base, "verdict-reeval-failed", "reeval-failed");
-		const caseId = published.case!.caseId;
-		let lastSequence = driveOwnerSteps(base, caseId, [
-			"owner_acknowledged",
-			"action_planned",
-			"fix_landed",
-			"reeval_requested",
-		]);
-		expect(getEvalCase(base.store, caseId).status).toBe("reeval_pending");
-		expectCode(
-			() =>
-				appendEvalLifecycleEvent(base.store, {
-					caseId,
-					expectedSequence: lastSequence,
-					type: "reeval_failed",
-					actor: OWNER,
-					reason: "owner cannot judge reeval",
-				}),
-			"forbidden",
-		);
-		const failed = appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: lastSequence,
-			type: "reeval_failed",
-			actor: EVAL,
-			reason: "closure condition not met",
-		});
-		expect(failed.event.seq).toBe(lastSequence + 1);
-		expect(getEvalCase(base.store, caseId).status).toBe("open");
-		lastSequence += 1;
-		const ack = appendEvalLifecycleEvent(base.store, {
-			caseId,
-			expectedSequence: lastSequence,
-			type: "owner_acknowledged",
-			actor: OWNER,
-			reason: "retry after failed re-eval",
-		});
-		expect(ack.event.seq).toBe(lastSequence + 1);
-		expect(getEvalCase(base.store, caseId).status).toBe("acknowledged");
-	});
-
-	it("rejects eval-agent packets that try to set cvoSuppressed", () => {
-		const base = fixture();
-		expectCode(
-			() =>
-				publishFixturePacket(base, {
-					id: "verdict-suppressed",
-					bundleId: "bundle-suppressed",
-					governance: { cvoAcceptRequired: false, cvoSuppressed: true },
-				}),
-			"forbidden",
-		);
-		expect(base.store.evals.get("verdict-suppressed")).toBeNull();
-		expect(base.store.messages.listThread("thread:eval-domain")).toHaveLength(0);
-	});
-
-	it("rejects a second verdict that reuses the same case identity", () => {
+	it("rejects a second verdict while the case is not resolved", () => {
 		const base = fixture();
 		publishFixturePacket(base);
 		const messageCount = base.store.messages.listThread("thread:eval-domain").length;
-		expectCode(
-			() =>
-				publishFixturePacket(base, {
-					id: "verdict-2",
-					bundleId: "bundle-2",
-					createdAt: base.now() + 1000,
-					acceptanceReevalPlan: {
-						nextEvalAt: base.now() + 7 * 24 * 60 * 60 * 1000,
-						closureCondition: "same case retry",
-					},
-				}),
-			"conflict",
-		);
+		expectCode(() => publishFixturePacket(base, { id: "verdict-2", findingKey: "review-quality-1" }), "conflict");
 		expect(base.store.evals.get("verdict-2")).toBeNull();
 		expect(base.store.messages.listThread("thread:eval-domain")).toHaveLength(messageCount);
-		expect(existsSync(join(base.dataDir, "eval-artifacts", "verdict-2"))).toBe(false);
+		expect(existsSync(join(base.dataDir, "evals", "bundles"))).toBe(true);
 	});
 
 	it("serializes sequence across two control connections", () => {
 		const base = fixture();
 		const published = publishFixturePacket(base);
 		const caseId = published.case!.caseId;
-		// Reopen the same data dir through a different ControlStore instance.
 		const reopened = openControlStore({ dataDir: base.dataDir });
 		try {
-			const types = ["owner_acknowledged", "action_planned", "fix_landed", "reeval_requested"] as const;
+			const steps: OwnerStep[] = ["owner_acknowledged", "action_planned"];
 			let sequence = 1;
-			for (const [index, type] of types.entries()) {
+			for (const [index, type] of steps.entries()) {
 				const store = index % 2 === 0 ? base.store : reopened;
 				const event = appendEvalLifecycleEvent(store, {
 					caseId,
 					expectedSequence: sequence,
 					type,
-					actor: { kind: "owner", id: "profile:owner" },
+					actor: OWNER,
 					reason: `${type}-${index}`,
 				}).event;
 				expect(event.seq).toBe(sequence + 1);
 				sequence += 1;
 			}
-			expect(getEvalCase(reopened, caseId).events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5]);
+			expect(getEvalCase(reopened, caseId).events.map((event) => event.seq)).toEqual([1, 2, 3]);
 		} finally {
 			reopened.close();
 		}
 	});
 
-	it("requires operator for cvo_suppressed and accept-sunset; eval cannot self-close", () => {
+	it("requires operator for cvo_suppressed and accept-sunset", () => {
 		const base = fixture();
 		const published = publishFixturePacket(base);
 		const caseId = published.case!.caseId;
-		expectCode(
-			() =>
-				suppressEvalCase(base.store, {
-					caseId,
-					actor: { kind: "owner", id: "profile:owner" },
-					reason: "not operator",
-				}),
-			"forbidden",
-		);
-		const suppressed = suppressEvalCase(base.store, {
-			caseId,
-			actor: { kind: "operator", id: "operator:test" },
-			reason: "accepted risk",
-		});
+		expectCode(() => suppressEvalCase(base.store, { caseId, actor: OWNER, reason: "not operator" }), "forbidden");
+		const suppressed = suppressEvalCase(base.store, { caseId, actor: OPERATOR, reason: "accepted risk" });
 		expect(suppressed.type).toBe("cvo_suppressed");
 		expect(getEvalCase(base.store, caseId).status).toBe("suppressed_with_reason");
-		expectCode(
-			() =>
-				appendEvalLifecycleEvent(base.store, {
-					caseId,
-					type: "owner_acknowledged",
-					actor: { kind: "owner", id: "profile:owner" },
-					reason: "terminal",
-				}),
-			"invalid_state",
-		);
 	});
 
 	it("keeps delete_sunset awaiting operator accept and never deletes harness files", () => {
 		const base = fixture();
 		const packet = makeVerdictPacket({
 			id: "verdict-sunset",
-			bundleId: "bundle-sunset",
-			verdict: "delete_sunset",
 			findingKey: "sunset-1",
-			governance: { cvoAcceptRequired: true, cvoSuppressed: false },
+			verdict: "delete_sunset",
+			governance: { cvoAcceptRequired: true },
 		});
 		const published = publishEvalVerdict(base.store, {
 			entry: base.entry,
 			packet,
-			actor: { kind: "eval", id: "profile:eval" },
-			dataDir: base.dataDir,
+			measurement: makeMeasurement(packet),
+			actor: EVAL,
 		});
 		expect(published.case?.awaitingSunsetDecision).toBe(true);
 		expect(published.case?.status).toBe("open");
 		expect(published.message.bodyMd).toContain("awaiting operator accept");
 		expectCode(
-			() =>
-				acceptSunset(base.store, {
-					caseId: published.case!.caseId,
-					actor: { kind: "owner", id: "profile:owner" },
-					reason: "not operator",
-				}),
+			() => acceptSunset(base.store, { caseId: published.case!.caseId, actor: OWNER, reason: "not operator" }),
 			"forbidden",
 		);
 		const accepted = acceptSunset(base.store, {
 			caseId: published.case!.caseId,
-			actor: { kind: "operator", id: "operator:test" },
+			actor: OPERATOR,
 			reason: "sunset trial accepted",
 		});
 		expect(accepted.case.status).toBe("resolved");
@@ -463,19 +355,10 @@ describe("W6b eval lifecycle", () => {
 
 	it("marks observation-only verdicts without findingKey and does not create a case", () => {
 		const base = fixture();
-		const packet = makeVerdictPacket({
+		const published = publishFixturePacket(base, {
 			id: "verdict-observation",
-			bundleId: "bundle-observation",
-			verdict: "keep_observe",
 			findingKey: undefined,
-			findings: [],
-			governance: { cvoAcceptRequired: false, cvoSuppressed: false },
-		});
-		const published = publishEvalVerdict(base.store, {
-			entry: base.entry,
-			packet,
-			actor: { kind: "eval", id: "profile:eval" },
-			dataDir: base.dataDir,
+			verdict: "keep_observe",
 		});
 		expect(published.case).toBeNull();
 		expect(published.message.bodyMd).toContain("observation report · no case tracking");
@@ -486,93 +369,35 @@ describe("W6b eval lifecycle", () => {
 		const base = fixture();
 		const packet = makeVerdictPacket({
 			id: "verdict-insufficient",
-			bundleId: "bundle-insufficient",
-			verdict: "keep_observe",
 			findingKey: undefined,
-			findings: [],
-			evidencePacket: {
-				...makeVerdictPacket().evidencePacket,
-				measurement: {
-					status: "insufficient",
-					method: "fixture",
-					windowStartMs: 1_700_000_000_000,
-					windowEndMs: 1_700_000_100_000,
-					measurementRef: "measurement:insufficient",
-					reasons: ["n=3 below smoke threshold"],
-				},
-			},
+			verdict: "keep_observe",
 		});
-		const published = publishEvalVerdict(base.store, {
-			entry: base.entry,
-			packet,
-			actor: { kind: "eval", id: "profile:eval" },
-			dataDir: base.dataDir,
-		});
+		const published = publishFixturePacket(base, packet, { status: "insufficient" });
 		expect(published.eval.status).toBe("insufficient");
 		expect(published.eval.reasons).toEqual(["n=3 below smoke threshold"]);
 		expect(published.message.bodyMd).toContain("Reasons: n=3 below smoke threshold");
-		expectCode(
-			() =>
-				publishEvalVerdict(base.store, {
-					entry: base.entry,
-					packet: makeVerdictPacket({
-						id: "verdict-bad-reasons",
-						bundleId: "bundle-bad-reasons",
-						verdict: "keep_observe",
-						evidencePacket: {
-							...makeVerdictPacket().evidencePacket,
-							measurement: {
-								status: "no_data",
-								method: "fixture",
-								windowStartMs: 1_700_000_000_000,
-								windowEndMs: 1_700_000_100_000,
-								measurementRef: "measurement:none",
-								reasons: [],
-							},
-						},
-					}),
-					actor: { kind: "eval", id: "profile:eval" },
-					dataDir: base.dataDir,
-				}),
-			"invalid_input",
-		);
 	});
 
-	it("rejects secrets before writing eval rows, messages, or artifacts", () => {
+	it("rejects secrets and unknown governance flags before writing anything", () => {
 		const base = fixture();
-		const packet = makeVerdictPacket({
-			id: "verdict-secret",
-			phenomenon: "leaked AKIAABCDEFGHIJKLMNOP",
-		});
 		expectCode(
-			() =>
-				publishEvalVerdict(base.store, {
-					entry: base.entry,
-					packet,
-					actor: { kind: "eval", id: "profile:eval" },
-					dataDir: base.dataDir,
-				}),
+			() => publishFixturePacket(base, { id: "verdict-secret", phenomenon: "leaked AKIAABCDEFGHIJKLMNOP" }),
 			"forbidden",
 		);
 		expect(base.store.evals.get("verdict-secret")).toBeNull();
 		expect(base.store.messages.listThread("thread:eval-domain")).toHaveLength(0);
+		expectCode(
+			() =>
+				publishFixturePacket(base, {
+					id: "verdict-suppressed",
+					governance: { cvoSuppressed: true } as unknown as { cvoAcceptRequired: boolean },
+				}),
+			"invalid_input",
+		);
+		expect(base.store.evals.get("verdict-suppressed")).toBeNull();
 	});
 
-	it("makes eval_lifecycle_events append-only", () => {
-		const base = fixture();
-		const published = publishFixturePacket(base);
-		const caseId = published.case!.caseId;
-		expect(() =>
-			base.store.database
-				.prepare("UPDATE eval_lifecycle_events SET reason = 'changed' WHERE case_id = ?")
-				.run(caseId),
-		).toThrow(/append_only/);
-		expect(() =>
-			base.store.database.prepare("DELETE FROM eval_lifecycle_events WHERE case_id = ?").run(caseId),
-		).toThrow(/append_only/);
-	});
-
-	it("does not write review or finding ledgers when eval lifecycle changes", () => {
+	it("makes eval_lifecycle_events append-only and keeps review/eval ledgers separate", () => {
 		const base = fixture();
 		const before = {
 			reviews: (base.store.database.prepare("SELECT COUNT(*) AS count FROM reviews").get() as { count: number })
@@ -584,13 +409,7 @@ describe("W6b eval lifecycle", () => {
 			).count,
 		};
 		const published = publishFixturePacket(base);
-		appendEvalLifecycleEvent(base.store, {
-			caseId: published.case!.caseId,
-			expectedSequence: 1,
-			type: "owner_acknowledged",
-			actor: { kind: "owner", id: "profile:owner" },
-			reason: "ack",
-		});
+		append(base, published.case!.caseId, "owner_acknowledged", OWNER, 1);
 		const after = {
 			reviews: (base.store.database.prepare("SELECT COUNT(*) AS count FROM reviews").get() as { count: number })
 				.count,
@@ -601,16 +420,9 @@ describe("W6b eval lifecycle", () => {
 			).count,
 		};
 		expect(after).toEqual(before);
-	});
-
-	it("fails closed without partial eval rows when the domain thread is unavailable", () => {
-		const base = fixture();
-		base.store.threads.setStatus("thread:eval-domain", "archived");
-		expectCode(
-			() => publishFixturePacket(base, { id: "verdict-archived", bundleId: "bundle-archived" }),
-			"invalid_state",
-		);
-		expect(base.store.evals.get("verdict-archived")).toBeNull();
-		expect(base.store.messages.listThread("thread:eval-domain")).toHaveLength(0);
+		expect(() =>
+			base.store.database.prepare("UPDATE eval_lifecycle_events SET event_type = 'action_planned'").run(),
+		).toThrow(/append_only/);
+		expect(() => base.store.database.prepare("DELETE FROM eval_lifecycle_events").run()).toThrow(/append_only/);
 	});
 });

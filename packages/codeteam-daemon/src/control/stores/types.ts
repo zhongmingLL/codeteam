@@ -569,11 +569,17 @@ export type ArtifactKind =
 	| "review"
 	| "verification"
 	| "merge-receipt"
-	| "log";
+	| "log"
+	| "eval-verdict"
+	| "eval-lifecycle-root"
+	| "eval-finding"
+	| "eval-snapshot"
+	| "eval-attribution"
+	| "eval-measurement-result";
 
 export interface Artifact {
 	id: string;
-	taskId: string;
+	taskId: string | null;
 	runId: string | null;
 	kind: ArtifactKind;
 	sha256: string;
@@ -587,7 +593,7 @@ export interface Artifact {
 
 export interface PutArtifactInput {
 	id?: string;
-	taskId: string;
+	taskId?: string | null;
 	runId?: string | null;
 	kind: ArtifactKind;
 	content: Buffer;

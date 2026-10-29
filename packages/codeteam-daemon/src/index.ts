@@ -106,6 +106,11 @@ export {
 	readEvalArtifact,
 	writeEvalArtifacts,
 } from "./eval/artifacts.ts";
+export {
+	type EvalConfig,
+	type ResolveEvalConfigOptions,
+	resolveEvalConfig,
+} from "./eval/config.ts";
 export * from "./eval/contract.ts";
 export {
 	type BuildTaskOutcomeEpisodeResult,
@@ -120,9 +125,11 @@ export {
 	type AcceptSunsetResult,
 	type AppendEvalLifecycleEventInput,
 	type AppendEvalLifecycleEventResult,
+	type AppendVerdictCycleInput,
 	type AppendVerdictOpenedInput,
 	acceptSunset,
 	appendEvalLifecycleEvent,
+	appendVerdictCycleEvent,
 	appendVerdictOpenedEvent,
 	deriveEvalCaseId,
 	type EvalCaseListFilter,
@@ -145,7 +152,9 @@ export {
 	buildEvalAgentInvocationPacket,
 	type LoadEvalDomainRegistryOptions,
 	loadEvalDomainRegistry,
+	loadEvalDomainRegistrySafe,
 	type ResolvedEvalDomain,
+	resolveEvalConfigForDataDir,
 	resolveEvalDomain,
 } from "./eval/registry.ts";
 export { type BuildEvalCorpusReportOptions, buildEvalCorpusReport } from "./eval/report.ts";

@@ -1,16 +1,25 @@
 domainId: "eval:task-outcome"
+displayName: "Task outcome"
 descriptionForHuman: "Judge whether task delivery outcomes and code-domain metrics justify fix/build/keep/sunset."
 systemThreadId: "thread:eval-task-outcome"
-evalAgent: "profile:eval"
+evalAgent:
+  profileId: "profile:eval"
+  role: "eval"
+  handle: "eval"
+  model: "eval-model"
 frequency: "daily"
 triggerPolicy:
-  kind: "time_only"
+  mode: "time_only"
   maxDetectionDelayHours: 24
 sourceAdapter: "task_outcome"
 sourceRefsKind: "task"
+handoffTargetResolver:
+  featureId: "F014"
+  ownerProfileId: "profile:owner"
+  threadLookup: "feature-thread"
 sla:
-  acknowledgementHours: 24
-  reevaluationHours: 168
+  acknowledgeHours: 24
+  reevalWithinHours: 168
 enabled: false
 dormancy:
   reason: "No operator-created eval system thread in a fresh install."

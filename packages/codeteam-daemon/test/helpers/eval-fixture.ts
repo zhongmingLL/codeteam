@@ -1,13 +1,18 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EvalDomainRegistryEntry, VerdictHandoffPacketV1 } from "../../src/eval/contract.ts";
+import type {
+	EvalDomainRegistryEntry,
+	EvalMeasurementResultV1,
+	VerdictHandoffPacketV1,
+} from "../../src/eval/contract.ts";
 import { publishEvalVerdict } from "../../src/eval/publish.ts";
 import { type ControlStore, openControlStore } from "../../src/index.ts";
 
 export const HEAD_SHA = "a".repeat(40);
 export const BASE_SHA = "b".repeat(40);
 export const MERGE_SHA = "c".repeat(40);
+export const COHORT_SHA = "d".repeat(64);
 
 export interface EvalFixture {
 	readonly store: ControlStore;
@@ -53,14 +58,26 @@ export function createEvalFixture(): EvalFixture {
 	store.threads.create({ id: "thread:work", title: "Work" });
 	const entry: EvalDomainRegistryEntry = {
 		domainId: "eval:test-domain",
+		displayName: "Test domain",
 		descriptionForHuman: "Test domain",
 		systemThreadId: "thread:eval-domain",
-		evalAgent: "profile:eval",
+		evalAgent: {
+			profileId: "profile:eval",
+			role: "eval",
+			handle: "eval",
+			model: "eval-model",
+		},
 		frequency: "daily",
-		triggerPolicy: { kind: "time_only", maxDetectionDelayHours: 24 },
+		triggerPolicy: { mode: "time_only", maxDetectionDelayHours: 24 },
 		sourceAdapter: "task_outcome",
 		sourceRefsKind: "task",
-		sla: { acknowledgementHours: 24, reevaluationHours: 168 },
+		handoffTargetResolver: {
+			featureId: "F014",
+			ownerProfileId: "profile:owner",
+			threadLookup: "feature-thread",
+		},
+		sla: { acknowledgeHours: 24, reevalWithinHours: 168 },
+		fixtures: [],
 		enabled: true,
 	};
 	return {
@@ -80,48 +97,86 @@ export function createEvalFixture(): EvalFixture {
 }
 
 export function makeVerdictPacket(overrides: Partial<VerdictHandoffPacketV1> = {}): VerdictHandoffPacketV1 {
+	const createdAt = new Date(1_700_000_000_000).toISOString();
 	const base: VerdictHandoffPacketV1 = {
 		v: 1,
 		id: "verdict-1",
 		domainId: "eval:test-domain",
-		bundleId: "bundle-1",
-		createdAt: 1_700_000_000_000,
+		findingKey: "review-quality-1",
+		createdAt,
 		phenomenon: "review quality fluctuates",
 		harnessUnderEval: { featureId: "F014", componentId: "review", name: "review quality" },
 		evidencePacket: {
-			sourceRefs: ["review:review-1"],
-			summary: "one review round with one confirmed finding",
-			measurement: {
-				status: "ok",
-				method: "fixture",
-				windowStartMs: 1_700_000_000_000,
-				windowEndMs: 1_700_000_100_000,
-				measurementRef: "measurement:1",
-				reasons: [],
-			},
+			snapshotRefs: ["snapshot:review-corpus-1"],
+			attributionRefs: ["attribution:review-corpus-1"],
+			metricRefs: ["metric:review-fp-rate", "metric:review-survival"],
+			sampleTraceRefs: ["inv:run-1"],
 		},
-		rootCauseHypothesis: "review prompt is under-specified",
+		dailyTrend: {
+			window: "P7D",
+			current: { review_fp_rate: 0.2 },
+			baseline: { review_fp_rate: 0.25 },
+			threshold: { review_fp_rate: 0.3 },
+			direction: "improved",
+		},
+		rootCauseHypothesis: {
+			summary: "review prompt is under-specified",
+			confidence: "medium",
+			alternatives: ["sample size is small"],
+		},
 		verdict: "fix",
-		findingKey: "review-quality-1",
-		findings: [
-			{
-				severity: "P2",
-				claim: "review misses a seeded bug",
-				evidenceRefs: ["review:review-1"],
-				requiredAction: "add a falsifier",
-			},
-		],
 		ownerAsk: {
 			targetFeatureId: "F014",
 			targetOwnerProfileId: "profile:owner",
 			requestedAction: "add a falsifier",
 		},
 		acceptanceReevalPlan: {
-			nextEvalAt: 1_700_000_000_000 + 7 * 24 * 60 * 60 * 1000,
+			nextEvalAt: new Date(1_700_000_000_000 + 7 * 24 * 60 * 60 * 1000).toISOString(),
 			closureCondition: "next review round catches the seeded bug",
 		},
 		counterarguments: ["fixture size is small"],
-		governance: { cvoAcceptRequired: false, cvoSuppressed: false },
+	};
+	return { ...base, ...overrides };
+}
+
+export function makeMeasurement(
+	packet: VerdictHandoffPacketV1,
+	overrides: Partial<EvalMeasurementResultV1> = {},
+): EvalMeasurementResultV1 {
+	const status = overrides.status ?? "ok";
+	const base: EvalMeasurementResultV1 = {
+		v: 1,
+		kind: "eval_measurement_result",
+		resultId: `measurement-${packet.id}`,
+		bundleId: `bundle-${packet.id}`,
+		domainId: packet.domainId,
+		generatedAt: packet.createdAt,
+		status,
+		method: "fixture",
+		cohort: {
+			ref: "cohort:review-corpus-1",
+			sha256: COHORT_SHA,
+			window: { startMs: 1_700_000_000_000, endMs: 1_700_000_100_000 },
+		},
+		metrics: [
+			{
+				metricId: "review_fp_rate",
+				role: "primary_loss",
+				n: 20,
+				pointEstimate: 0.2,
+				evidenceStatus: status === "ok" ? "sufficient" : "insufficient",
+			},
+		],
+		decision:
+			status === "ok"
+				? { status: "usable", reasons: [], withdrawalConditions: [] }
+				: {
+						status: "insufficient",
+						reasons: ["n=3 below smoke threshold"],
+						withdrawalConditions: ["n>=20 in the next window"],
+					},
+		actionProposal: { action: packet.verdict, rationale: "fixture action" },
+		measurementRef: `measurement-ref:${packet.id}`,
 	};
 	return { ...base, ...overrides };
 }
@@ -129,13 +184,15 @@ export function makeVerdictPacket(overrides: Partial<VerdictHandoffPacketV1> = {
 export function publishFixturePacket(
 	fixture: EvalFixture,
 	overrides: Partial<VerdictHandoffPacketV1> = {},
+	measurementOverrides: Partial<EvalMeasurementResultV1> = {},
 ): ReturnType<typeof publishEvalVerdict> {
 	const packet = makeVerdictPacket(overrides);
+	const measurement = makeMeasurement(packet, measurementOverrides);
 	return publishEvalVerdict(fixture.store, {
 		entry: fixture.entry,
 		packet,
-		actor: { kind: "eval", id: "profile:eval" },
-		dataDir: fixture.dataDir,
+		measurement,
+		actor: { kind: "agent", id: "profile:eval" },
 	});
 }
 

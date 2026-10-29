@@ -198,7 +198,7 @@ function liveObservation(evalRecord: Eval): EvalCorpusObservation | null {
 		modelFamily: resolveModelFamily(evalRecord.model),
 		role: evalRecord.role,
 		repo: metrics.repo ?? "unknown",
-		status: evalRecord.status,
+		status: evalRecord.status ?? "no_data",
 		taskOutcome: metrics,
 	};
 }

@@ -1,17 +1,26 @@
 /**
- * Frozen W6b eval contract. Consumers (CLI, W7 read surfaces, future
- * scheduler) depend on these shapes only; stores and implementation classes
- * are intentionally not part of the contract.
+ * Frozen W6b eval contract, aligned with the approved architecture reuse review
+ * (`docs/architecture/reuse-review/harness-eval.md`). Clowder wire names are
+ * mapped to codeteam identities (evalCat -> evalAgentProfileId, catId ->
+ * profileId), but the envelope/lifecycle semantics stay the same.
  */
 
-export type EvalDomainFrequency = "manual" | "daily" | "weekly";
-export type EvalTriggerPolicyKind = "time_only" | "threshold_or_time";
+export type EvalDomainFrequency = "daily" | "weekly" | `every-${number}d`;
+export type EvalTriggerPolicyMode = "time_only" | "threshold_or_time";
 export type EvalSourceAdapterId = "task_outcome" | "eval_corpus";
 export type EvalSourceRefsKind = "task" | "review" | "merge" | "artifact" | "trajectory";
 
 export interface EvalDomainSla {
-	readonly acknowledgementHours: number;
-	readonly reevaluationHours: number;
+	readonly acknowledgeHours: number;
+	readonly reevalWithinHours: number;
+}
+
+export interface EvalDomainFixture {
+	readonly id: string;
+	readonly featureId: `F${number}`;
+	readonly path: string;
+	readonly skill?: string;
+	readonly signal?: string;
 }
 
 export interface EvalDomainDormancy {
@@ -20,19 +29,44 @@ export interface EvalDomainDormancy {
 	readonly decisionRef: string;
 }
 
+export interface EvalTriggerPolicyTimeOnly {
+	readonly mode: "time_only";
+	readonly maxDetectionDelayHours: number;
+}
+
+export interface EvalTriggerPolicyThresholdOrTime {
+	readonly mode: "threshold_or_time";
+	readonly cooldownHours: number;
+	readonly eventSource: string;
+	readonly threshold: Readonly<Record<string, number>>;
+}
+
+export type EvalTriggerPolicy = EvalTriggerPolicyTimeOnly | EvalTriggerPolicyThresholdOrTime;
+
 export interface EvalDomainRegistryEntry {
 	readonly domainId: `eval:${string}`;
+	readonly displayName: string;
 	readonly descriptionForHuman?: string;
+	readonly metricGlossary?: Readonly<Record<string, string>>;
 	readonly systemThreadId: string;
-	readonly evalAgent: string;
-	readonly frequency: EvalDomainFrequency;
-	readonly triggerPolicy: {
-		readonly kind: EvalTriggerPolicyKind;
-		readonly maxDetectionDelayHours: number;
+	readonly evalAgent: {
+		readonly profileId: string;
+		readonly role: "eval";
+		readonly handle: string;
+		readonly model: string;
 	};
+	readonly frequency: EvalDomainFrequency;
+	readonly triggerPolicy: EvalTriggerPolicy;
 	readonly sourceAdapter: EvalSourceAdapterId;
 	readonly sourceRefsKind: EvalSourceRefsKind;
+	readonly handoffTargetResolver: {
+		readonly featureId: `F${number}`;
+		readonly ownerProfileId: string;
+		readonly threadLookup: "feature-thread";
+	};
 	readonly sla: EvalDomainSla;
+	readonly fixtures?: readonly EvalDomainFixture[];
+	readonly legacyScheduledTaskIds?: readonly string[];
 	readonly enabled: boolean;
 	readonly dormancy?: EvalDomainDormancy;
 }
@@ -42,52 +76,39 @@ export interface EvalAgentInvocationPacket {
 	readonly invocationId: string;
 	readonly domainId: string;
 	readonly targetThreadId: string;
-	readonly evalAgent: string;
+	readonly evalAgentProfileId: string;
 	readonly evalAgentRole: "eval";
 	readonly instructions: {
 		readonly goal: string;
-		readonly sourceAdapter: EvalSourceAdapterId;
-		readonly sourceRefsKind: EvalSourceRefsKind;
+		readonly publish: string;
 		readonly outputContract: "VerdictHandoffPacketV1";
+		readonly publishRequired: true;
 	};
 	readonly context: {
 		readonly windowStartMs: number;
 		readonly windowEndMs: number;
 		readonly trendRefs: readonly string[];
 		readonly verdictRefs: readonly string[];
+		readonly sourceAdapter: EvalSourceAdapterId;
+		readonly sourceRefsKind: EvalSourceRefsKind;
 		readonly sourceRefs: readonly string[];
+		readonly fixtures: readonly EvalDomainFixture[];
+		readonly handoffTargetResolver: EvalDomainRegistryEntry["handoffTargetResolver"];
 		readonly sla: EvalDomainSla;
 	};
 }
 
 export type EvalVerdictKind = "fix" | "build" | "keep_observe" | "delete_sunset";
 export type EvalMeasurementStatus = "ok" | "insufficient" | "no_data" | "degraded";
-
-export interface EvalMeasurementV1 {
-	readonly status: EvalMeasurementStatus;
-	readonly method: string;
-	readonly windowStartMs: number;
-	readonly windowEndMs: number;
-	readonly measurementRef: string;
-	readonly reasons: readonly string[];
-}
-
-export type EvalFindingSeverity = "P1" | "P2" | "P3";
-
-export interface VerdictFindingV1 {
-	readonly severity: EvalFindingSeverity;
-	readonly claim: string;
-	readonly evidenceRefs: readonly string[];
-	readonly falsifier?: string;
-	readonly requiredAction?: string;
-}
+export type EvalTrendDirection = "improved" | "regressed" | "flat" | "unknown";
+export type EvalRootCauseConfidence = "low" | "medium" | "high";
 
 export interface VerdictHandoffPacketV1 {
 	readonly v: 1;
 	readonly id: string;
-	readonly domainId: string;
-	readonly bundleId: string;
-	readonly createdAt: number;
+	readonly domainId: `eval:${string}`;
+	readonly findingKey?: string;
+	readonly createdAt: string;
 	readonly phenomenon: string;
 	readonly harnessUnderEval: {
 		readonly featureId: string;
@@ -95,30 +116,72 @@ export interface VerdictHandoffPacketV1 {
 		readonly name: string;
 	};
 	readonly evidencePacket: {
-		readonly sourceRefs: readonly string[];
-		readonly summary: string;
-		readonly measurement: EvalMeasurementV1;
-		readonly snapshotRef?: string;
-		readonly attributionRef?: string;
+		readonly snapshotRefs: readonly string[];
+		readonly attributionRefs: readonly string[];
+		readonly metricRefs: readonly string[];
+		readonly sampleTraceRefs: readonly string[];
 	};
-	readonly rootCauseHypothesis: string;
+	readonly dailyTrend: {
+		readonly window: string;
+		readonly current: Readonly<Record<string, number>>;
+		readonly baseline: Readonly<Record<string, number>>;
+		readonly threshold: Readonly<Record<string, number>>;
+		readonly direction: EvalTrendDirection;
+	};
+	readonly rootCauseHypothesis: {
+		readonly summary: string;
+		readonly confidence: EvalRootCauseConfidence;
+		readonly alternatives: readonly string[];
+	};
 	readonly verdict: EvalVerdictKind;
-	readonly findingKey?: string;
-	readonly findings: readonly VerdictFindingV1[];
 	readonly ownerAsk: {
 		readonly targetFeatureId: string;
 		readonly targetOwnerProfileId: string;
 		readonly requestedAction: string;
 	};
+	readonly governance?: {
+		readonly cvoAcceptRequired: boolean;
+	};
 	readonly acceptanceReevalPlan: {
-		readonly nextEvalAt: number;
+		readonly nextEvalAt: string;
 		readonly closureCondition: string;
 	};
 	readonly counterarguments: readonly string[];
-	readonly governance: {
-		readonly cvoAcceptRequired: boolean;
-		readonly cvoSuppressed: boolean;
+}
+
+export interface EvalMeasurementMetricV1 {
+	readonly metricId: string;
+	readonly role: "primary_loss" | "guardrail";
+	readonly n: number;
+	readonly pointEstimate: number | null;
+	readonly evidenceStatus: "sufficient" | "insufficient";
+}
+
+export interface EvalMeasurementResultV1 {
+	readonly v: 1;
+	readonly kind: "eval_measurement_result";
+	readonly resultId: string;
+	readonly bundleId: string;
+	readonly domainId: string;
+	readonly generatedAt: string;
+	readonly status: EvalMeasurementStatus;
+	readonly method: string;
+	readonly cohort: {
+		readonly ref: string;
+		readonly sha256: string;
+		readonly window: { readonly startMs: number; readonly endMs: number };
 	};
+	readonly metrics: readonly EvalMeasurementMetricV1[];
+	readonly decision: {
+		readonly status: "usable" | "insufficient";
+		readonly reasons: readonly string[];
+		readonly withdrawalConditions: readonly string[];
+	};
+	readonly actionProposal: {
+		readonly action: EvalVerdictKind;
+		readonly rationale: string;
+	};
+	readonly measurementRef: string;
 }
 
 export type EvalLifecycleStatus =
@@ -126,43 +189,57 @@ export type EvalLifecycleStatus =
 	| "acknowledged"
 	| "action_planned"
 	| "fix_landed"
+	| "main_landed"
 	| "reeval_pending"
 	| "monitoring"
-	| "escalated"
+	| "live_active"
 	| "resolved"
-	| "suppressed_with_reason";
+	| "suppressed_with_reason"
+	| "escalated";
 
 export type EvalLifecycleEventType =
 	| "verdict_opened"
+	| "verdict_cycle_observed"
 	| "owner_acknowledged"
 	| "action_planned"
-	| "fix_landed"
+	| "fix_recorded"
+	| "main_landed"
 	| "reeval_requested"
 	| "reeval_passed"
 	| "reeval_failed"
-	| "escalated"
 	| "cvo_suppressed"
-	| "sunset_accepted"
-	| "resolved";
+	| "sla_escalated"
+	| "owner_reassigned"
+	| "migration"
+	| "sunset_accepted";
 
-export type EvalLifecycleActorKind = "eval" | "owner" | "operator" | "system";
+export type EvalLifecycleActorKind = "agent" | "operator" | "system" | "migration";
 
 export interface EvalLifecycleActor {
 	readonly kind: EvalLifecycleActorKind;
 	readonly id: string;
 }
 
+export interface EvalLifecycleEventPayloadV1 {
+	readonly verdictId?: string;
+	readonly refs?: readonly string[];
+	readonly reason?: string;
+	readonly commitSha?: string;
+	readonly dueAt?: string;
+	readonly targetOwnerProfileId?: string;
+	readonly sourceRef?: string;
+}
+
 export interface EvalLifecycleEvent {
 	readonly eventId: string;
 	readonly caseId: string;
 	readonly seq: number;
-	readonly verdictId: string;
 	readonly domainId: string;
 	readonly type: EvalLifecycleEventType;
 	readonly actor: EvalLifecycleActor;
-	readonly reason: string;
-	readonly refs: readonly string[];
-	readonly createdAt: number;
+	readonly payload: EvalLifecycleEventPayloadV1;
+	readonly occurredAt: string;
+	readonly createdAt: string;
 }
 
 export interface EvalCaseProjection {
@@ -174,25 +251,48 @@ export interface EvalCaseProjection {
 	readonly status: EvalLifecycleStatus;
 	readonly awaitingSunsetDecision: boolean;
 	readonly overdue: boolean;
-	readonly lastEventAt: number;
+	readonly lastEventAt: string;
 	readonly nextSequence: number;
-	readonly createdAt: number;
+	readonly createdAt: string;
 	readonly sla: EvalDomainSla;
 	readonly events: readonly EvalLifecycleEvent[];
 }
 
+export interface EvalCaseListItem {
+	readonly caseId: string;
+	readonly verdictId: string;
+	readonly domainId: string;
+	readonly findingKey: string;
+	readonly verdict: EvalVerdictKind;
+	readonly status: EvalLifecycleStatus;
+	readonly awaitingSunsetDecision: boolean;
+	readonly overdue: boolean;
+	readonly createdAt: string;
+	readonly lastEventAt: string;
+}
+
+export type EvalArtifactKind =
+	| "eval-verdict"
+	| "eval-lifecycle-root"
+	| "eval-finding"
+	| "eval-snapshot"
+	| "eval-attribution"
+	| "eval-measurement-result";
+
 export interface EvalArtifactRef {
-	readonly kind: "eval-verdict" | "eval-finding" | "eval-snapshot" | "eval-attribution" | "lifecycle-root";
-	readonly path: string;
+	readonly artifactId: string;
+	readonly kind: EvalArtifactKind;
 	readonly sha256: string;
 	readonly bytes: number;
+	readonly path: string;
 }
 
 export interface EvalVerdictMetricsV1 {
 	readonly v: 1;
 	readonly kind: "eval_verdict";
 	readonly packet: VerdictHandoffPacketV1;
-	readonly evalAgent: string;
+	readonly measurement: EvalMeasurementResultV1;
+	readonly evalAgentProfileId: string;
 	readonly systemThreadId: string;
 	readonly sla: EvalDomainSla;
 	readonly messageId: string;
@@ -206,7 +306,7 @@ export interface LifecycleRootArtifactV1 {
 	readonly schemaVersion: 1;
 	readonly verdictId: string;
 	readonly domainId: string;
-	readonly createdAt: number;
+	readonly createdAt: string;
 	readonly verdict: EvalVerdictKind;
 	readonly harnessUnderEval: VerdictHandoffPacketV1["harnessUnderEval"];
 	readonly ownerAsk: VerdictHandoffPacketV1["ownerAsk"];
@@ -334,23 +434,11 @@ export interface EvalCorpusReport {
 	readonly warnings: readonly string[];
 }
 
-export interface EvalCaseListItem {
-	readonly caseId: string;
-	readonly verdictId: string;
-	readonly domainId: string;
-	readonly findingKey: string;
-	readonly verdict: EvalVerdictKind;
-	readonly status: EvalLifecycleStatus;
-	readonly awaitingSunsetDecision: boolean;
-	readonly overdue: boolean;
-	readonly createdAt: number;
-	readonly lastEventAt: number;
-}
-
 export const EVAL_DOMAIN_ID_PATTERN = /^eval:[a-z0-9][a-z0-9-]*$/;
 export const EVAL_BUNDLE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 export const EVAL_FINDING_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 export const EVAL_CASE_ID_PATTERN = /^eval-case-v1-[a-f0-9]{64}$/;
+export const EVAL_SHA_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 export const EVAL_VERDICT_KINDS: readonly EvalVerdictKind[] = ["fix", "build", "keep_observe", "delete_sunset"];
 export const EVAL_MEASUREMENT_STATUSES: readonly EvalMeasurementStatus[] = [
 	"ok",
@@ -363,24 +451,34 @@ export const EVAL_LIFECYCLE_STATUSES: readonly EvalLifecycleStatus[] = [
 	"acknowledged",
 	"action_planned",
 	"fix_landed",
+	"main_landed",
 	"reeval_pending",
 	"monitoring",
-	"escalated",
+	"live_active",
 	"resolved",
 	"suppressed_with_reason",
+	"escalated",
 ];
 export const EVAL_LIFECYCLE_EVENT_TYPES: readonly EvalLifecycleEventType[] = [
 	"verdict_opened",
+	"verdict_cycle_observed",
 	"owner_acknowledged",
 	"action_planned",
-	"fix_landed",
+	"fix_recorded",
+	"main_landed",
 	"reeval_requested",
 	"reeval_passed",
 	"reeval_failed",
-	"escalated",
 	"cvo_suppressed",
+	"sla_escalated",
+	"owner_reassigned",
+	"migration",
 	"sunset_accepted",
-	"resolved",
 ];
-export const EVAL_LIFECYCLE_ACTOR_KINDS: readonly EvalLifecycleActorKind[] = ["eval", "owner", "operator", "system"];
+export const EVAL_LIFECYCLE_ACTOR_KINDS: readonly EvalLifecycleActorKind[] = [
+	"agent",
+	"operator",
+	"system",
+	"migration",
+];
 export const TERMINAL_EVAL_STATUSES: readonly EvalLifecycleStatus[] = ["resolved", "suppressed_with_reason"];

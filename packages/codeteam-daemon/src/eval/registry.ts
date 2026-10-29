@@ -1,48 +1,62 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { parse } from "yaml";
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import type { AgentProfile, Thread } from "../control/stores/types.ts";
+import { type EvalConfig, resolveEvalConfig } from "./config.ts";
 import {
 	EVAL_DOMAIN_ID_PATTERN,
 	type EvalAgentInvocationPacket,
+	type EvalDomainFixture,
 	type EvalDomainRegistryEntry,
 	type EvalDomainSla,
 	type EvalSourceAdapterId,
 	type EvalSourceRefsKind,
-	type EvalTriggerPolicyKind,
+	type EvalTriggerPolicy,
 } from "./contract.ts";
 
 const ENTRY_KEYS = new Set([
 	"domainId",
+	"displayName",
 	"descriptionForHuman",
+	"metricGlossary",
 	"systemThreadId",
 	"evalAgent",
 	"frequency",
 	"triggerPolicy",
 	"sourceAdapter",
 	"sourceRefsKind",
+	"handoffTargetResolver",
 	"sla",
+	"fixtures",
+	"legacyScheduledTaskIds",
 	"enabled",
 	"dormancy",
 ]);
-const TRIGGER_POLICY_KEYS = new Set(["kind", "maxDetectionDelayHours"]);
-const SLA_KEYS = new Set(["acknowledgementHours", "reevaluationHours"]);
+const EVAL_AGENT_KEYS = new Set(["profileId", "role", "handle", "model"]);
+const HANDOFF_KEYS = new Set(["featureId", "ownerProfileId", "threadLookup"]);
+const SLA_KEYS = new Set(["acknowledgeHours", "reevalWithinHours"]);
 const DORMANCY_KEYS = new Set(["reason", "revivalPath", "decisionRef"]);
-const FREQUENCIES = new Set(["manual", "daily", "weekly"]);
-const TRIGGER_POLICY_KINDS = new Set<EvalTriggerPolicyKind>(["time_only", "threshold_or_time"]);
+const FIXTURE_KEYS = new Set(["id", "featureId", "path", "skill", "signal"]);
+const TIME_ONLY_KEYS = new Set(["mode", "maxDetectionDelayHours"]);
+const THRESHOLD_KEYS = new Set(["mode", "cooldownHours", "eventSource", "threshold"]);
+const FREQUENCY_PATTERN = /^(?:daily|weekly|every-[1-9][0-9]*d)$/;
+const FEATURE_ID_PATTERN = /^F[0-9]+$/;
 const SOURCE_ADAPTERS = new Set<EvalSourceAdapterId>(["task_outcome", "eval_corpus"]);
 const SOURCE_REF_KINDS = new Set<EvalSourceRefsKind>(["task", "review", "merge", "artifact", "trajectory"]);
 
 export interface LoadEvalDomainRegistryOptions {
 	readonly dir: string;
 	readonly store?: ControlStore;
+	readonly defaults?: EvalDomainSla;
+	readonly allowMissing?: boolean;
 }
 
 export interface ResolvedEvalDomain {
 	readonly entry: EvalDomainRegistryEntry;
 	readonly profile: AgentProfile;
+	readonly owner: AgentProfile;
 	readonly thread: Thread;
 }
 
@@ -81,20 +95,106 @@ function positiveInteger(value: unknown, label: string): number {
 	return value;
 }
 
-function parseDomainEntry(raw: unknown, filePath: string): EvalDomainRegistryEntry {
+function parseSla(value: unknown, filePath: string, defaults: EvalDomainSla): EvalDomainSla {
+	if (value === undefined) return defaults;
+	const raw = assertObject(value, `${filePath}: sla`, SLA_KEYS);
+	return {
+		acknowledgeHours: positiveInteger(raw.acknowledgeHours, `${filePath}: sla.acknowledgeHours`),
+		reevalWithinHours: positiveInteger(raw.reevalWithinHours, `${filePath}: sla.reevalWithinHours`),
+	};
+}
+
+function parseTriggerPolicy(value: unknown, filePath: string): EvalTriggerPolicy {
+	const raw = assertObject(value, `${filePath}: triggerPolicy`, new Set([...TIME_ONLY_KEYS, ...THRESHOLD_KEYS]));
+	const mode = nonEmptyString(raw.mode, `${filePath}: triggerPolicy.mode`);
+	if (mode === "time_only") {
+		for (const key of Object.keys(raw)) {
+			if (!TIME_ONLY_KEYS.has(key)) {
+				throw new ControlError("invalid_input", `${filePath}: time_only trigger has unknown key ${key}`);
+			}
+		}
+		return {
+			mode,
+			maxDetectionDelayHours: positiveInteger(
+				raw.maxDetectionDelayHours,
+				`${filePath}: triggerPolicy.maxDetectionDelayHours`,
+			),
+		};
+	}
+	if (mode === "threshold_or_time") {
+		for (const key of Object.keys(raw)) {
+			if (!THRESHOLD_KEYS.has(key)) {
+				throw new ControlError("invalid_input", `${filePath}: threshold trigger has unknown key ${key}`);
+			}
+		}
+		const thresholdRaw = assertObject(
+			raw.threshold,
+			`${filePath}: triggerPolicy.threshold`,
+			new Set(Object.keys(raw.threshold ?? {})),
+		);
+		const threshold: Record<string, number> = {};
+		for (const [key, entry] of Object.entries(thresholdRaw)) {
+			if (typeof entry !== "number" || !Number.isFinite(entry)) {
+				throw new ControlError("invalid_input", `${filePath}: triggerPolicy.threshold.${key} must be a number`);
+			}
+			threshold[key] = entry;
+		}
+		return {
+			mode,
+			cooldownHours: positiveInteger(raw.cooldownHours, `${filePath}: triggerPolicy.cooldownHours`),
+			eventSource: nonEmptyString(raw.eventSource, `${filePath}: triggerPolicy.eventSource`),
+			threshold,
+		};
+	}
+	throw new ControlError("invalid_input", `${filePath}: invalid triggerPolicy.mode ${mode}`);
+}
+
+function parseFixtures(value: unknown, filePath: string): EvalDomainFixture[] {
+	if (value === undefined) return [];
+	if (!Array.isArray(value)) throw new ControlError("invalid_input", `${filePath}: fixtures must be an array`);
+	return value.map((fixture, index) => {
+		const raw = assertObject(fixture, `${filePath}: fixtures[${index}]`, FIXTURE_KEYS);
+		const path = nonEmptyString(raw.path, `${filePath}: fixtures[${index}].path`);
+		if (path.split(/[\\/]+/).includes("..")) {
+			throw new ControlError("invalid_input", `${filePath}: fixtures[${index}].path must not traverse`);
+		}
+		return {
+			id: nonEmptyString(raw.id, `${filePath}: fixtures[${index}].id`),
+			featureId: parseFeatureId(raw.featureId, `${filePath}: fixtures[${index}].featureId`),
+			path,
+			...(raw.skill === undefined
+				? {}
+				: { skill: nonEmptyString(raw.skill, `${filePath}: fixtures[${index}].skill`) }),
+			...(raw.signal === undefined
+				? {}
+				: { signal: nonEmptyString(raw.signal, `${filePath}: fixtures[${index}].signal`) }),
+		};
+	});
+}
+
+function parseFeatureId(value: unknown, label: string): `F${number}` {
+	const featureId = nonEmptyString(value, label);
+	if (!FEATURE_ID_PATTERN.test(featureId)) throw new ControlError("invalid_input", `${label} must look like F123`);
+	return featureId as `F${number}`;
+}
+
+function parseDomainEntry(raw: unknown, filePath: string, defaults: EvalDomainSla): EvalDomainRegistryEntry {
 	const entry = assertObject(raw, `eval domain ${filePath}`, ENTRY_KEYS);
 	const domainId = nonEmptyString(entry.domainId, `${filePath}: domainId`);
 	if (!EVAL_DOMAIN_ID_PATTERN.test(domainId)) {
 		throw new ControlError("invalid_input", `${filePath}: invalid domainId ${domainId}`);
 	}
 	const frequency = nonEmptyString(entry.frequency, `${filePath}: frequency`);
-	if (!FREQUENCIES.has(frequency)) {
+	if (!FREQUENCY_PATTERN.test(frequency)) {
 		throw new ControlError("invalid_input", `${filePath}: invalid frequency ${frequency}`);
 	}
-	const triggerPolicyRaw = assertObject(entry.triggerPolicy, `${filePath}: triggerPolicy`, TRIGGER_POLICY_KEYS);
-	const triggerKind = nonEmptyString(triggerPolicyRaw.kind, `${filePath}: triggerPolicy.kind`);
-	if (!TRIGGER_POLICY_KINDS.has(triggerKind as EvalTriggerPolicyKind)) {
-		throw new ControlError("invalid_input", `${filePath}: invalid triggerPolicy.kind ${triggerKind}`);
+	const evalAgentRaw = assertObject(entry.evalAgent, `${filePath}: evalAgent`, EVAL_AGENT_KEYS);
+	const evalAgentRole = nonEmptyString(evalAgentRaw.role, `${filePath}: evalAgent.role`);
+	if (evalAgentRole !== "eval") throw new ControlError("invalid_input", `${filePath}: evalAgent.role must be eval`);
+	const handoffRaw = assertObject(entry.handoffTargetResolver, `${filePath}: handoffTargetResolver`, HANDOFF_KEYS);
+	const threadLookup = nonEmptyString(handoffRaw.threadLookup, `${filePath}: handoffTargetResolver.threadLookup`);
+	if (threadLookup !== "feature-thread") {
+		throw new ControlError("invalid_input", `${filePath}: handoffTargetResolver.threadLookup must be feature-thread`);
 	}
 	const sourceAdapter = nonEmptyString(entry.sourceAdapter, `${filePath}: sourceAdapter`);
 	if (!SOURCE_ADAPTERS.has(sourceAdapter as EvalSourceAdapterId)) {
@@ -103,14 +203,6 @@ function parseDomainEntry(raw: unknown, filePath: string): EvalDomainRegistryEnt
 	const sourceRefsKind = nonEmptyString(entry.sourceRefsKind, `${filePath}: sourceRefsKind`);
 	if (!SOURCE_REF_KINDS.has(sourceRefsKind as EvalSourceRefsKind)) {
 		throw new ControlError("invalid_input", `${filePath}: invalid sourceRefsKind ${sourceRefsKind}`);
-	}
-	const slaRaw = assertObject(entry.sla, `${filePath}: sla`, SLA_KEYS);
-	const sla: EvalDomainSla = {
-		acknowledgementHours: positiveInteger(slaRaw.acknowledgementHours, `${filePath}: sla.acknowledgementHours`),
-		reevaluationHours: positiveInteger(slaRaw.reevaluationHours, `${filePath}: sla.reevaluationHours`),
-	};
-	if (sla.reevaluationHours < sla.acknowledgementHours) {
-		throw new ControlError("invalid_input", `${filePath}: reevaluationHours must be >= acknowledgementHours`);
 	}
 	if (typeof entry.enabled !== "boolean") {
 		throw new ControlError("invalid_input", `${filePath}: enabled must be a boolean`);
@@ -130,24 +222,58 @@ function parseDomainEntry(raw: unknown, filePath: string): EvalDomainRegistryEnt
 	if (entry.enabled && dormancy) {
 		throw new ControlError("invalid_input", `${filePath}: enabled domain must not carry stale dormancy metadata`);
 	}
+	const fixtures = parseFixtures(entry.fixtures, filePath);
+	const legacyScheduledTaskIds =
+		entry.legacyScheduledTaskIds === undefined
+			? []
+			: Array.isArray(entry.legacyScheduledTaskIds)
+				? entry.legacyScheduledTaskIds.map((item, index) =>
+						nonEmptyString(item, `${filePath}: legacyScheduledTaskIds[${index}]`),
+					)
+				: (() => {
+						throw new ControlError("invalid_input", `${filePath}: legacyScheduledTaskIds must be an array`);
+					})();
+	const metricGlossary =
+		entry.metricGlossary === undefined
+			? undefined
+			: (() => {
+					const rawGlossary = assertObject(
+						entry.metricGlossary,
+						`${filePath}: metricGlossary`,
+						new Set(Object.keys(entry.metricGlossary as Record<string, unknown>)),
+					);
+					const glossary: Record<string, string> = {};
+					for (const [key, value] of Object.entries(rawGlossary)) {
+						glossary[key] = nonEmptyString(value, `${filePath}: metricGlossary.${key}`);
+					}
+					return glossary;
+				})();
 	return Object.freeze({
 		domainId: domainId as `eval:${string}`,
+		displayName: nonEmptyString(entry.displayName, `${filePath}: displayName`),
 		...(entry.descriptionForHuman === undefined
 			? {}
 			: { descriptionForHuman: nonEmptyString(entry.descriptionForHuman, `${filePath}: descriptionForHuman`) }),
+		...(metricGlossary ? { metricGlossary } : {}),
 		systemThreadId: nonEmptyString(entry.systemThreadId, `${filePath}: systemThreadId`),
-		evalAgent: nonEmptyString(entry.evalAgent, `${filePath}: evalAgent`),
-		frequency: frequency as EvalDomainRegistryEntry["frequency"],
-		triggerPolicy: {
-			kind: triggerKind as EvalTriggerPolicyKind,
-			maxDetectionDelayHours: positiveInteger(
-				triggerPolicyRaw.maxDetectionDelayHours,
-				`${filePath}: triggerPolicy.maxDetectionDelayHours`,
-			),
+		evalAgent: {
+			profileId: nonEmptyString(evalAgentRaw.profileId, `${filePath}: evalAgent.profileId`),
+			role: "eval" as const,
+			handle: nonEmptyString(evalAgentRaw.handle, `${filePath}: evalAgent.handle`),
+			model: nonEmptyString(evalAgentRaw.model, `${filePath}: evalAgent.model`),
 		},
+		frequency: frequency as EvalDomainRegistryEntry["frequency"],
+		triggerPolicy: parseTriggerPolicy(entry.triggerPolicy, filePath),
 		sourceAdapter: sourceAdapter as EvalSourceAdapterId,
 		sourceRefsKind: sourceRefsKind as EvalSourceRefsKind,
-		sla,
+		handoffTargetResolver: {
+			featureId: parseFeatureId(handoffRaw.featureId, `${filePath}: handoffTargetResolver.featureId`),
+			ownerProfileId: nonEmptyString(handoffRaw.ownerProfileId, `${filePath}: handoffTargetResolver.ownerProfileId`),
+			threadLookup: "feature-thread" as const,
+		},
+		sla: parseSla(entry.sla, filePath, defaults),
+		fixtures,
+		legacyScheduledTaskIds,
 		enabled: entry.enabled,
 		...(dormancy ? { dormancy } : {}),
 	});
@@ -160,13 +286,16 @@ export function loadEvalDomainRegistry(options: LoadEvalDomainRegistryOptions): 
 			.filter((name) => [".yaml", ".yml"].includes(extname(name)))
 			.sort();
 	} catch (error) {
+		if (options.allowMissing) return [];
 		throw new ControlError("invalid_input", `cannot read eval domain registry ${options.dir}`, { cause: error });
 	}
 	if (files.length === 0) {
+		if (options.allowMissing) return [];
 		throw new ControlError("invalid_input", `eval domain registry ${options.dir} has no YAML files`);
 	}
 	const entries: EvalDomainRegistryEntry[] = [];
 	const seen = new Set<string>();
+	const defaults = options.defaults ?? { acknowledgeHours: 24, reevalWithinHours: 72 };
 	for (const file of files) {
 		const path = join(options.dir, file);
 		let parsed: unknown;
@@ -175,7 +304,7 @@ export function loadEvalDomainRegistry(options: LoadEvalDomainRegistryOptions): 
 		} catch (error) {
 			throw new ControlError("invalid_input", `cannot parse eval domain ${path}`, { cause: error });
 		}
-		const entry = parseDomainEntry(parsed, path);
+		const entry = parseDomainEntry(parsed, path, defaults);
 		if (seen.has(entry.domainId)) {
 			throw new ControlError("invalid_input", `duplicate eval domainId ${entry.domainId}`);
 		}
@@ -184,6 +313,16 @@ export function loadEvalDomainRegistry(options: LoadEvalDomainRegistryOptions): 
 		entries.push(entry);
 	}
 	return entries;
+}
+
+export function loadEvalDomainRegistrySafe(options: LoadEvalDomainRegistryOptions): {
+	readonly entries: readonly EvalDomainRegistryEntry[];
+	readonly warnings: readonly string[];
+} {
+	if (options.allowMissing && !existsSync(options.dir)) {
+		return { entries: [], warnings: [`eval domain registry ${options.dir} is missing`] };
+	}
+	return { entries: loadEvalDomainRegistry(options), warnings: [] };
 }
 
 export function resolveEvalDomain(options: {
@@ -198,21 +337,43 @@ export function resolveEvalDomain(options: {
 	if (!role || role.status !== "active") {
 		throw new ControlError("invalid_state", "eval role is missing or disabled");
 	}
-	const profile = store.profiles.get(entry.evalAgent);
+	const profile = store.profiles.get(entry.evalAgent.profileId);
 	if (!profile) {
 		throw new ControlError(
 			"not_found",
-			`eval domain ${entry.domainId} references missing profile ${entry.evalAgent}`,
+			`eval domain ${entry.domainId} references missing profile ${entry.evalAgent.profileId}`,
 		);
 	}
 	if (profile.role !== "eval") {
 		throw new ControlError(
 			"invalid_state",
-			`eval domain ${entry.domainId} profile ${entry.evalAgent} has role ${profile.role}, expected eval`,
+			`eval domain ${entry.domainId} profile ${entry.evalAgent.profileId} has role ${profile.role}, expected eval`,
 		);
 	}
 	if (profile.status !== "active") {
-		throw new ControlError("invalid_state", `eval domain ${entry.domainId} profile ${entry.evalAgent} is disabled`);
+		throw new ControlError(
+			"invalid_state",
+			`eval domain ${entry.domainId} profile ${entry.evalAgent.profileId} is disabled`,
+		);
+	}
+	if (profile.model !== entry.evalAgent.model) {
+		throw new ControlError(
+			"invalid_state",
+			`eval domain ${entry.domainId} model ${entry.evalAgent.model} does not match profile model ${profile.model}`,
+		);
+	}
+	const owner = store.profiles.get(entry.handoffTargetResolver.ownerProfileId);
+	if (!owner) {
+		throw new ControlError(
+			"not_found",
+			`eval domain ${entry.domainId} references missing owner profile ${entry.handoffTargetResolver.ownerProfileId}`,
+		);
+	}
+	if (owner.status !== "active") {
+		throw new ControlError(
+			"invalid_state",
+			`eval domain ${entry.domainId} owner profile ${entry.handoffTargetResolver.ownerProfileId} is disabled`,
+		);
 	}
 	const thread = store.threads.get(entry.systemThreadId);
 	if (!thread) {
@@ -227,7 +388,7 @@ export function resolveEvalDomain(options: {
 			`eval domain ${entry.domainId} system thread ${entry.systemThreadId} is archived`,
 		);
 	}
-	return { entry, profile, thread };
+	return { entry, profile, owner, thread };
 }
 
 function assertRefs(refs: readonly string[] | undefined, label: string): string[] {
@@ -264,23 +425,31 @@ export function buildEvalAgentInvocationPacket(options: {
 		invocationId: nonEmptyString(input.invocationId, "invocationId"),
 		domainId: entry.domainId,
 		targetThreadId: entry.systemThreadId,
-		evalAgent: resolved.profile.id,
+		evalAgentProfileId: resolved.profile.id,
 		evalAgentRole: "eval",
 		instructions: {
 			goal:
-				entry.descriptionForHuman ??
-				`Evaluate ${entry.sourceAdapter} evidence and return a verdict handoff packet.`,
-			sourceAdapter: entry.sourceAdapter,
-			sourceRefsKind: entry.sourceRefsKind,
+				entry.descriptionForHuman ?? `Evaluate ${entry.displayName} evidence and return a verdict handoff packet.`,
+			publish:
+				"Return a VerdictHandoffPacketV1 with non-empty snapshotRefs, attributionRefs, metricRefs, and sampleTraceRefs. The publish pipeline writes immutable artifacts and lifecycle events; do not write the control DB directly.",
 			outputContract: "VerdictHandoffPacketV1",
+			publishRequired: true,
 		},
 		context: {
 			windowStartMs: input.windowStartMs,
 			windowEndMs: input.windowEndMs,
 			trendRefs: assertRefs(input.trendRefs, "trendRefs"),
 			verdictRefs: assertRefs(input.verdictRefs, "verdictRefs"),
+			sourceAdapter: entry.sourceAdapter,
+			sourceRefsKind: entry.sourceRefsKind,
 			sourceRefs,
+			fixtures: entry.fixtures ?? [],
+			handoffTargetResolver: entry.handoffTargetResolver,
 			sla: entry.sla,
 		},
 	};
+}
+
+export function resolveEvalConfigForDataDir(dataDir: string, env: NodeJS.ProcessEnv = process.env): EvalConfig {
+	return resolveEvalConfig({ env, dataDir });
 }

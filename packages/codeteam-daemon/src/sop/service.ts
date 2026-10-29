@@ -196,6 +196,9 @@ export class SopService {
 			if (artifact.sha256 !== subjectRevision) {
 				throw new ControlError("invalid_input", "artifact evidence subjectRevision must match sha256");
 			}
+			if (artifact.taskId === null) {
+				throw new ControlError("invalid_input", "eval artifacts cannot satisfy SOP task evidence");
+			}
 			this.assertTaskBelongsToBacklog(artifact.taskId, backlogItemId);
 			if (checkName === "qualityGatePassed" && artifact.kind !== "test-report" && artifact.kind !== "verification") {
 				throw new ControlError("invalid_input", "quality gate artifact must be a test-report or verification");

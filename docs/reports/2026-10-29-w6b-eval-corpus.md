@@ -71,6 +71,8 @@ Synthetic overall: 20 clean cases, 4 clean false positives; 20 seeded cases,
 `materializeTaskOutcomeEpisodes()` reads canonical
 `tasks/runs/reviews/findings/verifications/merges/budgets/messages`, writes one
 `evals` snapshot per task bundle, and keeps W6a `sourceRefs` for drill-down.
+Eval verdict/finding/measurement evidence uses the existing `artifacts` table
+with `eval-*` kinds; there is no separate `eval-artifacts/` index.
 `buildEvalCorpusReport({ store })` only includes live episodes whose
 `evals.status='ok'`; `insufficient`/`no_data`/`degraded` rows are counted as
 excluded. A cell with live n>=20 and a resolvable model family is the first

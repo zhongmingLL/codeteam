@@ -63,6 +63,29 @@ describe("W6b eval schema", () => {
 		]) {
 			expect(columns.some((column) => column.name === name)).toBe(true);
 		}
+		const artifactColumns = database.prepare("PRAGMA table_info(artifacts)").all() as unknown as {
+			name: string;
+			notnull: number;
+		}[];
+		expect(artifactColumns.find((column) => column.name === "task_id")?.notnull).toBe(0);
+		const lifecycleColumns = database.prepare("PRAGMA table_info(eval_lifecycle_events)").all() as unknown as {
+			name: string;
+		}[];
+		for (const name of [
+			"event_id",
+			"case_id",
+			"seq",
+			"domain_id",
+			"event_type",
+			"actor_kind",
+			"actor_id",
+			"payload_json",
+			"occurred_at",
+			"created_at",
+		]) {
+			expect(lifecycleColumns.some((column) => column.name === name)).toBe(true);
+		}
+		expect(lifecycleColumns.some((column) => column.name === "verdict_id")).toBe(false);
 		database.close();
 	});
 
@@ -118,6 +141,16 @@ describe("W6b eval schema", () => {
 			measurementRef: "measurement:1",
 		});
 		expect(valid.reasons).toEqual(["n<20"]);
+		const evalArtifact = store.evalArtifacts.put({
+			taskId: null,
+			kind: "eval-verdict",
+			mediaType: "application/json",
+			content: Buffer.from("{}\n"),
+			provenance: { sourceKind: "eval", evalVerdictId: "verdict-1", evalDomainId: "eval:test-domain" },
+		});
+		expect(evalArtifact.taskId).toBeNull();
+		expect(store.evalArtifacts.get(evalArtifact.id)?.kind).toBe("eval-verdict");
+		expect(() => store.evalArtifacts.delete(evalArtifact.id)).toThrow(/immutable/);
 		store.close();
 	});
 
