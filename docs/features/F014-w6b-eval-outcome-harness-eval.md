@@ -90,16 +90,17 @@ tool usage；W6b 要把这些 canonical 数据变成可决策的 eval：
 - 关键不变量：
   - outcome episode 只落 `evals`，同 bundle 多 snapshot 只取最新；
     synthetic/live 分账，live n<20 或 non-ok episode 不进入质量结论。
-  - `eval_lifecycle_events` 是唯一 case log；11 transitions × actor matrix；
-    terminal 只能 operator/system；`delete_sunset` 未 operator accept 保持
-    awaiting，且不执行删除。
+  - `eval_lifecycle_events` 是唯一 case log；11 transitions × actor matrix
+    （含 `escalated` 五个来源态、`reeval_failed` 回退、`cvoSuppressed`
+    packet 拒绝）；terminal 只能 operator/system；`delete_sunset` 未 operator
+    accept 保持 awaiting，且不执行删除。
   - publish 在 `BEGIN IMMEDIATE` 内写 eval + `verdict_opened` + system thread
     message；artifact 0600/wx/digest 校验；自由文本 secret 扫描 fail closed。
   - review `reviews/findings/verifications` 与 eval lifecycle 两本账，测试
     断言生命周期写入不改变 review 表计数。
 - 验证（`/home/ming/agent/codeteam-w6b`）：
   - `NODE_ENV=development npm run build:offline`：exit 0。
-  - `packages/codeteam-daemon`：**76 files passed + 2 skipped；514 tests
+  - `packages/codeteam-daemon`：**76 files passed + 2 skipped；517 tests
     passed + 2 skipped**。
   - root `tsc --noEmit`：exit 0；`biome check`（W6b changed files）：clean。
   - `check-runtime-deps` / `check-pinned-deps` / `check-ts-relative-imports` /

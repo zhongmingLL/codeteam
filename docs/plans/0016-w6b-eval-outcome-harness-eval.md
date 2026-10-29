@@ -289,8 +289,9 @@ interface EvalLifecycleEvent {
   内容 conflict。
 - read 面每次从 events 重新投影 status；不存 projection 表。
 - `overdue`：非 terminal 且超过 verdict `createdAt + sla.acknowledgementHours`
-  （尚未 acknowledged 类）或 `createdAt + sla.reevaluationHours`（已进入
-  reeval）；`escalated` 永远 overdue。
+  （open/acknowledged）或 `createdAt + sla.reevaluationHours`
+  （action_planned/fix_landed/reeval_pending/monitoring，含“reeval 已通过但
+  未在 SLA 内 closure”的 monitoring）；`escalated` 永远 overdue。
 
 ### 3.6 `evals` extension
 
@@ -345,7 +346,9 @@ interface TaskOutcomeEpisodeMetricsV1 {
     timeToGreenMs: number | null;          // task.createdAt → first successful merge.mergedAt
     costPerMergedChangeUsd: number | null;
   };
-  sourceRefs: string[];                     // task:/run:/review:/verification:/merge:
+  sourceRefs: string[];                     // W6a ControlEvidenceSourceRef:
+                                            // task:/review:/verification:/merge:/artifact:
+                                            // run identity is `runId`, not a source ref
   windowStartMs: number;
   windowEndMs: number;
 }
@@ -357,6 +360,9 @@ interface TaskOutcomeEpisodeMetricsV1 {
 - `status`：critical evidence（review 或 merge）缺失 = `insufficient` +
   reasons；task 非 terminal = `no_data` + reasons（正常 materializer 只取
   terminal run）。
+- `outcome` 映射：有 succeeded merge = `merged`；task disposition
+  `abandoned/canceled` = `abandoned`；task `blocked` = `blocked`；task `done`
+  且无 succeeded merge = `rejected`；其余 = `unknown`。
 - `humanInterventionCount` = task 上 `author_kind='user'` 的 message 数。
 - `tokens/cost/latency` 只从 run usage / run terminal 时间提取白名单数值键；
   缺失为 null，不猜。
@@ -480,9 +486,8 @@ codeteam eval accept-sunset <caseId> --reason <text> [--expected-seq <n>] [--jso
 |---|---|
 | `control-eval-schema.test.ts` | migration 15、evals 约束、legacy 数据、append-only trigger、表清单 |
 | `control-eval-registry.test.ts` | YAML strict、duplicate、enabled/dormant、profile role/status、thread 状态 |
-| `control-eval-episodes.test.ts` | episode 字段、幂等、insufficient reasons、review/eval 分账、sourceRefs |
-| `control-eval-report.test.ts` | 2 provider/2 repo、synthetic/live 分账、n<20 smoke、live recall null |
-| `control-eval-lifecycle.test.ts` | publish、11 transitions、actor matrix、并发 seq、event 幂等、非法 history fail closed |
+| `control-eval-episodes.test.ts` | episode 字段、幂等、insufficient reasons、sourceRefs；corpus report 的 2 provider/2 repo、synthetic/live 分账、n<20 smoke、live recall null、同 bundle 最新快照 |
+| `control-eval-lifecycle.test.ts` | publish、11 transitions（含 escalated 五来源态、reeval_failed 回退）、actor matrix、cvoSuppressed packet 拒绝、并发 seq、event 幂等、非法 history fail closed |
 | `control-eval-redaction.test.ts` | secret 模式、消息/artifact 不落盘 |
 | `cli-eval.test.ts` | list/open/overdue/show/accept-sunset、operator-only、未 accept 不执行 |
 
@@ -533,7 +538,7 @@ codeteam eval accept-sunset <caseId> --reason <text> [--expected-seq <n>] [--jso
 
 - 代码已落在 `feat/w6b-eval` worktree；实现文件与 F014 Implementation 节一致。
 - 定向测试：schema/registry/episodes/lifecycle/redaction/CLI + migration/schema
-  全部通过；daemon 全量 514 passed / 2 skipped。
+  全部通过；daemon 全量 517 passed / 2 skipped。
 - Root `tsc`、`build:offline`、biome、runtime/pinned dependency、TS import、
   entry graph 检查通过。
 - 未做：W7 HTTP/Console、W5 scheduler 接线、live corpus materialization、
@@ -541,5 +546,9 @@ codeteam eval accept-sunset <caseId> --reason <text> [--expected-seq <n>] [--jso
 - 已知限制：并发 seq 测试用两个控制连接交替写入验证跨连接单调性；真正的
   多线程压力测试留给 W7/acceptance 环境。`delete_sunset` 只记录 accept，
   不执行 harness 删除。
+- 已知规模边界：`EvalStore.list` 5000 行、materialize 默认 500 task 是 v1
+  安全上限；需要更宽窗口时由 W7 加分页/游标，不在此静默扩大。
+- 已知写入顺序：artifact 先落盘、DB 事务后写；DB conflict race 可能留下
+  content-addressed 孤儿目录，不损坏既有证据，清理留给后续 store GC。
 
 [宪宪/deepseek-flash🐾]
