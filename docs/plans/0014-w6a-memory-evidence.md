@@ -1,7 +1,7 @@
 ---
 title: "W6a Memory / Evidence 回源：实施计划与契约冻结"
 doc_kind: plan
-status: active
+status: reviewed
 created: 2026-10-29
 updated: 2026-10-29
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -377,3 +377,15 @@ npx biome check packages/codeteam-daemon/src/memory packages/codeteam-daemon/tes
 - 砚砚：provenance/redaction review（sourceRef 是否可回源、path deny/secret
   skip/出口 redaction、control 只读边界）。
 - 作者不审自己；P1/P2 修复后由提出 finding 的 active source 覆盖。
+
+## Result (2026-10-29)
+
+- Implemented under `packages/codeteam-daemon/src/memory/` + `src/cli/memory.ts`.
+- Reviewed at `aeeb1420a` (both P2s closed; P3 batch landed), base-merge HEAD
+  `b1d096486`, merged via PR #62 as `c82b0679c` into `codeteam-work`; CI 4/4.
+- Post-merge daemon suite: **479 passed / 2 skipped** (includes W6c base);
+  W6a memory suite 42/42.
+- W6b/W6c can import the frozen contract from
+  `packages/codeteam-daemon/src/memory/contract.ts` (re-exported by
+  `src/index.ts`); W6c has already merged independently and does not use
+  memory.db.

@@ -7,7 +7,7 @@ operator_signoff: "DP-MEM-1=A, DP-MEM-2=A, DP-MEM-3=A (2026-10-25)"
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-29
 ---
 
 # P1 复用卡：Memory / Evidence
@@ -83,6 +83,7 @@ updated: 2026-10-25
   按 `/` 分段 + sha 豁免、绝对前缀 deny、read/recall/digest 出口二次脱敏）。
 - **CLI**：`codeteam memory index|status|recall|read|digest|trigger`。
 - **测试**：8 个文件 / 42 个测试；daemon 全量 422 passed / 2 skipped。
+- **状态**：W6a 已通过 PR #62 合入 `codeteam-work`（`c82b0679c`；reviewed HEAD `aeeb1420a`；CI 4/4）。
 - **与卡的差异**：v1 卡写“source_kind=file only”；W6a dispatch 明确要求
   task/artifact/review/verification/merge source refs，因此 v2 以
   `source_kind='control'` 做派生投影，control truth 仍在 W1/W5 canonical
