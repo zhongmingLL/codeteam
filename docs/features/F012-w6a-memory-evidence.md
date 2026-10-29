@@ -2,7 +2,7 @@
 feature_ids: [codeteam/F012]
 related_features: [codeteam/F004, codeteam/F011]
 title: "F012: W6a Memory / Evidence 回源"
-status: review
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 created: 2026-10-29
@@ -68,8 +68,8 @@ evidence adapter。W6a 先把 **code evidence / source-ref 契约**和独立
 - `biome check`（memory src + tests + CLI wiring）：clean。
 - 新增测试：8 个文件、42 个测试（schema/redaction/index/control/recall/
   triggers/digest/CLI）。
-- 独立 review：墨墨（memory/reuse/真实路径）与砚砚（provenance/redaction）均在 `aa78adcb8` 给出 approved-with-findings；P2/P3 修复后待复核新 HEAD。
-- PR：#62（`feat/w6a-memory-evidence` → `codeteam-work`，基线 `6ac622ad0`）。
+- 独立 review：墨墨与砚砚在 `aa78adcb8` 给出 approved-with-findings；P2/P3 在 `aeeb1420a` 修复并由双方复核通过。
+- PR：#62（`feat/w6a-memory-evidence` → `codeteam-work`，基线 `6ac622ad0`），merge `c82b0679c`。
 
 ## Review follow-ups (2026-10-29)
 
@@ -90,6 +90,18 @@ evidence adapter。W6a 先把 **code evidence / source-ref 契约**和独立
   `found`/`coverage`，不得用 exit code 判断源存在。
 - **P3 keywords round-trip**：`keywords` 改用 U+001F 分隔，读取对 legacy
   whitespace 回退；新增含空格 keyword 测试。
+
+## Close evidence (2026-10-29)
+
+- PR #62 merged to `codeteam-work` at `c82b0679c` (reviewed P2 HEAD `aeeb1420a`;
+  base-merge HEAD `b1d096486`; CI 4/4 green).
+- 墨墨（memory/reuse/真实路径）与砚砚（provenance/redaction）均复核通过两个 P2
+  的 RED→GREEN；P3 批（artifact path policy、digest merges 守卫、provenance
+  metadata、keywords round-trip、digest rc 语义）已落位。
+- 合入后 daemon 全量：**479 passed / 2 skipped**（含 W6c base）；W6a memory
+  套件 42/42。
+- W6b/W6c 可直接消费 `packages/codeteam-daemon/src/memory/contract.ts`；W6c 已
+  独立合入且不依赖 memory.db。
 
 ## Out of scope
 

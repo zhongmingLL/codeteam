@@ -1,7 +1,7 @@
 ---
 title: "codeteam memory schema（独立 memory.db）"
 doc_kind: schema-annex
-status: review
+status: approved
 created: 2026-10-25
 updated: 2026-10-29
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -34,6 +34,9 @@ related_review: reuse-review/memory.md
 > ④ 新增 `evidence_passage_fts`；⑤ `index_runs` 增加 `mode`/`skipped_count`，
 > `source_kind` 增加 `control|mixed`。v1 的 file-only 语义仍成立；control 投影
 > 不改变 canonical truth，thread messages/run_events 仍不进入本 store。
+
+> **Review/merge.** W6a P2/P3 修复在 `aeeb1420a` 由墨墨/砚砚复核通过；PR #62
+> 于 `c82b0679c` 合入 `codeteam-work`。
 
 ## Tables
 
