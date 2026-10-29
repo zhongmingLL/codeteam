@@ -98,6 +98,57 @@ export {
 export * from "./deployment-wait/index.ts";
 export * from "./dispatch/index.ts";
 export { DaemonError, type DaemonErrorCode } from "./errors.ts";
+export {
+	buildLifecycleRootArtifact,
+	digestEvalArtifactManifest,
+	digestLifecycleRootArtifact,
+	type EvalArtifactSet,
+	readEvalArtifact,
+	writeEvalArtifacts,
+} from "./eval/artifacts.ts";
+export * from "./eval/contract.ts";
+export {
+	type BuildTaskOutcomeEpisodeResult,
+	buildTaskOutcomeEpisode,
+	type MaterializeTaskOutcomeOptions,
+	type MaterializeTaskOutcomeResult,
+	materializeTaskOutcomeEpisodes,
+	type SkippedTaskOutcome,
+} from "./eval/episodes.ts";
+export {
+	type AcceptSunsetInput,
+	type AcceptSunsetResult,
+	type AppendEvalLifecycleEventInput,
+	type AppendEvalLifecycleEventResult,
+	type AppendVerdictOpenedInput,
+	acceptSunset,
+	appendEvalLifecycleEvent,
+	appendVerdictOpenedEvent,
+	deriveEvalCaseId,
+	type EvalCaseListFilter,
+	getEvalCase,
+	listEvalCases,
+	projectEvalCase,
+	readEvalVerdictMetrics,
+	type SuppressCaseInput,
+	suppressEvalCase,
+} from "./eval/lifecycle.ts";
+export {
+	type PublishEvalVerdictInput,
+	type PublishEvalVerdictResult,
+	publishEvalVerdict,
+	validateVerdictPacket,
+} from "./eval/publish.ts";
+export { assertNoEvalSecrets, type EvalSecretFinding, scanEvalContent } from "./eval/redaction.ts";
+export {
+	type BuildEvalAgentInvocationInput,
+	buildEvalAgentInvocationPacket,
+	type LoadEvalDomainRegistryOptions,
+	loadEvalDomainRegistry,
+	type ResolvedEvalDomain,
+	resolveEvalDomain,
+} from "./eval/registry.ts";
+export { type BuildEvalCorpusReportOptions, buildEvalCorpusReport } from "./eval/report.ts";
 export { acquireFence, type FenceRecord, isProcessAlive, readFence, releaseFence } from "./fence.ts";
 export { GateService, type GateTelemetry, type MergeGateEvaluation, type MergeGateRequest } from "./gates/service.ts";
 export type {

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "note": "W6b smoke-only fixture: 2 providers x 2 repos x 10 review cases. Never a live model-family conclusion.",
+  "observations": [
+    {
+      "provider": "provider-a",
+      "model": "glm-5",
+      "modelFamily": "glm",
+      "role": "reviewer",
+      "repo": "repo-a",
+      "cleanCases": 5,
+      "cleanFalsePositiveCases": 1,
+      "seededCases": 5,
+      "seededDetectedCases": 4,
+      "reportedFindings": 6,
+      "confirmedFindings": 5,
+      "rejectedFindings": 1,
+      "blockedFindings": 0
+    },
+    {
+      "provider": "provider-a",
+      "model": "glm-5",
+      "modelFamily": "glm",
+      "role": "reviewer",
+      "repo": "repo-b",
+      "cleanCases": 5,
+      "cleanFalsePositiveCases": 0,
+      "seededCases": 5,
+      "seededDetectedCases": 5,
+      "reportedFindings": 5,
+      "confirmedFindings": 5,
+      "rejectedFindings": 0,
+      "blockedFindings": 0
+    },
+    {
+      "provider": "provider-b",
+      "model": "qwen-3",
+      "modelFamily": "qwen",
+      "role": "reviewer",
+      "repo": "repo-a",
+      "cleanCases": 5,
+      "cleanFalsePositiveCases": 2,
+      "seededCases": 5,
+      "seededDetectedCases": 3,
+      "reportedFindings": 7,
+      "confirmedFindings": 4,
+      "rejectedFindings": 2,
+      "blockedFindings": 1
+    },
+    {
+      "provider": "provider-b",
+      "model": "qwen-3",
+      "modelFamily": "qwen",
+      "role": "reviewer",
+      "repo": "repo-b",
+      "cleanCases": 5,
+      "cleanFalsePositiveCases": 1,
+      "seededCases": 5,
+      "seededDetectedCases": 4,
+      "reportedFindings": 6,
+      "confirmedFindings": 5,
+      "rejectedFindings": 1,
+      "blockedFindings": 0
+    }
+  ]
+}

@@ -1577,23 +1577,54 @@ export interface RecordScheduleRunInput {
 	reason?: Record<string, unknown> | null;
 }
 
+export type EvalStatus = "ok" | "insufficient" | "no_data" | "degraded";
+
 export interface Eval {
 	id: string;
-	taskId: string;
+	taskId: string | null;
 	provider: string;
 	model: string;
 	role: string;
 	metrics: Record<string, unknown>;
+	domainId: string | null;
+	bundleId: string | null;
+	verdictId: string | null;
+	windowStartMs: number | null;
+	windowEndMs: number | null;
+	measurementRef: string | null;
+	status: EvalStatus | null;
+	reasons: string[];
 	createdAt: number;
 }
 
 export interface CreateEvalInput {
 	id?: string;
-	taskId: string;
+	taskId?: string | null;
 	provider: string;
 	model: string;
 	role: string;
 	metrics: Record<string, unknown>;
+	domainId?: string | null;
+	bundleId?: string | null;
+	verdictId?: string | null;
+	windowStartMs?: number | null;
+	windowEndMs?: number | null;
+	measurementRef?: string | null;
+	status?: EvalStatus | null;
+	reasons?: readonly string[];
+	createdAt?: number;
+}
+
+export interface EvalListFilter {
+	taskId?: string;
+	domainId?: string;
+	bundleId?: string;
+	verdictId?: string;
+	status?: EvalStatus;
+	since?: number;
+	until?: number;
+	limit?: number;
+	order?: "asc" | "desc";
 }
 
 export interface ForgeDelivery {

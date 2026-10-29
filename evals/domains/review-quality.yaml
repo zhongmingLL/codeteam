@@ -1,0 +1,18 @@
+domainId: "eval:review-quality"
+descriptionForHuman: "Judge whether review findings and code-domain metrics are credible enough to drive repair or keep observing."
+systemThreadId: "thread:eval-review-quality"
+evalAgent: "profile:eval"
+frequency: "weekly"
+triggerPolicy:
+  kind: "threshold_or_time"
+  maxDetectionDelayHours: 48
+sourceAdapter: "eval_corpus"
+sourceRefsKind: "review"
+sla:
+  acknowledgementHours: 48
+  reevaluationHours: 336
+enabled: false
+dormancy:
+  reason: "No live multi-provider corpus yet; synthetic fixtures are smoke-only."
+  revivalPath: "Wire a live source adapter and create thread:eval-review-quality, then set enabled: true."
+  decisionRef: "docs/plans/0016-w6b-eval-outcome-harness-eval.md"
