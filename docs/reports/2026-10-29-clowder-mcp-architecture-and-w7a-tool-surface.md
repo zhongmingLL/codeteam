@@ -1063,4 +1063,3 @@ target。`input/output` 的输出统一是 MCP text JSON；逐工具 `required_i
 | `priority` | P0 / P1 / P2 / — |
 | `codeteam_target` | codeteam 目标工具或 — |
 | `note` | 取舍理由 |
-
