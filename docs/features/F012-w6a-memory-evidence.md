@@ -93,6 +93,8 @@ evidence adapter。W6a 先把 **code evidence / source-ref 契约**和独立
 
 ## Close evidence (2026-10-29)
 
+- operator signoff（2026-10-29，消息
+  `0001793276746238-003935-3d7a01c4`："确认"）：W6 整体收口确认。
 - PR #62 merged to `codeteam-work` at `c82b0679c` (reviewed P2 HEAD `aeeb1420a`;
   base-merge HEAD `b1d096486`; CI 4/4 green).
 - 墨墨（memory/reuse/真实路径）与砚砚（provenance/redaction）均复核通过两个 P2

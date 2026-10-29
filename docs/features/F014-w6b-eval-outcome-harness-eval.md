@@ -130,6 +130,8 @@ tool usage；W6b 要把这些 canonical 数据变成可决策的 eval：
 
 ## Close record（2026-10-29）
 
+- operator signoff（2026-10-29，消息
+  `0001793276746238-003935-3d7a01c4`："确认"）：W6 整体收口确认。
 - PR #66 squash merged into `codeteam-work` at
   `b74952ac28f2cc96fea30f72814caa344e53a1d6`（base `49f9a140e`）。
 - Final reviewed HEAD：`8163565548d442f563a5d5f028265e3377ad6352`。

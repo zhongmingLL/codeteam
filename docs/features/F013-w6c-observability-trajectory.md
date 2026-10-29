@@ -96,6 +96,8 @@ return at the same HEAD（1 P1 + 6 P3）。Follow-up 已收口：
 
 ## Close record（2026-10-29）
 
+- operator signoff（2026-10-29，消息
+  `0001793276746238-003935-3d7a01c4`："确认"）：W6 整体收口确认。
 - PR #63 squash merged into `codeteam-work` at
   `12c54685439a3b8cb92142bbac7a5d88764e1cea`（base `6ac622ad0`）。
 - Final reviewed HEAD `04d3f9382298e35c4bbecc4de39da378fd4564b5`。
