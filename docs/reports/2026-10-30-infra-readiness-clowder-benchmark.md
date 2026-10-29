@@ -1,7 +1,7 @@
 ---
 title: "codeteam Infra Readiness — Clowder AI 基础设施对标"
 doc_kind: report
-status: draft-for-review
+status: approved
 created: 2026-10-30
 updated: 2026-10-30
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -213,8 +213,9 @@ scope: "read-only infra readiness analysis; no product code changes"
   `/ready` 模式。
 - burn-rate alert（`packages/api/src/infrastructure/telemetry/burn-rate-monitor.ts`）：
   error rate、p95 latency、active invocations 阈值，默认
-  `TELEMETRY_ALERT_ERROR_RATE=0.3`、`P95_LATENCY=120s`、
-  `ACTIVE_INVOCATIONS=50`；连续 3 次 breach 才触发，WebSocket 推送。
+  `TELEMETRY_ALERT_ERROR_RATE=0.3`、`TELEMETRY_ALERT_P95_LATENCY_S=120`、
+  `TELEMETRY_ALERT_ACTIVE_INVOCATIONS=50`；连续 3 次 breach 才触发，
+  WebSocket 推送。
 - 明确边界：F153 是 **descriptive observability**，不是 eval/质量判断；
   不引入 Grafana/Tempo/Sentry。
 
@@ -355,14 +356,29 @@ W5d deployment wait 都只是测试 fixture；operator 无法完成一次真实�
 
 - `codeteam daemon start`（或 `codeteam daemon run --foreground`）：
   作为 external executor 入口，完成 `CODETEAM_DATA_DIR`/installation
-  preflight、fence、`startDaemon()`、`markReady()`、signal handling、
-  graceful stop；不提供 daemon 内自重启。
+  preflight、fence、生产 control-plane 组合、恢复、`startDaemon()`、
+  `markReady()`、signal handling、graceful stop；不提供 daemon 内自重启。
+- **恢复先于 ready**：start 路径先构造 `ControlStore` + `WorkerRuntime`，
+  调用 `WorkerRuntime.recover({ activeRunIds })`；`activeRunIds` 来自当前
+  worker registry，单机无 registry 时必须显式空集，不能跳过 recover。
+  上一 boot 的 `running` runs 必须转 `interrupted`、`attached` sessions 转
+  reattach-pending；recover 失败/不可证明时 fail closed，不 markReady。
+  这是 W5d-M1 的最终接线点，不能继续悬空。
+- **restart 链闭合**：提供 `codeteam daemon restart --op <opId>`（或
+  `daemon start --resume-op <opId>`），同一 opId 串
+  `authorizeRestart → stop → start → recordRestart → reverify`；
+  `recordRestart` 必须用新 boot 的 state file、boot ledger、process
+  identity 现场校验。start 只负责新 boot；restart 不能把
+  `restart_authorized` 悬挂。
 - supervisor 契约：文档给出 systemd/launchd 的 opt-in 示例（不自动安装）；
   `ExecStart` 只调用 `codeteam daemon run`，`Restart=on-failure` 是宿主
   责任；codeteam 不写第二 process registry。
 - build stamp：构建时写 `.build-commit`（daemon；W7b 可加 web），启动时
   解析所有 declared service 的 stamp；不一致/缺失 → `runningRevision=null`
-  并显示 unknown，不拿 checkout HEAD 回填。
+  并显示 unknown，不拿 checkout HEAD 回填。**类型必须 widening 为
+  `string | null`**（`StartDaemonOptions`、state file、status JSON、
+  deployment wait 全部按 null=unknown 处理）；禁止 sentinel 字符串，
+  `revision_included` 不得匹配 null。
 - `daemon status` 输出：state、pid、bootId/bootSequence、runningRevision、
   ready、healthPort、log path、data dir；`--json` 可机读。
 - `/ready`/`/metrics` 在生产 server 中真实可达；`/health` 保持 W5d
@@ -375,9 +391,17 @@ W5d deployment wait 都只是测试 fixture；operator 无法完成一次真实�
   `/metrics` 200 且有 `codeteam_telemetry_up`；
   `daemon status --json` 的 `runningRevision` 等于 build stamp。
 - build stamp 缺失/两服务不一致 → `runningRevision=null` + typed unknown；
-  不报 ready。
-- 已有 daemon 时 `start` 幂等（返回 already running，不启动第二个）；
-  stale state 只有身份可证时才清理；不可证时 fail closed。
+  不报 ready；state/status JSON 与 deployment wait 均按 null 处理。
+- 已有 daemon 时 `start` 返回 typed `already_running`（error code 或 status
+  字段）并非零退出，不启动第二个；stale state 只有身份可证时才清理；
+  不可证时 fail closed。
+- crash 重启 fixture：注入 running run + attached session → 重启 →
+  `recover()` 在 `markReady()` 之前把二者转为 `interrupted` /
+  reattach-pending；`/ready` 不早于 recovery 完成。
+- authorized restart fixture：stop → `authorizeRestart` →
+  `daemon restart --op` → `recordRestart`/`reverify` 同一 opId 闭环；
+  缺 opId、身份不匹配、health 不匹配均 fail closed，不留
+  `restart_authorized` 悬挂。
 - SIGTERM → graceful stop，boot ledger 有 `stopping/stopped/exited(clean)`；
   SIGKILL 后重启 → boot ledger 无 exit 证据显示 unknown，不伪写 clean。
 - supervisor 示例文档通过一次手工/容器 smoke（不要求在 CI 启动 systemd）。
@@ -387,7 +411,8 @@ Web/API 启停私有化；不引入第二 process registry。
 
 **风险**：PID 复用、端口冲突、启动失败误报 ready、build stamp 伪造。
 处置：frozen identity/health body 校验、loopback only、stamp 由构建链写且
-与 `UPSTREAM.md` 绑定。
+与 `UPSTREAM.md` 绑定。W5d-R2（pid 复用窄缝）保留为已知残留：身份不可证
+时 fail closed 为 `already_running`/拒绝启动，不在本切片当新 bug 重挖。
 
 #### OPS-2 `ops-data-protection` — 备份、恢复、升级、回滚
 
@@ -400,8 +425,10 @@ Web/API 启停私有化；不引入第二 process registry。
   - SQLite online backup（`VACUUM INTO` 或 `node:sqlite` backup API）+ WAL
     checkpoint；不直接复制正在写的 `control.db`。
   - 备份 manifest：`backupVersion`、`createdAt`、`codeteamVersion`、
-    `buildSha`、`schemaVersion`、`dataDir`（不含绝对路径？manifest 内可存
-    相对标识）、每个文件的 sha256/bytes；artifact 文件按内容 hash 记录。
+    `buildSha`、`schemaVersion`、每个文件的相对 data-dir 标识
+    （如 `control.db`、`artifacts/<sha256>`）与 sha256/bytes；不存绝对
+    路径。确需取证宿主路径时写单独的非可移植 sidecar，默认不生成、不进
+    portable archive。artifact 文件按内容 hash 记录。
   - 备份目录 0700、文件 0600；不写 secret 明文（manifest 不包含 key 内容）。
 - `codeteam backup list/verify`：列出备份、校验 manifest、校验 manifest
   中每个文件的 sha256；verify 失败非零退出。
@@ -411,6 +438,10 @@ Web/API 启停私有化；不引入第二 process registry。
   - `--apply` 恢复到**新的 data dir**（或显式停止 daemon 后的空目录），
     不覆盖正在运行的 data dir；恢复后跑 `openControlDatabase` + 基础
     read model 校验（schema version、关键表 count、artifact hash）。
+  - **运行态文件不回放**：`daemon-state.json`、`boot-ledger.jsonl`、
+    `lifecycle/` 默认只作审计留存，restore 不把它们当作新 installation 的
+    当前运行态。若显式导入，必须标 `imported:true` /
+    `sourceInstallationId`，不得让旧 pid/ports/bootSequence 污染新 daemon。
 - `codeteam backup prune`：保留策略可配置；建议默认“最近 7 个 + 最近 28 天
   每天 1 个 + manual 永不删”，与 Clowder 的 recent/daily/oldest/manual
   模式对齐（具体数字待 operator 拍）。
@@ -430,6 +461,9 @@ Web/API 启停私有化；不引入第二 process registry。
 - manifest 篡改/文件缺失 → verify/restore 失败；schema 比当前新 → restore
   拒绝；不静默降级。
 - 备份/恢复日志/输出不包含 operator.key、run token、prompt/diff 正文。
+- restore 到新 data dir 后，旧 `daemon-state.json`/boot ledger/lifecycle
+  不冒充当前运行态；显式 imported 标注可见，未导入时新 daemon 从
+  bootSequence=1 开始。
 - 升级失败演练：用 fixture 模拟 build 启动失败 → restore 回旧备份 →
   旧 build 可启动；记录 command/result。
 
@@ -441,15 +475,16 @@ Web/API 启停私有化；不引入第二 process registry。
 | `artifacts/` | 必需 | 备份（按 sha256 manifest） |
 | `credentials/operator.key` / `operator.pub` | 敏感必需 | 备份时显式 `--include-credentials`；默认不打包，文档要求离线安全保管 |
 | `lifecycle/`、`daemon-state.json`、`boot-ledger.jsonl` | 审计/恢复辅助 | 备份 |
-| `telemetry-salt` | 可选 | 默认备份（保持 trace HMAC 连续性）；不含 secret 用途 |
+| `telemetry-salt` | 敏感材料 | 默认备份以保持 trace HMAC 连续性；备份 archive 与 `credentials/` 同级保护；P2 offsite 必须加密；缺 salt 会使旧 `hmac_invocation_id` 失配并 fail closed |
 | `memory.db` | 派生索引 | 默认不备份；可重建（架构 §12.2） |
 | `logs/` | 可选 | 默认不备份；按需 |
 | `tokens/` | 临时凭据 | 永不备份 |
 | `state/auth.sqlite`（文档计划） | 当前代码未实现 | 等实现后再纳入；见 §8 D5 |
 
-**风险**：备份 operator key 造成新的泄露面；SQLite backup 与 daemon 并发
-写；restore 覆盖活动数据；schema 版本漂移。处置：默认不打包 key、恢复仅
-允许空目录/显式 overwrite、restore 前强制停 daemon、schema ahead 拒绝。
+**风险**：备份 operator key 或 telemetry-salt 造成新的泄露面；SQLite
+backup 与 daemon 并发写；restore 覆盖活动数据；schema 版本漂移。处置：
+默认不打包 key、salt 按敏感材料保护、恢复仅允许空目录/显式 overwrite、
+restore 前强制停 daemon、schema ahead 拒绝。
 
 #### OPS-3 `ops-config-preflight` — 配置、secret、环境可 provisioning
 
@@ -617,7 +652,7 @@ P2（shipping / external backend / trace persistence / multi-host）
 | D2 | 备份保留策略/是否默认备份 operator key？ | 默认 **7 个 recent + 28 天每日 + manual 永不删**；operator key 默认不打包，显式 `--include-credentials` | 备份可能过少或泄露面过大；无法定验收 |
 | D3 | v1 是否明确单机、多主机 P2？ | **是**；v1 只支持单 installation/单 serving daemon | 容易过早设计多主机 supervisor/集中式后端 |
 | D4 | 日志 shipping/集中式后端是否现在做？ | **不做**；先本地 JSONL + logs health + W7a 读 API；远程 worker 出现再触发 | 提前引入 ELK/Grafana，成本高且无真实需求 |
-| D5 | `auth.sqlite` 与 `control.db` 的凭据归属？ | 以当前代码为准：invocation credentials 在 `control.db`，operator key 在文件；更新 reuse 卡/架构文档的 `CODETEAM_AUTH_DB` 描述 | 备份清单和恢复演练会按错误文档设计 |
+| D5 | `auth.sqlite` 与 `control.db` 的凭据归属？ | 以当前代码为准：invocation credentials 登记在 `control.db.invocation_credentials`，token 原文在 `tokens/`（永不备份），operator key 在 `credentials/`；`auth.sqlite` 尚未实现。修正 `docs/architecture/reuse-review/callback-auth.md` 的 `CODETEAM_AUTH_DB` 行，并同步修正 `runtime-deployment.md` 的 `backupScope`：改为 manifest 点名，显式排除 `tokens/`/`logs/`/`memory.db`，`credentials/` 单独 opt-in | 备份清单和恢复演练会按错误文档设计；按“全目录”实现会把 tokens 带进备份 |
 | D6 | `memory.db` 是否进备份？ | **不进**；派生索引可重建；备份清单显式排除 | 与架构 §12.2 冲突；恢复后可能带入过期索引 |
 
 > 这些是产品/数据边界决策，不是技术 A/B。若 operator 不逐条回答，建议按
@@ -678,5 +713,23 @@ P2（shipping / external backend / trace persistence / multi-host）
   `/ready`/`/metrics` 证据。
 
 ---
+
+## 10. Review follow-up（2026-10-30）
+
+| Finding | Severity | 处置 |
+|---|---|---|
+| 砚砚 F1：telemetry-salt “不含 secret 用途”表述错误 | P2 | 改为“敏感材料”；默认备份、与 credentials 同级保护、P2 offsite 加密；缺 salt fail closed |
+| 砚砚 F2：D5 漏了 `runtime-deployment.md` 的 `backupScope` 全目录表述 | P2 | D5 已点名两个文档；`backupScope` 改为 manifest 点名 + 显式排除 tokens/logs/memory.db，credentials 单独 opt-in |
+| 砚砚 F3：manifest 的 `dataDir` 问号未定案 | P2 | 已定案：只存相对 data-dir 标识 + sha256；绝对路径只进非可移植取证 sidecar |
+| 砚砚 F4：restore 对运行态文件的语义未写清 | P3 | 已写明运行态文件默认不回放；显式导入需标 `imported`/`sourceInstallationId` |
+| 砚砚 F5：env 名简写与源码不符 | P3 | 改为 `TELEMETRY_ALERT_P95_LATENCY_S` / `TELEMETRY_ALERT_ACTIVE_INVOCATIONS` |
+| 烁烁 F1：OPS-1 漏 W5d-M1 recover-before-markReady | P1 | OPS-1 范围/AC 已加入 `WorkerRuntime.recover({ activeRunIds })` 先于 `startDaemon()`/`markReady()`，并加 crash 重启 fixture |
+| 烁烁 F2：`daemon start` 与 W5d restart 链另一半无归属 | P2 | OPS-1 增加 `daemon restart --op <opId>`（或 `start --resume-op`），同 opId 串 authorize→start→recordRestart→reverify |
+| 烁烁 F3：`runningRevision=null` 与现状 string 类型冲突 | P2 | 明确 widening 为 `string` 或 `null`，state/status/deployment wait 全按 null=unknown，禁止 sentinel |
+| 烁烁 F4：start 幂等 AC 与 fence throw 语义不一致 | P3 | AC 改为 typed `already_running` + 非零退出 |
+| 烁烁 F5：W5d-R2 pid 复用窄缝 | P3 | 风险表记录为已知残留，身份不可证时 fail closed |
+
+两位 reviewer 的 verdict 均为 approve（附修改项）；以上修改不改变 P0/P1
+方向，也不需要新开 review 轮次。
 
 [宪宪/deepseek-flash🐾]
