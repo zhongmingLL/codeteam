@@ -31,6 +31,7 @@ const ENTRY_KEYS = new Set([
 	"sla",
 	"fixtures",
 	"legacyScheduledTaskIds",
+	"threadPolicy",
 	"enabled",
 	"dormancy",
 ]);
@@ -39,6 +40,7 @@ const HANDOFF_KEYS = new Set(["featureId", "ownerProfileId", "threadLookup"]);
 const SLA_KEYS = new Set(["acknowledgeHours", "reevalWithinHours"]);
 const DORMANCY_KEYS = new Set(["reason", "revivalPath", "decisionRef"]);
 const FIXTURE_KEYS = new Set(["id", "featureId", "path", "skill", "signal"]);
+const THREAD_POLICY_KEYS = new Set(["role", "stateSot", "allowedContent"]);
 const TIME_ONLY_KEYS = new Set(["mode", "maxDetectionDelayHours"]);
 const THRESHOLD_KEYS = new Set(["mode", "cooldownHours", "eventSource", "threshold"]);
 const FREQUENCY_PATTERN = /^(?:daily|weekly|every-[1-9][0-9]*d)$/;
@@ -223,6 +225,34 @@ function parseDomainEntry(raw: unknown, filePath: string, defaults: EvalDomainSl
 		throw new ControlError("invalid_input", `${filePath}: enabled domain must not carry stale dormancy metadata`);
 	}
 	const fixtures = parseFixtures(entry.fixtures, filePath);
+	let threadPolicy: EvalDomainRegistryEntry["threadPolicy"];
+	if (entry.threadPolicy !== undefined) {
+		const raw = assertObject(entry.threadPolicy, `${filePath}: threadPolicy`, THREAD_POLICY_KEYS);
+		if (raw.role !== "working-home") {
+			throw new ControlError("invalid_input", `${filePath}: threadPolicy.role must be working-home`);
+		}
+		if (raw.stateSot !== "registry") {
+			throw new ControlError("invalid_input", `${filePath}: threadPolicy.stateSot must be registry`);
+		}
+		threadPolicy = {
+			role: "working-home",
+			stateSot: "registry",
+			...(raw.allowedContent === undefined
+				? {}
+				: {
+						allowedContent: Array.isArray(raw.allowedContent)
+							? raw.allowedContent.map((item, index) =>
+									nonEmptyString(item, `${filePath}: threadPolicy.allowedContent[${index}]`),
+								)
+							: (() => {
+									throw new ControlError(
+										"invalid_input",
+										`${filePath}: threadPolicy.allowedContent must be an array`,
+									);
+								})(),
+					}),
+		};
+	}
 	const legacyScheduledTaskIds =
 		entry.legacyScheduledTaskIds === undefined
 			? []
@@ -274,6 +304,7 @@ function parseDomainEntry(raw: unknown, filePath: string, defaults: EvalDomainSl
 		sla: parseSla(entry.sla, filePath, defaults),
 		fixtures,
 		legacyScheduledTaskIds,
+		...(threadPolicy ? { threadPolicy } : {}),
 		enabled: entry.enabled,
 		...(dormancy ? { dormancy } : {}),
 	});

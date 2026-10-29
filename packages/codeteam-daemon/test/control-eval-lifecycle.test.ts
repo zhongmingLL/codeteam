@@ -92,6 +92,23 @@ function driveToResolved(base: EvalFixture, caseId: string): void {
 	append(base, caseId, "reeval_passed", EVAL, last);
 }
 
+function rawInsert(
+	base: EvalFixture,
+	caseId: string,
+	seq: number,
+	type: string,
+	actorKind: string,
+	actorId: string,
+	payload: Record<string, unknown> = { reason: "raw" },
+): void {
+	const now = new Date().toISOString();
+	base.store.database
+		.prepare(
+			"INSERT INTO eval_lifecycle_events (event_id, case_id, seq, domain_id, event_type, actor_kind, actor_id, payload_json, occurred_at, created_at) VALUES (?, ?, ?, 'eval:test-domain', ?, ?, ?, ?, ?, ?)",
+		)
+		.run(`raw-${caseId}-${seq}`, caseId, seq, type, actorKind, actorId, JSON.stringify(payload), now, now);
+}
+
 describe("W6b eval lifecycle", () => {
 	it("publishes a verdict with immutable artifact-table entries, a lifecycle case, and a same-transaction message", () => {
 		const base = fixture();
@@ -217,6 +234,95 @@ describe("W6b eval lifecycle", () => {
 		seq += 1;
 		append(base, caseId, "fix_recorded", OWNER, seq);
 		expect(getEvalCase(base.store, caseId).status).toBe("fix_landed");
+	});
+
+	it("rejects actionable verdicts without findingKey", () => {
+		const base = fixture();
+		expectCode(
+			() =>
+				publishFixturePacket(base, {
+					id: "verdict-observation-fix",
+					findingKey: undefined,
+					verdict: "fix",
+				}),
+			"invalid_input",
+		);
+		expect(base.store.evals.get("verdict-observation-fix")).toBeNull();
+		expectCode(
+			() =>
+				publishFixturePacket(base, {
+					id: "verdict-observation-sunset",
+					findingKey: undefined,
+					verdict: "delete_sunset",
+					governance: { cvoAcceptRequired: true },
+				}),
+			"invalid_input",
+		);
+		expect(base.store.evals.get("verdict-observation-sunset")).toBeNull();
+	});
+
+	it("rejects raw lifecycle history that bypasses transition or authority checks", () => {
+		const base = fixture();
+		const authority = publishUnique(base, "verdict-raw-authority", "raw-authority");
+		rawInsert(base, authority.case!.caseId, 2, "owner_acknowledged", "agent", "agent:profile:not-owner");
+		expectCode(() => getEvalCase(base.store, authority.case!.caseId), "forbidden");
+
+		const transition = publishUnique(base, "verdict-raw-transition", "raw-transition");
+		rawInsert(base, transition.case!.caseId, 2, "main_landed", "system", "system:merge-owner");
+		expectCode(() => getEvalCase(base.store, transition.case!.caseId), "invalid_state");
+	});
+
+	it("escalates from all six legal source states and is always overdue", () => {
+		const base = fixture();
+		const scenarios: ReadonlyArray<{ readonly state: string; readonly steps: readonly OwnerStep[] }> = [
+			{ state: "open", steps: [] },
+			{ state: "acknowledged", steps: ["owner_acknowledged"] },
+			{ state: "action_planned", steps: ["owner_acknowledged", "action_planned"] },
+			{ state: "fix_landed", steps: ["owner_acknowledged", "action_planned", "fix_recorded"] },
+			{
+				state: "main_landed",
+				steps: ["owner_acknowledged", "action_planned", "fix_recorded", "main_landed"],
+			},
+			{
+				state: "reeval_pending",
+				steps: ["owner_acknowledged", "action_planned", "fix_recorded", "main_landed", "reeval_requested"],
+			},
+		];
+		for (const [index, scenario] of scenarios.entries()) {
+			const published = publishUnique(base, `verdict-escalate-${index}`, `escalate-${index}`);
+			const caseId = published.case!.caseId;
+			const last = driveOwner(base, caseId, scenario.steps);
+			expect(getEvalCase(base.store, caseId).status).toBe(scenario.state);
+			append(base, caseId, "sla_escalated", SLA, last);
+			const projection = getEvalCase(base.store, caseId, Date.parse(published.case!.createdAt) + 1000);
+			expect(projection.status).toBe("escalated");
+			expect(projection.overdue).toBe(true);
+		}
+	});
+
+	it("rejects unwired migration and unknown lifecycle event types", () => {
+		const base = fixture();
+		const published = publishUnique(base, "verdict-unwired", "unwired-1");
+		expectCode(
+			() =>
+				appendEvalLifecycleEvent(base.store, {
+					caseId: published.case!.caseId,
+					type: "migration" as never,
+					actor: { kind: "migration", id: "legacy" },
+					reason: "backfill",
+				}),
+			"invalid_state",
+		);
+		expectCode(
+			() =>
+				appendEvalLifecycleEvent(base.store, {
+					caseId: published.case!.caseId,
+					type: "live_active" as never,
+					actor: { kind: "system", id: "publish-pipeline" },
+					reason: "unwired",
+				}),
+			"invalid_input",
+		);
 	});
 
 	it("opens a new verdict cycle on the same case after resolution", () => {
@@ -361,7 +467,7 @@ describe("W6b eval lifecycle", () => {
 			verdict: "keep_observe",
 		});
 		expect(published.case).toBeNull();
-		expect(published.message.bodyMd).toContain("observation report · no case tracking");
+		expect(published.message.bodyMd).toContain("observation report · no finding tracking");
 		expect(listEvalCases(base.store)).toHaveLength(0);
 	});
 
@@ -376,6 +482,27 @@ describe("W6b eval lifecycle", () => {
 		expect(published.eval.status).toBe("insufficient");
 		expect(published.eval.reasons).toEqual(["n=3 below smoke threshold"]);
 		expect(published.message.bodyMd).toContain("Reasons: n=3 below smoke threshold");
+		expectCode(
+			() =>
+				publishFixturePacket(base, packet, {
+					status: "insufficient",
+					decision: {
+						status: "insufficient",
+						reasons: ["n=3 below smoke threshold"],
+						withdrawalConditions: [],
+					},
+					actionProposal: { action: "keep_observe", rationale: "fixture" },
+				}),
+			"invalid_input",
+		);
+	});
+
+	it("enforces the DB event_type CHECK independently of the service enum", () => {
+		const base = fixture();
+		const published = publishUnique(base, "verdict-db-check", "db-check");
+		expect(() => rawInsert(base, published.case!.caseId, 2, "not_a_real_event", "system", "system:test")).toThrow(
+			/CHECK constraint failed/,
+		);
 	});
 
 	it("rejects secrets and unknown governance flags before writing anything", () => {

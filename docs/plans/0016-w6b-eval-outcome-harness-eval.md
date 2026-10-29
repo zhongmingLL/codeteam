@@ -80,6 +80,7 @@ interface EvalDomainRegistryEntry {
   sla: { acknowledgeHours: number; reevalWithinHours: number };
   fixtures?: Array<{ id: string; featureId: `F${number}`; path: string; skill?: string; signal?: string }>;
   legacyScheduledTaskIds?: string[];
+  threadPolicy?: { role: "working-home"; stateSot: "registry"; allowedContent?: string[] };
   enabled: boolean;
   dormancy?: { reason: string; revivalPath: string; decisionRef: string };
 }
@@ -180,6 +181,8 @@ interface VerdictHandoffPacketV1 {
   fail closed。
 - 自由文本过内容级 secret 扫描；命中 fail closed。
 - `findingKey` 是 case identity；没有它 = observation report，不建 case。
+- 无 `findingKey` 只允许 `keep_observe`；`fix`/`build`/`delete_sunset` 要求
+  owner 行动，缺 key 时 publish fail closed（observation 不产生 SLA/case）。
 
 ### 3.4 Measurement result
 
@@ -215,6 +218,7 @@ interface EvalMeasurementResultV1 {
   非空。
 - non-ok measurement 只允许 `keep_observe`（不把 insufficient/no_data 当
   healthy）。
+- non-ok measurement 的 `decision.withdrawalConditions` 必须非空（F267 T11）。
 - `evals.measurement_ref = measurement.measurementRef`；window/status/reasons
   同事务落 `evals`。
 
@@ -296,6 +300,9 @@ Transition × actor matrix：
   追加 `verdict_cycle_observed`，不新开 case；case 未 resolved 时 conflict。
 - 并发 seq：`BEGIN IMMEDIATE` 内读 case tail、CAS expectedSequence、插
   seq+1；`UNIQUE(case_id,seq)` + `event_id PK` 是第二道防线。
+- 读面 replay 必须对每条 history event 重跑 transition + actor authority；
+  raw INSERT 绕过服务层时也 fail closed（append-only 只保护“不改”，不保护
+  非法语义）。
 - overdue：open/acknowledged → ack deadline；action_planned/fix_landed/
   main_landed/reeval_pending/monitoring → reeval deadline；escalated 永远
   overdue；terminal false。
@@ -329,7 +336,7 @@ episode 只进 statusCounts/excluded；live recall 无 ground truth = null；
 
 Publish 同一 `BEGIN IMMEDIATE` 事务内：写 message、`evals`、`verdict_opened`
 或 `verdict_cycle_observed`。消息头显示 measurement status/reasons、case
-或 `observation report · no case tracking`、ownerAsk/SLA/counterarguments/
+或 `observation report · no finding tracking`、ownerAsk/SLA/counterarguments/
 re-eval plan/artifact digest。
 
 ```text
@@ -340,7 +347,8 @@ codeteam eval show   <caseId|verdictId> [--json]
 codeteam eval accept-sunset <caseId|verdictId> --reason <text> [--expected-seq <n>] [--json]
 ```
 
-- `list/open/overdue/show` 从 lifecycle events + evals 派生。
+- `list/open/overdue/show` 从 lifecycle events + evals 派生；`show` 同时
+  支持 caseId 与 verdictId，observation verdict 可显示但无 case。
 - `accept-sunset` 必须 operator credential；只 append `sunset_accepted`，
   不删除任何文件/配置；未 accept 的 delete_sunset 显示
   `awaitingSunsetDecision=true`。
@@ -355,12 +363,12 @@ codeteam eval accept-sunset <caseId|verdictId> --reason <text> [--expected-seq <
 | AC-3 synthetic 与 live 分账；n<20 只作 smoke | `EvalCorpusReport` | n=10 smoke；live n>=20 conclusion；non-ok excluded |
 | AC-4 registry 可加载；evalAgent/owner/thread 解析；缺 profile/role/thread fail closed | `eval/registry.ts` + `evals/domains/*.yaml` | valid/invalid YAML；dormant；missing dir warning |
 | AC-5 12-field envelope + measurement + immutable `artifacts` 表证据 | `eval/publish.ts` + `eval/artifacts.ts` | packet/measurement round-trip；artifact table id；delete denied |
-| AC-6 lifecycle append-only + actor/event matrix + 并发 seq + same-case cycle | migration 15 + `eval/lifecycle.ts` | 14 event types；actor authority；trigger abort；cycle test |
+| AC-6 lifecycle append-only + actor/event matrix + 并发 seq + same-case cycle | migration 15 + `eval/lifecycle.ts` | 14 event types；actor authority；读面 replay guard；trigger abort；cycle test |
 | AC-7 `evals` 扩展 + non-ok reasons | migration 15 + `EvalStore` | DB CHECK + store；legacy NULL |
 | AC-8 publish 同事务写 domain thread verdict 消息 | `eval/publish.ts` | eval+event+message；缺 thread 无残留 |
 | AC-9 CLI list/open/overdue/show/accept-sunset；delete_sunset 两层门 | `cli/eval.ts` | CLI e2e；未 accept awaiting；accept 后 resolved |
 | AC-10 cvo_suppressed / accept-sunset operator-only；eval 不能自签 terminal | lifecycle actors | owner/eval/system 尝试 forbidden；operator 成功 |
-| AC-11 secret 扫描；无 findingKey 消息标 observation | `eval/redaction.ts` + publish | AWS/GitHub/PEM 样例；无 key marker |
+| AC-11 secret 扫描；无 findingKey 只允许 keep_observe；消息标 observation | `eval/redaction.ts` + publish | AWS/GitHub/PEM 样例；actionable 无 key fail closed；`no finding tracking` marker |
 | AC-12 review/eval 两本账；不建第二 verdict/case/finding/artifact store | schema + tests | review 表计数不变；无 eval_cases/eval_verdicts/eval_findings；artifacts 表唯一索引 |
 | AC-13 approved 架构对齐：actor_kind agent/operator/system/migration；fix_recorded/main_landed/sla_escalated；same-case cycle；artifacts 表 | 全套 | contract tests + review |
 
@@ -423,7 +431,7 @@ codeteam eval accept-sunset <caseId|verdictId> --reason <text> [--expected-seq <
   migration 15；`src/cli/eval.ts`；`evals/domains/*.yaml`。
 - Artifacts：走 `artifacts` 表 + `${dataDir}/evals/bundles`；无
   `eval-artifacts/` 第二目录。
-- 测试：daemon 全量 **516 passed / 2 skipped**；eval 定向 37/37。
+- 测试：daemon 全量 **521 passed / 2 skipped**；eval 定向 42/42。
 - Root `tsc`、`build:offline`、biome、runtime/pinned dependency、TS import、
   entry graph 通过。
 - 未做：W7 HTTP/Console、W5 scheduler 接线、live corpus materialization、

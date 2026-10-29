@@ -100,12 +100,28 @@ tool usage；W6b 要把这些 canonical 数据变成可决策的 eval：
     synthetic smoke report。
 - 验证：
   - `NODE_ENV=development npm run build:offline`：exit 0。
-  - `packages/codeteam-daemon`：**76 files passed + 2 skipped；516 tests
+  - `packages/codeteam-daemon`：**76 files passed + 2 skipped；521 tests
     passed + 2 skipped**。
   - root `tsc --noEmit`：exit 0；biome changed files：clean。
   - runtime/pinned dependency、TS import、entry graph：pass。
 - Review：墨墨（reuse/process）→ 砚砚（provenance/eval credibility/
   security）待进行；merge 后更新 close record。
+
+## Review follow-up（2026-10-29，architecture-aligned re-review）
+
+- **P2-A**：无 `findingKey` 的 `fix/build/delete_sunset` 现在 publish
+  fail closed；只有 `keep_observe` 允许 observation report。
+- **P2-B**：`getEvalCase`/`projectEvalCase` 读面严格重放每条 history event
+  的 transition + actor authority；raw INSERT 非法 history 会 fail closed
+  （新增 authority/transition 两条 raw INSERT 测试）。
+- **P2-C**：`sla_escalated` 恢复六个合法来源态参数化测试；补 `migration`
+  unwired 拒绝与未知 event type fail-closed 测试。
+- **P3-D**：non-ok measurement 强制 `withdrawalConditions` 非空。
+- **P3-E**：observation 消息头统一为 `no finding tracking`（对齐 approved §3.7）。
+- **P3-F**：registry 补 `threadPolicy` 契约/解析；`metricGlossary`/fixtures/
+  legacy task ids 保持。
+- **P3-G**：补 raw event_type DB CHECK 测试。
+- **P3-H**：CLI `overdue` 增加 escalated case 与 open case 同屏证据。
 
 ## Dependencies
 

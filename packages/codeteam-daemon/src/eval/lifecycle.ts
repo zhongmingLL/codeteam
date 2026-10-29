@@ -322,6 +322,80 @@ function projectStatus(events: readonly EvalLifecycleEvent[]): EvalLifecycleStat
 	return status;
 }
 
+function contextForEvent(
+	store: ControlStore,
+	base: VerdictContext,
+	event: EvalLifecycleEvent,
+	ownerProfileId: string,
+): VerdictContext {
+	const verdictId = event.payload.verdictId ?? base.record.id;
+	const record = store.evals.get(verdictId);
+	if (!record) {
+		throw new ControlError("not_found", `eval verdict ${verdictId} for history event ${event.eventId} not found`);
+	}
+	const metrics = readEvalVerdictMetrics(record);
+	const findingKey = metrics.findingKey;
+	if (!findingKey) {
+		throw new ControlError("invalid_state", `eval verdict ${verdictId} has no findingKey in history`);
+	}
+	if (findingKey !== base.findingKey) {
+		throw new ControlError("invalid_state", "eval history switched findingKey");
+	}
+	return {
+		record,
+		metrics,
+		verdict: metrics.packet.verdict,
+		domainId: record.domainId!,
+		findingKey,
+		caseId: base.caseId,
+		sla: metrics.sla,
+		createdAt: metrics.packet.createdAt,
+		ownerProfileId,
+		evalAgentProfileId: metrics.evalAgentProfileId,
+		events: [],
+	};
+}
+
+/**
+ * Read-side replay guard required by the approved architecture review:
+ * append-only triggers protect bytes, not semantics. Every history read must
+ * revalidate transition and authority, including raw INSERTs that bypassed the
+ * service layer.
+ */
+function validateEventHistory(store: ControlStore, base: VerdictContext, events: readonly EvalLifecycleEvent[]): void {
+	if (events.length === 0) throw new ControlError("not_found", "eval case has no lifecycle events");
+	const first = events[0]!;
+	if (first.seq !== 1 || first.type !== "verdict_opened") {
+		throw new ControlError("invalid_state", "eval lifecycle must start with verdict_opened at seq 1");
+	}
+	const root = contextForEvent(store, base, first, base.ownerProfileId);
+	assertActorAllowed({
+		context: root,
+		type: first.type,
+		actor: first.actor,
+		payload: first.payload,
+		store,
+	});
+	let status: EvalLifecycleStatus = "open";
+	let ownerProfileId = root.metrics.packet.ownerAsk.targetOwnerProfileId;
+	for (let index = 1; index < events.length; index += 1) {
+		const event = events[index]!;
+		if (event.seq !== index + 1) {
+			throw new ControlError("invalid_state", `eval lifecycle seq gap at ${event.eventId}`);
+		}
+		const context = contextForEvent(store, base, event, ownerProfileId);
+		assertTransition(context, status, event.type);
+		assertActorAllowed({ context, type: event.type, actor: event.actor, payload: event.payload, store });
+		status = statusAfterEvent(status, event.type);
+		if (event.type === "owner_reassigned" && event.payload.targetOwnerProfileId) {
+			ownerProfileId = event.payload.targetOwnerProfileId;
+		}
+		if (event.type === "verdict_cycle_observed") {
+			ownerProfileId = context.metrics.packet.ownerAsk.targetOwnerProfileId;
+		}
+	}
+}
+
 function isOverdue(status: EvalLifecycleStatus, createdAt: string, sla: EvalDomainSla, now: number): boolean {
 	if (TERMINAL_EVAL_STATUSES.includes(status)) return false;
 	if (status === "escalated") return true;
@@ -333,11 +407,13 @@ function isOverdue(status: EvalLifecycleStatus, createdAt: string, sla: EvalDoma
 }
 
 export function projectEvalCase(options: {
+	readonly store: ControlStore;
 	readonly context: VerdictContext;
 	readonly events: readonly EvalLifecycleEvent[];
 	readonly now: number;
 }): EvalCaseProjection {
-	const { context, events, now } = options;
+	const { store, context, events, now } = options;
+	validateEventHistory(store, context, events);
 	const status = projectStatus(events);
 	const lastEvent = events.at(-1)!;
 	const awaitingSunsetDecision = context.verdict === "delete_sunset" && !TERMINAL_EVAL_STATUSES.includes(status);
@@ -372,7 +448,7 @@ export function getEvalCase(store: ControlStore, caseOrVerdictId: string, now = 
 	const events = listEvents(store, caseId);
 	if (events.length === 0) throw new ControlError("not_found", `eval case ${caseId} not found`);
 	const context = resolveVerdictContext(store, { caseId });
-	return projectEvalCase({ context, events, now });
+	return projectEvalCase({ store, context, events, now });
 }
 
 export function listEvalCases(store: ControlStore, filter: EvalCaseListFilter = {}): EvalCaseListItem[] {
@@ -824,7 +900,7 @@ export function acceptSunset(store: ControlStore, input: AcceptSunsetInput, now 
 			].join("\n"),
 		});
 		const events = listEvents(store, context.caseId);
-		return { event, case: projectEvalCase({ context, events, now: now() }), message };
+		return { event, case: projectEvalCase({ store, context, events, now: now() }), message };
 	});
 }
 

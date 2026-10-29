@@ -67,6 +67,11 @@ export interface EvalDomainRegistryEntry {
 	readonly sla: EvalDomainSla;
 	readonly fixtures?: readonly EvalDomainFixture[];
 	readonly legacyScheduledTaskIds?: readonly string[];
+	readonly threadPolicy?: {
+		readonly role: "working-home";
+		readonly stateSot: "registry";
+		readonly allowedContent?: readonly string[];
+	};
 	readonly enabled: boolean;
 	readonly dormancy?: EvalDomainDormancy;
 }

@@ -181,6 +181,12 @@ export function validateVerdictPacket(packet: VerdictHandoffPacketV1, entry: Eva
 	if (!EVAL_VERDICT_KINDS.includes(packet.verdict)) {
 		throw new ControlError("invalid_input", `invalid verdict ${String(packet.verdict)}`);
 	}
+	if (packet.verdict !== "keep_observe" && !packet.findingKey) {
+		throw new ControlError(
+			"invalid_input",
+			`verdict ${packet.verdict} requires findingKey; observation reports may only keep_observe`,
+		);
+	}
 	const ownerAsk = assertObject(packet.ownerAsk, "ownerAsk", OWNER_ASK_KEYS);
 	const targetFeatureId = nonEmpty(ownerAsk.targetFeatureId as string | undefined, "ownerAsk.targetFeatureId");
 	const targetOwnerProfileId = nonEmpty(
@@ -271,7 +277,11 @@ function validateMeasurement(
 	const decision = assertObject(measurement.decision, "measurement.decision", DECISION_KEYS);
 	const decisionStatus = nonEmpty(decision.status as string | undefined, "measurement.decision.status");
 	const reasons = assertStringList(decision.reasons, "measurement.decision.reasons", 0);
-	assertStringList(decision.withdrawalConditions, "measurement.decision.withdrawalConditions", 0);
+	const withdrawalConditions = assertStringList(
+		decision.withdrawalConditions,
+		"measurement.decision.withdrawalConditions",
+		0,
+	);
 	if (measurement.status === "ok" && decisionStatus !== "usable") {
 		throw new ControlError("invalid_input", "measurement status ok requires decision usable");
 	}
@@ -280,6 +290,9 @@ function validateMeasurement(
 	}
 	if (measurement.status !== "ok" && reasons.length === 0) {
 		throw new ControlError("invalid_input", "non-ok measurement requires decision reasons");
+	}
+	if (measurement.status !== "ok" && withdrawalConditions.length === 0) {
+		throw new ControlError("invalid_input", "non-ok measurement requires withdrawalConditions");
 	}
 	const actionProposal = assertObject(measurement.actionProposal, "measurement.actionProposal", ACTION_PROPOSAL_KEYS);
 	if (actionProposal.action !== packet.verdict) {
@@ -313,7 +326,7 @@ function renderVerdictMessage(options: {
 		`- Domain: ${packet.domainId}`,
 		`- Verdict: ${packet.verdict}`,
 		`- Measurement: ${measurement.status} (${measurement.cohort.window.startMs}..${measurement.cohort.window.endMs})`,
-		`- Case: ${caseId ?? "observation report · no case tracking"}`,
+		`- Case: ${caseId ?? "observation report · no finding tracking"}`,
 	];
 	if (measurement.decision.reasons.length > 0) {
 		lines.push(`- Reasons: ${measurement.decision.reasons.join("; ")}`);

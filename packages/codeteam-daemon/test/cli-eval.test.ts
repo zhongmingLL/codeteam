@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	appendEvalLifecycleEvent,
 	type EvalDomainRegistryEntry,
 	initOperatorCredential,
 	openControlStore,
@@ -15,6 +16,7 @@ const CLI = join(process.cwd(), "dist", "cli.js");
 const dirs: string[] = [];
 let dataDir: string;
 let caseId: string;
+let escalatedCaseId: string;
 
 function rawCli(args: readonly string[]) {
 	return spawnSync(process.execPath, [CLI, "--data-dir", dataDir, ...args], {
@@ -109,6 +111,24 @@ beforeEach(() => {
 		measurement: makeMeasurement(observation),
 		actor: { kind: "agent", id: "profile:eval" },
 	});
+	const escalatedPacket = makeVerdictPacket({
+		id: "verdict-cli-escalated",
+		findingKey: "cli-escalated-1",
+	});
+	const escalated = publishEvalVerdict(store, {
+		entry,
+		packet: escalatedPacket,
+		measurement: makeMeasurement(escalatedPacket),
+		actor: { kind: "agent", id: "profile:eval" },
+	});
+	escalatedCaseId = escalated.case!.caseId;
+	appendEvalLifecycleEvent(store, {
+		caseId: escalatedCaseId,
+		expectedSequence: 1,
+		type: "sla_escalated",
+		actor: { kind: "system", id: "sla-reconciler" },
+		reason: "SLA missed",
+	});
 	store.close();
 });
 
@@ -121,17 +141,17 @@ describe("W6b eval CLI", () => {
 		const all = cliJson<Array<{ caseId: string; status: string; awaitingSunsetDecision: boolean; overdue: boolean }>>(
 			["eval", "list"],
 		);
-		expect(all).toHaveLength(1);
-		expect(all[0]).toMatchObject({
+		expect(all).toHaveLength(2);
+		expect(all.find((item) => item.caseId === caseId)).toMatchObject({
 			caseId,
 			status: "open",
 			awaitingSunsetDecision: true,
 			overdue: true,
 		});
 		const open = cliJson<Array<{ caseId: string }>>(["eval", "open"]);
-		expect(open.map((item) => item.caseId)).toEqual([caseId]);
+		expect(open.map((item) => item.caseId).sort()).toEqual([caseId, escalatedCaseId].sort());
 		const overdue = cliJson<Array<{ caseId: string }>>(["eval", "overdue"]);
-		expect(overdue.map((item) => item.caseId)).toEqual([caseId]);
+		expect(overdue.map((item) => item.caseId).sort()).toEqual([caseId, escalatedCaseId].sort());
 		const detail = cliJson<{
 			case: { status: string; awaitingSunsetDecision: boolean };
 			verdict: { id: string; status: string };
@@ -161,7 +181,7 @@ describe("W6b eval CLI", () => {
 		expect(accepted.case.awaitingSunsetDecision).toBe(false);
 		expect(accepted.event.type).toBe("sunset_accepted");
 		const open = cliJson<Array<{ caseId: string }>>(["eval", "open"]);
-		expect(open).toEqual([]);
+		expect(open.map((item) => item.caseId)).toEqual([escalatedCaseId]);
 		const detail = cliJson<{ case: { status: string } }>(["eval", "show", caseId]);
 		expect(detail.case.status).toBe("resolved");
 		const second = rawCli(["eval", "accept-sunset", "verdict-cli-sunset", "--reason", "again"]);
