@@ -169,7 +169,18 @@ export class WorkerControlServer {
 			const toolName = required(request.toolName, "toolName");
 			const input = objectInput(request.input);
 			const { workerId, binding, run, session, task } = this.resolveWorkerBinding(request);
-			this.assertCredentialAllowsTool(binding.credentialId, toolName);
+			const credentialDecision = this.credentialToolDecision(binding.credentialId, toolName);
+			if (credentialDecision === "missing") {
+				throw new ControlError("forbidden", `credential has no tool allowlist; denied ${toolName}`);
+			}
+			if (credentialDecision === "denied") {
+				return {
+					ok: true,
+					allow: false,
+					code: "tool_not_allowed_for_role",
+					reason: `credential does not allow tool ${toolName}`,
+				};
+			}
 			this.registry.heartbeat(workerId);
 			const decision = evaluateWorkerToolCall({ role: session.role, task, dataDir: this.dataDir, runId: run.id }, {
 				toolName,
@@ -231,12 +242,17 @@ export class WorkerControlServer {
 		return { workerId, binding, run, session, task };
 	}
 
-	private assertCredentialAllowsTool(credentialId: string, toolName: string): void {
+	private credentialToolDecision(credentialId: string, toolName: string): "allow" | "denied" | "missing" {
 		const credential = this.store.credentials.get(credentialId);
 		if (!credential) throw new ControlError("invalid_token", "invocation credential not found");
 		const allowed = credential.toolPolicy.allowedTools;
-		if (!Array.isArray(allowed) || allowed.length === 0) return;
-		if (!allowed.some((entry) => entry === toolName)) {
+		if (!Array.isArray(allowed) || allowed.length === 0) return "missing";
+		return allowed.some((entry) => entry === toolName) ? "allow" : "denied";
+	}
+
+	private assertCredentialAllowsTool(credentialId: string, toolName: string): void {
+		const decision = this.credentialToolDecision(credentialId, toolName);
+		if (decision !== "allow") {
 			throw new ControlError("forbidden", `credential does not allow tool ${toolName}`);
 		}
 	}

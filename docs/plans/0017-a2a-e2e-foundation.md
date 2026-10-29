@@ -1,7 +1,7 @@
 ---
 title: "A2A E2E Foundation — production composition + worker tools 实施计划"
 doc_kind: plan
-status: implemented_pending_review
+status: reviewed_pending_vision_guard
 created: 2026-10-30
 updated: 2026-10-30
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -219,10 +219,12 @@ NODE_ENV=development npm run build:offline
 
 - F015-1..F015-7 已实现；真实 CLI/daemon/worker + mock provider E2E 与
   cold-boot recovery E2E 已跑通。
-- daemon 全量：82 files passed | 2 skipped；541 tests passed | 2 skipped。
+- daemon 全量：82 files passed | 2 skipped；542 tests passed | 2 skipped。
 - 定向：`daemon-a2a-e2e` 2、`control-a2a-worker-e2e` 3、
   `control-a2a-control` 2、`control-a2a-tools` 14、
   `control-handoff-terminal` 5、`cli-producer-binding` 1。
+- Review follow-up：P2 allowedTools fail-closed 已修（mint 默认按 run.role
+  填充；empty/missing 在 socket 拒绝）+ 负例；biome 三文件漂移已修。
 - 证据：[`../reports/2026-10-30-a2a-e2e-foundation.md`](../reports/2026-10-30-a2a-e2e-foundation.md)。
 - 待办：烁烁 A2A/session/worker review、砚砚 identity/custody/security
   review、墨墨 vision guard；review 通过后 merge PR 并 final-only 回报主 thread。

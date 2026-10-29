@@ -203,4 +203,41 @@ describe("A2A control socket", () => {
 			socket.destroy();
 		}
 	});
+
+	it("denies a credential with an empty allowlist instead of treating it as allow-all", async () => {
+		fixture = createW5BFixture();
+		const socketPath = await fixture.runtime.start();
+		const run = createBoundRun(fixture, {
+			runId: "run-empty-policy",
+			workerId: "worker-empty-policy",
+			profileId: "profile:coder",
+			sessionId: "session-coder",
+		});
+		const minted = mintInvocationCredential(fixture.store, { runId: run.id, toolPolicy: {} });
+		expect(minted.credential.toolPolicy.allowedTools).toBeUndefined();
+		const { socket, request } = await connectControl(socketPath);
+		try {
+			const readPolicy = await request({
+				type: "tool_policy",
+				workerId: "worker-empty-policy",
+				token: minted.token,
+				toolName: "read",
+				input: { path: "README.md" },
+			});
+			expect(readPolicy).toMatchObject({ ok: false, error: { code: "forbidden" } });
+			const a2a = await request({
+				type: "a2a_call",
+				workerId: "worker-empty-policy",
+				token: minted.token,
+				toolName: "a2a_send",
+				input: { kind: "question", targets: ["profile:reviewer"], bodyMd: "must not send" },
+			});
+			expect(a2a).toMatchObject({ ok: false, error: { code: "forbidden" } });
+			expect(
+				fixture.store.messages.listThread("thread-w5b").some((message) => message.bodyMd.includes("must not send")),
+			).toBe(false);
+		} finally {
+			socket.destroy();
+		}
+	});
 });

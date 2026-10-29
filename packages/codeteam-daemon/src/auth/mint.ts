@@ -2,6 +2,7 @@ import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import { newId } from "../control/stores/helpers.ts";
 import type { InvocationCredential, OwnerAuthProvenance } from "../control/stores/types.ts";
+import { allowedToolsForRole } from "../workers/tool-policy.ts";
 import {
 	createInvocationTokenMaterial,
 	formatInvocationToken,
@@ -48,6 +49,7 @@ export function mintInvocationCredential(
 
 	const material = createInvocationTokenMaterial();
 	const credentialId = newId();
+	const toolPolicy = input.toolPolicy ?? { allowedTools: [...allowedToolsForRole(run.role)] };
 	const credential = store.credentials.create({
 		id: credentialId,
 		tokenHash: hashInvocationSecret(material.salt, material.secret),
@@ -60,7 +62,7 @@ export function mintInvocationCredential(
 		threadId: run.thread_id,
 		userId: run.user_id ?? "unpaired-user",
 		ownerAuthProvenance: input.ownerAuthProvenance ?? "strict",
-		toolPolicy: input.toolPolicy ?? {},
+		toolPolicy,
 		callbackAllowlist: [...(input.callbackAllowlist ?? [])],
 		expiresAt: input.expiresAt ?? null,
 	});

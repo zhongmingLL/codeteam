@@ -1,7 +1,7 @@
 ---
 title: "A2A E2E Foundation — composition + worker tools 实施报告"
 doc_kind: report
-status: implemented_pending_review
+status: reviewed_pending_vision_guard
 created: 2026-10-30
 updated: 2026-10-30
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -107,7 +107,7 @@ A2A、return/replace tool、live provider 质量验收。详见 `0017` residual 
 ```text
 NODE_ENV=development npm run build          # packages/codeteam-daemon, pass
 NODE_ENV=development npx vitest --run       # 82 files passed | 2 skipped
-                                            # 541 tests passed | 2 skipped
+                                            # 542 tests passed | 2 skipped
 ```
 
 定向：
@@ -121,7 +121,21 @@ control-handoff-terminal.test.ts       5 passed
 cli-producer-binding.test.ts           1 passed
 ```
 
-Biome：changed files checked, no issues.
+Biome：仓库官方 gate `npx biome check --error-on-warnings .` 通过；仅剩
+base 已存在的 `packages/codeteam-skills/test/catalog.test.ts` useTemplate
+info（非本 PR）。
+
+Review follow-up（砚砚 identity/custody/security）：
+
+- P2 allowedTools fail-open 已修：`mintInvocationCredential` 未显式给
+  toolPolicy 时按 run.role 填充 allowlist；control socket 对 missing/empty
+  allowlist 直接 `forbidden`，非空但缺 tool 时返回 policy denial。新增
+  `control-a2a-control.test.ts` 空清单负例，同时覆盖 tool_policy 与
+  a2a_call。
+- Biome 三文件漂移已机械修复；`terminal.ts` 也在官方 gate 中一并收口。
+- 保留为后续 follow-up：completed run + unverified candidate 的 claim 释放、
+  handoff deadline 封顶与周期 expiry sweep、installation-wide peers
+  收敛。它们不影响本 slice 的约定结果。
 
 未通过/未运行：
 

@@ -178,9 +178,11 @@ describe("server-owned handoff terminal resolver", () => {
 	it("releases a holder claim when a failed run left only an unverified candidate", () => {
 		const base = fixture();
 		const coder = sourceRun(base);
-		const created = createA2AHandlers({ store: base.store, principal: coder.principal, clock: base.now }).createHandoff(
-			handoffInput({ idempotencyKey: "idem-failed-candidate" }) as never,
-		);
+		const created = createA2AHandlers({
+			store: base.store,
+			principal: coder.principal,
+			clock: base.now,
+		}).createHandoff(handoffInput({ idempotencyKey: "idem-failed-candidate" }) as never);
 		const reviewerMessage = base.createSourceMessage("failed candidate");
 		const reviewerRun = base.createRun({
 			id: "run-reviewer-failed-candidate",
@@ -201,7 +203,9 @@ describe("server-owned handoff terminal resolver", () => {
 		const resolved = resolver.onRunTerminal(base.store.runs.get(reviewerRun.id)!);
 		expect(resolved.map((entry) => entry.status)).toEqual(["unverified", "released"]);
 		expect(base.store.handoffs.get(created.handoff.id)?.status).toBe("pending");
-		expect(base.store.handoffs.listClaims(created.handoff.id).every((claim) => claim.status === "released")).toBe(true);
+		expect(base.store.handoffs.listClaims(created.handoff.id).every((claim) => claim.status === "released")).toBe(
+			true,
+		);
 	});
 
 	it("commits a review_delivered predicate only from a matching review record", () => {
@@ -258,7 +262,11 @@ describe("server-owned handoff terminal resolver", () => {
 			seq: 1,
 			userId: "user-1",
 		});
-		const created = createA2AHandlers({ store: base.store, principal: coder.principal, clock: base.now }).createHandoff(
+		const created = createA2AHandlers({
+			store: base.store,
+			principal: coder.principal,
+			clock: base.now,
+		}).createHandoff(
 			handoffInput({
 				terminalPredicate: { kind: "review_delivered", headSha },
 				targets: ["profile:reviewer-anthropic"],

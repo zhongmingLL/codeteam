@@ -207,9 +207,9 @@ describe("W5a A2A tool surface", () => {
 		);
 		expect(base.store.queue.listPending()).toHaveLength(1);
 		expect(base.store.handoffs.custodyEvents(created.handoff.id)).toHaveLength(2);
-		expect(() =>
-			handlers.createHandoff({ ...handoffInput(), terminalPredicate: { kind: "different" } }),
-		).toThrow(/another intent/);
+		expect(() => handlers.createHandoff({ ...handoffInput(), terminalPredicate: { kind: "different" } })).toThrow(
+			/another intent/,
+		);
 	});
 
 	it("rejects handoff forgery and missing expected artifact", () => {

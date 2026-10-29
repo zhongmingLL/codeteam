@@ -77,11 +77,7 @@ export class HandoffTerminalResolver {
 			if (candidate) {
 				const resolution = this.resolveHandoff(handoff.id, run.id);
 				resolutions.push(resolution);
-				if (
-					resolution.status === "unverified" &&
-					run.status !== "completed" &&
-					run.status !== "running"
-				) {
+				if (resolution.status === "unverified" && run.status !== "completed" && run.status !== "running") {
 					const reason = `holder_run_${run.status}_candidate_unverified`;
 					if (handoff.mode === "parallel") {
 						this.store.handoffs.recordParallelUnfinished({

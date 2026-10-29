@@ -41,7 +41,8 @@ export function toolRoleForSessionRole(role: string): ToolRole {
 }
 
 export function allowedToolsForRole(role: string): readonly string[] {
-	const fileTools = toolRoleForSessionRole(role) === "coder" ? CODER_TOOLS : READ_ONLY_TOOLS;
+	const toolRole = toolRoleForSessionRole(role);
+	const fileTools = toolRole === "coder" || toolRole === "verifier" ? CODER_TOOLS : READ_ONLY_TOOLS;
 	return [...fileTools, ...a2aToolsForRole(role)];
 }
 
