@@ -99,7 +99,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W3 | closed (F006, operator confirmed) | `0008` + F006；包内 171 passed / 1 skipped；砚砚 code/security + 墨墨 eval 均 Approved；CI 4/4；烁烁愿景守护有条件放行，follow-up ledger（W4）已补；operator 已确认 F006 accepted/done |
 | W4 | closed (F007, operator confirmed) | PR #47 `4743137c9` + PR #48 `772dd1741`；264 passed / 1 skipped；22/22 AC；vision guard 烁烁 approve；W7a residuals tracked（`0009` / F007） |
 | W5 | closed (W5a/W5b/W5c core/W5d; operator confirmed) | F008/`0010` + F009/`0011`（W5b closed）+ F010/`0012`（W5c core closed，PR #52 `959ef7e76`）+ F011/`0013`（W5d closed：PR #56 `168e67dd0` reviewed HEAD `dfb872d9c`；烁烁 post-merge P2 修复 PR #59 `125ba4f81` reviewed HEAD `d96ca039b`，APPROVED；operator signoff `0001793204552090-003817-65582a68`） |
-| W6 | in progress | W6a memory/evidence merged (PR #62 @ `c82b0679c`；reviewed @ `aeeb1420a`；CI 4/4)；W6c observability/trajectory merged (#63 @ `12c546854`)；W6b eval/harness-eval 已按 approved reuse review 重构，review 进行中 |
+| W6 | in progress | W6a memory/evidence merged (PR #62 @ `c82b0679c`)；W6c observability/trajectory merged (#63 @ `12c546854`)；W6b eval/harness-eval merged (#66 @ `b74952ac2`)；W6 overall operator signoff pending |
 | W7 | planned | W7a headless → W7b Console（C → A）；前端复用基线 `DP-WEB-1=B`（classic）；`thread-chat-surface`/`thread-navigation` 在 W7b 前补卡 |
 | W8 | planned | github-signals W8 契约已冻结；待 Forge connector |
 
