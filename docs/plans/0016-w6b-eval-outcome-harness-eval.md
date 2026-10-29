@@ -1,7 +1,7 @@
 ---
 title: "W6b Eval / Outcome / Harness Eval 实施计划与契约冻结"
 doc_kind: plan
-status: review
+status: closed
 created: 2026-10-29
 updated: 2026-10-29
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -450,5 +450,16 @@ codeteam eval accept-sunset <caseId|verdictId> --reason <text> [--expected-seq <
   安全上限；W7 加分页。
 - 已知写入顺序：artifact 先落盘、DB 事务后写；DB conflict race 可能留下
   content-addressed 孤儿文件，不损坏既有证据，清理留给后续 GC。
+
+## 11. Close record（2026-10-29）
+
+- PR #66 squash merged into `codeteam-work` at
+  `b74952ac28f2cc96fea30f72814caa344e53a1d6`（base `49f9a140e`）。
+- Final reviewed HEAD：`8163565548d442f563a5d5f028265e3377ad6352`。
+- 墨墨 reuse/process approved at `012c630f`；砚砚 provenance/credibility/
+  security approved at final HEAD `816356554`（覆盖 P3-I/J/K/L delta）。
+- Post-merge acceptance at `b74952ac2`：daemon 77 files passed + 2 skipped，
+  **524 tests passed + 2 skipped**；root `tsc --noEmit` exit 0。
+- W6b slice closed；W6 overall operator signoff remains with the source thread.
 
 [宪宪/deepseek-flash🐾]

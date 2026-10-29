@@ -1,7 +1,7 @@
 ---
 feature_ids: [codeteam/F014]
 title: "F014: W6b Eval / Outcome / Harness Eval"
-status: review
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 created: 2026-10-29
@@ -127,6 +127,20 @@ tool usage；W6b 要把这些 canonical 数据变成可决策的 eval：
 - **P3-K**：plan 记录 W7 composition 必须把 bundle cap/sample trace/SLA
   defaults 传入 publish/registry；W6b 无生产 publish caller。
 - **P3-L**：caseId 保留 `\u001f` 分隔符并在 plan 记录抗碰撞理由。
+
+## Close record（2026-10-29）
+
+- PR #66 squash merged into `codeteam-work` at
+  `b74952ac28f2cc96fea30f72814caa344e53a1d6`（base `49f9a140e`）。
+- Final reviewed HEAD：`8163565548d442f563a5d5f028265e3377ad6352`。
+- 独立 verdict：墨墨 reuse/process approved at `012c630f`（P2-A/B/C +
+  P3-D–H 闭环）；砚砚 provenance/credibility/security approved at
+  `816356554`（覆盖 P3-I/J/K/L final delta）。
+- Pre-merge verification at `816356554`：daemon 77 files passed + 2 skipped，
+  **524 tests passed + 2 skipped**；`build:offline`、root `tsc`、biome clean。
+- Post-merge acceptance at `b74952ac2`：daemon **524 passed / 2 skipped**；
+  root `tsc --noEmit` exit 0。
+- Feature close：**done**。W6 整体 operator signoff 由 source thread 另行提请。
 
 ## Dependencies
 
