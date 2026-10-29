@@ -221,7 +221,7 @@ NODE_ENV=development npm run build:offline
   cold-boot recovery E2E 已跑通。
 - daemon 全量：82 files passed | 2 skipped；542 tests passed | 2 skipped。
 - 定向：`daemon-a2a-e2e` 2、`control-a2a-worker-e2e` 3、
-  `control-a2a-control` 2、`control-a2a-tools` 14、
+  `control-a2a-control` 3、`control-a2a-tools` 14、
   `control-handoff-terminal` 5、`cli-producer-binding` 1。
 - Review follow-up：P2 allowedTools fail-closed 已修（mint 默认按 run.role
   填充；empty/missing 在 socket 拒绝）+ 负例；biome 三文件漂移已修。

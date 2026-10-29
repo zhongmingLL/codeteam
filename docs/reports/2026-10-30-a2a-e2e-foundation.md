@@ -115,7 +115,7 @@ NODE_ENV=development npx vitest --run       # 82 files passed | 2 skipped
 ```text
 daemon-a2a-e2e.test.ts                 2 passed
 control-a2a-worker-e2e.test.ts         3 passed
-control-a2a-control.test.ts            2 passed
+control-a2a-control.test.ts            3 passed
 control-a2a-tools.test.ts             14 passed
 control-handoff-terminal.test.ts       5 passed
 cli-producer-binding.test.ts           1 passed
