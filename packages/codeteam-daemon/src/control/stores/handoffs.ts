@@ -215,6 +215,15 @@ export class HandoffStore {
 		return row ? mapHandoff(row) : null;
 	}
 
+	findLiveByCanonicalActionKey(taskId: string, canonicalActionKey: string): Handoff | null {
+		const row = this.database
+			.prepare(
+				"SELECT * FROM handoffs WHERE task_id = ? AND canonical_action_key = ? AND status IN ('pending', 'claimed') ORDER BY created_at LIMIT 1",
+			)
+			.get(taskId, canonicalActionKey) as HandoffRow | undefined;
+		return row ? mapHandoff(row) : null;
+	}
+
 	list(filter: HandoffListFilter = {}): Handoff[] {
 		const clauses: string[] = [];
 		const params: string[] = [];
@@ -516,6 +525,21 @@ export class HandoffStore {
 				this.requireRunForHandoff(input.runId, current.taskId, current.holderThreadId);
 				const now = this.clock();
 				const outcomes = { ...current.holderOutcomes };
+				if (current.mode === "parallel") {
+					const verifiedProfiles = input.verifiedProfiles ? new Set(input.verifiedProfiles) : null;
+					for (const value of Object.values(current.completionCandidates)) {
+						if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+						const candidate = value as Record<string, unknown>;
+						const profileId = typeof candidate.profileId === "string" ? candidate.profileId : null;
+						if (!profileId) continue;
+						if (verifiedProfiles && !verifiedProfiles.has(profileId)) continue;
+						outcomes[profileId] = {
+							outcome: "succeeded",
+							evidenceRef: typeof candidate.evidenceRef === "string" ? candidate.evidenceRef : null,
+							at: typeof candidate.at === "number" ? candidate.at : now,
+						};
+					}
+				}
 				outcomes[input.profileId] = { outcome: "succeeded", evidenceRef: input.evidenceRef, at: now };
 				this.database
 					.prepare(
@@ -627,6 +651,45 @@ export class HandoffStore {
 			)
 			.all(now) as unknown as ClaimRow[];
 		return rows.map(mapClaim);
+	}
+
+	recordParallelUnfinished(input: { handoffId: string; profileId: string; runId: string; reason: string }): Handoff {
+		try {
+			return this.transaction.run(() => {
+				const current = this.require(input.handoffId);
+				if (current.mode !== "parallel") {
+					throw new ControlError("invalid_state", `handoff ${current.id} is not parallel`);
+				}
+				if (current.status !== "pending" && current.status !== "claimed") return current;
+				const outcomes = { ...current.holderOutcomes };
+				outcomes[input.profileId] = {
+					outcome: "unfinished",
+					reason: input.reason,
+					at: this.clock(),
+				};
+				this.database
+					.prepare("UPDATE handoffs SET holder_outcomes_json = ?, revision = revision + 1 WHERE id = ?")
+					.run(jsonObject(outcomes, "holderOutcomes"), current.id);
+				this.appendCustodyEvent({
+					handoffId: current.id,
+					subjectRef: current.subjectRef,
+					generation: current.generation,
+					classification: "informational",
+					kind: "handoff.parallel_unfinished",
+					actorRef: `profile:${input.profileId}`,
+					payload: { runId: input.runId, reason: input.reason },
+				});
+				this.audit.append({
+					actor: `profile:${input.profileId}`,
+					action: "handoff_parallel_unfinished",
+					subject: `handoff:${current.id}`,
+					args: { runId: input.runId, reason: input.reason },
+				});
+				return this.get(current.id)!;
+			});
+		} catch (error) {
+			throw mapStoreError(error);
+		}
 	}
 
 	loopGuardSnapshot(): LoopGuardSnapshotEntry[] {

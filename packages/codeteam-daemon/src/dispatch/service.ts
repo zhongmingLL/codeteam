@@ -24,6 +24,7 @@ import { InterruptedExecutionError, RetryableExecutionError } from "./types.ts";
 const DEFAULT_MAX_ENTRIES = 100;
 const DEFAULT_QUEUE_CLAIM_TTL_MS = 5 * 60 * 1000;
 const MAX_DEFERRED_ENTRIES = 500;
+const DEFER_AUDIT_COOLDOWN_MS = 30_000;
 const TERMINAL_STATUSES = new Set(["completed", "canceled", "interrupted", "failed"]);
 const POISON_DISPATCH_ERRORS = new Set([
 	"invalid_state",
@@ -38,6 +39,7 @@ const DEFERRABLE_DISPATCH_ERRORS = new Set([
 	"budget_paused",
 	"deployment_wait_pending",
 	"deployment_wait_outcome_pending",
+	"dispatch_not_ready",
 ]);
 
 export interface DispatchServiceOptions {
@@ -287,12 +289,7 @@ export class DispatchService {
 						if (current?.status === "claimed" && current.claimId) {
 							this.store.queue.release(entry.id, current.claimId);
 						}
-						this.store.audit.append({
-							actor: "system:dispatch",
-							action: "dispatch_deferred",
-							subject: `queue:${entry.id}`,
-							args: { code, message },
-						});
+						this.auditDeferred(entry.id, code, message);
 						deferredIds.add(entry.id);
 						continue;
 					} else {
@@ -300,12 +297,7 @@ export class DispatchService {
 						if (current?.status === "claimed" && current.claimId) {
 							this.store.queue.release(entry.id, current.claimId);
 						}
-						this.store.audit.append({
-							actor: "system:dispatch",
-							action: "dispatch_deferred",
-							subject: `queue:${entry.id}`,
-							args: { code, message },
-						});
+						this.auditDeferred(entry.id, code, message);
 						break;
 					}
 				}
@@ -327,6 +319,10 @@ export class DispatchService {
 		this.assertBudgetAdmission(source.taskId);
 		this.deploymentWaitGuard?.assertCanStart(source.taskId);
 		const targets = [...entry.targets];
+		this.assertDeliveryReady(source.taskId, targets, entry.sourceKind);
+		const handoff = source.controlRef ? this.store.handoffs.get(source.controlRef) : null;
+		const boundHandoff =
+			handoff && handoff.taskId === source.taskId && handoff.holderThreadId === source.threadId ? handoff : null;
 		return this.store.transaction.run(() => {
 			let activeClaimId = claimId;
 			const runs: Run[] = [];
@@ -399,11 +395,48 @@ export class DispatchService {
 					attempt: route.attempt,
 					responseBody: "",
 					chainMetadata: route.chainMetadata,
+					handoffId: boundHandoff?.id ?? null,
+					executionKind: "ordinary",
 				});
 				runs.push(result.run);
 			}
 			return { runs, failures };
 		});
+	}
+
+	private assertDeliveryReady(taskId: string, targets: readonly string[], sourceKind: string): void {
+		const task = this.store.tasks.get(taskId);
+		if (!task) throw new ControlError("not_found", `task ${taskId} not found`);
+		if (!task.worktree) {
+			throw new ControlError(
+				"dispatch_not_ready",
+				`task ${task.id} has no worktree; run codeteam task prepare ${task.id} before draining`,
+			);
+		}
+		if (sourceKind !== "backlog_dispatch") return;
+		for (const targetProfileId of targets) {
+			const profile = this.store.profiles.get(targetProfileId);
+			if (!profile) throw new ControlError("not_found", `agent profile ${targetProfileId} not found`);
+			if (profile.status !== "active") {
+				throw new ControlError("invalid_state", `agent profile ${targetProfileId} is disabled`);
+			}
+			const sessions = this.store.sessions.list({ taskId, profileId: targetProfileId, status: "active" });
+			if (sessions.length === 0) {
+				throw new ControlError(
+					"dispatch_not_ready",
+					`target ${targetProfileId} has no active session for task ${taskId}; run codeteam task prepare ${taskId}`,
+				);
+			}
+			if (sessions.length > 1) {
+				throw new ControlError("invalid_state", `target ${targetProfileId} has ambiguous active sessions`);
+			}
+			if (sessions[0]!.threadId !== task.threadId) {
+				throw new ControlError(
+					"invalid_state",
+					`target ${targetProfileId} session is not bound to the task thread`,
+				);
+			}
+		}
 	}
 
 	private assertBudgetAdmission(taskId: string): void {
@@ -481,12 +514,25 @@ export class DispatchService {
 		});
 	}
 
+	private auditDeferred(queueEntryId: string, code: string, message: string): void {
+		const subject = `queue:${queueEntryId}`;
+		const latest = this.store.audit.latest(subject, "dispatch_deferred");
+		if (latest && latest.args.code === code && latest.ts + DEFER_AUDIT_COOLDOWN_MS > this.clock()) return;
+		this.store.audit.append({
+			actor: "system:dispatch",
+			action: "dispatch_deferred",
+			subject,
+			args: { code, message },
+		});
+	}
+
 	private async executeRun(run: Run): Promise<DispatchRunOutcome> {
 		const task = this.store.tasks.get(run.taskId);
 		const session = this.store.sessions.get(run.agentSessionId);
 		const target = this.store.profiles.get(run.recipientProfileId);
 		const sourceMessage = this.store.messages.get(run.sourceId);
 		const responseMessage = run.responseMessageId ? this.store.messages.get(run.responseMessageId) : null;
+		const handoff = run.handoffId ? this.store.handoffs.get(run.handoffId) : null;
 		if (!task || !session || !target || !sourceMessage || !responseMessage) {
 			const failed = this.settleRun(run.id, {
 				status: "failed",
@@ -514,6 +560,7 @@ export class DispatchService {
 					sourceMessage,
 					responseMessage,
 					route: this.resolveRoute(run.taskId, run.recipientProfileId, run.chainMetadata),
+					handoff,
 				},
 				controller.signal,
 			);

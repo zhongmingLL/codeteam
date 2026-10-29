@@ -95,6 +95,12 @@ export {
 	type StartDaemonOptions,
 	startDaemon,
 } from "./daemon.ts";
+export {
+	DaemonControlPlane,
+	type DaemonControlPlaneOptions,
+	type DaemonControlPlaneReady,
+	resolvePiCliPath,
+} from "./daemon-runtime.ts";
 export * from "./deployment-wait/index.ts";
 export * from "./dispatch/index.ts";
 export { DaemonError, type DaemonErrorCode } from "./errors.ts";

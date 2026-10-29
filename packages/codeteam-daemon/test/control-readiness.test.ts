@@ -187,13 +187,24 @@ describe("W5c task readiness", () => {
 
 	it("blocks a task whose budget is paused and a task with no worktree capacity", () => {
 		const base = fixture();
+		base.store.tasks.create({
+			id: "task-worktree-capacity",
+			kind: "work",
+			threadId: "thread-1",
+			title: "worktree capacity",
+			why: "worktree capacity",
+			ownerProfileId: "profile:coder",
+			createdBy: "user-1",
+			userId: "user-1",
+			backlogItemId: "backlog-1",
+		});
 		const budget = new BudgetService(base.store, base.now);
-		budget.setLimits({ taskId: "task-1", tokensLimit: 0, actorRef: "user:user-1" });
+		budget.setLimits({ taskId: "task-worktree-capacity", tokensLimit: 0, actorRef: "user:user-1" });
 		const service = new TaskReadinessService(base.store, {
 			capacity: new LocalCapacityProvider(base.store, { maxConcurrentRuns: 4 }),
 			worktree: { checkCapacity: () => ({ ok: false, code: "worktree_capacity_exhausted", message: "full" }) },
 		});
-		const decision = service.evaluateTask("task-1", { now: base.now() });
+		const decision = service.evaluateTask("task-worktree-capacity", { now: base.now() });
 		expect(decision.reasons.map((reason) => reason.code)).toEqual(
 			expect.arrayContaining(["budget_paused", "worktree_capacity_exhausted"]),
 		);

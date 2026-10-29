@@ -7,7 +7,8 @@ export type DaemonErrorCode =
 	| "ledger_corrupt"
 	| "invalid_state"
 	| "missing_services"
-	| "undeclared_service";
+	| "undeclared_service"
+	| "control_plane_failed";
 
 export class DaemonError extends Error {
 	readonly code: DaemonErrorCode;

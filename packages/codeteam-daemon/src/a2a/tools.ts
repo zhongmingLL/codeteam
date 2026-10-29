@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import { newId } from "../control/stores/helpers.ts";
@@ -15,6 +16,14 @@ import type {
 } from "../control/stores/types.ts";
 import { assertHandoffDirection } from "../policy/handoffs.ts";
 import type { RunPrincipal } from "./principal.ts";
+
+export {
+	A2A_TOOL_NAMES,
+	A2A_TOOL_SPECS,
+	type A2AToolName,
+	type A2AToolSpec,
+	describeA2ATools,
+} from "./tool-surface.ts";
 
 const A2A_MESSAGE_KINDS = new Set(["question", "answer", "proposal", "finding", "status"]);
 export const DEFAULT_MAX_A2A_DEPTH = 32;
@@ -68,6 +77,7 @@ export interface A2ASendInput {
 	targets: string[];
 	bodyMd: string;
 	replyTo?: string | null;
+	requestId?: string | null;
 }
 
 export interface HandoffCreateInput {
@@ -92,7 +102,7 @@ export interface HandoffCreateInput {
 
 export interface A2ASendResult {
 	message: Message;
-	queueEntry: QueueEntry;
+	queueEntry: QueueEntry | null;
 }
 
 export interface HandoffCreateResult {
@@ -166,6 +176,29 @@ function assertDepth(depth: number): void {
 	}
 }
 
+function a2aSendIntentHash(input: {
+	kind: string;
+	targets: readonly string[];
+	bodyMd: string;
+	replyTo: string | null;
+}): string {
+	return createHash("sha256")
+		.update(
+			JSON.stringify({ kind: input.kind, targets: input.targets, bodyMd: input.bodyMd, replyTo: input.replyTo }),
+		)
+		.digest("hex");
+}
+
+function stableJson(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+	if (value && typeof value === "object") {
+		const record = value as Record<string, unknown>;
+		const keys = Object.keys(record).sort();
+		return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
+	}
+	return JSON.stringify(value);
+}
+
 export class A2AToolHandlers {
 	private readonly store: ControlStore;
 	private readonly principal: RunPrincipal;
@@ -179,18 +212,26 @@ export class A2AToolHandlers {
 
 	send(input: A2ASendInput): A2ASendResult {
 		const raw = assertObject(input, "a2a_send input");
-		assertAllowedKeys(raw, ["kind", "targets", "bodyMd", "replyTo"], "a2a_send");
+		assertAllowedKeys(raw, ["kind", "targets", "bodyMd", "replyTo", "requestId"], "a2a_send");
 		const kind = nonEmptyString(raw.kind, "kind");
 		if (!A2A_MESSAGE_KINDS.has(kind)) {
 			throw new ControlError("invalid_input", `a2a_send kind ${kind} is not a discussion kind`);
 		}
 		const bodyMd = nonEmptyString(raw.bodyMd, "bodyMd");
 		const targets = this.deliverableTargets(uniqueTargets(raw.targets));
+		const targetIds = targets.map((target) => target.profile.id);
 		const replyTo = raw.replyTo === undefined || raw.replyTo === null ? null : nonEmptyString(raw.replyTo, "replyTo");
 		if (replyTo) this.assertReplyTarget(replyTo);
+		const requestId =
+			raw.requestId === undefined || raw.requestId === null ? null : nonEmptyString(raw.requestId, "requestId");
+		const intentHash = a2aSendIntentHash({ kind, targets: targetIds, bodyMd, replyTo });
 		const depth = nextDepth(this.principal);
 		assertDepth(depth);
 		return this.store.transaction.run(() => {
+			if (requestId) {
+				const existing = this.store.a2aRequests.get(this.principal.taskId, this.principal.profileId, requestId);
+				if (existing) return this.replaySend(existing, intentHash);
+			}
 			const message = this.store.messages.append({
 				threadId: this.principal.threadId,
 				taskId: this.principal.taskId,
@@ -205,7 +246,7 @@ export class A2AToolHandlers {
 				sourceId: message.id,
 				sourceRecordId: this.principal.runId,
 				sourceKind: "message_wake",
-				targets: targets.map((target) => target.profile.id),
+				targets: targetIds,
 				authorIntent: Object.fromEntries(
 					targets.map((target) => [
 						target.profile.id,
@@ -224,9 +265,33 @@ export class A2AToolHandlers {
 				subject: `message:${message.id}`,
 				args: { kind, targets: targets.map((target) => target.profile.id), queueEntryId: queueEntry.id },
 			});
+			if (requestId) {
+				this.store.a2aRequests.reserve({
+					taskId: this.principal.taskId,
+					profileId: this.principal.profileId,
+					requestId,
+					intentHash,
+					messageId: message.id,
+					queueEntryId: queueEntry.id,
+				});
+			}
 			this.recordToolCall("a2a_send");
 			return { message, queueEntry };
 		});
+	}
+
+	private replaySend(
+		existing: { readonly intentHash: string; readonly requestId: string; readonly messageId: string },
+		intentHash: string,
+	): A2ASendResult {
+		if (existing.intentHash !== intentHash) {
+			throw new ControlError("conflict", `a2a_send requestId ${existing.requestId} was used by another intent`);
+		}
+		const message = this.store.messages.get(existing.messageId);
+		if (!message) {
+			throw new ControlError("conflict", `a2a_send requestId ${existing.requestId} has no visible message`);
+		}
+		return { message, queueEntry: this.store.queue.get(`queue:${message.id}`) };
 	}
 
 	createHandoff(input: HandoffCreateInput): HandoffCreateResult {
@@ -287,6 +352,9 @@ export class A2AToolHandlers {
 			raw.parallelIntent === undefined || raw.parallelIntent === null
 				? null
 				: nonEmptyString(raw.parallelIntent, "parallelIntent");
+		if (mode === "parallel" && parallelIntent === null) {
+			throw new ControlError("invalid_input", "parallel handoff requires parallelIntent");
+		}
 		const subject = nonEmptyString(raw.subject, "subject");
 		const subjectRef = nonEmptyString(raw.subjectRef, "subjectRef");
 		const expectedArtifact = nonEmptyString(raw.expectedArtifact, "expectedArtifact");
@@ -315,11 +383,19 @@ export class A2AToolHandlers {
 			const sameTargets =
 				existing.holderProfileIds.length === targets.length &&
 				targets.every((target) => existing.holderProfileIds.includes(target.profile.id));
+			const samePredicate = stableJson(existing.terminalPredicate) === stableJson(terminalPredicate);
+			const samePayload = stableJson(existing.payload) === stableJson(payload);
 			if (
 				!sameTargets ||
+				existing.kind !== kind ||
 				existing.subjectRef !== subjectRef ||
 				existing.actionFamily !== actionFamily ||
-				existing.successorSlot !== successorSlot
+				existing.successorSlot !== successorSlot ||
+				existing.mode !== mode ||
+				existing.parallelIntent !== parallelIntent ||
+				existing.expectedArtifact !== expectedArtifact ||
+				!samePredicate ||
+				!samePayload
 			) {
 				throw new ControlError("conflict", `handoff idempotency key ${idempotencyKey} was used by another intent`);
 			}
@@ -330,6 +406,19 @@ export class A2AToolHandlers {
 				message,
 				queueEntry: this.store.queue.get(`queue:${message.id}`),
 			};
+		}
+		const live = this.store.handoffs.findLiveByCanonicalActionKey(this.principal.taskId, canonicalActionKey);
+		if (live) {
+			this.store.audit.append({
+				actor: `profile:${this.principal.profileId}`,
+				action: "handoff_loop_guard_blocked",
+				subject: `handoff:${live.id}`,
+				args: { canonicalActionKey, attemptedIdempotencyKey: idempotencyKey },
+			});
+			throw new ControlError(
+				"loop_guard_live_handoff",
+				`canonical action ${canonicalActionKey} already has a live handoff ${live.id}`,
+			);
 		}
 		return this.store.transaction.run(() => {
 			const message = this.store.messages.append({
@@ -415,10 +504,10 @@ export class A2AToolHandlers {
 		const handoff = this.store.handoffs.get(handoffId);
 		if (!handoff) throw new ControlError("not_found", `handoff ${handoffId} not found`);
 		if (handoff.taskId !== this.principal.taskId || handoff.holderThreadId !== this.principal.threadId) {
-			return { status: "safe_wait", reason: "task_scope_mismatch", handoff };
+			return { status: "safe_wait", reason: "task_scope_mismatch", handoff: null };
 		}
 		if (!handoff.holderProfileIds.includes(this.principal.profileId)) {
-			return { status: "safe_wait", reason: "not_holder", handoff };
+			return { status: "safe_wait", reason: "not_holder", handoff: null };
 		}
 		if (handoff.status !== "pending" && handoff.status !== "claimed") {
 			return { status: "terminal_handoff", handoff };
@@ -509,117 +598,4 @@ export class A2AToolHandlers {
 
 export function createA2AHandlers(options: A2AHandlersOptions): A2AToolHandlers {
 	return new A2AToolHandlers(options);
-}
-
-export const A2A_TOOL_NAMES = [
-	"a2a_send",
-	"handoff_create",
-	"handoff_claim",
-	"handoff_complete",
-	"handoff_withdraw",
-] as const;
-export type A2AToolName = (typeof A2A_TOOL_NAMES)[number];
-
-export interface A2AToolSpec {
-	readonly name: A2AToolName;
-	readonly description: string;
-	readonly inputSchema: Record<string, unknown>;
-}
-
-export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
-	{
-		name: "a2a_send",
-		description: "Send an agent discussion message and wake the typed targets. Does not change custody.",
-		inputSchema: {
-			type: "object",
-			additionalProperties: false,
-			required: ["kind", "targets", "bodyMd"],
-			properties: {
-				kind: { enum: ["question", "answer", "proposal", "finding", "status"] },
-				targets: { type: "array", minItems: 1, items: { type: "string" } },
-				bodyMd: { type: "string", minLength: 1 },
-				replyTo: { type: ["string", "null"] },
-			},
-		},
-	},
-	{
-		name: "handoff_create",
-		description: "Create a typed responsibility handoff, visible message shell, and one pending-wake queue entry.",
-		inputSchema: {
-			type: "object",
-			additionalProperties: false,
-			required: [
-				"kind",
-				"targets",
-				"subject",
-				"subjectRef",
-				"actionFamily",
-				"successorSlot",
-				"expectedArtifact",
-				"deadline",
-				"idempotencyKey",
-				"terminalPredicate",
-			],
-			properties: {
-				kind: { type: "string" },
-				targets: { type: "array", minItems: 1, items: { type: "string" } },
-				subject: { type: "string", minLength: 1 },
-				subjectRef: { type: "string", minLength: 1 },
-				actionFamily: { type: "string" },
-				successorSlot: { type: "string" },
-				expectedArtifact: { type: "string", minLength: 1 },
-				deadline: { type: "integer" },
-				idempotencyKey: { type: "string", minLength: 1 },
-				terminalPredicate: { type: "object" },
-				payload: { type: "object" },
-				mode: { enum: ["single", "parallel"] },
-				parallelIntent: { type: ["string", "null"] },
-				replyTo: { type: ["string", "null"] },
-				stageId: { type: ["string", "null"] },
-				resolveMode: { enum: ["completes", "bounces_back_to_owner", null] },
-				bodyMd: { type: "string" },
-			},
-		},
-	},
-	{
-		name: "handoff_claim",
-		description: "Claim a handoff as an exact holder run; non-holders receive safe_wait.",
-		inputSchema: {
-			type: "object",
-			additionalProperties: false,
-			required: ["handoffId"],
-			properties: { handoffId: { type: "string" } },
-		},
-	},
-	{
-		name: "handoff_complete",
-		description: "Record a completion candidate for the calling holder run; verified commit remains separate.",
-		inputSchema: {
-			type: "object",
-			additionalProperties: false,
-			required: ["handoffId", "evidenceRef", "result"],
-			properties: {
-				handoffId: { type: "string" },
-				evidenceRef: { type: "string", minLength: 1 },
-				result: { type: "object" },
-			},
-		},
-	},
-	{
-		name: "handoff_withdraw",
-		description: "Withdraw a handoff as its author.",
-		inputSchema: {
-			type: "object",
-			additionalProperties: false,
-			required: ["handoffId", "reason"],
-			properties: {
-				handoffId: { type: "string" },
-				reason: { type: "string", minLength: 1 },
-			},
-		},
-	},
-];
-
-export function describeA2ATools(): readonly A2AToolSpec[] {
-	return A2A_TOOL_SPECS;
 }

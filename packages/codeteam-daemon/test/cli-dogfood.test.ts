@@ -93,37 +93,26 @@ describe("codeteam W4 CLI dogfood", () => {
 		]);
 		const backlogId = created.id;
 		cli(["backlog", "approve", backlogId]);
-		const dispatched = cliJson<{ thread: { id: string }; message: { id: string }; queueEntry: { id: string } }>([
-			"backlog",
-			"dispatch",
-			backlogId,
-			"--to",
-			"profile:eval",
-			"--phase",
-			"coding",
-			"--body",
-			"Kickoff",
-		]);
+		const dispatched = cliJson<{
+			thread: { id: string };
+			task: { id: string };
+			message: { id: string };
+			queueEntry: { id: string };
+		}>(["backlog", "dispatch", backlogId, "--to", "profile:eval", "--phase", "coding", "--body", "Kickoff"]);
 		const threadId = dispatched.thread.id;
 		const listed = cliJson<Array<{ id: string; backlogItemId: string }>>(["thread", "list", "--backlog", backlogId]);
 		expect(listed.some((thread) => thread.id === threadId)).toBe(true);
 		const shown = cliJson<{ messages: Array<{ kind: string }> }>(["thread", "show", threadId]);
 		expect(shown.messages.some((message) => message.kind === "backlog_kickoff")).toBe(true);
-		cli(["thread", "post", threadId, "please execute the dogfood", "--to", "profile:eval"]);
-		const task = cliJson<{ id: string }>([
+		const task = dispatched.task;
+		const prepared = cliJson<{ sessions: Array<{ id: string; role: string }> }>([
 			"task",
-			"create",
-			"--backlog",
-			backlogId,
-			"--thread",
-			threadId,
-			"--title",
-			"Dogfood task",
-			"--why",
-			"prove the CLI loop",
-			"--owner",
+			"prepare",
+			task.id,
+			"--profile",
 			"profile:eval",
 		]);
+		cli(["thread", "post", threadId, "please execute the dogfood", "--to", "profile:eval", "--task", task.id]);
 		const directed = cliJson<{ inbox: Array<{ taskId: string }> }>([
 			"thread",
 			"post",
@@ -136,25 +125,13 @@ describe("codeteam W4 CLI dogfood", () => {
 			const pending = store.queue.listPending().find((entry) => entry.threadId === threadId);
 			expect(pending).toBeDefined();
 			store.queue.claim(pending!.id, { claimId: "dogfood-claim" });
-			store.sessions.create({
-				id: "dogfood-session",
-				threadId,
-				taskId: task.id,
-				profileId: "profile:eval",
-				role: "coder",
-				effectiveToolPolicy: "default",
-				provider: "test",
-				model: "glm-5.3-flash",
-				modelFamily: "glm",
-				seq: 0,
-			});
 			store.cutoverQueueEntry({
 				queueEntryId: pending!.id,
 				claimId: "dogfood-claim",
 				targetProfileId: "profile:eval",
 				taskId: task.id,
-				role: "coder",
-				agentSessionId: "dogfood-session",
+				role: prepared.sessions[0]!.role,
+				agentSessionId: prepared.sessions[0]!.id,
 				provider: "test",
 				model: "glm-5.3-flash",
 				modelFamily: "glm",

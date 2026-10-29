@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
+import { Type } from "typebox";
+import { A2A_TOOL_SPECS } from "../a2a/tool-surface.ts";
 
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const REQUEST_TIMEOUT_MS = 2_000;
+const A2A_REQUEST_TIMEOUT_MS = 30_000;
 
 interface ToolCallEvent {
 	readonly toolName: string;
@@ -20,6 +23,18 @@ interface ExtensionAPI {
 		handler: (event: ToolCallEvent) => Promise<ToolCallResult | undefined> | ToolCallResult | undefined,
 	): void;
 	on(event: "session_start" | "agent_settled", handler: () => void): void;
+	registerTool(tool: {
+		name: string;
+		label: string;
+		description: string;
+		promptGuidelines?: string[];
+		parameters: unknown;
+		execute(
+			toolCallId: string,
+			params: Record<string, unknown>,
+			signal: AbortSignal | undefined,
+		): Promise<{ content: Array<{ type: "text"; text: string }>; details: Record<string, unknown> }>;
+	}): void;
 }
 
 interface Pending {
@@ -96,6 +111,15 @@ class ControlClient {
 		}
 	}
 
+	async a2aCall(toolName: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+		const token = readToken(this.tokenFile);
+		if (!token) throw new Error("a2a_tool_unavailable: no active run token");
+		return await this.request(
+			{ type: "a2a_call", workerId: this.workerId, token, toolName, input },
+			A2A_REQUEST_TIMEOUT_MS,
+		);
+	}
+
 	private async request(payload: Record<string, unknown>, timeoutMs: number): Promise<Record<string, unknown>> {
 		await this.connect();
 		const socket = this.socket;
@@ -140,8 +164,10 @@ class ControlClient {
 			this.pending.delete(id);
 			if (message.ok === true) pending.resolve(message);
 			else {
-				const error = message.error as { message?: unknown } | undefined;
-				pending.reject(new Error(typeof error?.message === "string" ? error.message : "worker control error"));
+				const error = message.error as { code?: unknown; message?: unknown } | undefined;
+				const code = typeof error?.code === "string" ? error.code : "control_error";
+				const reason = typeof error?.message === "string" ? error.message : "worker control error";
+				pending.reject(new ControlRequestError(code, reason));
 			}
 		}
 	}
@@ -152,6 +178,16 @@ class ControlClient {
 			this.pending.delete(id);
 			pending.reject(error);
 		}
+	}
+}
+
+class ControlRequestError extends Error {
+	readonly code: string;
+
+	constructor(code: string, message: string) {
+		super(`${code}: ${message}`);
+		this.name = "ControlRequestError";
+		this.code = code;
 	}
 }
 
@@ -198,4 +234,25 @@ export default function codeteamWorkerExtension(pi: ExtensionAPI): void {
 		const reason = typeof decision.reason === "string" ? decision.reason : "tool denied by worker policy";
 		return { block: true, reason: `${code}: ${reason}` };
 	});
+
+	for (const spec of A2A_TOOL_SPECS) {
+		pi.registerTool({
+			name: spec.name,
+			label: `A2A ${spec.name}`,
+			description: spec.description,
+			promptGuidelines: [
+				"Use a2a_send for discussion; use handoff_create for responsibility transfer.",
+				"Targets are AgentProfile ids, not display names. Text @ does not route.",
+			],
+			parameters: Type.Unsafe(spec.inputSchema),
+			async execute(_toolCallId, params) {
+				const response = await client.a2aCall(spec.name, params);
+				const result = response.result;
+				return {
+					content: [{ type: "text", text: JSON.stringify(result ?? response) }],
+					details: { tool: spec.name, result: result ?? response },
+				};
+			},
+		});
+	}
 }

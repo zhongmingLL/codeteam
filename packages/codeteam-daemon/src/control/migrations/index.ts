@@ -13,6 +13,7 @@ import { WORKER_RUNTIME_STATEMENTS } from "./012-worker-runtime.ts";
 import { SCHEDULING_RESOURCE_STATEMENTS } from "./013-w5c-scheduling-resources.ts";
 import { TOOL_USAGE_SCHEMA_STATEMENTS } from "./014-tool-usage.ts";
 import { W6B_EVAL_SCHEMA_STATEMENTS } from "./015-w6b-eval.ts";
+import { A2A_REQUEST_DEDUPE_STATEMENTS } from "./016-a2a-request-dedupe.ts";
 
 export interface ControlMigration {
 	readonly version: number;
@@ -47,6 +48,7 @@ export const CONTROL_MIGRATIONS: readonly ControlMigration[] = [
 		statements: W6B_EVAL_SCHEMA_STATEMENTS,
 		foreignKeysOff: true,
 	},
+	{ version: 16, name: "a2a-request-dedupe", statements: A2A_REQUEST_DEDUPE_STATEMENTS },
 ];
 
 export const CONTROL_TABLE_NAMES: readonly string[] = [
@@ -93,4 +95,5 @@ export const CONTROL_TABLE_NAMES: readonly string[] = [
 	"audit",
 	"tool_usage_events",
 	"tool_usage_counters",
+	"a2a_requests",
 ];

@@ -95,6 +95,8 @@ export class RpcAgentExecutor implements AgentExecutor {
 				sourceMessage,
 				continuityCapsule: ensured.handle.session.continuityCapsule,
 				degradedContinuity: ensured.degradedReason,
+				peers: this.store.profiles.list({ status: "active" }),
+				handoff: request.handoff,
 			});
 			const result = await this.harness.prompt(handle, {
 				runId: run.id,

@@ -1,7 +1,8 @@
 import { join } from "node:path";
 import { ControlError } from "../control/errors.ts";
-import type { Message, MessageKind, ThreadPhase } from "../control/stores/types.ts";
+import type { Message, MessageKind, StageLane, Task, ThreadPhase } from "../control/stores/types.ts";
 import { BudgetService } from "../scheduling/budget.ts";
+import { defaultWorktreeRoot, TaskProvisioningService } from "../scheduling/provisioning.ts";
 import { TaskReadinessService } from "../scheduling/readiness.ts";
 import { WorktreePoolService } from "../scheduling/worktree-pool.ts";
 import { SopService } from "../sop/service.ts";
@@ -24,6 +25,7 @@ const MESSAGE_KINDS = new Set<MessageKind>([
 	"approval_pointer",
 ]);
 const PHASES = new Set<ThreadPhase>(["coding", "research", "brainstorm"]);
+const LANES = new Set<StageLane>(["impl", "quality_gate", "fresh_context", "review", "merge"]);
 
 export async function runThreadCommand(args: ParsedArgs, context: CliContext): Promise<number> {
 	const subcommand = args.positionals[0];
@@ -86,8 +88,43 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 	const kind = (option(args, "kind") ?? "chat") as MessageKind;
 	if (!MESSAGE_KINDS.has(kind)) throw new ControlError("invalid_input", `unknown message kind ${kind}`);
 	const targets = options(args, "to");
+	const taskId = option(args, "task");
+	let boundTask: Task | null = null;
+	if (targets.length > 0) {
+		if (!taskId) {
+			throw new ControlError(
+				"invalid_input",
+				"thread post --to requires --task <taskId>; run codeteam task list --thread <threadId>",
+			);
+		}
+		boundTask = context.store.tasks.get(taskId);
+		if (!boundTask) throw new ControlError("not_found", `task ${taskId} not found`);
+		if (boundTask.threadId !== id) {
+			throw new ControlError("invalid_input", `task ${taskId} is not bound to thread ${id}`);
+		}
+		if (!boundTask.worktree) {
+			throw new ControlError(
+				"invalid_state",
+				`task ${taskId} has no worktree; run codeteam task prepare ${taskId} --profile <profile>`,
+			);
+		}
+		for (const target of targets) {
+			const profile = context.store.profiles.get(target);
+			if (!profile || profile.status !== "active") {
+				throw new ControlError("invalid_state", `target ${target} is not an active profile`);
+			}
+			const sessions = context.store.sessions.list({ taskId, profileId: target, status: "active" });
+			if (sessions.length !== 1) {
+				throw new ControlError(
+					"invalid_state",
+					`target ${target} has ${sessions.length} active sessions for task ${taskId}; run codeteam task prepare ${taskId} --profile ${target}`,
+				);
+			}
+		}
+	}
 	const message = context.store.messages.append({
 		threadId: id,
+		taskId: boundTask?.id ?? null,
 		authorKind: "user",
 		authorId: operator.id,
 		kind,
@@ -98,6 +135,7 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 		queue = context.store.queue.admit({
 			threadId: id,
 			sourceId: message.id,
+			sourceRecordId: boundTask?.id ?? null,
 			sourceKind: "conversation_input",
 			targets,
 			authorIntent: Object.fromEntries(targets.map((target) => [target, "next_work"])),
@@ -106,7 +144,8 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 		});
 	}
 	const directed = resolveLineMentions(context, body);
-	const task = context.store.tasks.list({ threadId: id }).find((candidate) => candidate.status !== "done") ?? null;
+	const task =
+		boundTask ?? context.store.tasks.list({ threadId: id }).find((candidate) => candidate.status !== "done") ?? null;
 	const inboxItems = [];
 	if (directed.length > 0 && task) {
 		inboxItems.push(
@@ -203,6 +242,13 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 				createdBy: operator.id,
 				userId: option(args, "user") ?? operator.id,
 				backlogItemId: requireOption(args, "backlog"),
+				repo: option(args, "repo") ?? null,
+				baseRef: option(args, "base-ref") ?? null,
+				baseSha: option(args, "base-sha") ?? null,
+				worktree: option(args, "worktree") ?? null,
+				branch: option(args, "branch") ?? null,
+				risk: option(args, "risk") ?? null,
+				lane: laneOption(args),
 			});
 			const tokensLimit = budgetNumber(args, "budget-tokens");
 			const costLimit = budgetNumber(args, "budget-cost");
@@ -220,6 +266,38 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 		});
 		if (context.json) writeJson(task);
 		else writeLine(`created task ${task.id} thread=${task.threadId} backlog=${task.backlogItemId}`);
+		return 0;
+	}
+	if (subcommand === "prepare") {
+		const operator = requireOperator(context);
+		const taskId = args.positionals[1];
+		if (!taskId) {
+			throw new ControlError(
+				"invalid_input",
+				"usage: codeteam task prepare <taskId> --profile <profile> [--profile ...] [--role <role>] [--worktree <path>]",
+			);
+		}
+		const profileIds = options(args, "profile");
+		if (profileIds.length === 0) throw new ControlError("invalid_input", "--profile is required");
+		const service = new TaskProvisioningService(context.store, {
+			worktreeRootDir: defaultWorktreeRoot(context.dataDir),
+		});
+		const prepared = service.prepare({
+			taskId,
+			profileIds,
+			role: option(args, "role") ?? null,
+			worktree: option(args, "worktree") ?? null,
+			actorRef: `user:${operator.id}`,
+		});
+		if (context.json) writeJson(prepared);
+		else {
+			writeLine(
+				`prepared task ${prepared.task.id} worktree=${prepared.task.worktree} lease=${prepared.lease?.id ?? "-"}`,
+			);
+			for (const session of prepared.sessions) {
+				writeLine(`session=${session.id} profile=${session.profileId} role=${session.role}`);
+			}
+		}
 		return 0;
 	}
 	if (subcommand === "readiness") {
@@ -261,7 +339,7 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 		else writeLine(`updated task ${task.id} status=${task.status}`);
 		return 0;
 	}
-	throw new ControlError("invalid_input", "usage: codeteam task <create|list|status|readiness>");
+	throw new ControlError("invalid_input", "usage: codeteam task <create|prepare|list|status|readiness>");
 }
 
 function budgetNumber(args: ParsedArgs, name: string): number | undefined {
@@ -272,4 +350,11 @@ function budgetNumber(args: ParsedArgs, name: string): number | undefined {
 		throw new ControlError("invalid_input", `--${name} must be a non-negative number`);
 	}
 	return value;
+}
+
+function laneOption(args: ParsedArgs): StageLane | null {
+	const lane = option(args, "lane");
+	if (lane === undefined) return null;
+	if (!LANES.has(lane as StageLane)) throw new ControlError("invalid_input", `unknown task lane ${lane}`);
+	return lane as StageLane;
 }

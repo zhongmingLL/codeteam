@@ -39,7 +39,7 @@ describe("W6b eval schema", () => {
 		const database = new DatabaseSync(":memory:");
 		configureControlDatabase(database);
 		applyControlMigrations(database);
-		expect(CONTROL_MIGRATIONS.at(-1)?.version).toBe(15);
+		expect(CONTROL_MIGRATIONS.at(-1)?.version).toBe(16);
 		expect(
 			database
 				.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'eval_lifecycle_events'")

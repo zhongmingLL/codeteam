@@ -15,6 +15,7 @@ import { runMergeCommand } from "./merge.ts";
 import { writeJson, writeLine } from "./output.ts";
 import { runProfileCommand } from "./profile.ts";
 import { runScheduleCommand } from "./schedule.ts";
+import { runSessionCommand } from "./session.ts";
 import { runSopCommand } from "./sop.ts";
 import { runTaskCommand, runThreadCommand } from "./thread.ts";
 
@@ -56,6 +57,7 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 		if (command === "deployment") return runDeploymentCommand(args, context);
 		if (command === "daemon") return await runDaemonCommand(args, context);
 		if (command === "schedule") return runScheduleCommand(args, context);
+		if (command === "session") return runSessionCommand(args, context);
 		if (command === "profile") return runProfileCommand(args, context);
 		if (command === "gate") return runGateCommand(args, context);
 		if (command === "merge") return runMergeCommand(args, context);
@@ -115,6 +117,7 @@ function writeUsage(): void {
 	writeLine("  deployment wait <register|status|sweep> ...");
 	writeLine("  daemon <status|stop>");
 	writeLine("  schedule <add|list|show|pause|resume|tick>");
+	writeLine("  session <list|show>");
 	writeLine("  profile <seed|add|list>");
 	writeLine("  gate <check|telemetry>");
 	writeLine("  merge <plan|execute|record>");
@@ -126,7 +129,7 @@ function writeUsage(): void {
 	writeLine("backlog create dependencies: [--depends-on <backlogId> ...]");
 	writeLine("backlog depend: <id> [--on <backlogId> ... | --clear]");
 	writeLine("backlog dispatch: <id> --to <profile> [--phase coding|research|brainstorm] [--body]");
-	writeLine("thread post: <threadId> <body> [--to <profile>] [--kind chat]");
+	writeLine("thread post: <threadId> <body> [--to <profile> --task <taskId>] [--kind chat]");
 	writeLine("thread tail: <threadId> [--after-seq N] [--follow] [--interval-ms N]");
 	writeLine("sop evidence: <backlogId> <check> <evidenceRef> --subject-revision <sha>");
 	writeLine("sop update: <backlogId> --stage <stage> --baton <profile|operator> --focus <text>");
@@ -136,4 +139,5 @@ function writeUsage(): void {
 	writeLine("deployment wait register: <taskId> (--revision <sha> | --new-boot) --to <profile> [--services daemon]");
 	writeLine("schedule add: --task --thread [--factory task_wake] [--every-ms N] [--to <profile> ...] [--body]");
 	writeLine("task create budget: [--budget-tokens N] [--budget-cost N] [--budget-wall-time-ms N]");
+	writeLine("task prepare: <taskId> --profile <profile> [--profile ...] [--role <role>] [--worktree <path>]");
 }

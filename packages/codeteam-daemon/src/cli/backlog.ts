@@ -153,13 +153,20 @@ function dispatchBacklog(args: ParsedArgs, context: CliContext): number {
 		title: option(args, "title"),
 		repo: option(args, "repo") ?? null,
 		kickoffBody: option(args, "body"),
+		taskTitle: option(args, "task-title"),
+		taskWhy: option(args, "task-why"),
+		baseRef: option(args, "base-ref") ?? null,
+		baseSha: option(args, "base-sha") ?? null,
+		branch: option(args, "branch") ?? null,
+		risk: option(args, "risk") ?? null,
 	});
 	if (context.json) writeJson(result);
 	else {
-		writeLine(`dispatched ${result.backlog.id} thread=${result.thread.id}`);
+		writeLine(`dispatched ${result.backlog.id} thread=${result.thread.id} task=${result.task.id}`);
 		writeLine(
 			`message=${result.message.id} queue=${result.queueEntry.id} targets=${result.queueEntry.targets.join(",")}`,
 		);
+		writeLine(`next: codeteam task prepare ${result.task.id} --profile ${result.queueEntry.targets[0]}`);
 	}
 	return 0;
 }
