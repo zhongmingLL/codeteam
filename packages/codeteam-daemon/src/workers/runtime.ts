@@ -6,6 +6,7 @@ import type { ControlStore } from "../control/store.ts";
 import type { Run, Worker } from "../control/stores/types.ts";
 import { settleRunTerminal } from "../dispatch/settle.ts";
 import type { DispatchServiceHooks } from "../dispatch/types.ts";
+import type { ObservabilityRuntime } from "../observability/runtime.ts";
 import { WorkerControlServer } from "./control.ts";
 import { RpcAgentExecutor } from "./executor.ts";
 import { WorkerFailurePolicy } from "./failure-policy.ts";
@@ -25,6 +26,7 @@ export interface WorkerRuntimeOptions extends WorkerRegistryOptions {
 	readonly extraArgs?: readonly string[];
 	readonly env?: Record<string, string | undefined>;
 	readonly maxAttempts?: number;
+	readonly observability?: ObservabilityRuntime | null;
 }
 
 export interface StaleSweepResult {
@@ -92,6 +94,7 @@ export class WorkerRuntime {
 			harness: this.harness,
 			dataDir: options.dataDir,
 			clock: this.clock,
+			observability: options.observability ?? null,
 		});
 		this.failurePolicy = new WorkerFailurePolicy({
 			store: options.store,

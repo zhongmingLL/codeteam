@@ -128,6 +128,7 @@ export {
 	triggerKinds,
 } from "./memory/triggers.ts";
 export { type MergeExecuteInput, type MergeExecuteResult, MergeExecutor } from "./merge/executor.ts";
+export * from "./observability/index.ts";
 export { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
 export {
 	assertAllowedCwd,
