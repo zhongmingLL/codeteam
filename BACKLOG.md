@@ -28,6 +28,7 @@ created: 2026-10-25
 | F013 | W6c Observability / Trajectory | done | 宪宪 | [F013](docs/features/F013-w6c-observability-trajectory.md) |
 | F014 | W6b Eval / Outcome / Harness Eval | done | 宪宪 | [F014](docs/features/F014-w6b-eval-outcome-harness-eval.md) |
 | F015 | A2A E2E Foundation | done | 宪宪 | [F015](docs/features/F015-a2a-e2e-foundation.md) |
-| F016 | W7a headless API / 事件重放 + Console M0 | planned (scope signoff pending) | 宪宪 | [plan 0004 §W7](docs/plans/0004-w5-w8-scale-product.md) |
+| F016 | W7a headless surface + A2A ingress E2E | spec (F016a plan review) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
 
-> F016 是 W7a 的预留 feature 号；feature 文档在 W7a scope signoff 后创建。
+> F016 是 W7a umbrella：F016a = A2A ingress/tool E2E，F016b = wait scheduler，
+> F016c = headless API/Hub 兼容。Console M0 是 W7b，独立立项。

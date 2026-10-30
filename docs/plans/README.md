@@ -3,7 +3,7 @@ title: "codeteam 执行计划索引"
 doc_kind: index
 status: reviewed
 created: 2026-10-21
-updated: 2026-10-28
+updated: 2026-10-31
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 ---
 
@@ -50,6 +50,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0015-w6c-observability-trajectory.md`](0015-w6c-observability-trajectory.md) | W6c observability/trajectory、F150/F130 parity、redaction/trace/log 契约冻结、AC 映射 | 砚砚（security/redaction/provenance）+ 墨墨（reuse/真实路径/可解释性） |
 | [`0016-w6b-eval-outcome-harness-eval.md`](0016-w6b-eval-outcome-harness-eval.md) | W6b Eval/Outcome + Harness Eval：outcome episodes、corpus/matrix、registry、verdict/lifecycle、evals 扩展、CLI 读面、AC 映射 | 墨墨（eval/harness reuse/process）+ 砚砚（provenance/eval credibility/security） |
 | [`0017-a2a-e2e-foundation.md`](0017-a2a-e2e-foundation.md) | A2A E2E Foundation：production composition root、producer/task 绑定、session/worktree 入口、worker A2A tools、terminal resolver、requestId/loop guard、真实 CLI/daemon/worker E2E | 烁烁（A2A/session/worker）+ 砚砚（identity/custody/security）+ 墨墨（vision guard） |
+| [`0018-f016a-a2a-ingress-e2e.md`](0018-f016a-a2a-ingress-e2e.md) | F016a：8 类 ingress × scenario real RPC E2E、P0 工具面（5 现有 + thread_context）、withdraw/parallel/loop guard/typed error、F016b/F016c 边界 | 烁烁（dispatch/queue/terminal）+ 砚砚（auth/custody/withdraw）+ 墨墨（vision guard） |
 
 ## W0–W8 一览
 
@@ -101,7 +102,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W4 | closed (F007, operator confirmed) | PR #47 `4743137c9` + PR #48 `772dd1741`；264 passed / 1 skipped；22/22 AC；vision guard 烁烁 approve；W7a residuals tracked（`0009` / F007） |
 | W5 | closed (W5a/W5b/W5c core/W5d; operator confirmed) | F008/`0010` + F009/`0011`（W5b closed）+ F010/`0012`（W5c core closed，PR #52 `959ef7e76`）+ F011/`0013`（W5d closed：PR #56 `168e67dd0` reviewed HEAD `dfb872d9c`；烁烁 post-merge P2 修复 PR #59 `125ba4f81` reviewed HEAD `d96ca039b`，APPROVED；operator signoff `0001793204552090-003817-65582a68`） |
 | W6 | closed (W6a/W6b/W6c; operator confirmed) | W6a/F012 PR #62 `c82b0679c`；W6c/F013 PR #63 `12c546854`；W6b/F014 PR #66 `b74952ac2`；operator signoff `0001793276746238-003935-3d7a01c4` |
-| W7 | in_progress | W7a A2A E2E foundation merged（F015，PR #72 `b941dde32`）；W7a headless API/事件重放与 W7b Console 仍待做；前端复用基线 `DP-WEB-1=B`（classic）；`thread-chat-surface`/`thread-navigation` 在 W7b 前补卡 |
+| W7 | in_progress | W7a A2A E2E foundation merged（F015，PR #72 `b941dde32`）；F016 umbrella：F016a ingress/tool E2E、F016b wait、F016c headless API/Hub 兼容；W7b Console 后置，复用基线 `DP-WEB-1=B`（classic） |
 | W8 | planned | github-signals W8 契约已冻结；待 Forge connector |
 
 ---

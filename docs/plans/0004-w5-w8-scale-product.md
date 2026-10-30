@@ -3,7 +3,7 @@ title: "W5–W8 扩展与产品计划：调度、记忆、Console、GitHub"
 doc_kind: plan
 status: reviewed
 created: 2026-10-21
-updated: 2026-10-25
+updated: 2026-10-31
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 ---
@@ -340,7 +340,8 @@ reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 - daemon HTTP API + WebSocket/SSE events。
 - Thread message API：operator chat append/list；agent 回复按 `agentSessionId` 归属。
 - Trajectory/observability read API：`/api/invocations/:id/trajectory`、`/api/telemetry/traces`、`/api/tool-usage`、`/api/logs/tail`；operator/console auth，run token 403。
-- MCP server：team / memory / workitem / artifact / review。
+- Worker extension tool surface：A2A/custody + read tools；MCP server 只在命名
+  外部 consumer 出现时作为 sibling adapter，不是 v1 默认路径。
 - CLI：`codeteam backlog create/dispatch/list`、`codeteam task create/status/run`、`codeteam daemon`、`codeteam approval list/show/approve/reject`、`codeteam merge record`、`codeteam merge run`（operator 手动触发/调试；调用同一 merge service，仍走 E1–E5）、`codeteam eval list/open/overdue/show/accept-sunset`；W4 已提供最小 thread CLI（`thread list/show/post/tail`），W7a 复用同一 daemon API。
 - Lifecycle：Web Console/API 只提交 lifecycle intent/approval；实际 daemon 启停/复验由 external executor（W0/W5 CLI；W7 独立 supervisor/controller）执行。不暴露通用 shell；目标 backend 不 self-restart。
 - GitHub/GitLab 由 W8 提供。
@@ -388,9 +389,9 @@ reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 
 1. **W7a**：daemon API/WS/SSE、事件重放、thread/message/approval/backlog-item/workflow-sop 只读投影兼容子集；trajectory/trace/tool-usage/logs 只读 API。
 2. **W7a**：artifact → ThreadArtifactDTO 投影契约（kind 映射、`provenance.sourceMessageId`、账本权威/视图只读）。
-3. **W7a**：MCP server tools + token auth。
+3. **W7a**：worker extension tool surface（P0 6：现有 5 个 + `thread_context`；注册名统一 `codeteam_` 前缀）+ real RPC E2E；MCP server 只在命名外部 consumer 出现时做 sibling adapter。
 4. **W7a**：CLI commands（含 W4 的 approval list/decide、backlog create/dispatch/list）。
-5. **W7a**：鉴权矩阵：operator credential（Console/CLI）/ run token（MCP）/ webhook HMAC（W8）三个 auth 域互不可替代；`approval:decide` 只接受 operator credential；`merge:execute` 只由 daemon `service:merge-owner` 执行、无 MCP/REST 暴露；`merge:record` 由 daemon 同事务写；thread chat 是普通消息写入，不获得 approval decide / merge:execute 权限；telemetry/trajectory/tool-usage/logs 读面 operator/console 限定，run token 403。
+5. **W7a**：鉴权矩阵：operator credential（Console/CLI）/ run token（worker extension）/ webhook HMAC（W8）三个 auth 域互不可替代；`approval:decide` 只接受 operator credential；`merge:execute` 只由 daemon `service:merge-owner` 执行、无 MCP/REST 暴露；`merge:record` 由 daemon 同事务写；thread chat 是普通消息写入，不获得 approval decide / merge:execute 权限；telemetry/trajectory/tool-usage/logs 读面 operator/console 限定，run token 403。
 6. **W7a**：对 pinned clowder Hub 版本做兼容 contract tests；不支持的功能显式隐藏/降级；功能清单由 dogfood 摩擦记录驱动。
 6b. **W7a**：GitHub tracking status 只读派生投影（observing/stopped(reason)/unarmed + predicates/generation/expires/last outcome/lag）+ CLI `codeteam forge tracking list`（GS-8b）。
 7. **W7b**：Console M0 前端壳（C：接入现成 Hub；A：同构 + 复用/fork 组件）；复用基线按 `DP-WEB-1=B`（classic）。
@@ -398,18 +399,18 @@ reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 9. 备份/恢复、schema migration、升级流程。
 10. 测试：session 断线重连、事件重放、聊天消息持久化/回放、审批幂等、run token 打 merge 端点 403、artifact 投影；trajectory 404/unknown/trace_unavailable、tool usage/log 读权限。
 
-> **2026-10-30 MCP necessity review (proposed).** F015 已经交付 worker
+> **2026-10-30 operator decision: extension-first.** F015 已经交付 worker
 > extension tool path 与真实 RPC E2E；internal pi worker 显式 `--no-mcp`。
-> 建议 v1 extension-first：task 3 的 MCP server 与 MCP acceptance 项
-> defer 到“出现命名的外部 consumer”触发；P0 13 工具面保留，但 v1 由
-> worker extension 交付。详见
-> [`../reports/2026-10-30-mcp-vs-extension-tool-necessity.md`](../reports/2026-10-30-mcp-vs-extension-tool-necessity.md)。
-> operator signoff 前不直接改任务清单；本条只是复盘记录。
+> operator 明确 v1 由 worker extension 交付；task 3 的 MCP server 与 MCP
+> acceptance 项 defer 到“出现命名的外部 consumer”触发。工具优先级以
+> [`../reports/2026-10-31-f016-a2a-dispatch-tool-priority.md`](../reports/2026-10-31-f016-a2a-dispatch-tool-priority.md)
+> 为准：P0 = 现有 5 个 + `thread_context`，wait 三件套拆到 F016b。
 
 ### Deliverables
 
 - daemon API/WS + Hub 兼容子集 + contract tests。
-- MCP server。
+- Worker extension tool surface（P0 + F016a real RPC E2E）；MCP sibling adapter
+  仅在命名外部 consumer 出现时做。
 - CLI。
 - W7a headless surface；W7b Console M0（Mission Hub board + Approval Hub + thread chat）。
 - merge record。
@@ -418,7 +419,7 @@ reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 ### Acceptance
 
 - [ ] 外部进程能通过 CLI/JSON 驱动一个 task。
-- [ ] MCP client 能调用 team/memory/workitem tools。
+- [ ] 真实 pi RPC worker 能调用 P0 extension tools；P1/P2 按 F016a 计划交付或 defer。
 - [ ] W7a C 体验：operator 能在现成 clowder Hub 看到 backlog board、打开 codeteam thread、发消息、看回复、审批、断线重连；不读 clowder DB。
 - [ ] W7a 开工前，W0a Hub 承载 spike 已通过，或 clowder 侧改动清单已获 operator 授权。
 - [ ] Hub 兼容子集对 pinned 版本有 contract test；未支持功能不伪装可用。
@@ -428,7 +429,7 @@ reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 - [ ] Console M0 的 operator 写操作只有 hard-gate approval；routine merge 只显示 merge-owner execution status（read-only）；thread chat 是普通消息写入，不改变 task 状态；approval 显示 resolution 与 materialization 两段。
 - [ ] W7b 复用基线已确认（`DP-WEB-1=B`，classic）；C/A 均用 classic，不混用 v2；v2 不在 v1 验收内。
 - [ ] approval decide 只接受 operator credential；routine merge 走 merge-owner capability；run token 访问 approval decide 返回 403；agent 只能 request，不能 decide。
-- [ ] MCP 工具面不暴露 approval decide / merge execution。
+- [ ] extension/MCP 工具面不暴露 approval decide / merge execution。
 - [ ] accepted-but-not-materialized 有 operator abandon 出口（failed `operator_abandon`）；Hub 分开显示 resolution/materialization。
 - [ ] `codeteam merge record` 能录入 merge owner merge receipt。
 - [ ] 升级不破坏 SQLite；可回滚。
@@ -448,7 +449,7 @@ reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 
 - 墨墨：Console M0 是否真的能支撑 operator 的 thread/diff/review/聊天/审批路径。
 - 烁烁：daemon/WS/事件模型、断线重连。
-- 砚砚：MCP auth、merge/approval 权限边界。
+- 砚砚：extension/MCP auth、merge/approval 权限边界。
 
 ---
 
@@ -518,7 +519,7 @@ interface ForgeEvent {
 | ID | 实现切片 | 验收 |
 |---|---|---|
 | GS-1 | `ForgeAdapter` / `ForgeEvent` schema + provider seam；GitLab 只留 seam | 未登记 provider/kind fail closed；不声称 GitLab 支持 |
-| GS-2 | `register_pr_tracking` / `register_issue_tracking` + `tasks.kind`/`subject_key` partial unique；register 入口 = MCP tool + operator CLI；GitHub issue inbound 按 A2-1 G15：`created_by_kind='system'`、`created_by_id='system:forge:<provider>'`、`user_id=operator`，只准初始 `open|suggested` | 同 subject 同 kind replay 既有 task/wait；换 kind 允许；无双 task/双 wait；不伪造 operator actor |
+| GS-2 | `register_pr_tracking` / `register_issue_tracking` + `tasks.kind`/`subject_key` partial unique；register 入口 = extension tool + operator CLI；GitHub issue inbound 按 A2-1 G15：`created_by_kind='system'`、`created_by_id='system:forge:<provider>'`、`user_id=operator`，只准初始 `open|suggested` | 同 subject 同 kind replay 既有 task/wait；换 kind 允许；无双 task/双 wait；不伪造 operator actor |
 | GS-3 | baseline reader + 10 typed predicates + pure matcher | 未知 kind/duplicate kind fail closed；baseline 与 cursor 分离 |
 | GS-4 | review/issue/CI/conflict collectors；per-source cursors；429 指数退避至 `CODETEAM_GITHUB_RATE_LIMIT_BACKOFF_MAX_MS`；collectors 以 F139 TaskSpec 注册进 W5 schedule registry（factoryId 白名单），禁止 daemon 私有轮询循环 | collection/delivery cursor 分离；cursor 只在 durable observation/outcome 后推进；429 不无限重试 |
 | GS-5 | wait lifecycle + renewal + outcomeId 幂等 + `rearm_failed` | 同一 outcome 不双唤醒；rearm_failed 明确“已停止观察”；不直接写 message |
