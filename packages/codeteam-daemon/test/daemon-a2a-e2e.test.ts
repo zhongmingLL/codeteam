@@ -68,9 +68,9 @@ function handoffIdFromPrompt(body: Record<string, unknown>): string | null {
 
 function mockCoder(body: Record<string, unknown>): string {
 	const lastTool = lastToolName(body);
-	if (lastTool === "handoff_create") return textResponse("CODER_HANDOFF_CREATED");
-	if (lastTool === "a2a_send") {
-		return toolCallResponse("handoff_create", {
+	if (lastTool === "codeteam_handoff_create") return textResponse("CODER_HANDOFF_CREATED");
+	if (lastTool === "codeteam_a2a_send") {
+		return toolCallResponse("codeteam_handoff_create", {
 			kind: "review_request",
 			targets: ["profile:reviewer"],
 			subject: "Review daemon E2E",
@@ -84,7 +84,7 @@ function mockCoder(body: Record<string, unknown>): string {
 			bodyMd: "Please review the daemon E2E handoff.",
 		});
 	}
-	return toolCallResponse("a2a_send", {
+	return toolCallResponse("codeteam_a2a_send", {
 		kind: "status",
 		targets: ["profile:reviewer"],
 		bodyMd: "Creating a review handoff.",
@@ -96,15 +96,15 @@ function mockReviewer(body: Record<string, unknown>): string {
 	const handoffId = handoffIdFromPrompt(body);
 	if (!handoffId) return textResponse("REVIEWER_ACK");
 	const lastTool = lastToolName(body);
-	if (lastTool === "handoff_claim") {
-		return toolCallResponse("handoff_complete", {
+	if (lastTool === "codeteam_handoff_claim") {
+		return toolCallResponse("codeteam_handoff_complete", {
 			handoffId,
 			evidenceRef: "review:approved",
 			result: { verdict: "approved" },
 		});
 	}
-	if (lastTool === "handoff_complete") return textResponse("REVIEW_COMPLETE");
-	return toolCallResponse("handoff_claim", { handoffId });
+	if (lastTool === "codeteam_handoff_complete") return textResponse("REVIEW_COMPLETE");
+	return toolCallResponse("codeteam_handoff_claim", { handoffId });
 }
 
 async function waitFor<T>(check: () => T | null | undefined | false, timeoutMs = 30_000): Promise<T> {
@@ -253,10 +253,10 @@ describe("daemon A2A end-to-end", () => {
 					.filter((event) => event.kind === "tool_call")
 					.map((event) => (event.payload as { toolName?: string }).toolName ?? ""),
 			);
-			expect(toolNames).toContain("a2a_send");
-			expect(toolNames).toContain("handoff_create");
-			expect(toolNames).toContain("handoff_claim");
-			expect(toolNames).toContain("handoff_complete");
+			expect(toolNames).toContain("codeteam_a2a_send");
+			expect(toolNames).toContain("codeteam_handoff_create");
+			expect(toolNames).toContain("codeteam_handoff_claim");
+			expect(toolNames).toContain("codeteam_handoff_complete");
 			expect(
 				store.audit
 					.listSubject(`queue:${dispatched.queueEntry.id}`, 50)

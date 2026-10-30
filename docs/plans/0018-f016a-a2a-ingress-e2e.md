@@ -1,7 +1,7 @@
 ---
 title: "F016a — A2A ingress × scenario real RPC E2E 实施计划"
 doc_kind: plan
-status: draft
+status: in_progress
 created: 2026-10-31
 updated: 2026-10-31
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -121,7 +121,8 @@ operator 2026-10-30 明确要求。注册名固定为：
 `name`、`worker-extension.ts` 的 `registerTool`、worker prompt、tool
 policy/allowlist、control socket `toolName` 路由、测试和文档必须同步；
 unprefixed 调用按 unknown tool fail closed。报告中的名字是逻辑名，注册名
-加前缀。
+加前缀。内部 audit action / eval metric label 仍用逻辑名（历史口径），
+不当作模型注册名。
 
 ## 实施切片与测试
 
@@ -213,6 +214,16 @@ unprefixed 调用按 unknown tool fail closed。报告中的名字是逻辑名�
 2. F016a S1 → S2 → S3；S1/S2 可由不同猫在 disjoint 文件上并行，但 queue
    语义和 withdraw 决定必须先冻结。
 3. F016b 在 F016a 后；F016c 等 Hub 调研结论。
+
+## Current progress (2026-10-31)
+
+- S0 naming migration implemented: F015 的 5 个工具注册名改为 `codeteam_*`；
+  worker prompt、tool policy、allowlist、control socket `toolName`、测试和文档
+  同步；无无前缀 alias，unprefixed 调用 fail closed。
+- Evidence: `packages/codeteam-daemon` `npm test` → 82 passed / 2 skipped
+  files，542 passed / 2 skipped tests；targeted E2E 覆盖 prefixed registry 与
+  unprefixed negative。
+- `codeteam_thread_context` 尚未实现，归 S3；wait 仍归 F016b。
 
 ## 风险与回滚
 

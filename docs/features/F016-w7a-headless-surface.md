@@ -2,7 +2,7 @@
 feature_ids: [codeteam/F016]
 related_features: [codeteam/F015]
 title: "F016: W7a headless surface + A2A ingress E2E"
-status: spec
+status: in_progress
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -80,6 +80,12 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
 - [ ] F016c 的 daemon API/WS/SSE、事件重放和 Hub 兼容 contract tests 通过；
   未支持功能显式隐藏/降级。
 - [ ] 不新增第二套 queue/message/handoff store；不引入 MCP ingress。
+
+## 当前进展
+
+- 2026-10-31：F016a S0 工具命名迁移已实现——F015 的 5 个工具统一注册为
+  `codeteam_*`，worker prompt / tool policy / allowlist / control socket
+  `toolName` / 测试同步，无无前缀 alias。`codeteam_thread_context` 仍在 S3。
 
 ## 非目标
 

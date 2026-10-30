@@ -92,7 +92,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-a2a-send",
 				token: minted.token,
-				toolName: "a2a_send",
+				toolName: "codeteam_a2a_send",
 				input: {
 					kind: "question",
 					targets: ["profile:reviewer"],
@@ -113,7 +113,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-a2a-send",
 				token: minted.token,
-				toolName: "a2a_send",
+				toolName: "codeteam_a2a_send",
 				input: {
 					kind: "question",
 					targets: ["profile:reviewer"],
@@ -176,7 +176,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-other",
 				token: minted.token,
-				toolName: "a2a_send",
+				toolName: "codeteam_a2a_send",
 				input: { kind: "question", targets: ["profile:reviewer"], bodyMd: "x" },
 			});
 			expect(wrongWorker).toMatchObject({ ok: false, error: { code: "forbidden" } });
@@ -190,11 +190,20 @@ describe("A2A control socket", () => {
 			});
 			expect(nonA2A).toMatchObject({ ok: false, error: { code: "invalid_input" } });
 
+			const unprefixed = await request({
+				type: "a2a_call",
+				workerId: "worker-a2a-negative",
+				token: minted.token,
+				toolName: "a2a_send",
+				input: { kind: "question", targets: ["profile:reviewer"], bodyMd: "unprefixed" },
+			});
+			expect(unprefixed).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+
 			const allowlist = await request({
 				type: "a2a_call",
 				workerId: "worker-a2a-restricted",
 				token: restricted.token,
-				toolName: "a2a_send",
+				toolName: "codeteam_a2a_send",
 				input: { kind: "question", targets: ["profile:reviewer"], bodyMd: "x" },
 			});
 			expect(allowlist).toMatchObject({ ok: false, error: { code: "forbidden" } });
@@ -229,7 +238,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-empty-policy",
 				token: minted.token,
-				toolName: "a2a_send",
+				toolName: "codeteam_a2a_send",
 				input: { kind: "question", targets: ["profile:reviewer"], bodyMd: "must not send" },
 			});
 			expect(a2a).toMatchObject({ ok: false, error: { code: "forbidden" } });

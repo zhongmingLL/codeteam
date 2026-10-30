@@ -105,7 +105,10 @@ export class A2ARequestStore {
 
 	private assertSameIntent(existing: A2ARequestRecord, intentHash: string): A2ARequestRecord {
 		if (existing.intentHash !== intentHash) {
-			throw new ControlError("conflict", `a2a_send requestId ${existing.requestId} was used by another intent`);
+			throw new ControlError(
+				"conflict",
+				`codeteam_a2a_send requestId ${existing.requestId} was used by another intent`,
+			);
 		}
 		return existing;
 	}

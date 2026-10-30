@@ -241,7 +241,7 @@ export default function codeteamWorkerExtension(pi: ExtensionAPI): void {
 			label: `A2A ${spec.name}`,
 			description: spec.description,
 			promptGuidelines: [
-				"Use a2a_send for discussion; use handoff_create for responsibility transfer.",
+				"Use codeteam_a2a_send for discussion; use codeteam_handoff_create for responsibility transfer.",
 				"Targets are AgentProfile ids, not display names. Text @ does not route.",
 			],
 			parameters: Type.Unsafe(spec.inputSchema),

@@ -77,14 +77,17 @@ describe("W5a A2A tool surface", () => {
 	it("describes the complete typed A2A tool surface", () => {
 		const tools = describeA2ATools();
 		expect(tools.map((tool) => tool.name)).toEqual([
-			"a2a_send",
-			"handoff_create",
-			"handoff_claim",
-			"handoff_complete",
-			"handoff_withdraw",
+			"codeteam_a2a_send",
+			"codeteam_handoff_create",
+			"codeteam_handoff_claim",
+			"codeteam_handoff_complete",
+			"codeteam_handoff_withdraw",
 		]);
-		expect(tools.find((tool) => tool.name === "a2a_send")?.inputSchema.additionalProperties).toBe(false);
-		expect(tools.find((tool) => tool.name === "handoff_create")?.inputSchema.additionalProperties).toBe(false);
+		expect(tools.every((tool) => tool.name.startsWith("codeteam_"))).toBe(true);
+		expect(tools.find((tool) => tool.name === "codeteam_a2a_send")?.inputSchema.additionalProperties).toBe(false);
+		expect(tools.find((tool) => tool.name === "codeteam_handoff_create")?.inputSchema.additionalProperties).toBe(
+			false,
+		);
 	});
 
 	it("writes discussion messages and queue entries with visible target markers", () => {
@@ -490,7 +493,7 @@ describe("W5a A2A tool surface", () => {
 			toolCalls: [],
 		});
 		expect(observed?.kind).toBe("missing_a2a_tool_call");
-		expect(observed?.correction).toContain("a2a_send");
+		expect(observed?.correction).toContain("codeteam_a2a_send");
 		expect(base.store.queue.listPending()).toHaveLength(0);
 		expect(base.store.handoffs.list()).toHaveLength(0);
 		expect(
@@ -511,7 +514,7 @@ describe("W5a A2A tool surface", () => {
 			observeMissingA2AToolCall(base.store, {
 				runId: source2.run.id,
 				bodyMd: "Please ask reviewer to look",
-				toolCalls: ["a2a_send"],
+				toolCalls: ["codeteam_a2a_send"],
 			}),
 		).toBeNull();
 	});
