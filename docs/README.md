@@ -48,7 +48,12 @@ updated: 2026-10-28
 | [`features/F007-w4-sop-gates.md`](features/F007-w4-sop-gates.md) | F007：W4 SOP 复用与点状 gate（worktree/design/review/verify/merge/completion） |
 | [`features/F008-w5a-a2a-dispatch-custody.md`](features/F008-w5a-a2a-dispatch-custody.md) | F008：W5a A2A 投递与球权内核（dispatch queue、tool surface、custody/wait） |
 | [`features/F009-w5b-rpc-worker-runtime.md`](features/F009-w5b-rpc-worker-runtime.md) | F009：W5b RPC worker harness、worker registry/sticky/re-attach、失败策略 |
+| [`features/F010-w5c-scheduling-resources.md`](features/F010-w5c-scheduling-resources.md) | F010：W5c 调度 readiness/DAG、预算、worktree pool/GC、F139 adapter |
+| [`features/F011-w5d-runtime-lifecycle-managed-work.md`](features/F011-w5d-runtime-lifecycle-managed-work.md) | F011：W5d daemon lifecycle、deployment wait、managed-work bindings |
+| [`features/F012-w6a-memory-evidence.md`](features/F012-w6a-memory-evidence.md) | F012：W6a memory/evidence 回源、独立 memory.db、recall/trigger |
 | [`features/F013-w6c-observability-trajectory.md`](features/F013-w6c-observability-trajectory.md) | F013：W6c local trace ring、canonical trajectory、F150/F130 parity、`/ready` |
+| [`features/F014-w6b-eval-outcome-harness-eval.md`](features/F014-w6b-eval-outcome-harness-eval.md) | F014：W6b eval/outcome episodes、harness eval lifecycle、eval CLI |
+| [`features/F015-a2a-e2e-foundation.md`](features/F015-a2a-e2e-foundation.md) | F015：A2A E2E foundation（composition root、worker A2A tools、terminal resolver、真实 RPC E2E） |
 | [`plans/0015-w6c-observability-trajectory.md`](plans/0015-w6c-observability-trajectory.md) | W6c observability/trajectory 实施计划与 AC 映射 |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
