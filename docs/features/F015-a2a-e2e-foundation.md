@@ -72,7 +72,9 @@ handler/daemon/worker A2A E2E。
   墨墨 vision guard pass。
 - Post-merge：daemon 82 files passed / 2 skipped，542 tests passed / 2 skipped；
   build 与官方 biome gate 通过。
-- Residual 与 `docs/plans/0017-a2a-e2e-foundation.md` §6 一致。
+- Residual **覆盖** `docs/plans/0017-a2a-e2e-foundation.md` §6 全部项（MCP 按
+  #74 决策更新；live provider 质量验收见 Out of scope），另补 worktree-lease /
+  drain-poll / parallel-holder 三项 carry-over。
 
 ## Residual
 

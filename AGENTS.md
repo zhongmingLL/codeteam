@@ -6,6 +6,10 @@
 - `docs/` is the project documentation source of truth. Start with `CODETEAM.md`, `docs/README.md`, `docs/plans/README.md`, and `docs/features/F001-architecture-v1.md`.
 - `main` is the pi release baseline. `codeteam-work` is the default development branch. Feature branches are short-lived and target `codeteam-work`; releasing to `main` is a separate PR.
 - Never force-push, rewrite `main`, or merge without the applicable review and verification evidence.
+- `BACKLOG.md` is the full feature index: allocate the next `Fxxx`, create
+  `docs/features/Fxxx-*.md`, and add the BACKLOG row before implementation; at
+  close, keep the done row and update its status. This overrides the generic
+  `feat-lifecycle` "remove done row" step for codeteam.
 
 ## Scope and boundaries
 
