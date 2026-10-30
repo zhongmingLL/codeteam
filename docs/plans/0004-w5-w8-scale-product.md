@@ -398,6 +398,14 @@ reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 9. 备份/恢复、schema migration、升级流程。
 10. 测试：session 断线重连、事件重放、聊天消息持久化/回放、审批幂等、run token 打 merge 端点 403、artifact 投影；trajectory 404/unknown/trace_unavailable、tool usage/log 读权限。
 
+> **2026-10-30 MCP necessity review (proposed).** F015 已经交付 worker
+> extension tool path 与真实 RPC E2E；internal pi worker 显式 `--no-mcp`。
+> 建议 v1 extension-first：task 3 的 MCP server 与 MCP acceptance 项
+> defer 到“出现命名的外部 consumer”触发；P0 13 工具面保留，但 v1 由
+> worker extension 交付。详见
+> [`../reports/2026-10-30-mcp-vs-extension-tool-necessity.md`](../reports/2026-10-30-mcp-vs-extension-tool-necessity.md)。
+> operator signoff 前不直接改任务清单；本条只是复盘记录。
+
 ### Deliverables
 
 - daemon API/WS + Hub 兼容子集 + contract tests。

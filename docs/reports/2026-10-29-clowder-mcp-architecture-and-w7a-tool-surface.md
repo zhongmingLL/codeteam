@@ -3,7 +3,7 @@ title: "Clowder MCP 架构与 codeteam W7a 工具面分析"
 doc_kind: report
 status: draft-for-review
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-10-30
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash), 烁烁 (Kimi K3)]
 baseline: "codeteam-work@d33dd17fb2eafefdfd167036e4dc258012c9882d"
@@ -15,6 +15,14 @@ scope: "read-only analysis; no product code changes"
 
 > 本文只做调研与决策建议。没有修改 codeteam 产品代码，也没有把 clowder-ai
 > 作为运行依赖；所有 clowder 代码路径均为参考仓的 repo-relative 路径。
+>
+> **2026-10-30 update.** F015 has landed the pi extension tool path (5 A2A
+> tools, real RPC E2E). This report's W7a MCP recommendation is superseded in
+> part by
+> [`2026-10-30-mcp-vs-extension-tool-necessity.md`](2026-10-30-mcp-vs-extension-tool-necessity.md):
+> the inventory, mapping and auth boundaries remain valid; MCP is now a
+> conditional sibling adapter, not a v1 default. The P0 13 tool surface remains,
+> but its v1 adapter is the worker extension.
 
 ## 0. 结论先行
 
