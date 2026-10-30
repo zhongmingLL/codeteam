@@ -8,6 +8,7 @@ created: 2026-10-25
 
 > **Rules**: Index of all project Features (idea/spec/in-progress/review/done); status is current truth.
 > Details in `docs/features/Fxxx-*.md`.
+> New feature: allocate the next `Fxxx`, create `docs/features/Fxxx-*.md`, and add a BACKLOG row before implementation.
 
 | ID | Name | Status | Owner | Link |
 |----|------|--------|-------|------|
