@@ -71,6 +71,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Documentation index check
+        run: node scripts/check-doc-index.mjs
+
       - name: Docs whitespace check
         if: needs.changes.outputs.mode == 'docs'
         shell: bash

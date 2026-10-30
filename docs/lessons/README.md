@@ -28,3 +28,4 @@ guardrail that changes future behavior. A lesson without a guardrail is just a s
 | File | Scope |
 |---|---|
 | [`2026-10-27-f002-w0a.md`](2026-10-27-f002-w0a.md) | F002 W0a gate: secrets, verification layers, review routing, Mission Hub IDs, test hygiene |
+| [`2026-10-30-feature-registry-drift.md`](2026-10-30-feature-registry-drift.md) | Feature registry drift: plan-local F ids, missing BACKLOG/README rows, completeness gate |
