@@ -389,7 +389,7 @@ reviewers: [烁烁 (Kimi K3), 墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 
 1. **W7a**：daemon API/WS/SSE、事件重放、thread/message/approval/backlog-item/workflow-sop 只读投影兼容子集；trajectory/trace/tool-usage/logs 只读 API。
 2. **W7a**：artifact → ThreadArtifactDTO 投影契约（kind 映射、`provenance.sourceMessageId`、账本权威/视图只读）。
-3. **W7a**：worker extension tool surface（P0 6：现有 5 个 + `thread_context`）+ real RPC E2E；MCP server 只在命名外部 consumer 出现时做 sibling adapter。
+3. **W7a**：worker extension tool surface（P0 6：现有 5 个 + `thread_context`；注册名统一 `codeteam_` 前缀）+ real RPC E2E；MCP server 只在命名外部 consumer 出现时做 sibling adapter。
 4. **W7a**：CLI commands（含 W4 的 approval list/decide、backlog create/dispatch/list）。
 5. **W7a**：鉴权矩阵：operator credential（Console/CLI）/ run token（worker extension）/ webhook HMAC（W8）三个 auth 域互不可替代；`approval:decide` 只接受 operator credential；`merge:execute` 只由 daemon `service:merge-owner` 执行、无 MCP/REST 暴露；`merge:record` 由 daemon 同事务写；thread chat 是普通消息写入，不获得 approval decide / merge:execute 权限；telemetry/trajectory/tool-usage/logs 读面 operator/console 限定，run token 403。
 6. **W7a**：对 pinned clowder Hub 版本做兼容 contract tests；不支持的功能显式隐藏/降级；功能清单由 dogfood 摩擦记录驱动。

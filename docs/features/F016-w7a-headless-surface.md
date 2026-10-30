@@ -30,12 +30,26 @@ deployment wait、interrupt/retry、parallel/withdraw/blocked handoff 仍缺真�
 `thread_context`。因此 F016 的重点不是“凑 13 个工具”，而是 ingress ×
 scenario 的真实 E2E 和 typed 失败语义。
 
+## 工具命名
+
+所有通过 pi extension 注册的工具统一 `codeteam_` 前缀，不保留无前缀别名：
+
+- F015 的 5 个工具在 F016a 重命名：`codeteam_a2a_send`、
+  `codeteam_handoff_create`、`codeteam_handoff_claim`、
+  `codeteam_handoff_complete`、`codeteam_handoff_withdraw`。
+- F016a 新增：`codeteam_thread_context`。
+- F016b：`codeteam_message_get`、`codeteam_handoff_events`、
+  `codeteam_wait_arm`、`codeteam_wait_status`、`codeteam_wait_cancel`。
+- 调研报告里的工具名是逻辑名；注册名一律加 `codeteam_`。worker prompt、
+  tool policy/allowlist、control socket 的 `toolName`、测试和文档同步更新。
+  F015 文档保留历史名，F016a 负责重命名。
+
 ## 用户可见结果
 
 - operator 的 `thread post --to`、backlog dispatch、schedule、retry 和
   extension A2A 都落到同一条 queue/dispatch/worker 链，关键路径有真实 pi RPC
   E2E；失败有 typed 原因，不静默 dead-letter。
-- worker 能读取 bounded `thread_context`，reviewer 不再只依赖 prompt 里的
+- worker 能读取 bounded `codeteam_thread_context`，reviewer 不再只依赖 prompt 里的
   source message。
 - handoff withdraw / parallel / loop guard / requestId / execution role 的
   语义有真实 E2E；cross-thread 明确拒绝，不伪装支持。
@@ -46,8 +60,8 @@ scenario 的真实 E2E 和 typed 失败语义。
 
 | Slice | 范围 | 状态 |
 |---|---|---|
-| F016a | P0 ingress × scenario real RPC E2E；现有 5 tools + `thread_context`；withdraw queue cleanup；cross-thread negative；typed error/auth matrix | planned（plan 0018 review） |
-| F016b | wait scheduler + `wait_arm`/`wait_status`/`wait_cancel`；P1 `message_get`/`handoff_events`；owner fence | planned（F016a 之后） |
+| F016a | P0 ingress × scenario real RPC E2E；现有 5 tools（重命名为 `codeteam_*`）+ `codeteam_thread_context`；withdraw queue cleanup；cross-thread negative；typed error/auth matrix | planned（plan 0018 review） |
+| F016b | wait scheduler + `codeteam_wait_arm`/`codeteam_wait_status`/`codeteam_wait_cancel`；P1 `codeteam_message_get`/`codeteam_handoff_events`；owner fence | planned（F016a 之后） |
 | F016c | W7a daemon HTTP API、WS/SSE、事件 cursor/snapshot/replay、Hub 兼容子集、artifact/telemetry 只读 API | discovery（Hub 调研） |
 
 W7b Console M0 独立立项，不进 F016；M1 继续后置。
@@ -60,7 +74,7 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
 
 - [ ] F016a P0 ingress/custody 场景真实 RPC 通过；typed 失败、幂等、parallel、
   withdraw、冷启动恢复都有证据。
-- [ ] `thread_context` 按 principal.threadId 过滤，bounded/cursor/hasMore 正确；
+- [ ] `codeteam_thread_context` 按 principal.threadId 过滤，bounded/cursor/hasMore 正确；
   cross-thread 拒绝。
 - [ ] wait 三件套与最小 scheduler 在 F016b 交付；不把“三个 tool”当 wait 完成。
 - [ ] F016c 的 daemon API/WS/SSE、事件重放和 Hub 兼容 contract tests 通过；
