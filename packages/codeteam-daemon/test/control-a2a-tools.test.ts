@@ -261,8 +261,19 @@ describe("W5a A2A tool surface", () => {
 		expect(() => reviewer.withdrawHandoff(created.handoff.id, "reviewer cannot withdraw")).toThrow(/author/);
 		const withdrawn = coder.withdrawHandoff(created.handoff.id, "scope changed");
 		expect(withdrawn.status).toBe("withdrawn");
+		expect(base.store.queue.get(created.queueEntry!.id)?.status).toBe("withdrawn");
+		expect(
+			base.store.audit
+				.listSubject(`queue:${created.queueEntry!.id}`, 20)
+				.some((entry) => entry.action === "queue_withdrawn"),
+		).toBe(true);
 		expect(base.store.handoffs.custodyEvents(created.handoff.id).map((event) => event.kind)).toContain(
 			"handoff.withdrawn",
+		);
+		expect(base.store.runs.get(reviewerRun.id)?.status).toBe("running");
+		expect(reviewer.claimHandoff(created.handoff.id).status).toBe("terminal_handoff");
+		expect(() => reviewer.completeHandoff(created.handoff.id, "late:evidence", {})).toThrowError(
+			expect.objectContaining({ code: "invalid_state" }),
 		);
 	});
 

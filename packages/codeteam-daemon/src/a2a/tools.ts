@@ -538,19 +538,32 @@ export class A2AToolHandlers {
 	}
 
 	withdrawHandoff(handoffId: string, reason: string): Handoff {
-		const handoff = this.store.handoffs.get(handoffId);
-		if (!handoff) throw new ControlError("not_found", `handoff ${handoffId} not found`);
-		if (handoff.taskId !== this.principal.taskId || handoff.holderThreadId !== this.principal.threadId) {
-			throw new ControlError("forbidden", "handoff is outside the caller task scope");
-		}
-		if (handoff.predecessorProfileId !== this.principal.profileId) {
-			throw new ControlError("forbidden", "only the handoff author can withdraw it");
-		}
-		return this.store.handoffs.withdraw(
-			handoffId,
-			`profile:${this.principal.profileId}`,
-			nonEmptyString(reason, "reason"),
-		);
+		const normalizedReason = nonEmptyString(reason, "reason");
+		return this.store.transaction.run(() => {
+			const handoff = this.store.handoffs.get(handoffId);
+			if (!handoff) throw new ControlError("not_found", `handoff ${handoffId} not found`);
+			if (handoff.taskId !== this.principal.taskId || handoff.holderThreadId !== this.principal.threadId) {
+				throw new ControlError("forbidden", "handoff is outside the caller task scope");
+			}
+			if (handoff.predecessorProfileId !== this.principal.profileId) {
+				throw new ControlError("forbidden", "only the handoff author can withdraw it");
+			}
+			const withdrawn = this.store.handoffs.withdraw(
+				handoffId,
+				`profile:${this.principal.profileId}`,
+				normalizedReason,
+			);
+			const message = this.store.messages.findByControlRef(handoff.id);
+			const queueEntry = message ? this.store.queue.get(`queue:${message.id}`) : null;
+			if (queueEntry && (queueEntry.status === "queued" || queueEntry.status === "claimed")) {
+				this.store.queue.withdrawTarget(queueEntry.id, {
+					actorRef: `profile:${this.principal.profileId}`,
+					reason: `handoff_withdrawn:${normalizedReason}`,
+					...(queueEntry.status === "claimed" ? { expectedClaimId: queueEntry.claimId ?? undefined } : {}),
+				});
+			}
+			return withdrawn;
+		});
 	}
 
 	private recordToolCall(tool: "a2a_send" | "handoff_create"): void {
