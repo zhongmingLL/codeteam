@@ -30,6 +30,7 @@ export function buildWorkerSystemPrompt(role: string): string {
 		"- If the control plane is unavailable, mutating tools are denied while read-only tools may continue.",
 		`- ${a2aGuidance} Text @ is a visible marker, not a route.`,
 		"- A2A targets are AgentProfile ids. If you are assigned a handoff, call codeteam_handoff_claim before doing the work.",
+		"- Use codeteam_thread_context to read a bounded window of the current thread; it never accepts a thread id.",
 		"- codeteam_handoff_complete records a candidate only. Server-owned evidence decides the verified terminal; never claim that you verified it yourself.",
 		"- Return a concise final response. Include evidence (commands, paths, SHAs) when relevant.",
 	].join("\n");

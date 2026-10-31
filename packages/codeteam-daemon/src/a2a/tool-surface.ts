@@ -14,11 +14,18 @@ export const A2A_TOOL_NAMES = [
 	"codeteam_handoff_claim",
 	"codeteam_handoff_complete",
 	"codeteam_handoff_withdraw",
+	"codeteam_thread_context",
 ] as const;
 
 export type A2AToolName = (typeof A2A_TOOL_NAMES)[number];
 
-export type A2AAction = "a2a_send" | "handoff_create" | "handoff_claim" | "handoff_complete" | "handoff_withdraw";
+export type A2AAction =
+	| "a2a_send"
+	| "handoff_create"
+	| "handoff_claim"
+	| "handoff_complete"
+	| "handoff_withdraw"
+	| "thread_context";
 
 export const A2A_ACTION_BY_TOOL: Record<A2AToolName, A2AAction> = {
 	codeteam_a2a_send: "a2a_send",
@@ -26,6 +33,7 @@ export const A2A_ACTION_BY_TOOL: Record<A2AToolName, A2AAction> = {
 	codeteam_handoff_claim: "handoff_claim",
 	codeteam_handoff_complete: "handoff_complete",
 	codeteam_handoff_withdraw: "handoff_withdraw",
+	codeteam_thread_context: "thread_context",
 };
 
 export interface A2AToolSpec {
@@ -134,6 +142,22 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 			properties: {
 				handoffId: { type: "string" },
 				reason: { type: "string", minLength: 1 },
+			},
+		},
+	},
+	{
+		name: "codeteam_thread_context",
+		description:
+			"Read a bounded window of the caller's thread. The thread is always derived from the caller principal; no thread id is accepted. Use anchorMessageId for a window around one message, or cursor for older pages.",
+		inputSchema: {
+			type: "object",
+			additionalProperties: false,
+			properties: {
+				anchorMessageId: { type: "string", minLength: 1 },
+				before: { type: "integer", minimum: 0, maximum: 200 },
+				after: { type: "integer", minimum: 0, maximum: 200 },
+				limit: { type: "integer", minimum: 1, maximum: 200 },
+				cursor: { type: "string", minLength: 1 },
 			},
 		},
 	},

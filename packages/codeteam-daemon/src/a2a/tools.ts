@@ -100,6 +100,22 @@ export interface HandoffCreateInput {
 	bodyMd?: string;
 }
 
+export interface ThreadContextInput {
+	anchorMessageId?: string | null;
+	before?: number | null;
+	after?: number | null;
+	limit?: number | null;
+	cursor?: string | null;
+}
+
+export interface ThreadContextResult {
+	threadId: string;
+	messages: Message[];
+	anchorMessageId: string | null;
+	hasMore: boolean;
+	nextCursor: string | null;
+}
+
 export interface A2ASendResult {
 	message: Message;
 	queueEntry: QueueEntry | null;
@@ -143,6 +159,19 @@ function positiveInteger(value: unknown, field: string): number {
 		throw new ControlError("invalid_input", `${field} must be a positive integer`);
 	}
 	return value;
+}
+
+function optionalInteger(value: unknown, fallback: number, min: number, max: number, field: string): number {
+	if (value === undefined || value === null) return fallback;
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) {
+		throw new ControlError("invalid_input", `${field} must be an integer between ${min} and ${max}`);
+	}
+	return value;
+}
+
+function optionalNonEmptyString(value: unknown, field: string): string | null {
+	if (value === undefined || value === null) return null;
+	return nonEmptyString(value, field);
 }
 
 function uniqueTargets(value: unknown): string[] {
@@ -542,19 +571,97 @@ export class A2AToolHandlers {
 	}
 
 	withdrawHandoff(handoffId: string, reason: string): Handoff {
-		const handoff = this.store.handoffs.get(handoffId);
-		if (!handoff) throw new ControlError("not_found", `handoff ${handoffId} not found`);
-		if (handoff.taskId !== this.principal.taskId || handoff.holderThreadId !== this.principal.threadId) {
-			throw new ControlError("forbidden", "handoff is outside the caller task scope");
+		const normalizedReason = nonEmptyString(reason, "reason");
+		return this.store.transaction.run(() => {
+			const handoff = this.store.handoffs.get(handoffId);
+			if (!handoff) throw new ControlError("not_found", `handoff ${handoffId} not found`);
+			if (handoff.taskId !== this.principal.taskId || handoff.holderThreadId !== this.principal.threadId) {
+				throw new ControlError("forbidden", "handoff is outside the caller task scope");
+			}
+			if (handoff.predecessorProfileId !== this.principal.profileId) {
+				throw new ControlError("forbidden", "only the handoff author can withdraw it");
+			}
+			const withdrawn = this.store.handoffs.withdraw(
+				handoffId,
+				`profile:${this.principal.profileId}`,
+				normalizedReason,
+			);
+			const message = this.store.messages.findByControlRef(handoff.id);
+			const queueEntry = message ? this.store.queue.get(`queue:${message.id}`) : null;
+			if (queueEntry && (queueEntry.status === "queued" || queueEntry.status === "claimed")) {
+				this.store.queue.withdrawTarget(queueEntry.id, {
+					actorRef: `profile:${this.principal.profileId}`,
+					reason: `handoff_withdrawn:${normalizedReason}`,
+					...(queueEntry.status === "claimed" ? { expectedClaimId: queueEntry.claimId ?? undefined } : {}),
+				});
+			}
+			return withdrawn;
+		});
+	}
+
+	threadContext(input: ThreadContextInput): ThreadContextResult {
+		const raw = assertObject(input, "thread_context input");
+		assertAllowedKeys(raw, ["anchorMessageId", "before", "after", "limit", "cursor"], "thread_context");
+		const limit = optionalInteger(raw.limit, 50, 1, 200, "limit");
+		const cursor = optionalNonEmptyString(raw.cursor, "cursor");
+		const anchorMessageId = optionalNonEmptyString(raw.anchorMessageId, "anchorMessageId");
+		if (anchorMessageId && cursor) {
+			throw new ControlError("invalid_input", "anchorMessageId and cursor are mutually exclusive");
 		}
-		if (handoff.predecessorProfileId !== this.principal.profileId) {
-			throw new ControlError("forbidden", "only the handoff author can withdraw it");
+		if (anchorMessageId) {
+			const anchor = this.store.messages.get(anchorMessageId);
+			if (!anchor) throw new ControlError("not_found", `message ${anchorMessageId} not found`);
+			if (anchor.threadId !== this.principal.threadId) {
+				throw new ControlError("forbidden", "thread context is scoped to the caller thread");
+			}
+			const before = optionalInteger(raw.before, Math.min(20, limit - 1), 0, 200, "before");
+			const after = optionalInteger(raw.after, 0, 0, 200, "after");
+			if (before + after + 1 > limit) {
+				throw new ControlError("invalid_input", "before + after + 1 must not exceed limit");
+			}
+			const beforeMessages = this.store.messages.listThread(this.principal.threadId, {
+				beforeSeq: anchor.seq,
+				limit: before + 1,
+			});
+			const hasMoreBefore = beforeMessages.length > before;
+			const windowBefore = hasMoreBefore ? beforeMessages.slice(1) : beforeMessages;
+			const afterMessages = this.store.messages.listThread(this.principal.threadId, {
+				afterSeq: anchor.seq,
+				beforeSeq: anchor.seq + after + 2,
+				limit: after + 1,
+			});
+			const hasMoreAfter = afterMessages.length > after;
+			const windowAfter = hasMoreAfter ? afterMessages.slice(0, after) : afterMessages;
+			const messages = [...windowBefore, anchor, ...windowAfter];
+			return {
+				threadId: this.principal.threadId,
+				messages,
+				anchorMessageId: anchor.id,
+				hasMore: hasMoreBefore || hasMoreAfter,
+				nextCursor: hasMoreBefore && messages[0] ? String(messages[0].seq) : null,
+			};
 		}
-		return this.store.handoffs.withdraw(
-			handoffId,
-			`profile:${this.principal.profileId}`,
-			nonEmptyString(reason, "reason"),
-		);
+		let cursorSeq: number | null = null;
+		if (cursor) {
+			const parsed = Number(cursor);
+			if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+				throw new ControlError("invalid_input", "cursor must be a positive message seq");
+			}
+			cursorSeq = parsed;
+		}
+		const fetched = this.store.messages.listThread(this.principal.threadId, {
+			...(cursorSeq === null ? {} : { beforeSeq: cursorSeq }),
+			limit: limit + 1,
+		});
+		const hasMore = fetched.length > limit;
+		const messages = hasMore ? fetched.slice(1) : fetched;
+		return {
+			threadId: this.principal.threadId,
+			messages,
+			anchorMessageId: null,
+			hasMore,
+			nextCursor: hasMore && messages[0] ? String(messages[0].seq) : null,
+		};
 	}
 
 	private recordToolCall(tool: "a2a_send" | "handoff_create"): void {

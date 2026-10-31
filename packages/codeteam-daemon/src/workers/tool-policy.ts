@@ -9,18 +9,24 @@ import type { ToolPolicy, ToolRole } from "../policy/types.ts";
 export const READ_ONLY_TOOLS: readonly string[] = ["read", "grep", "find", "ls"];
 export const CODER_TOOLS: readonly string[] = [...READ_ONLY_TOOLS, "bash", "edit", "write"];
 
+const THREAD_CONTEXT_TOOL = A2A_TOOL_NAMES.find((name) => name.endsWith("thread_context"));
+if (!THREAD_CONTEXT_TOOL) throw new ControlError("invalid_state", "thread_context tool is not registered");
+
 const A2A_ROLE_TOOLS: Record<string, readonly string[]> = {
-	architect: ["codeteam_a2a_send", "codeteam_handoff_create", "codeteam_handoff_withdraw"],
+	architect: ["codeteam_a2a_send", "codeteam_handoff_create", "codeteam_handoff_withdraw", THREAD_CONTEXT_TOOL],
 	coder: [
 		"codeteam_a2a_send",
 		"codeteam_handoff_create",
 		"codeteam_handoff_claim",
 		"codeteam_handoff_complete",
 		"codeteam_handoff_withdraw",
+		THREAD_CONTEXT_TOOL,
 	],
-	reviewer: ["codeteam_a2a_send", "codeteam_handoff_claim", "codeteam_handoff_complete"],
-	verifier: ["codeteam_a2a_send", "codeteam_handoff_claim", "codeteam_handoff_complete"],
+	reviewer: ["codeteam_a2a_send", "codeteam_handoff_claim", "codeteam_handoff_complete", THREAD_CONTEXT_TOOL],
+	verifier: ["codeteam_a2a_send", "codeteam_handoff_claim", "codeteam_handoff_complete", THREAD_CONTEXT_TOOL],
 };
+
+const DEFAULT_A2A_TOOLS = A2A_TOOL_NAMES.filter((name) => name.endsWith("a2a_send") || name.endsWith("thread_context"));
 
 export interface WorkerToolPolicyContext {
 	readonly role: string;
@@ -53,7 +59,7 @@ export function allowedToolsForRole(role: string): readonly string[] {
 }
 
 export function a2aToolsForRole(role: string): readonly string[] {
-	return A2A_ROLE_TOOLS[role] ?? ["codeteam_a2a_send"];
+	return A2A_ROLE_TOOLS[role] ?? DEFAULT_A2A_TOOLS;
 }
 
 export function allowedToolsForToolRole(role: ToolRole): readonly string[] {
