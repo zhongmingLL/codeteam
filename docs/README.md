@@ -55,7 +55,7 @@ updated: 2026-10-31
 | [`features/F014-w6b-eval-outcome-harness-eval.md`](features/F014-w6b-eval-outcome-harness-eval.md) | F014：W6b eval/outcome episodes、harness eval lifecycle、eval CLI |
 | [`features/F015-a2a-e2e-foundation.md`](features/F015-a2a-e2e-foundation.md) | F015：A2A E2E foundation（composition root、worker A2A tools、terminal resolver、真实 RPC E2E） |
 | [`features/F016-w7a-headless-surface.md`](features/F016-w7a-headless-surface.md) | F016：W7a umbrella（A2A ingress E2E、wait scheduler、headless API/Hub 兼容） |
-| [`features/F017-a2a-surface-unification.md`](features/F017-a2a-surface-unification.md) | F017：A2A 模型面统一（post_message / cross_post_message、custody union、SOP 方向模型） |
+| [`features/F017-a2a-surface-unification.md`](features/F017-a2a-surface-unification.md) | F017：A2A 模型面统一（post/cross-post、共享 custody union、跨 thread custody/return、SOP 方向模型） |
 | [`plans/0015-w6c-observability-trajectory.md`](plans/0015-w6c-observability-trajectory.md) | W6c observability/trajectory 实施计划与 AC 映射 |
 | [`plans/0018-f016a-a2a-ingress-e2e.md`](plans/0018-f016a-a2a-ingress-e2e.md) | F016a：8 类 ingress × scenario real RPC E2E、P0 工具面、withdraw/parallel/loop guard |
 | [`plans/0019-f017-a2a-surface-unification.md`](plans/0019-f017-a2a-surface-unification.md) | F017：post_message/cross_post_message contract、harness 不变量、SOP 方向模型与 A/B/C 迁移 |

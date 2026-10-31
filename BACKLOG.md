@@ -29,9 +29,10 @@ created: 2026-10-25
 | F014 | W6b Eval / Outcome / Harness Eval | done | 宪宪 | [F014](docs/features/F014-w6b-eval-outcome-harness-eval.md) |
 | F015 | A2A E2E Foundation | done | 宪宪 | [F015](docs/features/F015-a2a-e2e-foundation.md) |
 | F016 | W7a headless surface + A2A ingress E2E | in_progress (F016a done; F016b next) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
-| F017 | A2A surface unification（post_message / cross_post_message） | spec (Phase A pending) | 宪宪 | [F017](docs/features/F017-a2a-surface-unification.md) |
+| F017 | A2A surface unification（post/cross-post + full A2A custody） | spec (Phase A pending) | 宪宪 | [F017](docs/features/F017-a2a-surface-unification.md) |
 
 > F016 是 W7a umbrella：F016a = A2A ingress/tool E2E，F016b = wait scheduler，
 > F016c = headless API/Hub 兼容。Console M0 是 W7b，独立立项。
-> F017 是独立 A2A 模型面重构：统一 post/cross-post，旧 a2a_send/handoff_*
-> 模型面逐步移除；不回改 F016a，也不阻塞 F016b/F016c。
+> F017 是独立 A2A 模型面重构：统一 post/cross-post，覆盖同 thread 与跨 thread
+> 的 message/custody/return-recovery；旧 a2a_send/handoff_* 模型面逐步移除；
+> 不回改 F016a，也不阻塞 F016b/F016c。
