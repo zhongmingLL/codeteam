@@ -5,6 +5,13 @@ export interface MockAnthropicRequest {
 	readonly body: Record<string, unknown>;
 }
 
+export interface MockAnthropicErrorResponse {
+	readonly status: number;
+	readonly body: string;
+}
+
+export type MockAnthropicResponse = string | MockAnthropicErrorResponse;
+
 export interface MockAnthropicServer {
 	readonly baseUrl: string;
 	readonly requests: MockAnthropicRequest[];
@@ -12,7 +19,7 @@ export interface MockAnthropicServer {
 }
 
 export async function startMockAnthropic(
-	respond: (request: MockAnthropicRequest) => string,
+	respond: (request: MockAnthropicRequest) => MockAnthropicResponse,
 ): Promise<MockAnthropicServer> {
 	const requests: MockAnthropicRequest[] = [];
 	const server: Server = createServer((request, response) => {
@@ -30,8 +37,14 @@ export async function startMockAnthropic(
 			const model = typeof parsed.model === "string" ? parsed.model : "unknown";
 			const entry = { model, body: parsed };
 			requests.push(entry);
-			response.writeHead(200, { "content-type": "text/event-stream" });
-			response.end(respond(entry));
+			const result = respond(entry);
+			if (typeof result === "string") {
+				response.writeHead(200, { "content-type": "text/event-stream" });
+				response.end(result);
+				return;
+			}
+			response.writeHead(result.status, { "content-type": "application/json" });
+			response.end(result.body);
 		});
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -81,6 +94,13 @@ export function textResponse(text: string): string {
 		},
 		{ event: "message_stop", data: { type: "message_stop" } },
 	]);
+}
+
+export function errorResponse(message: string, status = 500): MockAnthropicErrorResponse {
+	return {
+		status,
+		body: JSON.stringify({ type: "error", error: { type: "api_error", message } }),
+	};
 }
 
 export function toolCallResponse(toolName: string, input: Record<string, unknown>): string {
