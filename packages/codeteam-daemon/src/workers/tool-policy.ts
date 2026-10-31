@@ -10,10 +10,16 @@ export const READ_ONLY_TOOLS: readonly string[] = ["read", "grep", "find", "ls"]
 export const CODER_TOOLS: readonly string[] = [...READ_ONLY_TOOLS, "bash", "edit", "write"];
 
 const A2A_ROLE_TOOLS: Record<string, readonly string[]> = {
-	architect: ["a2a_send", "handoff_create", "handoff_withdraw"],
-	coder: ["a2a_send", "handoff_create", "handoff_claim", "handoff_complete", "handoff_withdraw"],
-	reviewer: ["a2a_send", "handoff_claim", "handoff_complete"],
-	verifier: ["a2a_send", "handoff_claim", "handoff_complete"],
+	architect: ["codeteam_a2a_send", "codeteam_handoff_create", "codeteam_handoff_withdraw"],
+	coder: [
+		"codeteam_a2a_send",
+		"codeteam_handoff_create",
+		"codeteam_handoff_claim",
+		"codeteam_handoff_complete",
+		"codeteam_handoff_withdraw",
+	],
+	reviewer: ["codeteam_a2a_send", "codeteam_handoff_claim", "codeteam_handoff_complete"],
+	verifier: ["codeteam_a2a_send", "codeteam_handoff_claim", "codeteam_handoff_complete"],
 };
 
 export interface WorkerToolPolicyContext {
@@ -47,7 +53,7 @@ export function allowedToolsForRole(role: string): readonly string[] {
 }
 
 export function a2aToolsForRole(role: string): readonly string[] {
-	return A2A_ROLE_TOOLS[role] ?? ["a2a_send"];
+	return A2A_ROLE_TOOLS[role] ?? ["codeteam_a2a_send"];
 }
 
 export function allowedToolsForToolRole(role: ToolRole): readonly string[] {

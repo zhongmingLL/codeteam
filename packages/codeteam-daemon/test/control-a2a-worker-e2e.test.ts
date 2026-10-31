@@ -96,14 +96,14 @@ function createDispatch(f: W5BFixture): DispatchService {
 }
 
 describe("real worker A2A end-to-end", () => {
-	it("runs coder a2a_send + handoff_create, reviewer claim/complete, and consumes the handoff", async () => {
+	it("runs coder codeteam_a2a_send + codeteam_handoff_create, reviewer claim/complete, and consumes the handoff", async () => {
 		fixture = createRealFixture({ coder: "mock-coder", reviewer: "mock-reviewer" });
 		mock = await startMockAnthropic(({ model, body }) => {
 			if (model === "mock-coder") {
 				const lastTool = lastToolName(body);
-				if (lastTool === "handoff_create") return textResponse("CODER_HANDOFF_CREATED");
-				if (lastTool === "a2a_send") {
-					return toolCallResponse("handoff_create", {
+				if (lastTool === "codeteam_handoff_create") return textResponse("CODER_HANDOFF_CREATED");
+				if (lastTool === "codeteam_a2a_send") {
+					return toolCallResponse("codeteam_handoff_create", {
 						kind: "review_request",
 						targets: ["profile:reviewer"],
 						subject: "Review A2A E2E",
@@ -117,7 +117,7 @@ describe("real worker A2A end-to-end", () => {
 						bodyMd: "Please review the handoff.",
 					});
 				}
-				return toolCallResponse("a2a_send", {
+				return toolCallResponse("codeteam_a2a_send", {
 					kind: "status",
 					targets: ["profile:reviewer"],
 					bodyMd: "I am creating a review handoff.",
@@ -128,15 +128,15 @@ describe("real worker A2A end-to-end", () => {
 				const handoffId = handoffIdFromPrompt(body);
 				if (!handoffId) return textResponse("REVIEWER_ACK");
 				const lastTool = lastToolName(body);
-				if (lastTool === "handoff_claim") {
-					return toolCallResponse("handoff_complete", {
+				if (lastTool === "codeteam_handoff_claim") {
+					return toolCallResponse("codeteam_handoff_complete", {
 						handoffId,
 						evidenceRef: "review:approved",
 						result: { verdict: "approved", headSha: "a".repeat(40) },
 					});
 				}
-				if (lastTool === "handoff_complete") return textResponse("REVIEW_COMPLETE");
-				return toolCallResponse("handoff_claim", { handoffId });
+				if (lastTool === "codeteam_handoff_complete") return textResponse("REVIEW_COMPLETE");
+				return toolCallResponse("codeteam_handoff_claim", { handoffId });
 			}
 			return textResponse("OK");
 		});
@@ -172,10 +172,16 @@ describe("real worker A2A end-to-end", () => {
 				.filter((event) => event.kind === "tool_call")
 				.map((event) => (event.payload as { toolName?: string }).toolName ?? ""),
 		);
-		expect(toolNames).toContain("a2a_send");
-		expect(toolNames).toContain("handoff_create");
-		expect(toolNames).toContain("handoff_claim");
-		expect(toolNames).toContain("handoff_complete");
+		expect(toolNames).toContain("codeteam_a2a_send");
+		expect(toolNames).toContain("codeteam_handoff_create");
+		expect(toolNames).toContain("codeteam_handoff_claim");
+		expect(toolNames).toContain("codeteam_handoff_complete");
+		expect(
+			toolNames
+				.filter((name) => name.includes("a2a") || name.includes("handoff"))
+				.every((name) => name.startsWith("codeteam_")),
+		).toBe(true);
+		expect(toolNames).not.toContain("a2a_send");
 		expect(fixture.store.audit.latest(`run:${runs[0]!.id}`, "missing_a2a_tool_call")).toBeNull();
 	}, 90_000);
 
@@ -203,7 +209,7 @@ describe("real worker A2A end-to-end", () => {
 		mock = await startMockAnthropic(({ model, body }) => {
 			if (model !== "mock-a2a-blocked") return textResponse("OK");
 			if (lastMessageHasToolResult(body)) return textResponse("A2A_BLOCKED_OBSERVED");
-			return toolCallResponse("a2a_send", {
+			return toolCallResponse("codeteam_a2a_send", {
 				kind: "status",
 				targets: ["profile:reviewer"],
 				bodyMd: "must not send",

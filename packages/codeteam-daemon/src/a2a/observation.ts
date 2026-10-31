@@ -9,7 +9,7 @@ const INTENT_PATTERNS: readonly RegExp[] = [
 ];
 
 export const A2A_SCHEMA_CORRECTION =
-	"A2A routing requires a typed tool call. Use a2a_send for discussion; use handoff_create for responsibility transfer. Body @ mentions do not route.";
+	"A2A routing requires a typed tool call. Use codeteam_a2a_send for discussion; use codeteam_handoff_create for responsibility transfer. Body @ mentions do not route.";
 
 export interface ObserveTerminalInput {
 	readonly runId: string;
@@ -29,7 +29,7 @@ export function hasUnroutedA2AIntent(bodyMd: string): boolean {
 }
 
 export function hasA2AToolCall(toolCalls: readonly string[]): boolean {
-	return toolCalls.some((name) => name === "a2a_send" || name.startsWith("handoff_"));
+	return toolCalls.some((name) => name === "codeteam_a2a_send" || name.startsWith("codeteam_handoff_"));
 }
 
 export function observeMissingA2AToolCall(
