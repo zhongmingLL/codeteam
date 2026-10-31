@@ -83,9 +83,13 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
 
 ## 当前进展
 
-- 2026-10-31：F016a S0 工具命名迁移已实现——F015 的 5 个工具统一注册为
-  `codeteam_*`，worker prompt / tool policy / allowlist / control socket
-  `toolName` / 测试同步，无无前缀 alias。`codeteam_thread_context` 仍在 S3。
+- 2026-10-31：F016a S0 已合入（PR #79 / `2954b4447`）——F015 的 5 个工具
+  统一注册为 `codeteam_*`，无无前缀 alias。
+- 2026-10-31：F016a S1-S3 已实现并本地全量验证：ingress 真实 RPC E2E
+  （I1/I2/I4/I6/I8/I10）、A2A/custody E2E（A2/A6/A7/A9）、D4 withdraw
+  queue cleanup、`codeteam_thread_context` bounded/anchor/cursor + cross-thread
+  negative、typed error/auth matrix。`codeteam-daemon` 86 files / 563 tests
+  passed，2 skipped。F016a PR 合并后进入 F016b（wait scheduler）。
 
 ## 非目标
 

@@ -196,16 +196,16 @@ unprefixed 调用按 unknown tool fail closed。报告中的名字是逻辑名�
 
 ## AC
 
-- [ ] I1/I2/I3/I4/I6/I8/I10 有 real RPC 或 typed negative 证据；不带纯
+- [x] I1/I2/I3/I4/I6/I8/I10 有 real RPC 或 typed negative 证据；不带纯
   in-process 冒充。
-- [ ] A2/A3/A5/A6/A7/A9/A10 + T1/T2/T3 的 P0 断言通过；withdraw 语义按 D4。
-- [ ] 所有 pi extension 工具注册名只含 `codeteam_` 前缀；无 unprefixed alias；
+- [x] A2/A3/A5/A6/A7/A9/A10 + T1/T2/T3 的 P0 断言通过；withdraw 语义按 D4。
+- [x] 所有 pi extension 工具注册名只含 `codeteam_` 前缀；无 unprefixed alias；
   prompt/allowlist/control socket/测试同步。
-- [ ] `codeteam_thread_context` bounded/cursor/hasMore/thread scope 通过；cross-thread
+- [x] `codeteam_thread_context` bounded/cursor/hasMore/thread scope 通过；cross-thread
   拒绝。
-- [ ] typed error/auth matrix 覆盖 §S3；所有 mutating A2A tool 有 audit。
-- [ ] 一条 queue ledger；multi-target parallel；无第二 queue/store。
-- [ ] F016 feature doc、本 plan、BACKLOG row 在实现前已存在并被
+- [x] typed error/auth matrix 覆盖 §S3；所有 mutating A2A tool 有 audit。
+- [x] 一条 queue ledger；multi-target parallel；无第二 queue/store。
+- [x] F016 feature doc、本 plan、BACKLOG row 在实现前已存在并被
   `npm run check:doc-index` 校验。
 
 ## 依赖与顺序
@@ -217,13 +217,36 @@ unprefixed 调用按 unknown tool fail closed。报告中的名字是逻辑名�
 
 ## Current progress (2026-10-31)
 
-- S0 naming migration implemented: F015 的 5 个工具注册名改为 `codeteam_*`；
-  worker prompt、tool policy、allowlist、control socket `toolName`、测试和文档
-  同步；无无前缀 alias，unprefixed 调用 fail closed。
-- Evidence: `packages/codeteam-daemon` `npm test` → 82 passed / 2 skipped
-  files，542 passed / 2 skipped tests；targeted E2E 覆盖 prefixed registry 与
-  unprefixed negative。
-- `codeteam_thread_context` 尚未实现，归 S3；wait 仍归 F016b。
+### S0 naming migration
+
+- F015 的 5 个工具注册名改为 `codeteam_*`；worker prompt、tool policy、
+  allowlist、control socket `toolName`、测试和文档同步；无无前缀 alias，
+  unprefixed 调用 fail closed。
+- PR #79 merged at `2954b4447`；砚砚 + 墨墨双 non-author approved（烁烁 CLI
+  auth 失败，墨墨替补 dispatch/control 面）。
+
+### S1-S3 implementation
+
+- S1: `daemon-a2a-ingress-e2e.test.ts` 覆盖 I1/I2/I4/I6/I8/I10，使用真实 pi
+  RPC + mock provider；缺 `--task` / worktree / session 的 producer 负路径断言
+  不写 message/queue；missing-session 为 typed withdraw + `queue_withdrawn`
+  audit；retry/dead-letter 覆盖真实 model error。
+- S2: `daemon-a2a-parallel-e2e.test.ts` 覆盖 A2/A6/A7/A9 真实 RPC，以及 A7
+  parallel_unfinished / A10 execution-role in-process 语义。`withdrawHandoff`
+  现在在同一 control transaction 内把 pending queue targets 置 withdrawn；
+  claimed holder run 继续执行，claim-after-withdraw 返回 `terminal_handoff`，
+  complete-after-withdraw typed reject。
+- S3: `codeteam_thread_context` 已注册到所有 role；支持 bounded latest window、
+  anchor/before/after、cursor/hasMore，始终按 principal threadId 过滤，跨 thread
+  anchor 返回 `forbidden`；真实 worker 读取测试通过。`control-a2a-errors.test.ts`
+  覆盖 depth/loop guard/conflict/invalid_state/forbidden 与 mutating-tool
+  audit/tool_usage。
+- Evidence: merged branch `packages/codeteam-daemon` `npm test` → 86 passed /
+  2 skipped files，563 passed / 2 skipped tests；`tsc --noEmit`、biome、
+  doc-index、ts-imports、entry-graphs 通过。
+- D1 queue lifecycle 口径：按已签 dispatch 复用卡，queue row 在完整 cutover
+  后删除或按 target withdraw；终态真相在 `runs` / `message.dispatchRefs`，
+  不新增 queue terminal tombstone。pending handoff targets 清理后保留 audit。
 
 ## 风险与回滚
 
