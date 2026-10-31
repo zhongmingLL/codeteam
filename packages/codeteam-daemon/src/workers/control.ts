@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveRunPrincipal } from "../a2a/principal.ts";
 import { A2A_TOOL_NAMES } from "../a2a/tool-surface.ts";
-import { type A2ASendInput, A2AToolHandlers, type HandoffCreateInput } from "../a2a/tools.ts";
+import { type A2ASendInput, A2AToolHandlers, type HandoffCreateInput, type ThreadContextInput } from "../a2a/tools.ts";
 import { resolveInvocationToken } from "../auth/resolver.ts";
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
@@ -281,6 +281,8 @@ export class WorkerControlServer {
 					requiredInputString(input, "handoffId"),
 					requiredInputString(input, "reason"),
 				);
+			case "codeteam_thread_context":
+				return handlers.threadContext(input as unknown as ThreadContextInput);
 			default:
 				throw new ControlError("invalid_input", `unknown A2A tool ${toolName}`);
 		}

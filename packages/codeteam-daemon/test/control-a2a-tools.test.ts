@@ -82,6 +82,7 @@ describe("W5a A2A tool surface", () => {
 			"handoff_claim",
 			"handoff_complete",
 			"handoff_withdraw",
+			"codeteam_thread_context",
 		]);
 		expect(tools.find((tool) => tool.name === "a2a_send")?.inputSchema.additionalProperties).toBe(false);
 		expect(tools.find((tool) => tool.name === "handoff_create")?.inputSchema.additionalProperties).toBe(false);
