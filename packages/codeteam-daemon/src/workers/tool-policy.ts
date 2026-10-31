@@ -13,10 +13,17 @@ const THREAD_CONTEXT_TOOL = A2A_TOOL_NAMES.find((name) => name.endsWith("thread_
 if (!THREAD_CONTEXT_TOOL) throw new ControlError("invalid_state", "thread_context tool is not registered");
 
 const A2A_ROLE_TOOLS: Record<string, readonly string[]> = {
-	architect: ["a2a_send", "handoff_create", "handoff_withdraw", THREAD_CONTEXT_TOOL],
-	coder: ["a2a_send", "handoff_create", "handoff_claim", "handoff_complete", "handoff_withdraw", THREAD_CONTEXT_TOOL],
-	reviewer: ["a2a_send", "handoff_claim", "handoff_complete", THREAD_CONTEXT_TOOL],
-	verifier: ["a2a_send", "handoff_claim", "handoff_complete", THREAD_CONTEXT_TOOL],
+	architect: ["codeteam_a2a_send", "codeteam_handoff_create", "codeteam_handoff_withdraw", THREAD_CONTEXT_TOOL],
+	coder: [
+		"codeteam_a2a_send",
+		"codeteam_handoff_create",
+		"codeteam_handoff_claim",
+		"codeteam_handoff_complete",
+		"codeteam_handoff_withdraw",
+		THREAD_CONTEXT_TOOL,
+	],
+	reviewer: ["codeteam_a2a_send", "codeteam_handoff_claim", "codeteam_handoff_complete", THREAD_CONTEXT_TOOL],
+	verifier: ["codeteam_a2a_send", "codeteam_handoff_claim", "codeteam_handoff_complete", THREAD_CONTEXT_TOOL],
 };
 
 const DEFAULT_A2A_TOOLS = A2A_TOOL_NAMES.filter((name) => name.endsWith("a2a_send") || name.endsWith("thread_context"));

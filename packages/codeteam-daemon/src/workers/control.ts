@@ -4,7 +4,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveRunPrincipal } from "../a2a/principal.ts";
-import { A2A_TOOL_NAMES } from "../a2a/tool-surface.ts";
+import { A2A_ACTION_BY_TOOL, A2A_TOOL_NAMES, type A2AToolName } from "../a2a/tool-surface.ts";
 import { type A2ASendInput, A2AToolHandlers, type HandoffCreateInput, type ThreadContextInput } from "../a2a/tools.ts";
 import { resolveInvocationToken } from "../auth/resolver.ts";
 import { ControlError } from "../control/errors.ts";
@@ -258,7 +258,8 @@ export class WorkerControlServer {
 	}
 
 	private invokeA2ATool(handlers: A2AToolHandlers, toolName: string, input: Record<string, unknown>): unknown {
-		switch (toolName) {
+		const action = A2A_ACTION_BY_TOOL[toolName as A2AToolName];
+		switch (action) {
 			case "a2a_send":
 				return handlers.send(input as unknown as A2ASendInput);
 			case "handoff_create":
@@ -281,7 +282,7 @@ export class WorkerControlServer {
 					requiredInputString(input, "handoffId"),
 					requiredInputString(input, "reason"),
 				);
-			case "codeteam_thread_context":
+			case "thread_context":
 				return handlers.threadContext(input as unknown as ThreadContextInput);
 			default:
 				throw new ControlError("invalid_input", `unknown A2A tool ${toolName}`);

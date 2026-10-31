@@ -306,7 +306,7 @@ describe("W5a dispatch queue adapter", () => {
 		const runId = executor.started[0]!;
 		executor.resolve(runId, "请 reviewer-a 看一下", []);
 		const result = await draining;
-		expect(result.outcomes[0]?.schemaCorrection).toContain("a2a_send");
+		expect(result.outcomes[0]?.schemaCorrection).toContain("codeteam_a2a_send");
 		expect(base.store.queue.listPending()).toHaveLength(0);
 		expect(base.store.handoffs.list()).toHaveLength(0);
 		const audit = base.store.audit

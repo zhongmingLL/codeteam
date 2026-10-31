@@ -6,16 +6,35 @@
  * daemon control plane into the pi process.
  */
 
+export const A2A_TOOL_PREFIX = "codeteam_";
+
 export const A2A_TOOL_NAMES = [
-	"a2a_send",
-	"handoff_create",
-	"handoff_claim",
-	"handoff_complete",
-	"handoff_withdraw",
+	"codeteam_a2a_send",
+	"codeteam_handoff_create",
+	"codeteam_handoff_claim",
+	"codeteam_handoff_complete",
+	"codeteam_handoff_withdraw",
 	"codeteam_thread_context",
 ] as const;
 
 export type A2AToolName = (typeof A2A_TOOL_NAMES)[number];
+
+export type A2AAction =
+	| "a2a_send"
+	| "handoff_create"
+	| "handoff_claim"
+	| "handoff_complete"
+	| "handoff_withdraw"
+	| "thread_context";
+
+export const A2A_ACTION_BY_TOOL: Record<A2AToolName, A2AAction> = {
+	codeteam_a2a_send: "a2a_send",
+	codeteam_handoff_create: "handoff_create",
+	codeteam_handoff_claim: "handoff_claim",
+	codeteam_handoff_complete: "handoff_complete",
+	codeteam_handoff_withdraw: "handoff_withdraw",
+	codeteam_thread_context: "thread_context",
+};
 
 export interface A2AToolSpec {
 	readonly name: A2AToolName;
@@ -25,7 +44,7 @@ export interface A2AToolSpec {
 
 export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 	{
-		name: "a2a_send",
+		name: "codeteam_a2a_send",
 		description:
 			"Send an agent discussion message and wake the typed targets. Does not change custody. targets are profile ids; text @ does not route.",
 		inputSchema: {
@@ -49,7 +68,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "handoff_create",
+		name: "codeteam_handoff_create",
 		description:
 			"Create a typed responsibility handoff, visible message shell, and one pending-wake queue entry. targets are profile ids; text @ does not route.",
 		inputSchema: {
@@ -89,7 +108,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "handoff_claim",
+		name: "codeteam_handoff_claim",
 		description: "Claim a handoff as an exact holder run; non-holders receive safe_wait.",
 		inputSchema: {
 			type: "object",
@@ -99,7 +118,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "handoff_complete",
+		name: "codeteam_handoff_complete",
 		description:
 			"Record a completion candidate for the calling holder run; verified commit remains a separate server-owned step.",
 		inputSchema: {
@@ -114,7 +133,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "handoff_withdraw",
+		name: "codeteam_handoff_withdraw",
 		description: "Withdraw a handoff as its author.",
 		inputSchema: {
 			type: "object",
