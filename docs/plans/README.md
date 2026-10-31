@@ -102,7 +102,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W4 | closed (F007, operator confirmed) | PR #47 `4743137c9` + PR #48 `772dd1741`；264 passed / 1 skipped；22/22 AC；vision guard 烁烁 approve；W7a residuals tracked（`0009` / F007） |
 | W5 | closed (W5a/W5b/W5c core/W5d; operator confirmed) | F008/`0010` + F009/`0011`（W5b closed）+ F010/`0012`（W5c core closed，PR #52 `959ef7e76`）+ F011/`0013`（W5d closed：PR #56 `168e67dd0` reviewed HEAD `dfb872d9c`；烁烁 post-merge P2 修复 PR #59 `125ba4f81` reviewed HEAD `d96ca039b`，APPROVED；operator signoff `0001793204552090-003817-65582a68`） |
 | W6 | closed (W6a/W6b/W6c; operator confirmed) | W6a/F012 PR #62 `c82b0679c`；W6c/F013 PR #63 `12c546854`；W6b/F014 PR #66 `b74952ac2`；operator signoff `0001793276746238-003935-3d7a01c4` |
-| W7 | in_progress | W7a A2A E2E foundation merged（F015，PR #72 `b941dde32`）；F016 umbrella：F016a ingress/tool E2E、F016b wait、F016c headless API/Hub 兼容；W7b Console 后置，复用基线 `DP-WEB-1=B`（classic） |
+| W7 | in_progress | W7a A2A E2E foundation merged（F015，PR #72 `b941dde32`）；F016a ingress/tool E2E merged（PR #81 `bc778185e`）；F016b wait、F016c headless API/Hub 兼容待做；W7b Console 后置，复用基线 `DP-WEB-1=B`（classic） |
 | W8 | planned | github-signals W8 契约已冻结；待 Forge connector |
 
 ---

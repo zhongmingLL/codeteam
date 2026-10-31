@@ -1,7 +1,7 @@
 ---
 title: "F016a — A2A ingress × scenario real RPC E2E 实施计划"
 doc_kind: plan
-status: in_progress
+status: closed
 created: 2026-10-31
 updated: 2026-10-31
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -247,6 +247,18 @@ unprefixed 调用按 unknown tool fail closed。报告中的名字是逻辑名�
 - D1 queue lifecycle 口径：按已签 dispatch 复用卡，queue row 在完整 cutover
   后删除或按 target withdraw；终态真相在 `runs` / `message.dispatchRefs`，
   不新增 queue terminal tombstone。pending handoff targets 清理后保留 audit。
+
+## Close (2026-10-31)
+
+- PR #81 merged at `bc778185e`；reviewed head `6f82d5e8`，rebase head
+  `6cbf02b1a`；烁烁 + 砚砚双 non-author approved。rebase continuity 仅含
+  base-sync 文件，无 F016a source/test delta，不需要重审。
+- PR CI 与 post-merge CI `41179351875` 全绿；merged branch daemon 86 files /
+  563 tests passed（2 skipped），`tsc --noEmit`、`check-doc-index`、依赖/导入
+  检查通过。
+- Residual：wait 三件套 + scheduler → F016b；P1 read（`codeteam_message_get` /
+  `codeteam_handoff_events`）→ F016b；W7a API/Hub 兼容 → F016c；
+  cross-thread 仅 negative，独立调研中。
 
 ## 风险与回滚
 
