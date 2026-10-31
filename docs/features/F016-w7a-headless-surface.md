@@ -60,9 +60,9 @@ scenario 的真实 E2E 和 typed 失败语义。
 
 | Slice | 范围 | 状态 |
 |---|---|---|
-| F016a | P0 ingress × scenario real RPC E2E；现有 5 tools（重命名为 `codeteam_*`）+ `codeteam_thread_context`；withdraw queue cleanup；cross-thread negative；typed error/auth matrix | planned（plan 0018 review） |
-| F016b | wait scheduler + `codeteam_wait_arm`/`codeteam_wait_status`/`codeteam_wait_cancel`；P1 `codeteam_message_get`/`codeteam_handoff_events`；owner fence | planned（F016a 之后） |
-| F016c | W7a daemon HTTP API、WS/SSE、事件 cursor/snapshot/replay、Hub 兼容子集、artifact/telemetry 只读 API | discovery（Hub 调研） |
+| F016a | P0 ingress × scenario real RPC E2E；现有 5 tools（重命名为 `codeteam_*`）+ `codeteam_thread_context`；withdraw queue cleanup；cross-thread negative；typed error/auth matrix | done（PR #81，`bc778185e`） |
+| F016b | wait scheduler + `codeteam_wait_arm`/`codeteam_wait_status`/`codeteam_wait_cancel`；P1 `codeteam_message_get`/`codeteam_handoff_events`；owner fence | next |
+| F016c | W7a daemon HTTP API、WS/SSE、事件 cursor/snapshot/replay、Hub 兼容子集、artifact/telemetry 只读 API | discovery（报告已合入，scope signoff pending） |
 
 W7b Console M0 独立立项，不进 F016；M1 继续后置。
 
@@ -89,7 +89,8 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
   （I1/I2/I4/I6/I8/I10）、A2A/custody E2E（A2/A6/A7/A9）、D4 withdraw
   queue cleanup、`codeteam_thread_context` bounded/anchor/cursor + cross-thread
   negative、typed error/auth matrix。`codeteam-daemon` 86 files / 563 tests
-  passed，2 skipped。F016a PR 合并后进入 F016b（wait scheduler）。
+  passed，2 skipped。F016a 已 closed（PR #81 / `bc778185e`），进入 F016b
+  （wait scheduler）。
 
 ## 非目标
 
