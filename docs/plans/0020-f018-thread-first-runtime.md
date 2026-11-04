@@ -29,11 +29,14 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 
 - `threads`：`created_by`、`project_path`、`goal_json`。
 - `thread_participants`、`thread_member_effort`。
-- `agent_sessions`：thread×profile 单 active；`task_id` legacy。
+- `.codeteam/agent-catalog.json` + `.codeteam/accounts.json`：AgentConfig /
+  AccountConfig 加载、校验、AgentRegistry；AgentState 运行时状态。
+- `agent_sessions`：thread×agent 单 active；`agent_id` 目标列；`task_id`/
+  `profile_id` legacy。
 - `runs` → invocations：`execution_kind` 保持 `ordinary|routing_guard`；无 taskId。
 - `invocation_credentials`：无 taskId。
 - `a2a_requests`：`thread_id` + `task_id` nullable；unique
-  `(thread_id, profile_id, request_id)`；drop 旧 task-level unique。
+  `(thread_id, agent_id, request_id)`；drop 旧 task-level unique。
 - 旧 `tasks`/`handoffs`/`custody_events`/`budgets`/`reviews`/`merges` 冻结 legacy，
   不读不写。
 - 迁移前 drain/seal 有 running invocation 的 session；跳过 running，等 terminal。
@@ -41,11 +44,12 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 
 ## R2 — Same-thread A2A
 
-- `ensureThreadSession(threadId, profileId)`：一个 thread×profile 一个 active
+- `ensureThreadSession(threadId, agentId)`：一个 thread×agent 一个 active
   session、`workingDirectory=thread.projectPath`。
+- A2A target 从 AgentRegistry 解析；`enabled=false` / 未知 id / account 缺失
+  都是 typed reject。
 - `buildThreadPrompt`：thread/participants/recent；无 `# Task`。
-- tool policy：沿用现有 profile/sandbox policy；v1 不新增限制；A2A runtime
-  不重新定义权限模型。
+- tool policy：工具/MCP 由 pi 执行层负责；AgentConfig 不定义 tool policy。
 - dispatch thread branch：thread-scoped queue、invocation、token；不调用
   budget/deployment/managed-work guard。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
@@ -56,7 +60,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   depth/loop guard、typed rejects。
 - `codeteam_multi_mention`：2-3 targets fan-out；one message + one queue entry +
   N invocations；不做聚合回调。
-- 任意 active profile 可被 target；首次成功后加入 participants。
+- 任意 enabled agent 可被 target；首次成功后加入 participants。
 - `thread post --to` 不再要求 `--task`；CLI/read model 同步。
 - 出口：E3/E4/E5/E6/E8/E10/E11。
 

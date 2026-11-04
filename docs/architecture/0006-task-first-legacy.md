@@ -43,6 +43,8 @@ related_features: [codeteam/F017, codeteam/F018]
 
 以下表标记 `legacy-read-only`；v1 runtime 不读不写、不双写，迁移/审计可读：
 
+- 旧 agent 身份：`agent_profiles`、`roles`；v1 由 `.codeteam/agent-catalog.json`
+  的 AgentConfig + AgentRegistry 取代；
 - 工作项/SOP：`tasks`、`stages`、`backlog_items`、`workflow_sops`、
   `sop_check_evidence`、`work_admissions`、`work_attempts`、
   `run_managed_work_bindings`、`task_managed_work_bindings`；
@@ -58,10 +60,13 @@ related_features: [codeteam/F017, codeteam/F018]
 旧列同样标记 `legacy-read-only`，不得新增语义：
 
 - `agent_sessions.task_id`
+- `agent_sessions.profile_id`（目标列 `agent_id`）
+- `agent_sessions.role`
 - `invocation_credentials.task_id`
 - `messages.task_id`
 - `queue_entries.source_record_id`
 - `a2a_requests.task_id`
+- `runs.role` / `workers.role`
 
 ## 3. 工具面
 
@@ -95,6 +100,7 @@ related_features: [codeteam/F017, codeteam/F018]
 |---|---|
 | R0 | 本文入库；F018 feature/plan 链接本文；不再对 legacy 模块加新功能 |
 | R1 | 停新 task dispatch；drain/seal 有 running invocation 的 session；旧表只读；不双写 |
+| R1 | 建 `.codeteam/agent-catalog.json` + accounts；AgentRegistry 取代 `agent_profiles`；旧 `roles`/profile 表只读 |
 | R2 | v1 worker registry 注册 A2A 四工具；旧 `a2a_send`/`handoff_*` 不注册 |
 | R5 | 旧 code delivery 代码归档/清理；历史数据保留只读 |
 | 未来 | code delivery 是否重设计或弃用另立 feature；必须从 A2A runtime 出发 |
@@ -102,6 +108,7 @@ related_features: [codeteam/F017, codeteam/F018]
 ## 6. 不要做
 
 - 不要把旧 Task-first 代码/测试当作 A2A runtime 的参考实现；
+- 不要把 `agent_profiles` 或 `roles` 表当成新 agent 身份真相源；
 - 不要给 legacy 表加字段、补旧 path 的功能或重构；
 - 不要复活 `a2a_send` / `handoff_*`，也不要加兼容 alias；
 - 不要为了“旧 E2E 绿”重新打开 task-first dispatch；
