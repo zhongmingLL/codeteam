@@ -40,7 +40,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
    `executionKind=ordinary|routing_guard`，没有 conversation/code。
 3. Session 是 thread×profile 的持久身份；一个 active session；无 taskId。
 4. A2A v1 工具面：`codeteam_post_message` / `codeteam_cross_post_message` /
-   `codeteam_thread_context`。
+   `codeteam_multi_mention` / `codeteam_thread_context`。
 5. Queue 单账本：thread + source message + targets；无 task 依赖。
 6. Auth 以 thread/invocation 为锚；token 无 task 坐标。
 7. Budget 归 Thread goal / member effort；v1 只记录 usage。
@@ -54,7 +54,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 | R1 | 新 thread-first schema：Thread owner/participants/projectPath/goal、thread session、invocation、credential、a2a_requests；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down |
 | R2 | same-thread post / thread context；真实 provider E2E | E1/E2/E7/E9/E12/E13 |
 | R3 | cross-thread post；thread access；participants | E3/E4/E5/E6/E8/E10/E11 |
-| R4 | loop guard/idempotency/observation；多 agent thread；不做 multi_mention | E14/E15/E16/E17 |
+| R4 | loop guard/idempotency/observation；多 agent thread；不做 multi_mention 聚合回调 | E14/E15/E16/E17 |
 | R5 | cutover CLI/daemon；旧 code delivery 归档；F018 close | A2A runtime 单一真相 |
 
 ## 验收方向
@@ -63,9 +63,10 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 - [ ] 无 task thread 可以真实 provider 完成 post/response。
 - [ ] same-thread post E2E；cross-thread post E3。
+- [ ] `multi_mention` 2-3 agent fan-out E4。
 - [ ] 任意 active profile 加入 participants；thread access 同 user。
 - [ ] token scope 负例 E7；target thread 负例 E8。
-- [ ] text @ / final @ 不路由 E6；observation 识别 3 个新工具 E12。
+- [ ] text @ / final @ 不路由 E6；observation 识别 4 个新工具 E12。
 - [ ] `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 E13。
 - [ ] v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges E14。
 - [ ] session 迁移跳过 running invocation E15。
@@ -75,7 +76,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 - TaskItem / worktree / code delivery / review / merge / SOP gate；
 - custody / handoff / return / replace；
-- `multi_mention` 聚合；
+- `multi_mention` 聚合回调（fan-out 已在 v1）；
 - agent-created thread propose/approve；
 - Console M0 / W7b；
 - 直接复用 Clowder 的 Redis/transport/deployment。
@@ -87,6 +88,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - F004/F005/F008/F010/F011：task-bound code delivery/custody 冻结为 legacy，
   不在 v1 runtime 中运行。
 - F016b/F016c：wait/API 工作按 thread/invocation 重新对齐，不假设 task-first。
+- 旧 Task-first 实现清单与处置：
+  `docs/architecture/0006-task-first-legacy.md`。
 
 ## 风险
 

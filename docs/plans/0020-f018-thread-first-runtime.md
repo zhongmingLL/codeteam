@@ -21,7 +21,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 
 - F017 Phase A 标记 `phase-a-archive`；F017 plan 0019 归档。
 - F018 feature + 本 plan；BACKLOG 加 F018 行。
-- ADR-0002 补 `superseded_for_execution_anchor` 指向 0005。
+- 按 operator 2026-11-04 决定移除 F017 的 ADR-0001/0002 与 plan 0019。
 - README / plans 索引更新；旧 code delivery feature 标 frozen/legacy。
 - 出口：`check:doc-index` 通过；docs-only；不写产品代码。
 
@@ -54,6 +54,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 
 - `codeteam_cross_post_message`：target threadId、targets、thread access、
   depth/loop guard、typed rejects。
+- `codeteam_multi_mention`：2-3 targets fan-out；one message + one queue entry +
+  N invocations；不做聚合回调。
 - 任意 active profile 可被 target；首次成功后加入 participants。
 - `thread post --to` 不再要求 `--task`；CLI/read model 同步。
 - 出口：E3/E4/E5/E6/E8/E10/E11。
@@ -61,8 +63,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 ## R4 — Loop guard / observation / 多 agent
 
 - depth 15、`a2a_duplicate_delivery`、`a2a_request_conflict`。
-- observation 识别 3 个新工具；text-@ 负例不误报。
-- 多 agent thread；不做 `multi_mention` 聚合。
+- observation 识别 4 个新工具；text-@ 负例不误报。
+- 多 agent thread；不做 `multi_mention` 聚合回调。
 - 出口：E14/E15/E16/E17。
 
 ## R5 — Cutover 与清理
