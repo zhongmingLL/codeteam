@@ -1,9 +1,9 @@
 ---
 title: "F017 — A2A surface unification plan（Phase A/B/C）"
 doc_kind: plan
-status: draft
+status: archived
 created: 2026-10-31
-updated: 2026-10-31
+updated: 2026-11-04
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 source_decision: "operator decision 2026-10-31, coordination decision:a2a-surface-unification"
@@ -11,6 +11,11 @@ feature: F017
 ---
 
 # F017 — A2A surface unification
+
+> **2026-11-04 operator D1=A：本计划归档。** F017 Phase A 保留为历史输入；
+> A2A runtime v1 由 F018 与
+> `docs/architecture/0005-thread-first-runtime.md` 拥有，不再按本文的
+> task-first Phase A/B/C 推进。
 
 > 本计划先冻结 Phase A 的 contract/design，再进入实现。Phase A 的第一动作是
 > 只读 Clowder AI 的 `post_message` / `cross_post_message` / action successor /
