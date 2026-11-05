@@ -3,7 +3,7 @@ title: "codeteam A2A runtime v1 — thread-first architecture"
 doc_kind: architecture
 status: draft-for-review
 created: 2026-11-03
-updated: 2026-11-04
+updated: 2026-11-05
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_direction: "2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery setup frozen/deprecated"
@@ -37,8 +37,8 @@ related_features: [codeteam/F018, codeteam/F017]
    `codeteam_thread_context`。
 5. **Queue 单账本**：thread + source message + targets；不造第二队列。
 6. **Auth 以 thread/invocation 为锚**：token 绑 invocation；没有 Task 坐标。
-7. **Budget 归 Thread goal / member effort**：v1 只记录 usage，不做硬 gate；
-   TaskItem 不拥有 budget。
+7. **v1 只记录 invocation usage**：不引入 ThreadGoal/tokenBudget/
+   thread_member_effort；旧 task budget 是 legacy，后续 thread budget 另立 feature。
 8. **v1 不做**：TaskItem、worktree、code delivery、review/merge/gate、custody、
    SOP handoff；`multi_mention` 只做 fan-out，不做聚合回调。
 
@@ -107,22 +107,31 @@ Agent 身份是 config-as-code，完整模型见
 ```ts
 interface Thread {
   id: string;
-  projectPath: string | null;  // 新 thread 必填；legacy 可空，taskless 时 typed reject
+  projectPath: string;         // 必填
   title: string | null;
+  titleSource?: "user" | "agent" | "system";
   createdBy: string;           // user id
-  participants: string[];      // AgentConfig ids
-  parentThreadId?: string;
-  status: "active" | "archived";
-  goal?: ThreadGoal;
+  participants: string[];      // AgentConfig ids；可为空
+  lastActiveAt: number;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number | null;
 }
 ```
 
 - Thread 必须 user-owned；participants 只做路由/上下文，不作 ACL 替代。
 - Thread access 由 `created_by` + system-visible thread 决定。
+- `participants` 可为空：operator/CLI 可先建 thread，后拉 agent；post 时
+  targets 必须非空。
+- `deletedAt != null` = soft-deleted；从普通列表隐藏，post typed reject；
+  v1 没有 archive 状态，也不做硬删除。
+- `lastActiveAt` 由消息/response 更新；`updatedAt` 只表示配置变更。
+- `titleSource`：`user` = operator/CLI；`agent` = agent 创建/改名（后续）；
+  `system` = 首条消息自动生成。
 - v1 thread 由 operator/CLI 创建；agent propose/approve 是后续能力。
-- 现有 `repo` / `backlog_item_id` 保留为 legacy 字段，v1 runtime 不依赖。
+- 现有 `repo` / `phase` / `backlog_item_id` / `status` 保留为 legacy 字段，
+  v1 runtime 不依赖；目标用 `project_path/title_source/last_active_at/deleted_at`。
+  `projectPath` 迁移无法回填时进入 preflight 清单，不静默回退。
 
 ### 2.2 Invocation
 
@@ -206,29 +215,12 @@ token 由 daemon mint，绑定 invocation/thread/user；没有 taskId。
 `toolPolicy` 是 pi 运行时下发的 credential 字段，不是 AgentConfig 配置；
 MCP/工具由 pi 负责。
 
-### 2.6 Budget / effort（Clowder-aligned）
+### 2.6 Usage / budget（v1 不做）
 
-```ts
-interface ThreadGoal {
-  objective: string;
-  status: "active" | "paused" | "blocked" | "usageLimited" | "budgetLimited" | "complete";
-  tokenBudget?: number | null;
-  updatedAt: number;
-}
-
-interface ThreadMemberEffort {
-  threadId: string;
-  agentId: string;
-  effort: string;
-  updatedAt: number;
-}
-```
-
-- `threads.goal_json` 保存 `ThreadGoal`；`thread_member_effort` 保存 per-agent
-  effort override。
-- v1 只记录 usage（`invocations.usage_json` + thread read model），不做硬 gate；
-  thread goal tokenBudget enforcement 是后续能力。
-- **TaskItem 不拥有 budget**；code delivery/custody 都不在 v1。
+- v1 只记录 invocation usage；没有 ThreadGoal/tokenBudget/
+  thread_member_effort。
+- 现有 `budgets.task_id` / `tasks.budget_json` 是 Task-first legacy；v1 不读不写。
+- Thread budget / member effort 是后续能力；另立 feature/表，不预埋进 v1。
 
 ### 2.7 后续能力（不在 v1）
 
@@ -301,7 +293,7 @@ thread message / A2A tool
 - 跨 thread depth 上限 15；同一 source + target 已有 queued/running 返回
   `a2a_duplicate_delivery`；同一 requestId 不同 intent 返回
   `a2a_request_conflict`。
-- 目标 thread 不存在、archived、跨 user、target agent disabled 都是 typed
+- 目标 thread 不存在、soft-deleted、跨 user、target agent disabled 都是 typed
   reject，不静默降级。
 - `multi_mention` 的聚合回调不在 v1；fan-out 本身是 v1 能力。
 
@@ -312,7 +304,7 @@ thread message / A2A tool
 | 阶段 | 内容 | 出口 |
 |---|---|---|
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
-| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/goal、thread session、invocation、credential、a2a_requests；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
+| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、invocation、credential、a2a_requests；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
 | R2 | same-thread post / thread context；observation；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18 |
 | R3 | cross-thread post；multi_mention fan-out；thread access；participants | E3/E4/E5/E6/E8/E10/E11/E16 |
 | R4 | loop guard/idempotency；多 agent thread；不做 multi_mention 聚合回调 | E17 |
@@ -322,8 +314,7 @@ thread message / A2A tool
 
 | 表 | 变更 | 迁移 |
 |---|---|---|
-| `threads` | 新增 `created_by`, `project_path`, `goal_json`；`thread_participants` 新表 | owner 从 operator/最早 message/session 回填；projectPath 从旧 task.worktree 共同根或 operator 配置回填，无法确定的置空 |
-| `thread_member_effort` | 新表 | 旧 profile effort 默认值回填；字段改为 `agent_id` |
+| `threads` | 新增 `created_by`, `project_path`（必填）, `title_source`, `last_active_at`, `deleted_at`；`thread_participants` 新表 | owner 从 operator/最早 message/session 回填；projectPath 从 repo/task.worktree 共同根或 operator 配置回填；无法回填的 thread 进入 preflight 清单，不静默置空；archived → deleted_at |
 | `agent_sessions` | 只保留 thread×agent 单 active；`task_id`/`profile_id` legacy | 先 drain/seal 有 running invocation 的 session；跳过 running，等 terminal 再处理；旧 task session 不合并进新 runtime；目标列 `agent_id` |
 | `runs` → invocations | 新读模型；`execution_kind` 保持 `ordinary\|routing_guard`；无 taskId；新增 `usage_json` | 旧 runs/task 数据保留只读 legacy，不双写 |
 | `invocation_credentials` | 新 token 无 taskId | 旧 credential legacy |
@@ -354,7 +345,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | E5 | 任意 enabled agent 被拉入 thread | 首次成功后成为 participant | participant 表断言 |
 | E6 | text @ / final response @ | 不产生额外 queue/wake；只有 typed targets 路由 | 负例 E2E |
 | E7 | token scope 负例 | 跨 thread / 错 user / 错 agent 的 token 被拒 | auth 单测 + E2E |
-| E8 | 目标 thread archived / 跨 user / target disabled | typed reject，不静默降级 | 负例 E2E |
+| E8 | 目标 thread soft-deleted / 跨 user / target disabled | typed reject，不静默降级 | 负例 E2E |
 | E9 | 并发首条消息 | 同一 thread×agent session 不双开；queue 不重复消费 | 并发测试 |
 | E10 | `requestId` replay/conflict | 同 intent replay；不同 intent `a2a_request_conflict` | 负例 E2E |
 | E11 | `replyTo` 跨 thread / 不存在 | typed reject，不静默丢弃 | 负例 E2E |
@@ -370,8 +361,8 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 
 ### 6.1 必须改的核心模块
 
-- `control/migrations`：threads、thread_participants、thread_member_effort、
-  thread sessions、invocations、invocation_credentials、a2a_requests；
+- `control/migrations`：threads、thread_participants、thread sessions、
+  invocations、invocation_credentials、a2a_requests；
 - `auth`：mint/resolver/principals，token 从 task scope 改为 invocation/thread；
 - `dispatch`：resolveRoute/cutoverEntry/delivery readiness；
 - `workers`：executor/harness/tool-policy/prompt，thread workspace + A2A tools；
@@ -416,7 +407,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | # | 决策 | 结论 | 归属 |
 |---|---|---|---|
 | D1 | feature 归属 | **F018 A2A runtime v1**；F017 Phase A 归档 | operator 2026-11-04 |
-| D2 | budget 归属 | **Thread goal / member effort**，不是 TaskItem；v1 只记录 usage | operator 2026-11-04 |
+| D2 | budget 归属 | codeteam 当前没有 ThreadGoal/tokenBudget；v1 只记录 usage，不引入 ThreadGoal/thread_member_effort；thread budget 后续另立 feature | operator 2026-11-05 修订 |
 | D3 | v1 范围 | **纯 A2A runtime**；`a2a_send`/`handoff_*` 彻底弃用；code delivery setup 冻结/弃用 | operator 2026-11-04 |
 | D4 | 数据迁移 | 新 thread-first schema + up/down；旧 code delivery 表 legacy 只读；running session 先 drain | 工程默认 |
 | D5 | thread 创建 | v1 operator/CLI create；agent propose/approve 后续 | 工程默认 |

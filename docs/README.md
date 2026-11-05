@@ -68,6 +68,7 @@ updated: 2026-10-31
 | [`architecture/0005-thread-first-runtime.md`](architecture/0005-thread-first-runtime.md) | A2A runtime v1（draft-for-review）：AgentConfig config-as-code、Thread/Invocation、纯 A2A 四工具、无 Task/custody/code delivery、R0-R5 迁移 |
 | [`architecture/0006-task-first-legacy.md`](architecture/0006-task-first-legacy.md) | Task-first legacy inventory：旧模块/表/工具/feature 的识别、标记与处置，防止误导新开发 |
 | [`architecture/0007-agent-config.md`](architecture/0007-agent-config.md) | AgentConfig v1：config-as-code AgentCatalog/AgentConfig/AgentRegistry/AgentState、AccountConfig、roleId workflow key、迁移与校验 |
+| [`architecture/0008-thread-model.md`](architecture/0008-thread-model.md) | Thread v1：projectPath 必填、active/deleted、lastActiveAt、titleSource、空 thread、迁移 preflight |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
 | [`plans/0007-architecture-plan-coverage.md`](plans/0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵与缺口修复记录；三猫 accept，冻结为 DP→plans 唯一对账索引 |
 | [`architecture/decision-packets/README.md`](architecture/decision-packets/README.md) | 10 个 Decision Packet 索引与签字结论 |

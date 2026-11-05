@@ -3,7 +3,7 @@ title: "codeteam Task-first legacy inventory"
 doc_kind: architecture
 status: legacy-inventory
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-05
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F017, codeteam/F018]
 ---
@@ -62,6 +62,8 @@ related_features: [codeteam/F017, codeteam/F018]
 - `agent_sessions.task_id`
 - `agent_sessions.profile_id`（目标列 `agent_id`）
 - `agent_sessions.role`
+- `threads.repo` / `threads.phase` / `threads.backlog_item_id` /
+  `threads.status`（archived 迁移为 `deleted_at`；目标不再有 archive 状态）
 - `invocation_credentials.task_id`
 - `messages.task_id`
 - `queue_entries.source_record_id`

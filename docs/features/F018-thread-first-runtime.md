@@ -7,7 +7,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-05
 source_plan: "docs/plans/0020-f018-thread-first-runtime.md"
 source_architecture: "docs/architecture/0005-thread-first-runtime.md"
 source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery frozen"
@@ -35,7 +35,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 ## 目标态
 
-1. Thread 是主聚合根：user-owned、participants、projectPath。
+1. Thread 是主聚合根：user-owned、participants、projectPath、active/deleted、
+   lastActiveAt。
 2. Invocation 是每轮执行：`threadId + agentId + userId + invocationId`；
    `executionKind=ordinary|routing_guard`，没有 conversation/code。
 3. Session 是 thread×agent 的持久身份；一个 active session；无 taskId。
@@ -45,7 +46,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
    `codeteam_multi_mention` / `codeteam_thread_context`。
 6. Queue 单账本：thread + source message + targets；无 task 依赖。
 7. Auth 以 thread/invocation 为锚；token 无 task 坐标。
-8. Budget 归 Thread goal / member effort；v1 只记录 usage。
+8. v1 只记录 invocation usage；不引入 ThreadGoal/tokenBudget/
+   thread_member_effort；旧 task budget 是 legacy。
 9. v1 不做 TaskItem/worktree/code delivery/review/merge/custody/SOP handoff。
 
 ## 分阶段
@@ -53,7 +55,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 | 阶段 | 范围 | 出口 |
 |---|---|---|
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
-| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/goal、thread session、invocation、credential、a2a_requests；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down |
+| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、invocation、credential、a2a_requests；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down |
 | R2 | same-thread post / thread context；真实 provider E2E | E1/E2/E7/E9/E12/E13 |
 | R3 | cross-thread post；thread access；participants | E3/E4/E5/E6/E8/E10/E11 |
 | R4 | loop guard/idempotency/observation；多 agent thread；不做 multi_mention 聚合回调 | E14/E15/E16/E17 |
@@ -69,6 +71,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - [ ] `.codeteam/agent-catalog.json` + accounts 加载/校验；AgentRegistry/AgentState；
       disabled agent typed reject；defaultModel 属于 account.models。
 - [ ] A2A targets 用 agentId；消息展示用 displayName。
+- [ ] 空 thread 可创建；post 无 targets typed reject；soft-deleted thread post reject；
+      projectPath 必填且 legacy preflight 可列出需补路径的 thread。
 - [ ] 任意 enabled agent 加入 participants；thread access 同 user。
 - [ ] token scope 负例 E7；target thread 负例 E8。
 - [ ] text @ / final @ 不路由 E6；observation 识别 4 个新工具 E12。

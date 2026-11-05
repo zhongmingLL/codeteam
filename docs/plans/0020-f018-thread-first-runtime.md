@@ -3,7 +3,7 @@ title: "F018 — A2A runtime v1 实施计划（R0-R5）"
 doc_kind: plan
 status: draft
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-05
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
@@ -27,8 +27,9 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 
 ## R1 — Schema 与迁移
 
-- `threads`：`created_by`、`project_path`、`goal_json`。
-- `thread_participants`、`thread_member_effort`。
+- `threads`：`created_by`、`project_path`（必填）、`title_source`、
+  `last_active_at`、`deleted_at`。
+- `thread_participants`。
 - `.codeteam/agent-catalog.json` + `.codeteam/accounts.json`：AgentConfig /
   AccountConfig 加载、校验、AgentRegistry；AgentState 运行时状态。
 - `agent_sessions`：thread×agent 单 active；`agent_id` 目标列；`task_id`/
@@ -46,6 +47,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 
 - `ensureThreadSession(threadId, agentId)`：一个 thread×agent 一个 active
   session、`workingDirectory=thread.projectPath`。
+- 空 thread 允许创建；post 时 targets 必须非空；`deletedAt != null` 的 thread
+  拒绝 post。
 - A2A target 从 AgentRegistry 解析；`enabled=false` / 未知 id / account 缺失
   都是 typed reject。
 - `buildThreadPrompt`：thread/participants/recent；无 `# Task`。
