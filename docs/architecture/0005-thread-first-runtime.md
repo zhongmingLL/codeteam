@@ -171,23 +171,33 @@ interface AgentSession {
   id: string;
   threadId: string;
   agentId: string;
-  piSessionId: string | null;
-  provider: string;
-  model: string;
-  modelFamily: string;
-  status: "active" | "sealing" | "sealed";
+  userId: string;
   seq: number;
-  workingDirectory: string | null;
-  userId: string | null;
+  status: "active" | "sealing" | "sealed";
+  piSessionId: string | null;
+  piSessionFile: string | null;
+  workingDirectory: string;
+  messageCount: number;
+  consecutiveResumeFailures: number;
+  sealReason: string | null;
   createdAt: number;
   updatedAt: number;
   sealedAt: number | null;
 }
 ```
 
-- 一个 `(thread_id, agent_id)` 同时最多一个 active session。
-- `workingDirectory = thread.projectPath`；`projectPath` 为空时
+- 详细字段、resume 前置检查、fresh/熔断、schema 与迁移见
+  `docs/architecture/0009-session-model.md`；本节只保留架构摘要。
+- 一个 `(thread_id, agent_id)` 同时最多一个 live session（`active` 或 `sealing`）。
+- `workingDirectory = thread.projectPath` 必填；`projectPath` 为空时
   `thread_project_path_required` typed reject。
+- `provider/model/modelFamily` 不在 session；它们属于 `Invocation`，每轮从
+  AgentConfig/AccountConfig 解析。
+- `messageCount` 对齐 Clowder 语义：每个有 user-visible output 的 completed
+  invocation +1，不是原始 message 行数。
+- `consecutiveResumeFailures` 连续 3 次 resume 失败熔断 seal；同一轮新建
+  session 继续当前 invocation。
+- `sealed` 是终态；v1 不做 `sealed -> active` 的 restore。
 - `taskId` 不进入 session identity；旧 `agent_sessions.task_id` 只作为 legacy
   列保留到迁移完成，不读不写。
 - Session 不再有 `role`；workflow 分组只用 `AgentConfig.roleId`。

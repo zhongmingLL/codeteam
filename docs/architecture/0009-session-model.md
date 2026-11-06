@@ -1,13 +1,14 @@
 ---
 title: "codeteam AgentSession v1 — basics + resume"
 doc_kind: architecture
-status: draft-for-review
+status: accepted
 created: 2026-11-06
 updated: 2026-11-06
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
+operator_signoff: "confirmed 2026-11-06"
 operator_direction: "2026-11-06: v1 session 只做基础和 resume 相关特性；context/compression/handoff/import/scoped 全部放 v2"
-operator_decisions: "2026-11-06: agentId rename confirmed; messageCount aligns with Clowder; circuit breaker 3; sealed restore deferred to v2; provider/model/modelFamily move to Invocation"
+operator_decisions: "2026-11-06: agentId rename confirmed; messageCount aligns with Clowder; nativeSessionBinding flattened to piSessionId+piSessionFile; workspaceFingerprint not persisted; circuit breaker 3; sealed terminal + restore deferred to v2; provider/model/modelFamily move to Invocation"
 related_features: [codeteam/F018, codeteam/F017]
 ---
 
@@ -360,10 +361,6 @@ getActiveSession(threadId, agentId): AgentSession | null
 2. **`messageCount` 对齐 Clowder 语义**：每个有 user-visible output 的 completed invocation +1；不是原始 message 行数，也不改名。
 3. **熔断阈值 3 次**：熔断后 seal 当前 session、同一轮新建并继续当前 invocation。
 4. **模型快照移到 `Invocation`**：`provider/model/modelFamily` 不再进入 `AgentSession`；模型变更不要求 seal，下一轮 invocation 记录新模型并继续 pi 历史。
-5. **`sealed` 状态保留为终态，restore 放 v2**：v1 不做 sealed → active。
-
-### 10.2 仍需确认
-
-1. **`nativeSessionBinding` 扁平化**：Clowder 的 binding 是 AGY 专用（`agy_stream_json/agy_acp`），不是通用 CLI binding；建议 v1 用 `piSessionId + piSessionFile`，不再保留通用 binding 对象。
-2. **`workspaceFingerprint`**：Clowder 持久化它作为 resume 比较键，但当前实现只是规范化路径；建议 v1 不持久化，resume 时直接比较规范化后的 `workingDirectory`。
-3. **`sealed` 的理解**：本文按“sealed 状态保留、sealed→active restore 放 v2”落；如果你的意思是连 `sealed` 状态也整个移到 v2，那 v1 只剩 `active`，需要再砍 `status/sealReason/sealedAt`，请明确。
+5. **`sealed` 终态 + restore 放 v2**：v1 没有 `sealed -> active`；旧 session 只读可查，不恢复执行。
+6. **`nativeSessionBinding` 扁平化**：v1 用 `piSessionId + piSessionFile`，不再保留通用 binding 对象；Clowder 的 binding 是 AGY 专用，pi 不需要。
+7. **`workspaceFingerprint` 不持久化**：v1 的 `workingDirectory` required 且不可变，resume 时直接比较规范化路径。
