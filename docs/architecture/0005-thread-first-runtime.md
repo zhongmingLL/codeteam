@@ -172,32 +172,29 @@ interface AgentSession {
   threadId: string;
   agentId: string;
   userId: string;
-  seq: number;
-  status: "active" | "sealing" | "sealed";
   piSessionId: string | null;
   piSessionFile: string | null;
   workingDirectory: string;
   messageCount: number;
   consecutiveResumeFailures: number;
-  sealReason: string | null;
   createdAt: number;
   updatedAt: number;
-  sealedAt: number | null;
 }
 ```
 
 - 详细字段、resume 前置检查、fresh/熔断、schema 与迁移见
   `docs/architecture/0009-session-model.md`；本节只保留架构摘要。
-- 一个 `(thread_id, agent_id)` 同时最多一个 live session（`active` 或 `sealing`）。
+- v1 只有 active session：一个 `(thread_id, agent_id)` 一行；没有
+  `sealing/sealed/restore/seq`，这些整体放 v2。原因是 v1 只做 A2A runtime，
+  验收要求快速真实模型 E2E，不要求长 session。
 - `workingDirectory = thread.projectPath` 必填；`projectPath` 为空时
   `thread_project_path_required` typed reject。
 - `provider/model/modelFamily` 不在 session；它们属于 `Invocation`，每轮从
   AgentConfig/AccountConfig 解析。
 - `messageCount` 对齐 Clowder 语义：每个有 user-visible output 的 completed
   invocation +1，不是原始 message 行数。
-- `consecutiveResumeFailures` 连续 3 次 resume 失败熔断 seal；同一轮新建
-  session 继续当前 invocation。
-- `sealed` 是终态；v1 不做 `sealed -> active` 的 restore。
+- `consecutiveResumeFailures` 连续 3 次 resume 失败时强制 fresh、清空 pi
+  绑定、计数归零；不 seal、不新建 codeteam session。
 - `taskId` 不进入 session identity；旧 `agent_sessions.task_id` 只作为 legacy
   列保留到迁移完成，不读不写。
 - Session 不再有 `role`；workflow 分组只用 `AgentConfig.roleId`。

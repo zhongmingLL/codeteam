@@ -69,7 +69,7 @@ updated: 2026-10-31
 | [`architecture/0006-task-first-legacy.md`](architecture/0006-task-first-legacy.md) | Task-first legacy inventory：旧模块/表/工具/feature 的识别、标记与处置，防止误导新开发 |
 | [`architecture/0007-agent-config.md`](architecture/0007-agent-config.md) | AgentConfig v1：config-as-code AgentCatalog/AgentConfig/AgentRegistry/AgentState、AccountConfig、roleId workflow key、迁移与校验 |
 | [`architecture/0008-thread-model.md`](architecture/0008-thread-model.md) | Thread v1：projectPath 必填、active/deleted、lastActiveAt、titleSource、空 thread、迁移 preflight |
-| [`architecture/0009-session-model.md`](architecture/0009-session-model.md) | AgentSession v1：身份/生命周期、piSessionId/piSessionFile resume、连续失败熔断、v2 推迟清单 |
+| [`architecture/0009-session-model.md`](architecture/0009-session-model.md) | AgentSession v1：active-only 绑定、piSessionId/piSessionFile resume、连续失败上限、v2 推迟清单 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
 | [`plans/0007-architecture-plan-coverage.md`](plans/0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵与缺口修复记录；三猫 accept，冻结为 DP→plans 唯一对账索引 |
 | [`architecture/decision-packets/README.md`](architecture/decision-packets/README.md) | 10 个 Decision Packet 索引与签字结论 |
