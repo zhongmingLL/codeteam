@@ -7,6 +7,7 @@ updated: 2026-11-06
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_direction: "2026-11-06: v1 session 只做基础和 resume 相关特性；context/compression/handoff/import/scoped 全部放 v2"
+operator_decisions: "2026-11-06: agentId rename confirmed; messageCount aligns with Clowder; circuit breaker 3; sealed restore deferred to v2; provider/model/modelFamily move to Invocation"
 related_features: [codeteam/F018, codeteam/F017]
 ---
 
@@ -17,11 +18,11 @@ related_features: [codeteam/F018, codeteam/F017]
 
 ## 0. 结论先行
 
-1. **v1 只保留 18 个字段**：身份 6、执行快照 3、resume 3、基础计数 2、生命周期 4。
+1. **v1 只保留 15 个字段**：身份 6、resume 3、基础计数 2、生命周期 4。
 2. **不再保留通用 `nativeSessionBinding` 对象**。v1 只有 pi 一个 native backend，扁平 `piSessionId + piSessionFile` 就够；版本化 binding 留给 v2。
-3. **`sealed` 是终态**。v1 不做 sealed → active 的 restore；resume 只针对 `active` session 在 worker/daemon 重启后的续接。
+3. **`sealed` 状态保留为终态**；sealed → active 的 restore 放 v2。resume 只针对 `active` session 在 worker/daemon 重启后的续接。
 4. **resume 失败必须可解释**：文件缺失、id 不一致、绑定不完整都走 fresh，并写事件；连续 3 次失败熔断 seal，同一轮新建 session 继续当前 invocation。
-5. **session 是单模型/单工作区快照**：`provider/model/modelFamily` 和 `workingDirectory` 在 session 生命周期内不可变。换模型或换工作区先 seal，再新建 session。
+5. **session 不持有模型快照**：`provider/model/modelFamily` 属于 `Invocation`，每轮从 AgentConfig 解析；session 只绑定 `workingDirectory` 和 pi 历史。
 
 ## 1. 目标与非目标
 
@@ -64,18 +65,13 @@ export interface AgentSession {
   seq: number;
   status: SessionStatus;
 
-  // 执行快照（session 生命周期内不可变）
-  provider: string;
-  model: string;
-  modelFamily: string;
-
   // resume
   piSessionId: string | null;
   piSessionFile: string | null;
   workingDirectory: string;
 
   // 基础计数
-  messageCount: number;              // 完成的 agent response 数（每个 invocation 1 次）
+  messageCount: number;              // Clowder 语义：每个有 user-visible output 的 completed invocation +1
   consecutiveResumeFailures: number; // 连续 resume 失败次数，成功 turn 后归零
 
   // 生命周期
@@ -89,11 +85,10 @@ export interface AgentSession {
 | 字段 | 为什么在 v1 |
 |---|---|
 | `id/threadId/agentId/userId/seq/status` | session 的身份坐标与生命周期；一个 thread×agent 一个 live session。 |
-| `provider/model/modelFamily` | resume 时传给 worker 的执行快照；也是“这个 session 用什么模型跑出来”的证据。 |
+| `messageCount` | 对齐 Clowder：每个有 user-visible output 的 completed invocation +1；不是原始 message 行数。 |
 | `piSessionId` | pi 的 session 身份；resume 后必须和 `get_state().sessionId` 一致。 |
 | `piSessionFile` | pi 的 JSONL 文件路径；显式 resume 目标，文件缺失时能安全 fresh。 |
 | `workingDirectory` | session 的实际工作区；必须等于创建时的 `thread.projectPath`。 |
-| `messageCount` | 基础 read model；当前 UI/测试已经在用。 |
 | `consecutiveResumeFailures` | resume 熔断；没有它坏 session 会反复重试。 |
 | `sealReason/sealedAt` | 生命周期审计；sealed 必须能回答“为什么”。 |
 | `createdAt/updatedAt` | 基础时间戳。 |
@@ -104,6 +99,7 @@ export interface AgentSession {
 |---|---|---|
 | `task_id` / `role` / `stage_id` | 删除 | task-first legacy；v1 session 不绑 task。 |
 | `profile_id` | 改名 `agent_id` | 统一 AgentConfig 的 `agentId`。 |
+| `provider` / `model` / `model_family` | 移到 `Invocation` | 模型是每轮执行快照，不是 session 身份；0005 的 `Invocation` 已记录。 |
 | `effective_tool_policy` | 删除 | 工具策略归 pi 执行层。 |
 | `chain_key` | 删除 | 没有 bg carrier；pi session id 稳定。 |
 | `native_session_binding_json` | 拆成 `pi_session_id` + `pi_session_file` | v1 只有一个 native backend。 |
@@ -114,6 +110,20 @@ export interface AgentSession {
 | `workspace_fingerprint` | 删除 | v1 直接比较规范化后的 `workingDirectory`。 |
 | `worker_id` / `worker_binding_state` | 留在 worker 层 | 是 worker runtime 状态，不是 session identity。 |
 | `message_count` / `seal_reason` / `working_directory` / `user_id` | 保留 | 基础字段。 |
+
+**关于 `nativeSessionBinding`**：Clowder 的 `carrier` 只有
+`agy_stream_json` / `agy_acp` 两种，都是 Antigravity native；这个对象是
+**AGY 专用 launch identity binding**，不是通用 CLI binding。Claude/Codex/
+Gemini/OpenCode 等 CLI 走自己的 `cliSessionId` / `--resume`，不需要它。
+codeteam v1 只有 pi 一个 backend，所以不保留通用 binding 对象，直接用
+`piSessionId + piSessionFile`；如果 v2 增加第二个 native backend，再引入
+按 backend 版本化的 binding。
+
+**关于 `workspaceFingerprint`**：Clowder 会持久化它，作为 resume 时判断
+“是不是同一个 workspace”的比较键；但它的当前实现只是规范化路径
+（`resolve`，Windows 转小写），不是内容 hash。codeteam v1 的
+`workingDirectory` 已经是 required 且不可变，resume 时直接对两侧做
+realpath/规范化比较即可，不需要额外持久化一列。
 
 ## 3. 状态机与不变量
 
@@ -127,7 +137,7 @@ active ──seal()──▶ sealing ──finalize──▶ sealed
 2. `sealed` 必须有 `sealedAt` 和 `sealReason`；`active` 时两者都为空；`sealing` 允许有 `sealReason`，但 `sealedAt` 必须为空。
 3. `piSessionId` 与 `piSessionFile` 必须同时为空或同时非空。
 4. `piSessionId` 非空时全局唯一。
-5. `workingDirectory`、`provider/model/modelFamily` 非空且在 session 生命周期内不可变。
+5. `workingDirectory` 非空且在 session 生命周期内不可变；`provider/model/modelFamily` 由 `Invocation` 记录，不属于 session。
 6. `sealed` 是终态；v1 没有 `sealed -> active`。
 7. `sealing` 是 crash-recovery 中间态；正常 seal 可以在一事务内完成 `active -> sealed`。
 8. seal 不删除 `piSessionFile`；文件保留用于审计/回忆，清理是单独的 retention 策略。
@@ -159,7 +169,7 @@ consecutiveResumeFailures = 0
 | `workingDirectory` 存在且可访问 | typed error，不 fresh | `workspace_unavailable` |
 | `get_state().sessionId === piSessionId` | fresh | `resume_id_changed` |
 
-- `provider/model` 用 session 自己的快照，不重新解析 AgentConfig；换模型先 seal。
+- `provider/model/modelFamily` 在 invocation 层从 AgentConfig 解析，写入 `Invocation`；session 只恢复 pi 历史，不校验/不承诺模型一致。
 - `workingDirectory` 不可用是环境问题，不静默 fresh 到别处。
 - `get_state()` 的 id 校验是最后一道门：文件存在但 id 不一致也不能继续。
 - `workingDirectory` 比较使用 realpath/规范化路径；v1 不持久化 `workspaceFingerprint`。
@@ -202,10 +212,6 @@ CREATE TABLE agent_sessions (
   seq INTEGER NOT NULL CHECK (seq >= 0),
   status TEXT NOT NULL CHECK (status IN ('active', 'sealing', 'sealed')),
 
-  provider TEXT NOT NULL,
-  model TEXT NOT NULL,
-  model_family TEXT NOT NULL,
-
   pi_session_id TEXT,
   pi_session_file TEXT,
   working_directory TEXT NOT NULL,
@@ -246,8 +252,9 @@ CREATE INDEX agent_sessions_agent_status
 
 | 旧列 | 新列 | 处置 |
 |---|---|---|
-| `id/thread_id/seq/status/provider/model/model_family/pi_session_id/message_count/seal_reason/created_at/updated_at/sealed_at` | 同名列 | 直接迁移。 |
+| `id/thread_id/seq/status/pi_session_id/message_count/seal_reason/created_at/updated_at/sealed_at` | 同名列 | 直接迁移。 |
 | `profile_id` | `agent_id` | 按 AgentConfig id 映射；映射不上 → preflight。 |
+| `provider/model/model_family` | 不迁移 | 由 `Invocation` 记录；`runs` 表已有执行快照。 |
 | `user_id` | `user_id` | 空值从 task.user_id / thread.created_by 回填；仍不确定 → preflight。 |
 | `native_session_binding_json.sessionFile` | `pi_session_file` | 路径合法则迁移；否则置 null，下一轮 fresh。 |
 | `working_directory` | `working_directory` | 空值从 task.worktree / thread.repo 回填；无法确定 → preflight。 |
@@ -260,7 +267,7 @@ CREATE INDEX agent_sessions_agent_status
 ## 6. Store / API 契约
 
 ```ts
-createSession({ threadId, agentId, userId, provider, model, modelFamily, workingDirectory }): AgentSession
+createSession({ threadId, agentId, userId, workingDirectory }): AgentSession
 ```
 
 - `seq = max(seq) + 1`（同一 thread×agent）；已有 live session → `conflict`。
@@ -282,6 +289,10 @@ getActiveSession(threadId, agentId): AgentSession | null
 - `getActiveSession`：只返回 `active`；`sealing` 由 recovery 处理。
 
 **代码接线点**：`control/stores/types.ts`（接口收敛）、`control/stores/sessions.ts`（列映射与新方法）、`control/migrations/001-core.ts` + R1（重建表/旧表归档）、`workers/harness.ts`（resume 前置检查/fresh/熔断）、`workers/executor.ts`（completed turn 计数）、`control/read-models.ts`（只用 `messageCount`）、测试。
+
+> Clowder 的 `messageCount` 细节：首次 user-visible output 会把 0→1
+> （unseal safety），`done` 时同一 invocation 不再重复 +1。v1 等价为
+> “每个 completed invocation 最多 +1，且只有有 user-visible output 的才算”。
 
 ## 7. 事件
 
@@ -308,6 +319,7 @@ getActiveSession(threadId, agentId): AgentSession | null
 - `sealed` 必须有 `sealedAt + sealReason`；`active` 两者为空；`sealing` 允许有 `sealReason`、`sealedAt` 为空。
 - `piSessionId/piSessionFile` 同时为空或同时非空。
 - `createSession` 的 `seq` 单调递增；`workingDirectory` 必须等于 `thread.projectPath`。
+- `messageCount`：一次 invocation 内多条 message/rich block 只 +1；无 user-visible output 不 +1；同一 invocation 的 `done` 不重复 +1（对齐 Clowder）。
 - `bindPiSession` 不能覆盖已绑定值；`replacePiSession` 只能走 resume failure。
 - `sealSession` 重复调用返回 `invalid_state`。
 
@@ -340,12 +352,18 @@ getActiveSession(threadId, agentId): AgentSession | null
 | bg carrier | `latestResumeSessionId`、`chainKey` | pi session id 稳定，不需要每轮 fork 指针。 |
 | sealed restore | Clowder `restoreActiveSession` | v1 把 sealed 当终态；恢复旧 session 是 v2 显式能力。 |
 
-## 10. 待 operator 拍板
+## 10. 决策状态
 
-1. **`agentId` 改名**：确认 `profile_id -> agent_id`，旧 profileId 只做迁移映射。
-2. **`messageCount` 语义**：按“完成的 agent response 数”保留，还是改名 `completedInvocationCount`？
-3. **`nativeSessionBinding` 扁平化**：确认 v1 用 `piSessionId + piSessionFile`，不再保留通用 binding 对象。
-4. **`workspaceFingerprint`**：确认 v1 不持久化，resume 时直接比较规范化后的 `workingDirectory`。
-5. **熔断阈值**：确认 3 次；熔断后 seal 当前 session、同一轮新建并继续当前 invocation，而不是在同一 session 内无限 fresh。
-6. **模型变更**：确认 v1 换模型必须先 seal 当前 session；不做自动“换模型续旧上下文”。
-7. **`sealed` 终态**：确认 v1 不做 restore；旧 session 只读可查，不恢复执行。
+### 10.1 本轮已确认
+
+1. **`agentId` 改名**：`profile_id -> agent_id`；旧 profileId 只做迁移映射。
+2. **`messageCount` 对齐 Clowder 语义**：每个有 user-visible output 的 completed invocation +1；不是原始 message 行数，也不改名。
+3. **熔断阈值 3 次**：熔断后 seal 当前 session、同一轮新建并继续当前 invocation。
+4. **模型快照移到 `Invocation`**：`provider/model/modelFamily` 不再进入 `AgentSession`；模型变更不要求 seal，下一轮 invocation 记录新模型并继续 pi 历史。
+5. **`sealed` 状态保留为终态，restore 放 v2**：v1 不做 sealed → active。
+
+### 10.2 仍需确认
+
+1. **`nativeSessionBinding` 扁平化**：Clowder 的 binding 是 AGY 专用（`agy_stream_json/agy_acp`），不是通用 CLI binding；建议 v1 用 `piSessionId + piSessionFile`，不再保留通用 binding 对象。
+2. **`workspaceFingerprint`**：Clowder 持久化它作为 resume 比较键，但当前实现只是规范化路径；建议 v1 不持久化，resume 时直接比较规范化后的 `workingDirectory`。
+3. **`sealed` 的理解**：本文按“sealed 状态保留、sealed→active restore 放 v2”落；如果你的意思是连 `sealed` 状态也整个移到 v2，那 v1 只剩 `active`，需要再砍 `status/sealReason/sealedAt`，请明确。
