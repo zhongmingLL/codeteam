@@ -135,34 +135,20 @@ interface Thread {
 
 ### 2.2 Invocation
 
-```ts
-interface Invocation {
-  id: string;
-  threadId: string;
-  userId: string;
-  agentId: string;
-  parentInvocationId?: string;
-  triggerMessageId: string;
-  a2aTriggerMessageId?: string;
-  executionKind: "ordinary" | "routing_guard";
-  provider: string;
-  model: string;
-  modelFamily: string;
-  status: "running" | "completed" | "failed" | "interrupted" | "canceled";
-  responseMessageId?: string;
-  chainMetadata: Record<string, unknown>;
-  createdAt: number;
-  updatedAt: number;
-}
-```
+A2A runtime 的调用链拆成两层，详细字段/状态机/链路见
+`docs/architecture/0010-a2a-runtime-chain.md`：
 
-- `threadId` / `agentId` / `userId` 必填。
-- `provider/model/modelFamily` 是执行快照，来自 AccountConfig +
-  AgentConfig.defaultModel；不是 AgentConfig 字段。
+- `InvocationRecord`（parent）：一条消息的消息级生命周期；
+  `sourceMessageId` unique、`targetAgentIds[]`、`status`、
+  `successfulAgentIds`/`failedAgentIds`/`canceledAgentIds`、`retryCount`。
+- `TurnExecution`（child）：单 agent 一次执行；`invocationRecordId`（fan-out
+  parent）、`parentInvocationId`（A2A 因果父）、`agentSessionId`、`attempt`、
+  `status`/`responseMessageId`/`terminalReason`。
+- 一个 parent 下 N 个 child；一个 child 一次 terminal。
+- `provider/model/modelFamily` 在 `TurnExecution`；不是 AgentConfig 字段。
 - `executionKind` 只有 `ordinary | routing_guard`；routing_guard 是内部路由
   守卫，不是用户可见的第二种 agent 工作。
-- 一个 invocation 一条 response bubble；one terminal。
-- v1 没有 `taskId` / `scopedWork`；后续能力需要时再引入，不预埋。
+- Queue entry 只做调度；parent 在 QueueProcessor claim 后创建。
 
 ### 2.3 Session
 
@@ -189,7 +175,7 @@ interface AgentSession {
   验收要求快速真实模型 E2E，不要求长 session。
 - `workingDirectory = thread.projectPath` 必填；`projectPath` 为空时
   `thread_project_path_required` typed reject。
-- `provider/model/modelFamily` 不在 session；它们属于 `Invocation`，每轮从
+- `provider/model/modelFamily` 不在 session；它们属于 `TurnExecution`，每轮从
   AgentConfig/AccountConfig 解析。
 - `messageCount` 对齐 Clowder 语义：每个有 user-visible output 的 completed
   invocation +1，不是原始 message 行数。
@@ -202,25 +188,37 @@ interface AgentSession {
 ### 2.4 Message / Queue
 
 - `messages.threadId` 必填；`taskId` 是 legacy 可空列，v1 不写。
-- `queue_entries.threadId` 必填；dispatch 不要求 source message.taskId。
-- queue 仍是唯一 pending-wake 账本。
+- `queue_entries` 重命名为 `invocation_queue`；`QueueStore` →
+  `InvocationQueueStore`。它只做 admission/claim/lease/target 移除，是唯一
+  pending-wake 账本。
+- `QueueProcessor` 在 claim 后创建 parent `InvocationRecord`；queue entry 不持有
+  消息终态。
+- 详细链路见 `0010-a2a-runtime-chain.md`。
 
 ### 2.5 Credential
 
 ```ts
 interface InvocationCredential {
+  id: string;
   invocationId: string;
   threadId: string;
   userId: string;
   agentId: string;
-  toolPolicy: Record<string, unknown>;
+  agentSessionId: string;
+  allowedTools: string[];
   state: "active" | "terminal";
+  disposition: "completed" | "failed" | "interrupted" | "canceled" | "revoked" | null;
 }
 ```
 
-token 由 daemon mint，绑定 invocation/thread/user；没有 taskId。
-`toolPolicy` 是 pi 运行时下发的 credential 字段，不是 AgentConfig 配置；
-MCP/工具由 pi 负责。
+token 由 daemon mint，绑定 child `TurnExecution`/thread/agent/session/user；
+没有 task/role/run 字段。`allowedTools` 是 A2A pi extension tools 白名单
+（post/cross/thread_context），不是 AgentConfig 工具策略。
+
+- `InvocationRegistry` 是 service：`create/verify/commitTerminal`；
+- 存储仍是 `invocation_credentials`；
+- 鉴权面从 MCP callback 改为 pi extension tools；
+- 详细字段/schema/校验见 `0010-a2a-runtime-chain.md`。
 
 ### 2.6 Usage / budget（v1 不做）
 
@@ -245,13 +243,16 @@ MCP/工具由 pi 负责。
 
 ```text
 thread message / A2A tool
-  → queue_entries(threadId, sourceMessageId, targets)
-  → DispatchService thread branch
-  → ensureThreadSession(threadId, agentId)     // one active per thread×agent
-  → Invocation(threadId, agentId, userId, executionKind="ordinary")
-  → per-invocation token
+  → invocation_queue(threadId, sourceMessageId, targets)
+  → QueueProcessor claim
+  → InvocationRecord(parent, claim 后创建)
+  → InvocationTracker.start(thread, agent)
+  → AgentRouter.routeParallel
+  → TurnExecution(child, invocationRecordId, agentSessionId, attempt)
+  → InvocationRegistry.create(child credential)
   → pi RPC worker（cwd=thread.projectPath）
-  → response bubble + invocation terminal
+  → response bubble + TurnExecution terminal
+  → PerAgentTerminalDispositionCollector + parent aggregate
 ```
 
 没有 Task/worktree/review/merge/custody 分支。
@@ -262,9 +263,10 @@ thread message / A2A tool
   一个 active session；`workingDirectory=thread.projectPath`。
 - **Prompt**：`buildThreadPrompt({ thread, session, sourceMessage, participants,
   recentMessages })`；不渲染 `# Task`，不注入 worktree/branch/base。
-- **Tool policy**：工具/MCP 由 pi 执行层负责；AgentConfig 不定义 tool policy，
-  v1 不新增白名单。Thread 是主体；A2A runtime 验证
-  thread/invocation/communication，不在这里重新定义权限模型。
+- **Tool policy**：pi 自己的工具策略仍由 pi 执行层负责；AgentConfig 不定义
+  pi tool policy。A2A pi extension tools 的 allowlist 在
+  `InvocationCredential.allowedTools`；Thread 是主体；A2A runtime 验证
+  thread/agent/session/tool，不在这里重新定义 pi 工具权限模型。
 - **Workspace**：cwd = `thread.projectPath`；`projectPath` 为空时
   `thread_project_path_required` typed reject，不回退到 daemon 目录。
 - **Budget**：只记录 usage；不调用 budget admission / deployment-wait /
@@ -278,7 +280,7 @@ thread message / A2A tool
 |---|---|---|---|
 | `codeteam_post_message` | 同 thread 发言并唤醒 targets | `targets`, `kind`, `bodyMd` | targets 是 AgentConfig id；text @ 不路由 |
 | `codeteam_cross_post_message` | 跨 thread 发言并唤醒 targets | `threadId`, `targets`, `kind`, `bodyMd` | source/target thread 必须同 user 可见；depth/loop guard |
-| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent | `targets` (2-3), `question`, `context?`, `requestId?` | one message + one queue entry + N invocations；响应是独立消息；无聚合回调 |
+| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent | `targets` (2-3), `question`, `context?`, `requestId?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；响应是独立消息；无聚合回调 |
 | `codeteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
 
 约束：
@@ -290,10 +292,10 @@ thread message / A2A tool
 - `post_message` / `cross_post_message` 带 optional `replyTo` 与 `requestId`；
   `multi_mention` 带 optional `requestId`。`requestId` 幂等键 scope 为
   `(threadId, agentId, requestId)`。
-- `multi_mention` 是 fan-out：一条 message + 一个含多 targets 的 queue entry；
-  每个 target 一条 invocation；响应是独立消息，不写聚合状态；`multiMentionId`
-  写 message/chainMetadata 用于关联。v1 不做聚合回调，调用方用
-  `thread_context` 读响应；单 target 失败不影响其他 target。
+- `multi_mention` 是 fan-out：一条 message + 一个 queue entry + 一个
+  `InvocationRecord`(parent) + N 个 `TurnExecution`(child)；响应是独立消息；
+  parent 聚合 completed/partial_failed/failed 与成功/失败集合。v1 不做聚合
+  回调，调用方用 `thread_context` 读响应；单 target 失败不影响其他 target。
 - 消息送达不等于责任转移；v1 没有 handoff/claim/complete/return。
 - targets 可以是任意 enabled agent；首次成功 invocation 后加入 thread
   participants。participants 是路由/上下文，不是 ACL。
@@ -311,7 +313,7 @@ thread message / A2A tool
 | 阶段 | 内容 | 出口 |
 |---|---|---|
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
-| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、invocation、credential、a2a_requests；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
+| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential、a2a_requests；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
 | R2 | same-thread post / thread context；observation；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18 |
 | R3 | cross-thread post；multi_mention fan-out；thread access；participants | E3/E4/E5/E6/E8/E10/E11/E16 |
 | R4 | loop guard/idempotency；多 agent thread；不做 multi_mention 聚合回调 | E17 |
@@ -322,15 +324,17 @@ thread message / A2A tool
 | 表 | 变更 | 迁移 |
 |---|---|---|
 | `threads` | 新增 `created_by`, `project_path`（必填）, `title_source`, `last_active_at`, `deleted_at`；`thread_participants` 新表 | owner 从 operator/最早 message/session 回填；projectPath 从 repo/task.worktree 共同根或 operator 配置回填；无法回填的 thread 进入 preflight 清单，不静默置空；archived → deleted_at |
-| `agent_sessions` | 只保留 thread×agent 单 active；`task_id`/`profile_id` legacy | 先 drain/seal 有 running invocation 的 session；跳过 running，等 terminal 再处理；旧 task session 不合并进新 runtime；目标列 `agent_id` |
-| `runs` → invocations | 新读模型；`execution_kind` 保持 `ordinary\|routing_guard`；无 taskId；新增 `usage_json` | 旧 runs/task 数据保留只读 legacy，不双写 |
-| `invocation_credentials` | 新 token 无 taskId | 旧 credential legacy |
+| `agent_sessions` | 只保留 thread×agent 单 active；`task_id`/`profile_id` legacy | 先 drain/terminal 有 running invocation 的 session；sealing/sealed 行不迁移，留 legacy；旧 task session 不合并进新 runtime；目标列 `agent_id` |
+| `runs` → `turn_executions` | 新 child 表：`invocationRecordId`、`parentInvocationId`、`agentSessionId`、`attempt`、provider/model、status/response/terminal；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
+| 新 `invocation_records` | 消息级 parent：sourceMessageId unique、targetAgentIds、status、successful/failed/canceled、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
+| `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
+| `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、state/disposition、token hash/salt | 旧 task/role/run credential legacy |
 | `a2a_requests` | `thread_id` + `task_id` nullable；unique `(thread_id, agent_id, request_id)`；drop 旧 task-level unique | 旧行按 task.thread 回填；同一 `(thread, agent, requestId)` 多行时按 `created_at` 保留最新为 canonical，其余标 legacy；无 task 的旧行标 legacy；不删除历史 |
-| `messages` / `queue_entries` | 不改表；task 字段 legacy 可空 | 新消息不写 taskId |
+| `messages` | 不改表；task 字段 legacy 可空 | 新消息不写 taskId |
 | `tasks` / `handoffs` / `custody_events` / `budgets` / `reviews` / `merges` | 冻结 legacy，不读不写 | 保留历史只读；后续能力另立 feature |
 
 **关键 cutover 约束**：v1 不跑旧 code delivery path。R1 前先停止新 task dispatch，
-drain 或 seal 有 running invocation 的 session；旧 task/custody 数据只读保留。
+drain 或 terminal 有 running invocation 的 session；旧 task/custody 数据只读保留。
 这样不需要“R1 加 session 唯一索引但旧 code path 继续跑”的双路径，也不会撞
 reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 
@@ -345,10 +349,10 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 
 | # | 场景 | 期望 | 证据 |
 |---|---|---|---|
-| E1 | operator 在 thread 向 1 个 agent 发消息 | 创建 thread session + invocation + response bubble；无 task | CLI/daemon E2E，DB 断言无 task 写 |
+| E1 | operator 在 thread 向 1 个 agent 发消息 | 创建 thread session + InvocationRecord + TurnExecution + response bubble；无 task | CLI/daemon E2E，DB 断言无 task 写 |
 | E2 | 同 thread 两个 agent 互发 `post_message` | 两条 invocation 按 queue 唤醒 | 真实 pi RPC + mock provider |
 | E3 | `cross_post_message` 到另一个 thread | 目标 thread 收到消息并唤醒 target；source/target 不变 | 双 thread E2E |
-| E4 | `multi_mention` 给 2-3 个 agent | one message + one queue entry + N invocations；响应独立；单 target 失败不影响其他；无聚合回调 | E2E |
+| E4 | `multi_mention` 给 2-3 个 agent | one message + one queue entry + one InvocationRecord + N TurnExecutions；响应独立；parent 聚合 partial_failed；无聚合回调 | E2E |
 | E5 | 任意 enabled agent 被拉入 thread | 首次成功后成为 participant | participant 表断言 |
 | E6 | text @ / final response @ | 不产生额外 queue/wake；只有 typed targets 路由 | 负例 E2E |
 | E7 | token scope 负例 | 跨 thread / 错 user / 错 agent 的 token 被拒 | auth 单测 + E2E |
@@ -359,7 +363,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | E12 | observation 工具名 | 识别 4 个新工具；text-@ 负例不误报 `missing_a2a_tool_call` | observation 单测 |
 | E13 | 旧 A2A 工具 | `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 | registry 断言 |
 | E14 | 旧 code delivery 表 | v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges | DB 访问断言 |
-| E15 | session 迁移 | 有 running invocation 的 session 不被 seal；等 terminal 后处理 | migration 测试 |
+| E15 | session 迁移 | 有 running invocation 的 session 不迁移；等 terminal 后处理；sealing/sealed 留 legacy | migration 测试 |
 | E16 | thread access | 同 user 可见；participants 只做路由；跨 user 拒绝 | auth/ACL 测试 |
 | E17 | loop guard | depth 15、`a2a_duplicate_delivery`、`a2a_request_conflict` | 负例 E2E |
 | E18 | legacy thread 的 `projectPath` 为空 | `post_message`/`cross_post_message` 触发 `thread_project_path_required`；补 `projectPath` 后正常 | 负例 E2E |
@@ -368,13 +372,17 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 
 ### 6.1 必须改的核心模块
 
-- `control/migrations`：threads、thread_participants、thread sessions、
-  invocations、invocation_credentials、a2a_requests；
-- `auth`：mint/resolver/principals，token 从 task scope 改为 invocation/thread；
-- `dispatch`：resolveRoute/cutoverEntry/delivery readiness；
-- `workers`：executor/harness/tool-policy/prompt，thread workspace + A2A tools；
-- `a2a`：principal/tools/tool-surface/terminal/observation，thread-scoped principal；
-- `cli/read-models`：thread create/owner/participants；无 task 依赖；
+- `control/migrations`：threads、thread_participants、agent_sessions、
+  invocation_queue、invocation_records、turn_executions、invocation_credentials、
+  a2a_requests；
+- `auth`：InvocationRegistry + InvocationCredential；token 从 task scope 改为
+  child TurnExecution / thread / agent / session；鉴权面为 pi extension tools；
+- `dispatch`：QueueProcessor（claim/drain）、AgentRouter/routeParallel、
+  parent/child terminal aggregation；DispatchService 拆分；
+- `workers`：executor/harness/tool-policy/prompt；pi worker + A2A extension；
+- `a2a`：pi extension tools、principal、tool-surface、terminal/observation；
+- `cli/read-models`：thread create/owner/participants、MessageDispatchSummary、
+  ThreadLiveInvocations；无 task 依赖；
 - tests：现有 88 个 daemon 测试中的 task/custody 部分改为 legacy 或新 A2A 面。
 
 ### 6.2 已有 feature 的影响
@@ -396,7 +404,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 - **P1 范围失控**：不要在 A2A runtime 里偷偷恢复 Task/worktree/review/merge/
   custody；这些都是后续能力。
 - **P2 旧 feature 回归**：F016b/F016c 的 API 不能假设 task-first。
-- **P2 迁移工具行为**：session 合并/seal 必须跳过 running invocation，等
+- **P2 迁移工具行为**：session 迁移必须跳过 running invocation，等
   terminal 再处理。
 
 ## 7. 明确不做
@@ -407,7 +415,8 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 - v1 做 `multi_mention` fan-out，不做聚合回调；
 - 不在 v1 做 agent-created thread propose/approve；
 - 不引入第二套 queue/message/session store；
-- 不直接复用 Clowder 的 Redis/transport/deployment，只复用数据结构和语义。
+- 直接复用 Clowder 的 runtime 结构与语义；不引入 Clowder runtime/Redis/transport
+  依赖，存储与 transport 按 codeteam（SQLite、pi RPC、local socket）适配。
 
 ## 8. 决策记录
 
@@ -418,12 +427,13 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D3 | v1 范围 | **纯 A2A runtime**；`a2a_send`/`handoff_*` 彻底弃用；code delivery setup 冻结/弃用 | operator 2026-11-04 |
 | D4 | 数据迁移 | 新 thread-first schema + up/down；旧 code delivery 表 legacy 只读；running session 先 drain | 工程默认 |
 | D5 | thread 创建 | v1 operator/CLI create；agent propose/approve 后续 | 工程默认 |
-| D6 | v1 工具权限 | 工具/MCP 由 pi 执行层负责；AgentConfig 不定义 tool policy | operator 2026-11-04 |
+| D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
+| D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/routeParallel/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 删除 | operator 2026-11-06 |
 
-**术语**：Thread 是主体；Invocation 是 thread 里的一轮执行；Session 是
-thread×agent 的持久身份；TaskItem 不在 v1。`executionKind` 只有
-`ordinary | routing_guard`。没有 conversation/code 两种 invocation，也没有
-conversation 权限域。
+**术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；
+`TurnExecution` 是单 agent 一次执行；Session 是 thread×agent 的持久身份；
+TaskItem 不在 v1。`executionKind` 只有 `ordinary | routing_guard`。没有
+conversation/code 两种 execution，也没有 conversation 权限域。
 
 ## 9. 与 F017 的关系
 

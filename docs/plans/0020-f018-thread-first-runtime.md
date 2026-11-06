@@ -3,17 +3,18 @@ title: "F018 — A2A runtime v1 实施计划（R0-R5）"
 doc_kind: plan
 status: draft
 created: 2026-11-04
-updated: 2026-11-05
+updated: 2026-11-06
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
-source_architecture: "docs/architecture/0005-thread-first-runtime.md"
+source_architecture: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/0010-a2a-runtime-chain.md"
 source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 ---
 
 # F018 — A2A runtime v1 实施计划
 
-> 本计划执行 `docs/architecture/0005-thread-first-runtime.md` 的 R0-R5。
+> 本计划执行 `docs/architecture/0005-thread-first-runtime.md` 与
+> `docs/architecture/0010-a2a-runtime-chain.md` 的 R0-R5。
 > v1 只做纯 A2A runtime；TaskItem/code delivery/custody 不在本计划。
 > 所有阶段共享单 queue/message/session 账本，不造第二套 store。
 
@@ -34,13 +35,16 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   AccountConfig 加载、校验、AgentRegistry；AgentState 运行时状态。
 - `agent_sessions`：thread×agent 单 active；`agent_id` 目标列；`task_id`/
   `profile_id` legacy。
-- `runs` → invocations：`execution_kind` 保持 `ordinary|routing_guard`；无 taskId。
-- `invocation_credentials`：无 taskId。
+- `runs` → `turn_executions` + `invocation_records`：parent 消息生命周期 +
+  child 单 agent 执行；`execution_kind` 保持 `ordinary|routing_guard`；无 taskId。
+- `queue_entries` → `invocation_queue`：只做调度；`InvocationRecord` 在 claim 后创建。
+- `invocation_credentials`：child TurnExecution capability；allowedTools/
+  state/disposition；无 taskId/role/run。
 - `a2a_requests`：`thread_id` + `task_id` nullable；unique
   `(thread_id, agent_id, request_id)`；drop 旧 task-level unique。
 - 旧 `tasks`/`handoffs`/`custody_events`/`budgets`/`reviews`/`merges` 冻结 legacy，
   不读不写。
-- 迁移前 drain/seal 有 running invocation 的 session；跳过 running，等 terminal。
+- 迁移前 drain/terminal 有 running invocation 的 session；跳过 running，等 terminal。
 - 出口：旧 code path 停写；新 A2A schema 可写；migration up/down 可回滚。
 
 ## R2 — Same-thread A2A
@@ -52,8 +56,10 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - A2A target 从 AgentRegistry 解析；`enabled=false` / 未知 id / account 缺失
   都是 typed reject。
 - `buildThreadPrompt`：thread/participants/recent；无 `# Task`。
-- tool policy：工具/MCP 由 pi 执行层负责；AgentConfig 不定义 tool policy。
-- dispatch thread branch：thread-scoped queue、invocation、token；不调用
+- tool policy：pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist
+  在 InvocationCredential；AgentConfig 不定义 tool policy。
+- dispatch thread branch：QueueProcessor、InvocationRecord、TurnExecution、
+  credential；不调用
   budget/deployment/managed-work guard。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
 
