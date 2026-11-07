@@ -40,14 +40,15 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
    lastActiveAt。
 2. Invocation 拆两层：`InvocationRecord`（消息级 parent，targetAgentIds/
    status/successful/failed/canceled/retryCount）+ `TurnExecution`（单 agent
-   child，invocationRecordId/parentInvocationId/agentSessionId/attempt）；
+   child，invocationRecordId/a2aParentTurnExecutionId/agentSessionId/attempt）；
    `executionKind=ordinary|routing_guard`，没有 conversation/code。
 3. Session 是 thread×agent 的持久身份；一个 active session；无 taskId。
 4. Agent 身份是 config-as-code：`.codeteam/agent-catalog.json` →
    `AgentConfig` → `AgentRegistry`；`AgentState` 是运行时状态。
 5. A2A v1 工具面：`codeteam_post_message` / `codeteam_cross_post_message` /
    `codeteam_multi_mention` / `codeteam_thread_context`。
-6. Queue 单账本：thread + source message + targets；无 task 依赖。
+6. Queue 单账本：thread + sourceRecordId + attempt + targets；无 task 依赖。
+   身份/命名以 `docs/architecture/0011-identity-contract.md` 为准。
 7. Auth 以 child `TurnExecution`/thread/agent/session 为锚；pi extension tools
    allowlist 在 `InvocationCredential`；无 task/role/run 坐标。
 8. v1 只记录 invocation usage；不引入 ThreadGoal/tokenBudget/

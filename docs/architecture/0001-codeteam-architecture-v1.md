@@ -3,7 +3,7 @@ title: "codeteam 架构 v1 — repo-native code agent team"
 doc_kind: architecture
 status: draft-for-review
 created: 2026-10-21
-updated: 2026-10-26
+updated: 2026-11-07
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 audience: [operator, architect, implementer, reviewer]
 ---
@@ -484,6 +484,11 @@ interface QueueEntry {
   updatedAt: number;
 }
 
+> **Legacy task-first model.** New A2A runtime identity/naming follows
+> `0011-identity-contract.md`: `sourceId` → `messageId`, old
+> `sourceRecordId` (run/backlog) → `originRecordId`, queue identity →
+> `sourceRecordId + attempt`. This interface stays as the W1 migration baseline.
+
 interface Task {
   // clowder TaskItem base（复用）
   id: string;
@@ -564,6 +569,10 @@ interface Run {
   terminalAt?: number;
   usage?: Usage;
 }
+
+> **Legacy task-first model.** In the new A2A runtime, `Run.id` maps to
+> `turnExecutionId`, `Run.queueEntryId` maps to `queueEntryId`, and
+> `Run.sourceId` maps to `messageId`. See `0011-identity-contract.md`.
 
 interface RunEvent {
   id: string;

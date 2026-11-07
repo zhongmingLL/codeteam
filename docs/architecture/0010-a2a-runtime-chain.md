@@ -3,7 +3,7 @@ title: "codeteam A2A runtime chain v1 — Clowder-aligned"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-06
+updated: 2026-11-07
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06"
@@ -18,6 +18,8 @@ related_features: [codeteam/F018, codeteam/F017]
 >
 > codeteam 只替换 runtime 适配：pi 执行层、pi extension tools、active-only session；
 > 不另造一套缺 tracker/processor/collector 的轻量链路。
+>
+> 身份/引用命名以 `0011-identity-contract.md` 为准；本文旧名只出现在迁移/映射表。
 
 ## 0. 结论先行
 
@@ -75,7 +77,7 @@ TurnExecution A 调 post_message
   → 新 parent InvocationRecord invP2
   → 新 TurnExecution C：
       invocationRecordId=invP2
-      parentInvocationId=A.id（A2A 因果父）
+      a2aParentTurnExecutionId=A.turnExecutionId（A2A 因果父）
       a2aTriggerMessageId=m2
       a2aDepth=A.depth+1
   → 超过 15 拒绝
@@ -111,7 +113,7 @@ type QueueLedgerStatus = QueueDurableStatus | QueueProjectionStatus;
 
 interface QueueEntry {
   version: 1;
-  id: string;                    // queue:<sha256(sourceMessageId)>
+  queueEntryId: string;          // queue:<sha256(sourceRecordId:attempt)>
   threadId: string;
   owner: QueueOwner;
   kind: QueueEntryKind;
@@ -129,14 +131,17 @@ interface QueueEntry {
 }
 
 interface QueuePayload {
-  sourceMessageId: string;
+  sourceRecordId: string;        // 队列身份；v1 = messageId
+  messageId: string | null;      // 持久消息；v1 恒非空
+  originRecordId: string | null; // run/backlog/schedule/handoff provenance
+  attempt: number;               // 1-based
   content: string;               // admission 时正文快照
   requestedTargets: QueueTarget[]; // admission 全量快照
   requestId?: string;            // A2A requestId 幂等
 }
 
 interface QueueExecution {
-  a2aParentInvocationId: string | null;
+  a2aParentTurnExecutionId: string | null;
   a2aTriggerMessageId: string | null;
   a2aDepth: number;
 }
@@ -146,7 +151,7 @@ interface QueueDelivery {
 }
 
 interface QueueClaim {
-  id: string;
+  claimId: string;
   owner: string;                 // QueueProcessor claim identity
   claimedAt: number;
   expiresAt: number;
@@ -156,14 +161,14 @@ interface QueueClaim {
 // transition projection：只在返回值/读模型出现，不写 invocation_queue。
 interface QueueAttemptProjection {
   status: "processing";
-  entryId: string;
+  queueEntryId: string;
   targets: QueueTarget[];        // 本次 retire 的 targets 切片
   startedAt: number;
 }
 
 interface QueueTerminalProjection {
   status: "terminal";
-  entryId: string;
+  queueEntryId: string;
   targets: QueueTarget[];
   endedAt: number;
   reason: "dispatched" | "withdrawn";
@@ -193,20 +198,20 @@ interface QueueTerminalProjection {
 ```ts
 interface QueueLedgerStore {
   enqueue(entry: QueueEntry): QueueEnqueueResult;
-  get(threadId: string, entryId: string): QueueEntry | null;
+  get(threadId: string, queueEntryId: string): QueueEntry | null;
   listQueued(threadId: string): QueueEntry[];
   listActive(threadId: string): QueueEntry[];
   countQueued(threadId: string): number;
 
-  claim(threadId: string, entryId: string, input: QueueClaimInput): QueueClaimResult;
+  claim(threadId: string, queueEntryId: string, input: QueueClaimInput): QueueClaimResult;
   retireTargets(
     threadId: string,
-    entryId: string,
+    queueEntryId: string,
     claimId: string,
     input: QueueRetireInput,
   ): QueueRetireResult;
-  releaseClaim(threadId: string, entryId: string, claimId: string): QueueReleaseResult;
-  withdrawTargets(threadId: string, entryId: string, input: QueueWithdrawInput): QueueWithdrawResult;
+  releaseClaim(threadId: string, queueEntryId: string, claimId: string): QueueReleaseResult;
+  withdrawTargets(threadId: string, queueEntryId: string, input: QueueWithdrawInput): QueueWithdrawResult;
 
   restoreExpiredClaims(now: number): number;
 }
@@ -279,7 +284,10 @@ interface QueueEnqueueInput {
   kind: QueueEntryKind;
   owner: QueueOwner;
   from: MessageFrom;
-  sourceMessageId: string;
+  sourceRecordId: string;        // 队列身份；v1 = messageId
+  messageId: string | null;      // 持久消息；v1 恒非空
+  originRecordId?: string | null;
+  attempt?: number;              // 默认 1
   content: string;               // admission 正文快照
   targets: QueueTarget[];
   priority?: "urgent" | "normal";
@@ -290,20 +298,20 @@ interface QueueEnqueueInput {
 class InvocationQueue {
   enqueue(input: QueueEnqueueInput): QueueEnqueueResult;
 
-  get(threadId: string, entryId: string): QueueEntry | null;
+  get(threadId: string, queueEntryId: string): QueueEntry | null;
   listQueued(threadId: string): QueueEntry[];
   listActive(threadId: string): QueueEntry[];
   countQueued(threadId: string): number;
 
-  claim(threadId: string, entryId: string, input: QueueClaimInput): QueueClaimResult;
+  claim(threadId: string, queueEntryId: string, input: QueueClaimInput): QueueClaimResult;
   retireTargets(
     threadId: string,
-    entryId: string,
+    queueEntryId: string,
     claimId: string,
     input: QueueRetireInput,
   ): QueueRetireResult;
-  releaseClaim(threadId: string, entryId: string, claimId: string): QueueReleaseResult;
-  withdrawTargets(threadId: string, entryId: string, input: QueueWithdrawInput): QueueWithdrawResult;
+  releaseClaim(threadId: string, queueEntryId: string, claimId: string): QueueReleaseResult;
+  withdrawTargets(threadId: string, queueEntryId: string, input: QueueWithdrawInput): QueueWithdrawResult;
 
   restoreExpiredClaims(now?: number): number;
 }
@@ -329,7 +337,7 @@ class InvocationQueue {
 新增 `queue_admissions` receipt，保证“队列行已删除后，同一 source 重试”仍是 `replayed`：
 
 ```text
-source_message_id | entry_id | fingerprint | admitted_at
+source_record_id | attempt | queue_entry_id | fingerprint | admitted_at
 ```
 
 `enqueue` 顺序：
@@ -402,7 +410,7 @@ for entry of entries:
     continue
   if targetKeys(entry).intersect(held):
     continue
-  claimed = queue.claim(entry.id, { claimId, owner, ttlMs, targetKeys: startable })
+  claimed = queue.claim(entry.queueEntryId, { claimId, owner, ttlMs, targetKeys: startable })
   if claimed:
     return processEntry(claimed.entry, claimId)
   held.add(targetKeys(entry))
@@ -415,7 +423,7 @@ for entry of entries:
 1. 校验 claim（`claim.targetKeys` ⊆ entry pending targets）；
 2. 拆分 targets：`operatorTargets` / `agentTargets`；
 3. operator targets → 准备通知/可见性；`delivery.operatorNotifiedAt` 在步骤 6 同事务写，socket emit 在 commit 后；
-4. agent targets → 创建/复用 parent `InvocationRecord`（`sourceMessageId` 幂等）；
+4. agent targets → 创建/复用 parent `InvocationRecord`（`sourceRecordId` 幂等）；
 5. 每个 agent target：`TurnExecutionStore.createRunning` + `InvocationRegistry.create`；
 6. **同一事务**：parent + children + credentials + `retireTargets(claimId, 已派发/已通知 targetKeys)`；
 7. 事务外：启动 provider（pi worker）；
@@ -427,7 +435,7 @@ for entry of entries:
 
 - `retireTargets` 与 parent/child/credential 同事务；provider 启动在事务外。
 - provider 启动前失败：child `transitionTerminal(failed)` + parent aggregate + credential terminalize；queue target 已 retire，重试走新 queue entry。
-- parent `sourceMessageId` unique；child `createRunning` 幂等；重放不会二次执行。
+- parent `sourceRecordId` unique；child `createRunning` 幂等；重放不会二次执行。
 - operator notification 先写 durable `operatorNotifiedAt`，socket emit 在 commit 后；emit 失败不影响消息可见性。
 
 **v1 不做**
@@ -451,10 +459,11 @@ type InvocationRecordStatus =
   | "canceled";
 
 interface InvocationRecord {
-  id: string;
+  invocationRecordId: string;
   threadId: string;
   userId: string;
-  sourceMessageId: string;        // unique
+  sourceRecordId: string;         // unique；一个 source 一个 parent
+  userMessageId: string | null;   // v1 = payload.messageId
   targetAgentIds: string[];       // admission snapshot，不可变
   status: InvocationRecordStatus;
   successfulAgentIds: string[];
@@ -484,7 +493,7 @@ interface InvocationRecord {
 
 **v1 不做**
 - `intent (execute/ideate)`、`idempotencyKey`、`usageByCat`、`actionLeaseCarrier`、`waitContinuationCarrier`。
-- `sourceMessageId` unique 已足够做消息级幂等；usage 按 child TurnExecution 聚合，后续再加。
+- `sourceRecordId` unique + `queue_admissions` 已足够做 admission 幂等；usage 按 child TurnExecution 聚合，后续再加。
 
 ### 3.4 InvocationTracker + InvocationOwnerReaper
 
@@ -554,14 +563,14 @@ class AgentRouter {
 
 ```ts
 interface TurnExecution {
-  id: string;
+  turnExecutionId: string;
   invocationRecordId: string;        // parent 消息生命周期
   threadId: string;
   userId: string;
   agentId: string;
   agentSessionId: string;
 
-  parentInvocationId: string | null;  // A2A 因果父（上游 TurnExecution）
+  a2aParentTurnExecutionId: string | null; // A2A 因果父（上游 TurnExecution）
   queueEntryId: string | null;
   attempt: number;
 
@@ -587,13 +596,13 @@ interface TurnExecution {
 
 ```ts
 createRunning(input): { outcome: "created" | "replayed" | "conflict"; record: TurnExecution };
-transitionTerminal(id, input): { outcome: "transitioned" | "already_terminal" | "not_found"; record: TurnExecution | null };
-get(id);
-listByParent(invocationRecordId);
+transitionTerminal(turnExecutionId, input): { outcome: "transitioned" | "already_terminal" | "not_found"; record: TurnExecution | null };
+get(turnExecutionId);
+listByInvocationRecord(invocationRecordId);
 listRunning();
 ```
 
-- 唯一约束：`id`、`(invocationRecordId, agentId, attempt)`、`responseMessageId`（非空时）。
+- 唯一约束：`turnExecutionId`、`(invocationRecordId, agentId, attempt)`、`responseMessageId`（非空时）。
 - `createRunning` 的 identity = parent + agent + attempt + queueEntryId + trigger；不一致即 conflict。
 - `replayed` 时 `invoke-single-agent` 不启动 provider，按 duplicate 处理。
 - `transitionTerminal` 只允许一次；`completed + ordinary` 必须有 `responseMessageId`；`routing_guard + completed` 必须为 null；`failed/interrupted/canceled` 必须有 `terminalReason`。
@@ -620,8 +629,8 @@ parent aggregate；credential 若已创建则 terminalize。
 
 ```ts
 interface InvocationCredential {
-  id: string;
-  invocationId: string;          // child TurnExecution.id
+  credentialId: string;
+  turnExecutionId: string;       // child TurnExecution
   threadId: string;
   agentId: string;
   agentSessionId: string;
@@ -669,11 +678,11 @@ targets: Array<
 **`post_message` / `cross_post_message` 流程**
 1. 校验 caller credential + target/thread access；
 2. 创建 message；
-3. `InvocationQueue.enqueue`（sourceMessageId、content、targets、requestedTargets、requestId、priority）；
+3. `InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、requestId、priority）；
 4. QueueProcessor claim 后拆分 targets：
    - operator → 通知/可见性，写 `delivery.operatorNotifiedAt`；
    - agent → 创建 parent `InvocationRecord` + child `TurnExecution`；
-5. 若有 agent targets：child `parentInvocationId` = caller TurnExecution.id，`a2aTriggerMessageId` = 新 message，`a2aDepth` = caller.depth + 1；
+5. 若有 agent targets：child `a2aParentTurnExecutionId` = caller `turnExecutionId`，`a2aTriggerMessageId` = 新 message，`a2aDepth` = caller.depth + 1；
 6. operator-only：不创建 parent/TurnExecution；只通知并删除 queue entry；
 7. 超过 15 拒绝。
 
@@ -763,9 +772,12 @@ targets: Array<
 ```sql
 CREATE TABLE invocation_queue (
   version INTEGER NOT NULL CHECK (version = 1),
-  id TEXT PRIMARY KEY,
+  queue_entry_id TEXT PRIMARY KEY,
   thread_id TEXT NOT NULL,
-  source_message_id TEXT NOT NULL,
+  source_record_id TEXT NOT NULL,
+  message_id TEXT,
+  origin_record_id TEXT,
+  attempt INTEGER NOT NULL CHECK (attempt >= 1),
   owner_json TEXT NOT NULL CHECK (json_valid(owner_json)),
   kind TEXT NOT NULL CHECK (kind IN ('conversation_input', 'message_wake')),
   from_json TEXT NOT NULL CHECK (json_valid(from_json)),
@@ -795,42 +807,45 @@ CREATE TABLE invocation_queue (
          (claim_id IS NULL AND claim_owner IS NULL AND claimed_at IS NULL
           AND claim_expires_at IS NULL AND claimed_target_keys_json IS NULL)),
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
-  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE RESTRICT
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE RESTRICT
 ) STRICT;
 
-CREATE UNIQUE INDEX invocation_queue_source
-  ON invocation_queue(thread_id, source_message_id);
+CREATE UNIQUE INDEX invocation_queue_source_attempt
+  ON invocation_queue(thread_id, source_record_id, attempt);
 CREATE INDEX invocation_queue_pending
-  ON invocation_queue(thread_id, status, priority, position, enqueued_at, id);
+  ON invocation_queue(thread_id, status, priority, position, enqueued_at, queue_entry_id);
 CREATE UNIQUE INDEX invocation_queue_claim
   ON invocation_queue(claim_id) WHERE claim_id IS NOT NULL;
 
 CREATE TABLE queue_admissions (
-  source_message_id TEXT PRIMARY KEY,
-  entry_id TEXT NOT NULL,
+  source_record_id TEXT NOT NULL,
+  attempt INTEGER NOT NULL CHECK (attempt >= 1),
+  queue_entry_id TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
   admitted_at INTEGER NOT NULL,
-  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE RESTRICT
+  PRIMARY KEY (source_record_id, attempt)
 ) STRICT;
 ```
 
 - `targets_json` 是 **pending `QueueTarget[]`**；`payload_json.requestedTargets` 是 admission 全量快照。
-- `payload_json` 含 `sourceMessageId/content/requestedTargets/requestId`；`content` 是 admission 正文快照。标量 `source_message_id` 用于 FK/index，必须与 `payload_json.sourceMessageId` 一致。
-- `execution_json` 含 `a2aParentInvocationId/a2aTriggerMessageId/a2aDepth`。
+- `payload_json` 含 `sourceRecordId/messageId/originRecordId/attempt/content/requestedTargets/requestId`；`content` 是 admission 正文快照。
+- `source_record_id` 是队列身份；`message_id` 是消息指针（v1 恒非空，未来 connector 可为 null）；`attempt` 是 1-based 尝试序号。
+- `execution_json` 含 `a2aParentTurnExecutionId/a2aTriggerMessageId/a2aDepth`。
 - `delivery_json` 含 `operatorNotifiedAt`；operator-only entry 没有 parent/TurnExecution。
 - `claim` 在 TS 模型里是子对象；SQL 用 `claim_*` 标量 + `claimed_target_keys_json` 做 CAS，语义是 target-level claim。
 - `status` 只持久化 `queued | claimed`；`processing | terminal` 只出现在 transition projection，不落库。
-- `queue_admissions` 是 admission receipt：live row 删除后，同一 `source_message_id` 重放仍返回 `replayed`/`conflict`。
+- `queue_admissions` 是 admission receipt：live row 删除后，同一 `(source_record_id, attempt)` 重放仍返回 `replayed`/`conflict`。
 - queue entry 可以在全部 target dispatch 后删除；`turn_executions.queue_entry_id` 仍是 trace 字符串。
 
 ### 4.2 `invocation_records`
 
 ```sql
 CREATE TABLE invocation_records (
-  id TEXT PRIMARY KEY,
+  invocation_record_id TEXT PRIMARY KEY,
   thread_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
-  source_message_id TEXT NOT NULL UNIQUE,
+  source_record_id TEXT NOT NULL UNIQUE,
+  user_message_id TEXT,
   target_agent_ids_json TEXT NOT NULL
     CHECK (json_valid(target_agent_ids_json) AND json_type(target_agent_ids_json) = 'array'
            AND json_array_length(target_agent_ids_json) > 0),
@@ -852,14 +867,15 @@ CREATE TABLE invocation_records (
   CHECK (status IN ('queued', 'running') OR ended_at IS NOT NULL),
   CHECK (status IN ('queued', 'failed', 'canceled') OR started_at IS NOT NULL),
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
-  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE RESTRICT
+  FOREIGN KEY (user_message_id) REFERENCES messages(id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE INDEX invocation_records_thread_status
   ON invocation_records(thread_id, status);
 ```
 
-- `source_message_id` unique：一条消息一个 parent；重试复用同一 parent。
+- `source_record_id` unique：一个 source 一个 parent；重试复用同一 parent。
+- `user_message_id` 是 parent 的用户消息指针；v1 = `messageId`，未来 connector 可为 null。
 - `target_agent_ids_json` 是 admission 快照，不可变。
 - `successful_agent_ids_json` 单调递增；failed/canceled 反映最新 attempt。
 - `status`/`ended_at`/`terminal_reason` 由 collector 与 child terminal 同事务更新。
@@ -868,13 +884,13 @@ CREATE INDEX invocation_records_thread_status
 
 ```sql
 CREATE TABLE turn_executions (
-  id TEXT PRIMARY KEY,
+  turn_execution_id TEXT PRIMARY KEY,
   invocation_record_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
   agent_session_id TEXT NOT NULL,
-  parent_invocation_id TEXT,
+  a2a_parent_turn_execution_id TEXT,
   queue_entry_id TEXT,
   attempt INTEGER NOT NULL CHECK (attempt >= 1),
 
@@ -899,18 +915,18 @@ CREATE TABLE turn_executions (
   CHECK (status = 'running' OR terminal_reason IS NOT NULL OR status = 'completed'),
   CHECK (status <> 'completed' OR execution_kind <> 'ordinary' OR response_message_id IS NOT NULL),
   CHECK (status <> 'completed' OR execution_kind <> 'routing_guard' OR response_message_id IS NULL),
-  CHECK (a2a_trigger_message_id IS NULL OR parent_invocation_id IS NOT NULL),
+  CHECK (a2a_trigger_message_id IS NULL OR a2a_parent_turn_execution_id IS NOT NULL),
   UNIQUE (invocation_record_id, agent_id, attempt),
-  FOREIGN KEY (invocation_record_id) REFERENCES invocation_records(id) ON DELETE RESTRICT,
+  FOREIGN KEY (invocation_record_id) REFERENCES invocation_records(invocation_record_id) ON DELETE RESTRICT,
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
   FOREIGN KEY (agent_session_id) REFERENCES agent_sessions(id) ON DELETE RESTRICT,
-  FOREIGN KEY (parent_invocation_id) REFERENCES turn_executions(id) ON DELETE SET NULL,
+  FOREIGN KEY (a2a_parent_turn_execution_id) REFERENCES turn_executions(turn_execution_id) ON DELETE SET NULL,
   FOREIGN KEY (trigger_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
   FOREIGN KEY (a2a_trigger_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
   FOREIGN KEY (response_message_id) REFERENCES messages(id) ON DELETE RESTRICT
 ) STRICT;
 
-CREATE INDEX turn_executions_parent
+CREATE INDEX turn_executions_invocation
   ON turn_executions(invocation_record_id, agent_id, attempt);
 CREATE INDEX turn_executions_running
   ON turn_executions(status, started_at);
@@ -919,7 +935,7 @@ CREATE UNIQUE INDEX turn_executions_response
 ```
 
 - `queue_entry_id` 不加 FK：queue entry 是调度账本，dispatch 后可删除；字符串仍可 trace。
-- `parent_invocation_id` 是 A2A 因果父，不是 fan-out parent；fan-out parent 是 `invocation_record_id`。
+- `a2a_parent_turn_execution_id` 是 A2A 因果父，不是 fan-out parent；fan-out parent 是 `invocation_record_id`。
 - `provider/model/model_family` 是执行快照；Session 不再持有模型。
 - `a2a_depth` 用于 loop guard；A2A child = parent.depth + 1。
 
@@ -927,10 +943,10 @@ CREATE UNIQUE INDEX turn_executions_response
 
 ```sql
 CREATE TABLE invocation_credentials (
-  id TEXT PRIMARY KEY,
+  credential_id TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL UNIQUE,
   token_salt TEXT NOT NULL,
-  invocation_id TEXT NOT NULL UNIQUE,
+  turn_execution_id TEXT NOT NULL UNIQUE,
   thread_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
   agent_session_id TEXT NOT NULL,
@@ -948,7 +964,7 @@ CREATE TABLE invocation_credentials (
 
   CHECK (state <> 'terminal' OR disposition IS NOT NULL),
   CHECK (state <> 'active' OR disposition IS NULL),
-  FOREIGN KEY (invocation_id) REFERENCES turn_executions(id) ON DELETE RESTRICT,
+  FOREIGN KEY (turn_execution_id) REFERENCES turn_executions(turn_execution_id) ON DELETE RESTRICT,
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
   FOREIGN KEY (agent_session_id) REFERENCES agent_sessions(id) ON DELETE RESTRICT
 ) STRICT;
@@ -1052,7 +1068,7 @@ iA 调 post_message 给 C
   → InvocationRecord invP2（targetAgentIds=[C]）
   → TurnExecution iC：
        invocationRecordId=invP2
-       parentInvocationId=iA.id
+       a2aParentTurnExecutionId=iA.turnExecutionId
        a2aTriggerMessageId=m2
        a2aDepth=iA.depth+1
   → 超过 15 拒绝
@@ -1120,7 +1136,7 @@ parent partial_failed: successful=[A], failed=[B]
 | custody / action lease / wait continuation | v2 |
 | session sealed / compression / handoff | v1 active-only session（0009） |
 | `outputFence` / `coveredMessageIds` / `queueCompletionPolicy` | v2 的 action/prompt/carrier 审计 |
-| `usageByCat` / `idempotencyKey` / `intent` | v1 用 sourceMessageId unique + child usage；后续再加 |
+| `usageByCat` / `idempotencyKey` / `intent` | v1 用 `sourceRecordId` unique + queue receipt + child usage；parent 不再有 idempotencyKey |
 | `InvocationTrajectoryProjector` 完整版 | v1 用简单 timeline；trajectory drilldown 后续 |
 | `responsePending` 复杂 ledger | v1 用同事务提交 response + terminal |
 | managed work / collective grants / compaction carrier | v2 |
@@ -1131,7 +1147,7 @@ parent partial_failed: successful=[A], failed=[B]
 2. **旧 task-first 表**：`queue_entries`、`runs`、`agent_sessions`、旧 `invocation_credentials` 中的 task-first 数据保留在 `legacy_*`，新 runtime 不读。
 3. **drain**：有 running task-first invocation 的 session 先 drain/terminal，再迁移；不把旧 run 混进新 TurnExecution。
 4. **agent_sessions**：按 0009 只迁 active；sealing/sealed 行 legacy。
-5. **preflight**：`agentId`/`userId`/`workingDirectory`/`sourceMessageId` 无法确定的进入 preflight，不静默置空。
+5. **preflight**：`agentId`/`userId`/`workingDirectory`/`Task.sourceMessageId`（legacy 领域指针）无法确定的进入 preflight，不静默置空。
 6. **不迁移**：`task_id/role/stage_id/handoff_id/approval_id`、custody/action/wait/compaction 字段。
 7. **文档同步**：`0005` §2.2/2.4/2.5 指向本文；`docs/reuse/callback-auth.md` 从 per-run token 更新为 per-invocation tool capability。
 
@@ -1144,13 +1160,13 @@ parent partial_failed: successful=[A], failed=[B]
 - A2A tools 只接受显式 `{kind,id}` targets；正文 `@` 不路由。
 - operator-only entry：只通知，不创建 parent/TurnExecution；`delivery.operatorNotifiedAt` 写入。
 - target-level claim：`InvocationQueue.claim`；`claim.targetKeys` 是 pending 子集；过期/失败走 `releaseClaim` / `restoreExpiredClaims`。
-- 重放保护：live row 删除后，同一 `source_message_id` 仍由 `queue_admissions` 返回 `replayed`/`conflict`。
+- 重放保护：live row 删除后，同一 `(source_record_id, attempt)` 仍由 `queue_admissions` 返回 `replayed`/`conflict`。
 - `processEntry` 只对 agent targets 创建 parent + N child；全部 target dispatch 后 queue entry 可删除。
 - `routeSerial` 不在 v1 registry / 代码路径；`routeParallel` 每个 child 独立 signal。
 
 ### 9.2 InvocationRecord
 
-- `sourceMessageId` unique；重试复用同一 parent。
+- `sourceRecordId` unique；重试复用同一 parent。
 - `targetAgentIds` 不可变。
 - 全部 child completed → parent completed。
 - 部分成功 → parent partial_failed；`successfulAgentIds` 正确。
@@ -1179,7 +1195,7 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 9.5 A2A
 
-- `post_message` 创建新 message + queue entry + parent；child `parentInvocationId`/`a2aDepth` 正确。
+- `post_message` 创建新 message + queue entry + parent；child `a2aParentTurnExecutionId`/`a2aDepth` 正确。
 - `cross_post_message` 跨 thread 同 user；不同 user 拒绝。
 - `thread_context` 只读，不入队。
 - depth > 15 拒绝。
@@ -1226,7 +1242,7 @@ parent partial_failed: successful=[A], failed=[B]
 2. **`routeSerial` v1 删除**：静态 worklist 不 push target；A2A hop 是新 message/queue entry；没有 intent 选择依据。
 3. **Parent 在 QueueProcessor claim 后创建**：queue entry 是 admission/待处理账本；parent 是处理生命周期。
 4. **`TurnExecutionStore.createRunning` 是 provider 前幂等入口**：created/replayed/conflict；replayed 不授予第二次 provider lease。
-5. **`TurnExecution` 使用 `invocationRecordId`（fan-out parent）+ `parentInvocationId`（A2A 因果父）两个字段**，不共用一个 parent。
+5. **`TurnExecution` 使用 `invocationRecordId`（fan-out parent）+ `a2aParentTurnExecutionId`（A2A 因果父）两个字段**，不共用一个 parent。
 6. **Auth 从 MCP callback 改为 pi extension tool capability**：credential 绑 child TurnExecution，allowedTools 限 A2A tools；MCP/task/role/run 字段删除。
 7. **终态同事务**：child terminal + parent aggregate + credential terminalize；v1 不做 responsePending ledger。
 8. **Session active-only**（0009）：v1 不做 sealed/compression/handoff。
@@ -1240,8 +1256,9 @@ parent partial_failed: successful=[A], failed=[B]
 16. **Queue durable/projection 状态分层（DP-F018Q-2=B）**：`QueueLedgerStatus` 保留四值 union；`QueueEntry.status` 只取 `queued|claimed`；`processing|terminal` 只出现在 transition projection。
 17. **QueueLedgerStore + InvocationQueue 接口（DP-F018Q-1=A）**：store 只做持久化/CAS；InvocationQueue 负责 admission/claim/retire/release/withdraw/recovery；`claimNext` 从服务接口移除，候选选择留在 QueueProcessor。
 18. **重放保护（DP-F018Q-3=A）**：新增 `queue_admissions` receipt；live row 删除后按 fingerprint 返回 `replayed`/`conflict`。
-19. **删除 `invocation_queue.invocation_record_id`**：parent 通过 `invocation_records.source_message_id` + `turn_executions.queue_entry_id` 关联。
+19. **删除 `invocation_queue.invocation_record_id`**：parent 通过 `invocation_records.source_record_id` + `turn_executions.queue_entry_id` 关联。
 20. **QueueProcessor v1 方法面**：`requestDrain` / `processNext` / `drain` / `processEntry` / `recoverStartup` / `onInvocationComplete`；候选选择用 `InvocationQueue.listQueued` + `claim`，`claimNext` 只是内部 helper。
 21. **`processEntry` 同事务边界**：parent + child + credential + `retireTargets` 同事务；provider 启动在事务外。
 22. **v1 不自动重试失败 target**：失败由 parent aggregate 记录；重试走 `requestRetry` 新建 queue entry，避免退避/热循环。
 23. **QueueProcessor 删除 Clowder 扩展面**：append lifecycle、Steer、continuation、live companion、freshness、auto-resume suppression、prestart processing groups、batching、caller dispatch observations。
+24. **全局身份契约（0011）**：`sourceRecordId + attempt → queueEntryId`；`invocationRecordId`（parent）；`turnExecutionId`（child）；`credentialId`（auth）；`a2aParentTurnExecutionId`（因果父）；A2A runtime 禁用 `sourceMessageId` / `sourceId` / 裸 `invocationId` / `parentInvocationId` / `entryId` / parent `idempotencyKey`。
