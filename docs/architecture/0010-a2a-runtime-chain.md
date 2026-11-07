@@ -87,7 +87,8 @@ TurnExecution A 调 post_message
 
 **命名**
 - `queue_entries` → `invocation_queue`
-- `QueueStore` → `InvocationQueueStore`
+- `QueueStore` → `SqliteQueueLedgerStore`（implements `QueueLedgerStore`）
+- 服务 `InvocationQueue`
 - 记录类型 `QueueEntry`
 
 **v1 `QueueEntry`（多層次，Clowder-aligned）**
@@ -102,7 +103,11 @@ type QueueTarget =
   | { kind: "operator"; id: string }; // id = thread owner userId
 
 type QueueEntryKind = "conversation_input" | "message_wake";
-type QueueEntryStatus = "queued" | "claimed" | "processing";
+
+// durable row 只允许 queued/claimed；processing/terminal 只出现在 projection/读模型。
+type QueueDurableStatus = "queued" | "claimed";
+type QueueProjectionStatus = "processing" | "terminal";
+type QueueLedgerStatus = QueueDurableStatus | QueueProjectionStatus;
 
 interface QueueEntry {
   version: 1;
@@ -116,7 +121,7 @@ interface QueueEntry {
   execution: QueueExecution;
   delivery: QueueDelivery;
   claim: QueueClaim | null;
-  status: QueueEntryStatus;
+  status: QueueDurableStatus;
   priority: "urgent" | "normal";
   position: number;
   enqueuedAt: number;
@@ -147,6 +152,22 @@ interface QueueClaim {
   expiresAt: number;
   targetKeys: string[];          // 本次 claim 保护的精确 pending targets
 }
+
+// transition projection：只在返回值/读模型出现，不写 invocation_queue。
+interface QueueAttemptProjection {
+  status: "processing";
+  entryId: string;
+  targets: QueueTarget[];        // 本次 retire 的 targets 切片
+  startedAt: number;
+}
+
+interface QueueTerminalProjection {
+  status: "terminal";
+  entryId: string;
+  targets: QueueTarget[];
+  endedAt: number;
+  reason: "dispatched" | "withdrawn";
+}
 ```
 
 **`QueueTarget`**
@@ -165,19 +186,159 @@ interface QueueClaim {
 - **不解析 agent final response 的 `@`，也不解析 A2A tool 正文的 `@`。**
 - A2A tools 的 `targets` 是显式 `{kind,id}` 对象数组；operator target 只能从这里进入。
 
-**`claim`**
+**`QueueLedgerStore`（SQLite port）**
 
-- 复用 Clowder 的 target-level claim：`claim` / `claimPrefix` / `commit` / `restore`。
+只做持久化与原子 CAS，不决定“谁该跑”：
+
+```ts
+interface QueueLedgerStore {
+  enqueue(entry: QueueEntry): QueueEnqueueResult;
+  get(threadId: string, entryId: string): QueueEntry | null;
+  listQueued(threadId: string): QueueEntry[];
+  listActive(threadId: string): QueueEntry[];
+  countQueued(threadId: string): number;
+
+  claim(threadId: string, entryId: string, input: QueueClaimInput): QueueClaimResult;
+  retireTargets(
+    threadId: string,
+    entryId: string,
+    claimId: string,
+    input: QueueRetireInput,
+  ): QueueRetireResult;
+  releaseClaim(threadId: string, entryId: string, claimId: string): QueueReleaseResult;
+  withdrawTargets(threadId: string, entryId: string, input: QueueWithdrawInput): QueueWithdrawResult;
+
+  restoreExpiredClaims(now: number): number;
+}
+
+type QueueEnqueueResult =
+  | { outcome: "enqueued"; entry: QueueEntry }
+  | { outcome: "replayed"; entry: QueueEntry | null }
+  | { outcome: "conflict"; entry: null };
+
+interface QueueClaimInput {
+  claimId: string;
+  owner: string;
+  ttlMs: number;
+  targetKeys: string[];          // entry.targets 的非空子集
+  now?: number;
+}
+
+type QueueClaimResult =
+  | { outcome: "claimed"; entry: QueueEntry }
+  | { outcome: "not_found" }
+  | { outcome: "state_changed" };
+
+interface QueueRetireInput {
+  targetKeys: string[];          // claim.targetKeys 的子集
+  delivery?: { operatorNotifiedAt?: number };
+  now?: number;
+}
+
+interface QueueWithdrawInput {
+  claimId?: string;              // entry 处于 claimed 时必填
+  targetKeys?: string[];         // 省略 = 全部 targets
+  actorRef: string;
+  reason: string;
+  now?: number;
+}
+
+type QueueRetireResult =
+  | {
+      outcome: "updated";
+      entry: QueueEntry;
+      projection: QueueAttemptProjection;
+    }
+  | {
+      outcome: "deleted";
+      entry: QueueEntry;
+      projection: QueueAttemptProjection;
+    }
+  | { outcome: "not_found" }
+  | { outcome: "state_changed" };
+
+type QueueReleaseResult =
+  | { outcome: "updated"; entry: QueueEntry }
+  | { outcome: "not_found" }
+  | { outcome: "state_changed" };
+
+type QueueWithdrawResult =
+  | { outcome: "updated"; entry: QueueEntry; projection?: QueueTerminalProjection }
+  | { outcome: "deleted"; entry: QueueEntry; projection: QueueTerminalProjection }
+  | { outcome: "not_found" }
+  | { outcome: "state_changed" };
+```
+
+**`InvocationQueue`（服务）**
+
+准入校验、默认值、稳定 id、调用 store；QueueProcessor 只依赖这一层：
+
+```ts
+interface QueueEnqueueInput {
+  threadId: string;
+  kind: QueueEntryKind;
+  owner: QueueOwner;
+  from: MessageFrom;
+  sourceMessageId: string;
+  content: string;               // admission 正文快照
+  targets: QueueTarget[];
+  priority?: "urgent" | "normal";
+  execution?: Partial<QueueExecution>;
+  requestId?: string;
+}
+
+class InvocationQueue {
+  enqueue(input: QueueEnqueueInput): QueueEnqueueResult;
+
+  get(threadId: string, entryId: string): QueueEntry | null;
+  listQueued(threadId: string): QueueEntry[];
+  listActive(threadId: string): QueueEntry[];
+  countQueued(threadId: string): number;
+
+  claim(threadId: string, entryId: string, input: QueueClaimInput): QueueClaimResult;
+  retireTargets(
+    threadId: string,
+    entryId: string,
+    claimId: string,
+    input: QueueRetireInput,
+  ): QueueRetireResult;
+  releaseClaim(threadId: string, entryId: string, claimId: string): QueueReleaseResult;
+  withdrawTargets(threadId: string, entryId: string, input: QueueWithdrawInput): QueueWithdrawResult;
+
+  restoreExpiredClaims(now?: number): number;
+}
+```
+
+**`claim` / `retire` 语义**
+
 - 一条 entry 同时只有一个 active claim；`claim.targetKeys` 是本次受保护的 pending targets 子集。
 - `claim` 是短时、可撤销租约，不是执行状态，不创建 TurnExecution。
-- `commit` 把 claim 转 `processing` / 移除已 dispatch targets；失败/超时 `restore` 回 `queued`。
-- 全部 targets 移除后删除 queue entry；QueueEntry 没有 terminal。
+- `retireTargets` 是“派发完成”的提交点：从 `targets` 移除已派发/已通知的 target；全部移除后删除 entry。
+- `releaseClaim` 用于派发前失败/超时；targets 保持不变，退回 `queued`。
+- `retireTargets` 必须与 parent 创建、child `createRunning` 同事务；provider 启动在事务外。
 
-**职责**
-- 入队/去重（`id` 稳定 + `payload.requestId` / source 幂等）；
-- claim/lease（target-level）；commit/restore；
-- operator target 通知；agent target 派发；
-- 按 target 移除；全部 target 移除后删除。
+**状态投影（DP-F018Q-2=B）**
+
+- `QueueLedgerStatus` 保留 `queued | claimed | processing | terminal` 四值 union。
+- `QueueEntry.status` 只取 `QueueDurableStatus = queued | claimed`；durable row 不写 processing/terminal。
+- `processing` 只出现在 `QueueAttemptProjection`（retire 切片）；`terminal` 只出现在 `QueueTerminalProjection`（withdraw 删除）。
+- `invocation_queue.status` 的 SQL CHECK 只允许 `queued | claimed`；投影不落库。
+
+**重放保护（DP-F018Q-3=A）**
+
+新增 `queue_admissions` receipt，保证“队列行已删除后，同一 source 重试”仍是 `replayed`：
+
+```text
+source_message_id | entry_id | fingerprint | admitted_at
+```
+
+`enqueue` 顺序：
+
+1. 有 live row → 比较不可变 admission 字段；一致 `replayed`，不一致 `conflict`。
+2. 无 live row，有 receipt → 比较 fingerprint；一致 `replayed`（`entry:null`），不一致 `conflict`。
+3. 都没有 → 插入 row + receipt → `enqueued`。
+
+fingerprint 只覆盖不可变字段（source、owner、kind、from、payload、requestedTargets、priority、execution），不覆盖 `targets/status/claim/delivery`。
 
 **v1 不做**
 - `author_intent_json`、message disposition、action/wait carrier、fence refs、cloud provenance、steer。
@@ -195,11 +356,13 @@ interface QueueClaim {
 class QueueProcessor {
   processNext(threadId, userId): Promise<{ started: boolean; entry?: QueueEntry }>;
   drain(options): Promise<DrainResult>;
-  claimNext(options): QueueEntry | null;
   processEntry(entry, claimId): Promise<ProcessResult>;
   recoverStartup(): Promise<RecoveryResult>;
 }
 ```
+
+- 候选选择在 QueueProcessor 内完成：`InvocationQueue.listQueued` → 过滤 target busy → `InvocationQueue.claim`。
+- `claimNext` 只是 QueueProcessor 的内部 helper，不是 InvocationQueue/QueueLedgerStore 的方法。
 
 **`processEntry` 顺序**
 1. 校验 claim（`claim.targetKeys` ⊆ entry pending targets）；
@@ -211,7 +374,7 @@ class QueueProcessor {
 5. 收集 terminal；
 6. 更新 parent aggregate；
 7. 按 `claim.targetKeys` 移除已处理 targets；全部移除后删除 entry；
-8. 异常/超时 `restore(claimId)`；不要把 operator-only 当失败。
+8. 异常/超时 `releaseClaim(claimId)`；不要把 operator-only 当失败。
 
 **v1 不做**
 - Clowder 的 batching、caller dispatch observations、action successor、wait continuation、cloud bridge、multi-user grouping。
@@ -537,7 +700,7 @@ targets: Array<
 
 ## 4. 数据模型
 
-> 建表顺序：`invocation_records` → `invocation_queue` → `turn_executions` → `invocation_credentials`。
+> 建表顺序：`invocation_records` → `invocation_queue` → `queue_admissions` → `turn_executions` → `invocation_credentials`。
 > 下文按逻辑分组展示，实际迁移按上述顺序创建。
 
 ### 4.1 `invocation_queue`
@@ -559,7 +722,7 @@ CREATE TABLE invocation_queue (
   delivery_json TEXT NOT NULL CHECK (json_valid(delivery_json) AND json_type(delivery_json) = 'object'),
   priority TEXT NOT NULL CHECK (priority IN ('urgent', 'normal')),
   position INTEGER NOT NULL CHECK (position >= 0),
-  status TEXT NOT NULL CHECK (status IN ('queued', 'claimed', 'processing')),
+  status TEXT NOT NULL CHECK (status IN ('queued', 'claimed')),
   claim_id TEXT,
   claim_owner TEXT,
   claimed_at INTEGER,
@@ -567,7 +730,6 @@ CREATE TABLE invocation_queue (
   claimed_target_keys_json TEXT
     CHECK (claimed_target_keys_json IS NULL OR
            (json_valid(claimed_target_keys_json) AND json_type(claimed_target_keys_json) = 'array')),
-  invocation_record_id TEXT,
   enqueued_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
 
@@ -578,14 +740,23 @@ CREATE TABLE invocation_queue (
          (claim_id IS NULL AND claim_owner IS NULL AND claimed_at IS NULL
           AND claim_expires_at IS NULL AND claimed_target_keys_json IS NULL)),
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
-  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
-  FOREIGN KEY (invocation_record_id) REFERENCES invocation_records(id) ON DELETE SET NULL
+  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE RESTRICT
 ) STRICT;
 
+CREATE UNIQUE INDEX invocation_queue_source
+  ON invocation_queue(thread_id, source_message_id);
 CREATE INDEX invocation_queue_pending
-  ON invocation_queue(status, priority, position, enqueued_at);
+  ON invocation_queue(thread_id, status, priority, position, enqueued_at, id);
 CREATE UNIQUE INDEX invocation_queue_claim
   ON invocation_queue(claim_id) WHERE claim_id IS NOT NULL;
+
+CREATE TABLE queue_admissions (
+  source_message_id TEXT PRIMARY KEY,
+  entry_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  admitted_at INTEGER NOT NULL,
+  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE RESTRICT
+) STRICT;
 ```
 
 - `targets_json` 是 **pending `QueueTarget[]`**；`payload_json.requestedTargets` 是 admission 全量快照。
@@ -593,7 +764,8 @@ CREATE UNIQUE INDEX invocation_queue_claim
 - `execution_json` 含 `a2aParentInvocationId/a2aTriggerMessageId/a2aDepth`。
 - `delivery_json` 含 `operatorNotifiedAt`；operator-only entry 没有 parent/TurnExecution。
 - `claim` 在 TS 模型里是子对象；SQL 用 `claim_*` 标量 + `claimed_target_keys_json` 做 CAS，语义是 target-level claim。
-- `invocation_record_id` 只在存在 agent targets 时回写；operator-only 为 null。
+- `status` 只持久化 `queued | claimed`；`processing | terminal` 只出现在 transition projection，不落库。
+- `queue_admissions` 是 admission receipt：live row 删除后，同一 `source_message_id` 重放仍返回 `replayed`/`conflict`。
 - queue entry 可以在全部 target dispatch 后删除；`turn_executions.queue_entry_id` 仍是 trace 字符串。
 
 ### 4.2 `invocation_records`
@@ -916,7 +1088,8 @@ parent partial_failed: successful=[A], failed=[B]
 - operator conversation 只解析行首 `@`；多个 @ 去重；未知/disabled typed reject；无 @ → `no_target`。
 - A2A tools 只接受显式 `{kind,id}` targets；正文 `@` 不路由。
 - operator-only entry：只通知，不创建 parent/TurnExecution；`delivery.operatorNotifiedAt` 写入。
-- target-level claim：`claim`/`claimPrefix`；`claim.targetKeys` 是 pending 子集；过期/失败可 restore。
+- target-level claim：`InvocationQueue.claim`；`claim.targetKeys` 是 pending 子集；过期/失败走 `releaseClaim` / `restoreExpiredClaims`。
+- 重放保护：live row 删除后，同一 `source_message_id` 仍由 `queue_admissions` 返回 `replayed`/`conflict`。
 - `processEntry` 只对 agent targets 创建 parent + N child；全部 target dispatch 后 queue entry 可删除。
 - `routeSerial` 不在 v1 registry / 代码路径；`routeParallel` 每个 child 独立 signal。
 
@@ -978,7 +1151,7 @@ parent partial_failed: successful=[A], failed=[B]
 
 | Clowder | codeteam v1 | 关系 |
 |---|---|---|
-| `Message` + `InvocationQueue` + `QueueLedger` | `Message` + `invocation_queue` + `InvocationQueueStore` | 复用/改名；v1 轻量 |
+| `Message` + `InvocationQueue` + `QueueLedger` | `Message` + `invocation_queue` + `SqliteQueueLedgerStore` + `InvocationQueue` | 复用/改名；v1 轻量 |
 | `QueueProcessor` + `QueueEntry` | `QueueProcessor` + `QueueEntry` | 复用；拆分 DispatchService |
 | `InvocationRecordStore` + `InvocationRecord` | `InvocationRecordStore` + `InvocationRecord` | 复用；v1 轻量 |
 | `InvocationTracker` + `InvocationOwnerReaper` | `InvocationTracker` + `InvocationOwnerReaper` | 复用；v1 TTL |
@@ -1006,6 +1179,10 @@ parent partial_failed: successful=[A], failed=[B]
 10. **QueueEntry 多層次设计**：`owner/from/targets/payload/execution/delivery/claim` 分组；targets 是 `QueueTarget[]`（agent/operator）。
 11. **operator 对话只解析行首 `@`**；多个 @ 去重；未知/disabled typed reject；无 @ → `no_target`。
 12. **operator-only 允许只通知不执行**：不创建 parent/TurnExecution，只写 `delivery.operatorNotifiedAt` 并删除 queue entry。
-13. **claim 复用 Clowder 的 target-level 语义**：`claim`/`claimPrefix`/`commit`/`restore`；`claim.targetKeys` 是 pending targets 子集。
+13. **claim 复用 Clowder 的 target-level 语义**：`claim` / `retireTargets` / `releaseClaim` / `withdrawTargets`；`claim.targetKeys` 是 pending targets 子集。
 14. **QueueEntry 保留 admission 正文快照** `payload.content`；A2A tools 的 targets 用 `{kind:"agent"|"operator", id}` 对象数组，不解析正文 @。
 15. **v1 路由/解析错误走 audit/observation**，QueueEntry 不存 `routingWarnings`/`lastError`。
+16. **Queue durable/projection 状态分层（DP-F018Q-2=B）**：`QueueLedgerStatus` 保留四值 union；`QueueEntry.status` 只取 `queued|claimed`；`processing|terminal` 只出现在 transition projection。
+17. **QueueLedgerStore + InvocationQueue 接口（DP-F018Q-1=A）**：store 只做持久化/CAS；InvocationQueue 负责 admission/claim/retire/release/withdraw/recovery；`claimNext` 从服务接口移除，候选选择留在 QueueProcessor。
+18. **重放保护（DP-F018Q-3=A）**：新增 `queue_admissions` receipt；live row 删除后按 fingerprint 返回 `replayed`/`conflict`。
+19. **删除 `invocation_queue.invocation_record_id`**：parent 通过 `invocation_records.source_message_id` + `turn_executions.queue_entry_id` 关联。
