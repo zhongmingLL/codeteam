@@ -140,7 +140,7 @@ A2A runtime 的调用链拆成两层，详细字段/状态机/链路见
 
 - `InvocationRecord`（parent）：一条消息的消息级生命周期；
   `sourceRecordId` unique、`userMessageId`、`targetAgentIds[]`、`status`、
-  `successfulAgentIds`/`failedAgentIds`/`canceledAgentIds`、`retryCount`。
+  `successfulAgentIds`、`usageByAgent`/`usageRecordedAt`、`retryCount`、`partial_failed`。
 - `TurnExecution`（child）：单 agent 一次执行；`invocationRecordId`（fan-out
   parent）、`a2aParentTurnExecutionId`（A2A 因果父）、`agentSessionId`、`attempt`、
   `status`/`responseMessageId`/`terminalReason`。
@@ -334,7 +334,7 @@ thread message / A2A tool
 | `threads` | 新增 `created_by`, `project_path`（必填）, `title_source`, `last_active_at`, `deleted_at`；`thread_participants` 新表 | owner 从 operator/最早 message/session 回填；projectPath 从 repo/task.worktree 共同根或 operator 配置回填；无法回填的 thread 进入 preflight 清单，不静默置空；archived → deleted_at |
 | `agent_sessions` | 只保留 thread×agent 单 active；`task_id`/`profile_id` legacy | 先 drain/terminal 有 running invocation 的 session；sealing/sealed 行不迁移，留 legacy；旧 task session 不合并进新 runtime；目标列 `agent_id` |
 | `runs` → `turn_executions` | 新 child 表：`turnExecutionId`、`invocationRecordId`、`a2aParentTurnExecutionId`、`agentSessionId`、`attempt`、provider/model、status/response/terminal；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
-| 新 `invocation_records` | 消息级 parent：`invocationRecordId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successful/failed/canceled、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
+| 新 `invocation_records` | 消息级 parent：`invocationRecordId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
 | `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、state/disposition、token hash/salt | 旧 task/role/run credential legacy |
 | `a2a_requests` | `thread_id` + `task_id` nullable；unique `(thread_id, agent_id, request_id)`；drop 旧 task-level unique | 旧行按 task.thread 回填；同一 `(thread, agent, requestId)` 多行时按 `created_at` 保留最新为 canonical，其余标 legacy；无 task 的旧行标 legacy；不删除历史 |

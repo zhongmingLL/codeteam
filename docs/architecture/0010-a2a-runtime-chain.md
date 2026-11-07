@@ -32,7 +32,7 @@ related_features: [codeteam/F018, codeteam/F017]
 4. **Parent 在 QueueProcessor claim 后创建**（对齐 Clowder）：queue entry 是待处理账本，parent 是处理生命周期。
 5. **`TurnExecutionStore.createRunning` 是执行幂等入口**：`created/replayed/conflict`；provider 启动前必须有 child + credential。
 6. **终态路径只有一条**：`transitionTerminal` → `PerAgentTerminalDispositionCollector` → parent aggregate → credential terminalize，同一事务。
-7. **v1 不做**：MCP、task/role/run 字段、custody/action/wait、compaction、session sealed、outputFence/coveredMessageIds、trajectory projector、usageByCat/idempotencyKey/intent。
+7. **v1 不做**：MCP、task/role/run 字段、custody/action/wait、compaction、session sealed、outputFence/coveredMessageIds、trajectory projector、idempotencyKey/intent。
 
 ## 1. 设计原则
 
@@ -450,6 +450,15 @@ for entry of entries:
 **v1 字段**
 
 ```ts
+interface TokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  costUsd?: number;
+}
+
 type InvocationRecordStatus =
   | "queued"
   | "running"
@@ -466,9 +475,9 @@ interface InvocationRecord {
   userMessageId: string | null;   // v1 = payload.messageId
   targetAgentIds: string[];       // admission snapshot，不可变
   status: InvocationRecordStatus;
-  successfulAgentIds: string[];
-  failedAgentIds: string[];
-  canceledAgentIds: string[];
+  successfulAgentIds: string[];   // exact success witness，单调递增
+  usageByAgent: Record<string, TokenUsage>; // cumulative across attempts
+  usageRecordedAt: number | null;           // first write; stable for daily bucketing
   retryCount: number;
   terminalReason: string | null;
   createdAt: number;
@@ -477,12 +486,77 @@ interface InvocationRecord {
 }
 ```
 
-**v1 方法**
-- `createQueued`
-- `markRunning`
-- `applyTerminalAggregate`
-- `get` / `listByThread` / `listRunning`
-- `requestRetry`（只允许 failed/canceled targets）
+**`InvocationRecordStore` v1**
+
+```ts
+interface CreateQueuedInput {
+  invocationRecordId?: string;     // 可选；测试/重放
+  threadId: string;
+  userId: string;
+  sourceRecordId: string;
+  userMessageId: string | null;
+  targetAgentIds: string[];
+  now?: number;
+}
+
+type CreateQueuedResult =
+  | { outcome: "created"; record: InvocationRecord }
+  | { outcome: "replayed"; record: InvocationRecord }
+  | { outcome: "conflict" };
+
+interface TerminalAggregateInput {
+  status: "completed" | "partial_failed" | "failed" | "canceled";
+  successfulAgentIds: string[];
+  terminalReason: string | null;
+  // cumulative across all child attempts; omitted = keep existing
+  usageByAgent?: Record<string, TokenUsage>;
+  // backfill only; normal path stamps first-write time
+  usageRecordedAt?: number;
+  now?: number;
+}
+
+interface InvocationRecordStore {
+  createQueued(input: CreateQueuedInput): CreateQueuedResult;
+
+  get(invocationRecordId: string): InvocationRecord | null;
+  getBySource(threadId: string, sourceRecordId: string): InvocationRecord | null;
+  listByThread(threadId: string): InvocationRecord[];
+  listBySource(threadId: string, sourceRecordIds: string[]): InvocationRecord[];
+  listRunning(threadId?: string): InvocationRecord[];
+
+  markRunning(invocationRecordId: string, now?: number): InvocationRecord | null;
+  applyTerminalAggregate(
+    invocationRecordId: string,
+    input: TerminalAggregateInput,
+  ): InvocationRecord | null;
+  requestRetry(invocationRecordId: string, now?: number): InvocationRecord | null;
+}
+```
+
+**状态机**
+
+```text
+queued         → running | failed | canceled
+running        → completed | partial_failed | failed | canceled
+failed         → queued | canceled        // retry admitted
+partial_failed → queued | canceled        // retry admitted
+completed      → terminal
+canceled       → terminal
+```
+
+**聚合/usage 语义**
+
+- `successfulAgentIds` 是唯一成功见证；`failedAgentIds`/`canceledAgentIds` 由 `TurnExecution` 最新 attempt 推导，不在 parent 存储。
+- `usageByAgent` 按 `agentId` 跨 attempt 累计；`applyTerminalAggregate` 接收的是**累计值**，不是 delta。
+- `usageRecordedAt` 只在第一次写入 usage 时设置；之后不覆盖（backfill 显式传入除外）。
+- `requestRetry` 保留 `usageByAgent`/`usageRecordedAt`；status `failed|partial_failed → queued`，`retryCount++`，清 `endedAt`/`terminalReason`。
+- retry 的 queue entry `attempt = retryCount + 1`；parent 在 retry child 启动后由 `markRunning` 进入 running。
+
+**`markRunning` / `applyTerminalAggregate` 校验**
+
+- `markRunning`：`queued → running`；已是 `running` 幂等返回；terminal 返回 null。
+- `applyTerminalAggregate`：只接受 `running`；`successfulAgentIds ⊆ targetAgentIds` 且单调递增；`completed` 必须等于全部 targets；`partial_failed` 非空且不等于全部；`failed` 为空；`canceled` 允许任意子集。
+- `terminalReason`：`completed` 为 null；其余非 null。
 
 **operator target 边界**
 - `InvocationRecord` 只在 queue entry 存在至少一个 `agent` target 时创建。
@@ -492,8 +566,9 @@ interface InvocationRecord {
 - mixed targets：parent 只聚合 agent targets；operator 通知记录在 queue entry。
 
 **v1 不做**
-- `intent (execute/ideate)`、`idempotencyKey`、`usageByCat`、`actionLeaseCarrier`、`waitContinuationCarrier`。
-- `sourceRecordId` unique + `queue_admissions` 已足够做 admission 幂等；usage 按 child TurnExecution 聚合，后续再加。
+- `intent (execute/ideate)`、`idempotencyKey`、`actionLeaseCarrier`、`waitContinuationCarrier`。
+- `sourceRecordId` unique + `queue_admissions` 已足够做 admission 幂等。
+- usage 按 child `TurnExecution.usage` 汇总到 `usageByAgent`；不在 parent 存 failed/canceled 列表。
 
 ### 3.4 InvocationTracker + InvocationOwnerReaper
 
@@ -586,6 +661,7 @@ interface TurnExecution {
   status: "running" | "completed" | "failed" | "interrupted" | "canceled";
   responseMessageId: string | null;
   terminalReason: string | null;
+  usage: TokenUsage | null;      // provider 返回的本 attempt 用量
 
   startedAt: number;
   endedAt: number | null;
@@ -699,7 +775,7 @@ targets: Array<
    - 只允许一次；返回 child 终态。
 2. `PerAgentTerminalDispositionCollector`：
    - 输入 parent `targetAgentIds` + 该 parent 下所有 child 的**最新 attempt**；
-   - 产出 `successfulAgentIds` / `failedAgentIds` / `canceledAgentIds` / parent status。
+   - 产出 `successfulAgentIds` + parent status；`failedAgentIds`/`canceledAgentIds` 只是派生视图，不写 parent。
 3. `QueueProcessor`：
    - 在 child terminal 的同一事务里调用 collector；
    - 写 parent aggregate；
@@ -717,19 +793,19 @@ targets: Array<
 | 0 completed，且所有 target failed/interrupted/canceled，且无 running | `failed` |
 | operator 取消整个消息 | `canceled` |
 
-- `interrupted` 归入 `failedAgentIds`（可重试）；`canceled` 归入 `canceledAgentIds`。
-- `successfulAgentIds` 单调递增；`failedAgentIds`/`canceledAgentIds` 反映每个 agent 最新 attempt。
-- `requestRetry` 受理后 parent 保持 `running`（即使重试 child 尚未创建），不要降回 `queued`。
+- `interrupted` 归入失败面（可重试）；`canceled` 归入取消面。
+- `successfulAgentIds` 单调递增；failed/canceled 由每个 agent 最新 attempt 推导。
+- `requestRetry` 受理后 parent 进入 `queued`；retry child 创建并启动后由 `markRunning` 进入 `running`。
 
 **重试**
-- 只允许重试 `failedAgentIds`/`canceledAgentIds`；
-- parent `partial_failed | failed → running`，`retryCount+1`；
-- 为失败 target 创建新 queue entry；
-- 新 child attempt = 旧 attempt + 1；
+- 只允许重试 `targetAgentIds - successfulAgentIds`；
+- parent `partial_failed | failed → queued`，`retryCount+1`；
+- 为失败 target 创建新 queue entry，`attempt = retryCount + 1`；
+- 新 child attempt = 新 queue entry attempt；
 - 已成功的 agent 永不重跑。
 
 **v1 不做**
-- `usageByCat`、action fence 聚合、response pending ledger。
+- `usage` 由 collector 汇总到 parent `usageByAgent`；不做 action fence 聚合、response pending ledger。
 - v1 用一个事务保证 child terminal + parent aggregate + credential terminal；response 未提交则 child 不能 completed。
 
 ### 3.10 StartupReconciler / ZombieTerminalRecovery / TrajectoryProjector / LiveInvocations
@@ -854,10 +930,9 @@ CREATE TABLE invocation_records (
   ),
   successful_agent_ids_json TEXT NOT NULL DEFAULT '[]'
     CHECK (json_valid(successful_agent_ids_json) AND json_type(successful_agent_ids_json) = 'array'),
-  failed_agent_ids_json TEXT NOT NULL DEFAULT '[]'
-    CHECK (json_valid(failed_agent_ids_json) AND json_type(failed_agent_ids_json) = 'array'),
-  canceled_agent_ids_json TEXT NOT NULL DEFAULT '[]'
-    CHECK (json_valid(canceled_agent_ids_json) AND json_type(canceled_agent_ids_json) = 'array'),
+  usage_by_agent_json TEXT NOT NULL DEFAULT '{}'
+    CHECK (json_valid(usage_by_agent_json) AND json_type(usage_by_agent_json) = 'object'),
+  usage_recorded_at INTEGER,
   retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
   terminal_reason TEXT,
   created_at INTEGER NOT NULL,
@@ -866,6 +941,8 @@ CREATE TABLE invocation_records (
 
   CHECK (status IN ('queued', 'running') OR ended_at IS NOT NULL),
   CHECK (status IN ('queued', 'failed', 'canceled') OR started_at IS NOT NULL),
+  CHECK (status NOT IN ('completed', 'partial_failed')
+         OR json_array_length(successful_agent_ids_json) > 0),
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
   FOREIGN KEY (user_message_id) REFERENCES messages(id) ON DELETE RESTRICT
 ) STRICT;
@@ -877,7 +954,8 @@ CREATE INDEX invocation_records_thread_status
 - `source_record_id` unique：一个 source 一个 parent；重试复用同一 parent。
 - `user_message_id` 是 parent 的用户消息指针；v1 = `messageId`，未来 connector 可为 null。
 - `target_agent_ids_json` 是 admission 快照，不可变。
-- `successful_agent_ids_json` 单调递增；failed/canceled 反映最新 attempt。
+- `successful_agent_ids_json` 单调递增；failed/canceled 不落库，由 child 最新 attempt 推导。
+- `usage_by_agent_json` 是按 agent 的累计 usage；`usage_recorded_at` 首次写入时间，稳定分桶。
 - `status`/`ended_at`/`terminal_reason` 由 collector 与 child terminal 同事务更新。
 
 ### 4.3 `turn_executions`
@@ -908,6 +986,9 @@ CREATE TABLE turn_executions (
   ),
   response_message_id TEXT,
   terminal_reason TEXT,
+  usage_json TEXT
+    CHECK (usage_json IS NULL OR
+           (json_valid(usage_json) AND json_type(usage_json) = 'object')),
   started_at INTEGER NOT NULL,
   ended_at INTEGER,
 
@@ -936,6 +1017,7 @@ CREATE UNIQUE INDEX turn_executions_response
 
 - `queue_entry_id` 不加 FK：queue entry 是调度账本，dispatch 后可删除；字符串仍可 trace。
 - `a2a_parent_turn_execution_id` 是 A2A 因果父，不是 fan-out parent；fan-out parent 是 `invocation_record_id`。
+- `usage_json` 是本 attempt 的 provider 用量；collector 汇总所有 attempt 到 parent `usageByAgent`。
 - `provider/model/model_family` 是执行快照；Session 不再持有模型。
 - `a2a_depth` 用于 loop guard；A2A child = parent.depth + 1。
 
@@ -984,7 +1066,8 @@ running ──all success──▶ completed
 running ──some success + some failed/canceled──▶ partial_failed
 running ──no success + all failed/canceled──▶ failed
 queued/running ──operator cancel──▶ canceled
-partial_failed/failed ──retry admitted──▶ running
+partial_failed/failed ──retry admitted──▶ queued
+queued ──retry child starts──▶ running
 ```
 
 ### 5.2 TurnExecution
@@ -1010,15 +1093,15 @@ active ──auth revoke/orphan repair──▶ terminal(revoked)
 
 按每个 agent 的**最新 attempt**：
 
-1. 首次 attempt 还没有 child 开始且 retryCount=0 → parent `queued`；retry 已受理但 child 未创建 → `running`；
+1. 首次 attempt 还没有 child 开始，或 retry 已受理但 child 未创建 → parent `queued`；
 2. 任一最新 child running，或还有 target 没有 child → parent `running`；
 3. 所有 target 最新 child completed → parent `completed`；
 4. ≥1 completed + ≥1 failed/interrupted/canceled，且无 running → parent `partial_failed`；
 5. 0 completed，所有 target failed/interrupted/canceled，且无 running → parent `failed`；
 6. operator 取消整个消息 → parent `canceled`。
 
-`interrupted` 归 `failedAgentIds`（可重试）；`canceled` 归 `canceledAgentIds`。
-`successfulAgentIds` 单调递增；`failedAgentIds`/`canceledAgentIds` 反映最新 attempt。
+`interrupted` 归失败面（可重试）；`canceled` 归取消面。
+parent 只存 `successfulAgentIds`；failed/canceled 由 `TurnExecution` 最新 attempt 推导。
 
 ## 6. 端到端流程
 
@@ -1091,7 +1174,7 @@ parent partial_failed: successful=[A], failed=[B]
 - `cancel(parent)`：
   - tracker cancel 所有 active slots；
   - 所有 running TurnExecution → `canceled`（或 `interrupted`，取决于取消语义；v1 用 `canceled`）；
-  - 未开始的 target 标 `canceledAgentIds`；
+  - 未开始的 target 不写 parent 列表，由“无 child”推导为 canceled 面；
   - parent `canceled`；credential terminalize；
   - queue entry withdraw/delete。
 
@@ -1116,7 +1199,7 @@ parent partial_failed: successful=[A], failed=[B]
 
 - `InvocationQueue`/`QueueEntry`：admission、target-level claim、lease、target 移除、operator 通知、正文快照。
 - `QueueProcessor`：claim、parent 创建、tracker、route、terminal 聚合、retry、startup recovery。
-- `InvocationRecord`：消息生命周期、target snapshot、successful/failed/canceled、retryCount、partial_failed。
+- `InvocationRecord`：消息生命周期、target snapshot、successfulAgentIds、usageByAgent、retryCount、partial_failed。
 - `InvocationTracker`：thread×agent 活跃槽、cancel、live。
 - `AgentRouter` + `routeParallel`：显式 targets、per-child AbortSignal。
 - `invoke-single-agent`：pi worker/session、child TurnExecution、credential、prompt/stream/terminal。
@@ -1136,7 +1219,7 @@ parent partial_failed: successful=[A], failed=[B]
 | custody / action lease / wait continuation | v2 |
 | session sealed / compression / handoff | v1 active-only session（0009） |
 | `outputFence` / `coveredMessageIds` / `queueCompletionPolicy` | v2 的 action/prompt/carrier 审计 |
-| `usageByCat` / `idempotencyKey` / `intent` | v1 用 `sourceRecordId` unique + queue receipt + child usage；parent 不再有 idempotencyKey |
+| `idempotencyKey` / `intent` | v1 用 `sourceRecordId` unique + queue receipt；usage 已保留为 `usageByAgent`/`usageRecordedAt` |
 | `InvocationTrajectoryProjector` 完整版 | v1 用简单 timeline；trajectory drilldown 后续 |
 | `responsePending` 复杂 ledger | v1 用同事务提交 response + terminal |
 | managed work / collective grants / compaction carrier | v2 |
@@ -1172,7 +1255,8 @@ parent partial_failed: successful=[A], failed=[B]
 - 部分成功 → parent partial_failed；`successfulAgentIds` 正确。
 - 全部失败 → parent failed。
 - 取消 → parent canceled。
-- 重试只重跑 failed/canceled；successful 不重跑；retryCount 递增。
+- 重试只重跑 `targetAgentIds - successfulAgentIds`；successful 不重跑；`retryCount` 递增，parent 先回 `queued`。
+- `usageByAgent` 按 agent 跨 attempt 累计；`usageRecordedAt` 首次写入后不变。
 
 ### 9.3 TurnExecution / createRunning
 
@@ -1262,3 +1346,5 @@ parent partial_failed: successful=[A], failed=[B]
 22. **v1 不自动重试失败 target**：失败由 parent aggregate 记录；重试走 `requestRetry` 新建 queue entry，避免退避/热循环。
 23. **QueueProcessor 删除 Clowder 扩展面**：append lifecycle、Steer、continuation、live companion、freshness、auto-resume suppression、prestart processing groups、batching、caller dispatch observations。
 24. **全局身份契约（0011）**：`sourceRecordId + attempt → queueEntryId`；`invocationRecordId`（parent）；`turnExecutionId`（child）；`credentialId`（auth）；`a2aParentTurnExecutionId`（因果父）；A2A runtime 禁用 `sourceMessageId` / `sourceId` / 裸 `invocationId` / `parentInvocationId` / `entryId` / parent `idempotencyKey`。
+25. **InvocationRecord 状态/字段**：保留 `partial_failed`；只存 `successfulAgentIds`，failed/canceled 由 child 推导；`requestRetry` 把 parent 置 `queued`，retry child 启动后再 `markRunning`。
+26. **InvocationRecord usage**：parent 存 `usageByAgent`（跨 attempt 累计）+ `usageRecordedAt`（首次写入）；`TurnExecution` 存 per-attempt `usage`；collector 汇总后由 `applyTerminalAggregate` 写入。
