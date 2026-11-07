@@ -90,38 +90,98 @@ TurnExecution A 调 post_message
 - `QueueStore` → `InvocationQueueStore`
 - 记录类型 `QueueEntry`
 
-**v1 `QueueEntry`**
+**v1 `QueueEntry`（多層次，Clowder-aligned）**
 
 ```ts
+type QueueOwner =
+  | { kind: "user"; userId: string }
+  | { kind: "system"; service: string };
+
+type QueueTarget =
+  | { kind: "agent"; id: string }     // id = AgentConfig.agentId
+  | { kind: "operator"; id: string }; // id = thread owner userId
+
+type QueueEntryKind = "conversation_input" | "message_wake";
+type QueueEntryStatus = "queued" | "claimed" | "processing";
+
 interface QueueEntry {
-  id: string;
+  version: 1;
+  id: string;                    // queue:<sha256(sourceMessageId)>
   threadId: string;
-  userId: string;
-  sourceMessageId: string;
-  kind: "conversation_input" | "message_wake";
-  targetAgentIds: string[];
+  owner: QueueOwner;
+  kind: QueueEntryKind;
+  from: MessageFrom;             // user | agent | system
+  targets: QueueTarget[];        // pending targets；派发后收缩
+  payload: QueuePayload;
+  execution: QueueExecution;
+  delivery: QueueDelivery;
+  claim: QueueClaim | null;
+  status: QueueEntryStatus;
   priority: "urgent" | "normal";
   position: number;
-  idempotencyKey: string;
-  status: "queued" | "claimed" | "processing";
-  claimId: string | null;
-  claimOwner: string | null;
-  claimExpiresAt: number | null;
-  invocationRecordId: string | null; // claim 后关联 parent
   enqueuedAt: number;
   updatedAt: number;
 }
+
+interface QueuePayload {
+  sourceMessageId: string;
+  content: string;               // admission 时正文快照
+  requestedTargets: QueueTarget[]; // admission 全量快照
+  requestId?: string;            // A2A requestId 幂等
+}
+
+interface QueueExecution {
+  a2aParentInvocationId: string | null;
+  a2aTriggerMessageId: string | null;
+  a2aDepth: number;
+}
+
+interface QueueDelivery {
+  operatorNotifiedAt: number | null;
+}
+
+interface QueueClaim {
+  id: string;
+  owner: string;                 // QueueProcessor claim identity
+  claimedAt: number;
+  expiresAt: number;
+  targetKeys: string[];          // 本次 claim 保护的精确 pending targets
+}
 ```
 
+**`QueueTarget`**
+
+- `targetKey(target)`：`agent:<id>` / `operator:<id>`；用于去重、claim、移除。
+- `agent` target → 创建 `TurnExecution`，调用 pi worker。
+- `operator` target → 不创建 TurnExecution；只做消息可见/通知，标记 `delivery.operatorNotifiedAt` 后移除。
+- 允许 **operator-only**：没有 agent target 时只通知，不创建 parent `InvocationRecord` / TurnExecution。
+
+**`parseTarget`（仅 operator conversation ingress）**
+
+- 只解析**行首 `@handle`**（含列表/引用前缀）；正文中间 `@` 不路由。
+- 多个 `@` → 多个 `QueueTarget`；按 targetKey 去重。
+- 通过 AgentConfig handle/alias 解析；未知/歧义 → typed reject `unknown_target`；disabled → `agent_disabled`。
+- 没有行首 `@` → typed reject `no_target`（v1 不做“默认最近活跃 agent”隐式路由）。
+- **不解析 agent final response 的 `@`，也不解析 A2A tool 正文的 `@`。**
+- A2A tools 的 `targets` 是显式 `{kind,id}` 对象数组；operator target 只能从这里进入。
+
+**`claim`**
+
+- 复用 Clowder 的 target-level claim：`claim` / `claimPrefix` / `commit` / `restore`。
+- 一条 entry 同时只有一个 active claim；`claim.targetKeys` 是本次受保护的 pending targets 子集。
+- `claim` 是短时、可撤销租约，不是执行状态，不创建 TurnExecution。
+- `commit` 把 claim 转 `processing` / 移除已 dispatch targets；失败/超时 `restore` 回 `queued`。
+- 全部 targets 移除后删除 queue entry；QueueEntry 没有 terminal。
+
 **职责**
-- 入队/去重（`idempotencyKey` unique）；
-- claim/lease（`queued → claimed → processing`）；
-- 按 target 移除；全部 target 移除后删除；
-- claim 后在同一事务创建 parent `InvocationRecord`，并回写 `invocationRecordId`。
+- 入队/去重（`id` 稳定 + `payload.requestId` / source 幂等）；
+- claim/lease（target-level）；commit/restore；
+- operator target 通知；agent target 派发；
+- 按 target 移除；全部 target 移除后删除。
 
 **v1 不做**
-- `author_intent_json`、message disposition、action/wait carrier、fence refs、cloud provenance。
-- 这些是 Clowder 的 task/custody/connector 语义；v1 只需要 source + targets + priority + claim。
+- `author_intent_json`、message disposition、action/wait carrier、fence refs、cloud provenance、steer。
+- 路由/解析错误走 audit/observation；QueueEntry 不存 `routingWarnings`/`lastError`。
 
 ### 3.2 QueueProcessor + QueueEntry
 
@@ -142,15 +202,16 @@ class QueueProcessor {
 ```
 
 **`processEntry` 顺序**
-1. 校验 claim；
-2. 创建/复用 parent `InvocationRecord`（claim 后）；
-3. `InvocationTracker.start`；
-4. `AgentRouter.route`/`routeParallel`；
-5. 逐 target 创建 `TurnExecution`；
-6. 收集 terminal；
-7. 更新 parent aggregate；
-8. 移除 queue target / 删除 entry；
-9. 异常时 release claim 或标 failed。
+1. 校验 claim（`claim.targetKeys` ⊆ entry pending targets）；
+2. 拆分 targets：
+   - `operator` targets → 发通知/可见性，写 `delivery.operatorNotifiedAt`，从 pending 移除；
+   - `agent` targets → 创建/复用 parent `InvocationRecord`，`InvocationTracker.start`，`AgentRouter.route`/`routeParallel`；
+3. 若无 agent targets（operator-only）：**不创建 parent / TurnExecution**；通知完成、commit、删除 entry；
+4. 逐 agent target 创建 `TurnExecution`；
+5. 收集 terminal；
+6. 更新 parent aggregate；
+7. 按 `claim.targetKeys` 移除已处理 targets；全部移除后删除 entry；
+8. 异常/超时 `restore(claimId)`；不要把 operator-only 当失败。
 
 **v1 不做**
 - Clowder 的 batching、caller dispatch observations、action successor、wait continuation、cloud bridge、multi-user grouping。
@@ -195,6 +256,13 @@ interface InvocationRecord {
 - `applyTerminalAggregate`
 - `get` / `listByThread` / `listRunning`
 - `requestRetry`（只允许 failed/canceled targets）
+
+**operator target 边界**
+- `InvocationRecord` 只在 queue entry 存在至少一个 `agent` target 时创建。
+- `targetAgentIds` 只含 agent targets；operator targets 不进入 parent。
+- operator-only entry 没有 parent/TurnExecution；只写 queue entry 的
+  `delivery.operatorNotifiedAt`。
+- mixed targets：parent 只聚合 agent targets；operator 通知记录在 queue entry。
 
 **v1 不做**
 - `intent (execute/ideate)`、`idempotencyKey`、`usageByCat`、`actionLeaseCarrier`、`waitContinuationCarrier`。
@@ -366,13 +434,30 @@ interface InvocationCredential {
 - `cross_post_message`
 - `thread_context`（只读，不入队）
 
+**targets schema**
+
+```ts
+targets: Array<
+  | { kind: "agent"; id: string }
+  | { kind: "operator"; id: string }
+>
+```
+
+- 不解析正文行首 `@`；tool body 的 `@` 只是内容。
+- 至少一个 target；agent target 必须存在且 enabled；operator target 必须是 thread owner。
+- 允许 operator-only：只通知，不执行 agent。
+- `multi_mention` targets 仅 agent（2-3 个），不做聚合回调。
+
 **`post_message` / `cross_post_message` 流程**
 1. 校验 caller credential + target/thread access；
 2. 创建 message；
-3. `InvocationQueue.enqueue`（sourceMessageId、targetAgentIds、priority）；
-4. 新 queue entry 被 QueueProcessor claim 后创建新 parent `InvocationRecord`；
-5. 新 child `TurnExecution` 的 `parentInvocationId` = caller TurnExecution.id，`a2aTriggerMessageId` = 新 message，`a2aDepth` = caller.depth + 1；
-6. 超过 15 拒绝。
+3. `InvocationQueue.enqueue`（sourceMessageId、content、targets、requestedTargets、requestId、priority）；
+4. QueueProcessor claim 后拆分 targets：
+   - operator → 通知/可见性，写 `delivery.operatorNotifiedAt`；
+   - agent → 创建 parent `InvocationRecord` + child `TurnExecution`；
+5. 若有 agent targets：child `parentInvocationId` = caller TurnExecution.id，`a2aTriggerMessageId` = 新 message，`a2aDepth` = caller.depth + 1；
+6. operator-only：不创建 parent/TurnExecution；只通知并删除 queue entry；
+7. 超过 15 拒绝。
 
 **v1 不做**
 - `a2a_send`、`handoff_*`、multi_mention 聚合回调、cross-thread custody。
@@ -459,27 +544,39 @@ interface InvocationCredential {
 
 ```sql
 CREATE TABLE invocation_queue (
+  version INTEGER NOT NULL CHECK (version = 1),
   id TEXT PRIMARY KEY,
   thread_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
   source_message_id TEXT NOT NULL,
+  owner_json TEXT NOT NULL CHECK (json_valid(owner_json)),
   kind TEXT NOT NULL CHECK (kind IN ('conversation_input', 'message_wake')),
-  target_agent_ids_json TEXT NOT NULL
-    CHECK (json_valid(target_agent_ids_json) AND json_type(target_agent_ids_json) = 'array'
-           AND json_array_length(target_agent_ids_json) > 0),
+  from_json TEXT NOT NULL CHECK (json_valid(from_json)),
+  targets_json TEXT NOT NULL
+    CHECK (json_valid(targets_json) AND json_type(targets_json) = 'array'
+           AND json_array_length(targets_json) > 0),
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json) AND json_type(payload_json) = 'object'),
+  execution_json TEXT NOT NULL CHECK (json_valid(execution_json) AND json_type(execution_json) = 'object'),
+  delivery_json TEXT NOT NULL CHECK (json_valid(delivery_json) AND json_type(delivery_json) = 'object'),
   priority TEXT NOT NULL CHECK (priority IN ('urgent', 'normal')),
   position INTEGER NOT NULL CHECK (position >= 0),
-  idempotency_key TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL CHECK (status IN ('queued', 'claimed', 'processing')),
   claim_id TEXT,
   claim_owner TEXT,
+  claimed_at INTEGER,
   claim_expires_at INTEGER,
+  claimed_target_keys_json TEXT
+    CHECK (claimed_target_keys_json IS NULL OR
+           (json_valid(claimed_target_keys_json) AND json_type(claimed_target_keys_json) = 'array')),
   invocation_record_id TEXT,
   enqueued_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
 
-  CHECK (status = 'queued' OR (claim_id IS NOT NULL AND claim_owner IS NOT NULL AND claim_expires_at IS NOT NULL)),
-  CHECK (status <> 'queued' OR (claim_id IS NULL AND claim_owner IS NULL AND claim_expires_at IS NULL)),
+  CHECK (status = 'queued' OR
+         (claim_id IS NOT NULL AND claim_owner IS NOT NULL AND claimed_at IS NOT NULL
+          AND claim_expires_at IS NOT NULL AND claimed_target_keys_json IS NOT NULL)),
+  CHECK (status <> 'queued' OR
+         (claim_id IS NULL AND claim_owner IS NULL AND claimed_at IS NULL
+          AND claim_expires_at IS NULL AND claimed_target_keys_json IS NULL)),
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
   FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
   FOREIGN KEY (invocation_record_id) REFERENCES invocation_records(id) ON DELETE SET NULL
@@ -491,8 +588,12 @@ CREATE UNIQUE INDEX invocation_queue_claim
   ON invocation_queue(claim_id) WHERE claim_id IS NOT NULL;
 ```
 
-- `target_agent_ids_json` 是**本次调度**的 target 子集；首次为全量，重试为失败子集。
-- `invocation_record_id` 在 claim 后回写；不是 admission 前置。
+- `targets_json` 是 **pending `QueueTarget[]`**；`payload_json.requestedTargets` 是 admission 全量快照。
+- `payload_json` 含 `sourceMessageId/content/requestedTargets/requestId`；`content` 是 admission 正文快照。标量 `source_message_id` 用于 FK/index，必须与 `payload_json.sourceMessageId` 一致。
+- `execution_json` 含 `a2aParentInvocationId/a2aTriggerMessageId/a2aDepth`。
+- `delivery_json` 含 `operatorNotifiedAt`；operator-only entry 没有 parent/TurnExecution。
+- `claim` 在 TS 模型里是子对象；SQL 用 `claim_*` 标量 + `claimed_target_keys_json` 做 CAS，语义是 target-level claim。
+- `invocation_record_id` 只在存在 agent targets 时回写；operator-only 为 null。
 - queue entry 可以在全部 target dispatch 后删除；`turn_executions.queue_entry_id` 仍是 trace 字符串。
 
 ### 4.2 `invocation_records`
@@ -681,7 +782,7 @@ active ──auth revoke/orphan repair──▶ terminal(revoked)
 ### 6.1 多 target 普通消息
 
 ```text
-m1（targets=[A,B]）
+m1（targets=[agent:A, agent:B]）
   → InvocationQueue.enqueue q1
   → QueueProcessor claim q1
   → InvocationRecord invP 创建（status=queued）
@@ -695,6 +796,24 @@ m1（targets=[A,B]）
   → iA completed, iB failed
   → collector: successful=[A], failed=[B], status=partial_failed
   → parent 更新；credential terminalize；tracker release
+```
+
+### 6.1b operator-only / mixed targets
+
+```text
+operator-only:
+  post_message targets=[operator:U]
+  → message m1 + queue entry q1（targets=[operator:U]）
+  → QueueProcessor claim q1
+  → 通知/可见性 → delivery.operatorNotifiedAt
+  → 无 parent / 无 TurnExecution
+  → commit + 删除 q1
+
+mixed:
+  post_message targets=[agent:A, operator:U]
+  → queue entry targets=[agent:A, operator:U]
+  → operator → 通知；agent:A → InvocationRecord + TurnExecution
+  → parent 只看 agent:A；operator 通知记录在 queue entry
 ```
 
 ### 6.2 A2A hop
@@ -752,7 +871,7 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 7.1 v1 保留
 
-- `InvocationQueue`/`QueueEntry`：admission、claim、lease、target 移除。
+- `InvocationQueue`/`QueueEntry`：admission、target-level claim、lease、target 移除、operator 通知、正文快照。
 - `QueueProcessor`：claim、parent 创建、tracker、route、terminal 聚合、retry、startup recovery。
 - `InvocationRecord`：消息生命周期、target snapshot、successful/failed/canceled、retryCount、partial_failed。
 - `InvocationTracker`：thread×agent 活跃槽、cancel、live。
@@ -760,7 +879,7 @@ parent partial_failed: successful=[A], failed=[B]
 - `invoke-single-agent`：pi worker/session、child TurnExecution、credential、prompt/stream/terminal。
 - `TurnExecutionStore.createRunning/transitionTerminal`：执行幂等 + 单终态。
 - `InvocationRegistry`/`InvocationCredential`：pi extension tools 鉴权、allowed tools、terminalize、canonical repair。
-- `a2a/tools`：post/cross/thread_context，新 message/queue entry，parent/depth。
+- `a2a/tools`：post/cross/thread_context，typed targets（agent/operator），新 message/queue entry，parent/depth；operator-only 只通知不执行。
 - `PerAgentTerminalDispositionCollector`：parent aggregate。
 - `TurnExecutionStartupReconciler` / `ZombieTerminalRecovery` / `InvocationOwnerReaper` / `getThreadLiveInvocations` / `MessageDispatchSummary`。
 
@@ -793,9 +912,12 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 9.1 Queue / Processor
 
-- 一条消息 enqueue 一个 queue entry；重复 `idempotencyKey` 返回同一 entry。
-- claim 只允许一个 owner；过期 claim 可 release。
-- `processEntry` 创建 parent + N child；全部 target dispatch 后 queue entry 可删除。
+- 一条消息 enqueue 一个 queue entry；同 source 重放收敛到同一 `id`；重复 `requestId` 返回同一 entry。
+- operator conversation 只解析行首 `@`；多个 @ 去重；未知/disabled typed reject；无 @ → `no_target`。
+- A2A tools 只接受显式 `{kind,id}` targets；正文 `@` 不路由。
+- operator-only entry：只通知，不创建 parent/TurnExecution；`delivery.operatorNotifiedAt` 写入。
+- target-level claim：`claim`/`claimPrefix`；`claim.targetKeys` 是 pending 子集；过期/失败可 restore。
+- `processEntry` 只对 agent targets 创建 parent + N child；全部 target dispatch 后 queue entry 可删除。
 - `routeSerial` 不在 v1 registry / 代码路径；`routeParallel` 每个 child 独立 signal。
 
 ### 9.2 InvocationRecord
@@ -881,3 +1003,9 @@ parent partial_failed: successful=[A], failed=[B]
 7. **终态同事务**：child terminal + parent aggregate + credential terminalize；v1 不做 responsePending ledger。
 8. **Session active-only**（0009）：v1 不做 sealed/compression/handoff。
 9. **v1 不做 custody/action/wait/compaction/managed/collective**；全部 v2。
+10. **QueueEntry 多層次设计**：`owner/from/targets/payload/execution/delivery/claim` 分组；targets 是 `QueueTarget[]`（agent/operator）。
+11. **operator 对话只解析行首 `@`**；多个 @ 去重；未知/disabled typed reject；无 @ → `no_target`。
+12. **operator-only 允许只通知不执行**：不创建 parent/TurnExecution，只写 `delivery.operatorNotifiedAt` 并删除 queue entry。
+13. **claim 复用 Clowder 的 target-level 语义**：`claim`/`claimPrefix`/`commit`/`restore`；`claim.targetKeys` 是 pending targets 子集。
+14. **QueueEntry 保留 admission 正文快照** `payload.content`；A2A tools 的 targets 用 `{kind:"agent"|"operator", id}` 对象数组，不解析正文 @。
+15. **v1 路由/解析错误走 audit/observation**，QueueEntry 不存 `routingWarnings`/`lastError`。

@@ -191,6 +191,9 @@ interface AgentSession {
 - `queue_entries` 重命名为 `invocation_queue`；`QueueStore` →
   `InvocationQueueStore`。它只做 admission/claim/lease/target 移除，是唯一
   pending-wake 账本。
+- `QueueEntry` 保持 Clowder-aligned 多層次结构：
+  `owner/from/targets/payload/execution/delivery/claim`；`targets` 是
+  `{kind:"agent"|"operator", id}`；operator-only 只通知不执行。
 - `QueueProcessor` 在 claim 后创建 parent `InvocationRecord`；queue entry 不持有
   消息终态。
 - 详细链路见 `0010-a2a-runtime-chain.md`。
@@ -278,17 +281,19 @@ thread message / A2A tool
 
 | 工具 | 作用 | 必填 | 不变量 |
 |---|---|---|---|
-| `codeteam_post_message` | 同 thread 发言并唤醒 targets | `targets`, `kind`, `bodyMd` | targets 是 AgentConfig id；text @ 不路由 |
-| `codeteam_cross_post_message` | 跨 thread 发言并唤醒 targets | `threadId`, `targets`, `kind`, `bodyMd` | source/target thread 必须同 user 可见；depth/loop guard |
-| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent | `targets` (2-3), `question`, `context?`, `requestId?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；响应是独立消息；无聚合回调 |
+| `codeteam_post_message` | 同 thread 发言并唤醒 targets | `targets`, `kind`, `bodyMd` | targets 是 `{kind:"agent"|"operator", id}`；正文 @ 不路由；operator-only 只通知 |
+| `codeteam_cross_post_message` | 跨 thread 发言并唤醒 targets | `threadId`, `targets`, `kind`, `bodyMd` | source/target thread 必须同 user 可见；depth/loop guard；targets 同上 |
+| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent | `targets` (2-3 agents), `question`, `context?`, `requestId?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；响应是独立消息；无聚合回调 |
 | `codeteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
 
 约束：
 
 - **彻底弃用** `codeteam_a2a_send` 与 `codeteam_handoff_*`：v1 不注册、不保留
   legacy alias、不提供 custody 工具窗口。
-- 正文是自然语言；路由只由 typed `targets` 决定。final response 的行首 `@`
-  不是路由，不解析、不唤醒。
+- operator conversation 只解析**行首 `@`**（含列表/引用前缀）为 agent targets；
+  A2A tools / final response 的正文 `@` 不路由，只由 typed `targets` 决定。
+- `post_message` / `cross_post_message` 允许 agent + operator targets；
+  operator-only 只通知，不创建 parent/TurnExecution。
 - `post_message` / `cross_post_message` 带 optional `replyTo` 与 `requestId`；
   `multi_mention` 带 optional `requestId`。`requestId` 幂等键 scope 为
   `(threadId, agentId, requestId)`。
