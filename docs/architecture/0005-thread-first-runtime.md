@@ -189,13 +189,16 @@ interface AgentSession {
 
 - `messages.threadId` 必填；`taskId` 是 legacy 可空列，v1 不写。
 - `queue_entries` 重命名为 `invocation_queue`；`QueueStore` →
-  `InvocationQueueStore`。它只做 admission/claim/lease/target 移除，是唯一
-  pending-wake 账本。
+  `SqliteQueueLedgerStore`（implements `QueueLedgerStore`）+ `InvocationQueue`
+  服务。它只做 admission/claim/lease/target 移除，是唯一 pending-wake 账本。
 - `QueueEntry` 保持 Clowder-aligned 多層次结构：
   `owner/from/targets/payload/execution/delivery/claim`；`targets` 是
   `{kind:"agent"|"operator", id}`；operator-only 只通知不执行。
-- `QueueProcessor` 在 claim 后创建 parent `InvocationRecord`；queue entry 不持有
-  消息终态。
+- `QueueProcessor` 用 `InvocationQueue.listQueued` + `claim` 选候选；claim 后创建
+  parent `InvocationRecord`，与 child/credential/`retireTargets` 同事务；queue
+  entry 不持有消息终态。
+- `queue_admissions` receipt 保住 admission 幂等：live row 删除后同一 source
+  重放返回 `replayed`/`conflict`，不会二次派发。
 - 详细链路见 `0010-a2a-runtime-chain.md`。
 
 ### 2.5 Credential

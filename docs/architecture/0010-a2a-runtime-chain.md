@@ -50,7 +50,7 @@ related_features: [codeteam/F018, codeteam/F017]
 ```text
 Message
   → InvocationQueue.enqueue（QueueEntry）
-  → QueueProcessor.claimNext/drain
+  → QueueProcessor.drain/processEntry
       → InvocationRecordStore.create（parent，claim 后）
       → InvocationTracker.start(thread, agent)
       → AgentRouter.route
@@ -347,38 +347,93 @@ fingerprint 只覆盖不可变字段（source、owner、kind、from、payload、
 ### 3.2 QueueProcessor + QueueEntry
 
 **拆分**
-- `DispatchService.drainLoop/claimNext` → `QueueProcessor`；
+- `DispatchService.drainLoop` → `QueueProcessor.drain`；
+- `DispatchService.claimNext` → QueueProcessor 内部候选选择（`listQueued` + `claim`）；
 - `DispatchService` 只保留组合根/兼容 facade，内部委托 `QueueProcessor`。
+
+**v1 依赖**
+
+```ts
+interface QueueProcessorDeps {
+  queue: InvocationQueue;
+  tracker: InvocationTracker;
+  invocationRecords: InvocationRecordStore;
+  turnExecutions: TurnExecutionStore;
+  credentials: InvocationRegistry;
+  router: AgentRouter;
+  terminal: PerAgentTerminalDispositionCollector;
+  clock: () => number;
+  log: Logger;
+}
+```
 
 **v1 方法**
 
 ```ts
 class QueueProcessor {
-  processNext(threadId, userId): Promise<{ started: boolean; entry?: QueueEntry }>;
-  drain(options): Promise<DrainResult>;
-  processEntry(entry, claimId): Promise<ProcessResult>;
+  requestDrain(threadId: string): void;
+  processNext(threadId: string, userId: string): Promise<ProcessNextResult>;
+  drain(threadId: string, options?: DrainOptions): Promise<DrainResult>;
+  processEntry(entry: QueueEntry, claimId: string): Promise<ProcessEntryResult>;
   recoverStartup(): Promise<RecoveryResult>;
+  onInvocationComplete(threadId: string, agentId: string, outcome: InvocationOutcome): Promise<void>;
+
+  isThreadBusy(threadId: string): boolean;
+  isAgentBusy(threadId: string, agentId: string): boolean;
+  hasQueuedForThread(threadId: string): boolean;
 }
 ```
 
 - 候选选择在 QueueProcessor 内完成：`InvocationQueue.listQueued` → 过滤 target busy → `InvocationQueue.claim`。
 - `claimNext` 只是 QueueProcessor 的内部 helper，不是 InvocationQueue/QueueLedgerStore 的方法。
 
+**候选选择**
+
+```text
+entries = queue.listQueued(threadId)
+held = Set<string>
+
+for entry of entries:
+  startable = entry.targets.filter(target =>
+    target.kind === "operator" || !tracker.isBusy(threadId, target.id)
+  )
+  if startable.isEmpty:
+    held.add(all targetKeys(entry))
+    continue
+  if targetKeys(entry).intersect(held):
+    continue
+  claimed = queue.claim(entry.id, { claimId, owner, ttlMs, targetKeys: startable })
+  if claimed:
+    return processEntry(claimed.entry, claimId)
+  held.add(targetKeys(entry))
+```
+
+- 每次 drain 启动一个 entry；不同 target 的 entry 可由后续 drain 并行。
+- 同一 target 的后续 entry 被 `held` 挡住，保持 per-target 顺序。
+
 **`processEntry` 顺序**
 1. 校验 claim（`claim.targetKeys` ⊆ entry pending targets）；
-2. 拆分 targets：
-   - `operator` targets → 发通知/可见性，写 `delivery.operatorNotifiedAt`，从 pending 移除；
-   - `agent` targets → 创建/复用 parent `InvocationRecord`，`InvocationTracker.start`，`AgentRouter.route`/`routeParallel`；
-3. 若无 agent targets（operator-only）：**不创建 parent / TurnExecution**；通知完成、commit、删除 entry；
-4. 逐 agent target 创建 `TurnExecution`；
-5. 收集 terminal；
-6. 更新 parent aggregate；
-7. 按 `claim.targetKeys` 移除已处理 targets；全部移除后删除 entry；
-8. 异常/超时 `releaseClaim(claimId)`；不要把 operator-only 当失败。
+2. 拆分 targets：`operatorTargets` / `agentTargets`；
+3. operator targets → 准备通知/可见性；`delivery.operatorNotifiedAt` 在步骤 6 同事务写，socket emit 在 commit 后；
+4. agent targets → 创建/复用 parent `InvocationRecord`（`sourceMessageId` 幂等）；
+5. 每个 agent target：`TurnExecutionStore.createRunning` + `InvocationRegistry.create`；
+6. **同一事务**：parent + children + credentials + `retireTargets(claimId, 已派发/已通知 targetKeys)`；
+7. 事务外：启动 provider（pi worker）；
+8. child terminal → `PerAgentTerminalDispositionCollector` → parent aggregate → credential terminalize；
+9. operator-only：不创建 parent/child；通知后 retire，全部移除则删除 entry；
+10. 异常/超时 `releaseClaim(claimId)`；不要把 operator-only 当失败。
+
+**不变量**
+
+- `retireTargets` 与 parent/child/credential 同事务；provider 启动在事务外。
+- provider 启动前失败：child `transitionTerminal(failed)` + parent aggregate + credential terminalize；queue target 已 retire，重试走新 queue entry。
+- parent `sourceMessageId` unique；child `createRunning` 幂等；重放不会二次执行。
+- operator notification 先写 durable `operatorNotifiedAt`，socket emit 在 commit 后；emit 失败不影响消息可见性。
 
 **v1 不做**
 - Clowder 的 batching、caller dispatch observations、action successor、wait continuation、cloud bridge、multi-user grouping。
-- v1 一个 queue entry 的 targets 直接并行 dispatch。
+- append lifecycle、Steer、continuation、live companion、freshness、auto-resume suppression、prestart processing groups。
+- v1 一个 queue entry 的 targets 直接并行 dispatch；不自动重试失败 target。
 
 ### 3.3 InvocationRecordStore + InvocationRecord
 
@@ -1186,3 +1241,7 @@ parent partial_failed: successful=[A], failed=[B]
 17. **QueueLedgerStore + InvocationQueue 接口（DP-F018Q-1=A）**：store 只做持久化/CAS；InvocationQueue 负责 admission/claim/retire/release/withdraw/recovery；`claimNext` 从服务接口移除，候选选择留在 QueueProcessor。
 18. **重放保护（DP-F018Q-3=A）**：新增 `queue_admissions` receipt；live row 删除后按 fingerprint 返回 `replayed`/`conflict`。
 19. **删除 `invocation_queue.invocation_record_id`**：parent 通过 `invocation_records.source_message_id` + `turn_executions.queue_entry_id` 关联。
+20. **QueueProcessor v1 方法面**：`requestDrain` / `processNext` / `drain` / `processEntry` / `recoverStartup` / `onInvocationComplete`；候选选择用 `InvocationQueue.listQueued` + `claim`，`claimNext` 只是内部 helper。
+21. **`processEntry` 同事务边界**：parent + child + credential + `retireTargets` 同事务；provider 启动在事务外。
+22. **v1 不自动重试失败 target**：失败由 parent aggregate 记录；重试走 `requestRetry` 新建 queue entry，避免退避/热循环。
+23. **QueueProcessor 删除 Clowder 扩展面**：append lifecycle、Steer、continuation、live companion、freshness、auto-resume suppression、prestart processing groups、batching、caller dispatch observations。
