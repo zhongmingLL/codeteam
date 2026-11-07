@@ -55,15 +55,23 @@ updated: 2026-10-31
 | [`features/F014-w6b-eval-outcome-harness-eval.md`](features/F014-w6b-eval-outcome-harness-eval.md) | F014：W6b eval/outcome episodes、harness eval lifecycle、eval CLI |
 | [`features/F015-a2a-e2e-foundation.md`](features/F015-a2a-e2e-foundation.md) | F015：A2A E2E foundation（composition root、worker A2A tools、terminal resolver、真实 RPC E2E） |
 | [`features/F016-w7a-headless-surface.md`](features/F016-w7a-headless-surface.md) | F016：W7a umbrella（A2A ingress E2E、wait scheduler、headless API/Hub 兼容） |
-| [`features/F017-a2a-surface-unification.md`](features/F017-a2a-surface-unification.md) | F017：A2A 模型面统一（post/cross-post、共享 custody union、跨 thread custody/return、SOP 方向模型） |
+| [`features/F017-a2a-surface-unification.md`](features/F017-a2a-surface-unification.md) | F017：A2A 模型面统一（phase-a-archive；full custody/task-first 坐标已归档为历史输入） |
+| [`features/F018-thread-first-runtime.md`](features/F018-thread-first-runtime.md) | F018：A2A runtime v1（AgentConfig config-as-code、Thread/Invocation、post/cross/multi_mention/thread_context、纯 A2A、code delivery 冻结） |
 | [`plans/0015-w6c-observability-trajectory.md`](plans/0015-w6c-observability-trajectory.md) | W6c observability/trajectory 实施计划与 AC 映射 |
 | [`plans/0018-f016a-a2a-ingress-e2e.md`](plans/0018-f016a-a2a-ingress-e2e.md) | F016a：8 类 ingress × scenario real RPC E2E、P0 工具面、withdraw/parallel/loop guard |
-| [`plans/0019-f017-a2a-surface-unification.md`](plans/0019-f017-a2a-surface-unification.md) | F017：post_message/cross_post_message contract、harness 不变量、SOP 方向模型与 A/B/C 迁移 |
+| [`plans/0020-f018-thread-first-runtime.md`](plans/0020-f018-thread-first-runtime.md) | F018：A2A runtime v1 R0-R5、AgentConfig/Registry、schema/migration、same/cross-thread post、multi_mention fan-out、验收与回滚 |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |
 | [`lessons/README.md`](lessons/README.md) | 已交付工作的耐久教训：现象/根因/guardrail 索引 |
 | [`architecture/0004-reuse-architecture-review-plan.md`](architecture/0004-reuse-architecture-review-plan.md) | 复用架构梳理计划：Wave A 10 项（A1×4 + A2×3 + A3×3）、Wave B 11 项（4 项已提前 approved，余 7 项待 W4 dogfood）、统一模板、变量口径、批次依赖 |
+| [`architecture/0005-thread-first-runtime.md`](architecture/0005-thread-first-runtime.md) | A2A runtime v1（draft-for-review）：AgentConfig config-as-code、Thread/Invocation、纯 A2A 四工具、无 Task/custody/code delivery、R0-R5 迁移 |
+| [`architecture/0006-task-first-legacy.md`](architecture/0006-task-first-legacy.md) | Task-first legacy inventory：旧模块/表/工具/feature 的识别、标记与处置，防止误导新开发 |
+| [`architecture/0007-agent-config.md`](architecture/0007-agent-config.md) | AgentConfig v1：config-as-code AgentCatalog/AgentConfig/AgentRegistry/AgentState、AccountConfig、roleId workflow key、迁移与校验 |
+| [`architecture/0008-thread-model.md`](architecture/0008-thread-model.md) | Thread v1：projectPath 必填、active/deleted、lastActiveAt、titleSource、空 thread、迁移 preflight |
+| [`architecture/0009-session-model.md`](architecture/0009-session-model.md) | AgentSession v1：active-only 绑定、piSessionId/piSessionFile resume、连续失败上限、v2 推迟清单 |
+| [`architecture/0010-a2a-runtime-chain.md`](architecture/0010-a2a-runtime-chain.md) | A2A runtime v1 全链路：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/routeParallel/TurnExecution/InvocationRegistry/terminal+recovery，Clowder 对齐 + v1 轻量化 |
+| [`architecture/0011-identity-contract.md`](architecture/0011-identity-contract.md) | 全局身份契约：scope/message/admission/queue/lifecycle/execution/auth 分层、规范 ID、禁用名与 0001/Clowder 映射 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
 | [`plans/0007-architecture-plan-coverage.md`](plans/0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵与缺口修复记录；三猫 accept，冻结为 DP→plans 唯一对账索引 |
 | [`architecture/decision-packets/README.md`](architecture/decision-packets/README.md) | 10 个 Decision Packet 索引与签字结论 |
