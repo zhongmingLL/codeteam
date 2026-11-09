@@ -575,6 +575,9 @@ canceled       → terminal
 **InvocationTracker（进程内）**
 
 ```ts
+// Clowder 有 active | canceled | absent；codeteam v1 取消即释放，不产生 canceled。
+type SlotState = "active" | "absent";
+
 interface InvocationSlot {
   threadId: string;
   agentId: string;
@@ -593,6 +596,7 @@ class InvocationTracker {
   cancelAll(threadId, reason): string[];
   has(threadId, agentId?): boolean;
   isBusy(threadId, agentId): boolean;
+  getSlotState(threadId, agentId): SlotState;
   getController(threadId, agentId): AbortController | undefined;
   getExecutionId(threadId, agentId): string | undefined;
   getActiveSlots(threadId): Array<{ agentId; turnExecutionId; startedAt }>;
@@ -620,6 +624,26 @@ class InvocationTracker {
 - 普通消息默认不抢占；只有显式 Steer/停止动作走抢占路径。
 
 **InvocationOwnerReaper（v1，DP-F018T-3=A）**
+
+**为什么需要它（从零）**
+
+- `TurnExecution.status` 是 durable 真相，但它不会自己从 `running` 变成 terminal；daemon 崩溃、worker 进程丢失后，没有任何代码会去写终态。
+- 没有 reaper：parent 永远 `running`，credential 永远 `active`，UI 永远显示“在跑”，对应 agent 的 slot 也可能永远占着。
+- reaper 是周期性的 janitor：把 `TurnExecution.listRunning()`、tracker slot、`WorkerStore` heartbeat/lease 对账。
+- 只有“running 但没有任何 live worker/heartbeat”的记录才判僵尸；有 live worker 的长任务保留。
+- `TurnExecutionStartupReconciler` 是开机一次性扫描；`InvocationOwnerReaper` 是运行期周期扫描；两者共用同一套 `reconcileRunningTurn`。
+
+**一个最小时间线**
+
+```text
+1. agent A 开始执行：TurnExecution=running；tracker slot active；worker heartbeat 有效
+2. daemon 崩溃：DB 仍是 running；重启后 tracker 为空；worker 已不在
+3. startup reconciler 扫描：无 live worker → TurnExecution=interrupted/owner_reaped
+4. parent aggregate（partial_failed/failed）；credential terminalize；slot 释放
+5. operator 可 retry：新 attempt → 新 queue entry → 新 child
+```
+
+**注意**：被抢占但旧 worker 还活着的 child 不算僵尸；它保留到旧 worker 结束。session/worker lease 负责防止新旧叠跑。
 
 ```ts
 interface InvocationOwnerReaperDeps {
