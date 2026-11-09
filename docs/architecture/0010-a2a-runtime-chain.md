@@ -714,15 +714,60 @@ class InvocationOwnerReaper {
 
 ### 3.5 AgentRouter + runAgentTurn + routeAgents
 
-**定位**
+**全链路**
 
-- `AgentRouter`：target resolution + fan-out scheduler；
-- `runAgentTurn`：单 agent 完整生命周期（session/prompt/invoke/response/terminal）；
-- `routeAgents(mode)`：parallel = mergeStreams；serial = for-loop + priorResponses。
+```text
+OperatorMessageIngress
+  ├─ parseOperatorMentions(body)
+  ├─ resolveExplicitTargets / resolveImplicitTargets
+  └─ transaction: Message.targetAgentIds + invocation_queue(targets, attempt=1)
+
+QueueProcessor
+  ├─ claim queue entry
+  ├─ create InvocationRecord(parent)
+  ├─ InvocationTracker.startAll(...)
+  └─ AgentRouter.routeAgents(mode)
+
+AgentRouter
+  ├─ resolveTargets(...)
+  └─ routeAgents(mode)
+       ├─ parallel: mergeStreams(targets.map(runAgentTurn))
+       └─ serial:   for target: runAgentTurn(target, priorResponses)
+
+runAgentTurn
+  1. resolve AgentConfig
+  2. ensure AgentSession + worker lease
+  3. build context
+  4. TurnExecution.createRunning
+  5. InvocationCredential.create
+  6. build prompt
+  7. invoke pi worker
+  8. persist response + usage
+  9. transitionTerminal + collector + parent aggregate + credential terminalize
+ 10. release worker lease / tracker slot
+```
+
+**定位与边界**
+
+| 组件 | 拥有 | 不拥有 |
+|---|---|---|
+| OperatorMessageIngress | 行首 @ 解析、隐式路由、`Message.targetAgentIds`、message+queue 事务 | child/execution |
+| AgentRouter | target 校验、parallel/serial 调度、per-target signal | prompt/session/response/terminal |
+| routeParallel | 并行 merge、单 target 错误隔离 | 写 response、parent aggregate |
+| routeSerial | 顺序循环、priorResponses | 单体 per-agent 逻辑 |
+| runAgentTurn | session/prompt/invoke/response/terminal/usage | 队列 claim、parent 创建、tracker 占用 |
+| QueueProcessor | claim、parent、tracker、collector 调用 | @ 解析、per-agent prompt |
 
 **接口**
 
 ```ts
+type RoutingReason =
+  | "current_message_mentions"
+  | "previous_user_mentions"
+  | "recent_replier"
+  | "thread_participant"
+  | "default_agent";
+
 interface RouteInput {
   threadId: string;
   userId: string;
@@ -732,13 +777,88 @@ interface RouteInput {
   signalForAgent: (agentId: string) => AbortSignal | undefined;
 }
 
+interface AgentTurnInput extends RouteInput {
+  agentId: string;
+  signal: AbortSignal | undefined;
+  priorResponses?: Array<{ agentId: string; content: string }>;
+}
+
+type AgentStreamEvent =
+  | { type: "text"; agentId: string; turnExecutionId: string; content: string; timestamp: number }
+  | { type: "thinking"; agentId: string; turnExecutionId: string; content: string; timestamp: number }
+  | { type: "tool_call"; agentId: string; turnExecutionId: string; name: string; args: unknown; timestamp: number }
+  | { type: "tool_result"; agentId: string; turnExecutionId: string; name: string; result: unknown; timestamp: number }
+  | { type: "error"; agentId: string; turnExecutionId: string; error: string; timestamp: number }
+  | { type: "done"; agentId: string; turnExecutionId: string; timestamp: number };
+
+interface AgentTurnResult {
+  agentId: string;
+  turnExecutionId: string;
+  responseMessageId: string;
+  responseText: string;
+  status: "completed" | "failed" | "interrupted" | "canceled";
+  usage: TokenUsage | null;
+}
+
 class AgentRouter {
-  resolveTargets(...): ...;
+  resolveTargets(input: {
+    threadId: string;
+    body: string;
+    explicitHandles?: string[];
+  }): Promise<{ targetAgentIds: string[]; reason: RoutingReason }>;
+
   routeAgents(input: RouteInput, mode: "parallel" | "serial"): AsyncIterable<AgentStreamEvent>;
 }
 
-async function* runAgentTurn(input: AgentTurnInput): AsyncIterable<AgentStreamEvent>;
+async function* runAgentTurn(
+  input: AgentTurnInput,
+): AsyncGenerator<AgentStreamEvent, AgentTurnResult>;
 ```
+
+**route-parallel 形态**
+
+```ts
+async function* routeParallel(input: RouteInput): AsyncIterable<AgentStreamEvent> {
+  const streams = input.targetAgentIds.map((agentId) =>
+    runAgentTurn({
+      ...input,
+      agentId,
+      signal: input.signalForAgent(agentId),
+    }),
+  );
+  yield* mergeStreams(streams, {
+    signalForIndex: (i) => input.signalForAgent(input.targetAgentIds[i]),
+    valueForAbort: (i) => ({ type: "done", agentId: input.targetAgentIds[i] }),
+  });
+}
+```
+
+- 每个 target 一个独立 `runAgentTurn`；
+- 单 target 失败/中断不波及兄弟；
+- 流错误合成 `error + done`；
+- 不写 response、不做 parent aggregate。
+
+**route-serial 形态**
+
+```ts
+async function* routeSerial(input: RouteInput): AsyncIterable<AgentStreamEvent> {
+  const priorResponses: Array<{ agentId: string; content: string }> = [];
+  for (const agentId of input.targetAgentIds) {
+    const result = yield* runAgentTurn({
+      ...input,
+      agentId,
+      priorResponses,
+      signal: input.signalForAgent(agentId),
+    });
+    priorResponses.push({ agentId, content: result.responseText });
+  }
+}
+```
+
+- 顺序执行同一个 `runAgentTurn`；
+- 后一个 agent 能看到前一个 agent 的 response；
+- v1 保留薄循环，不默认启用；
+- 不是 Clowder 的 4334 行单体。
 
 **`runAgentTurn` 顺序**
 
@@ -753,11 +873,10 @@ async function* runAgentTurn(input: AgentTurnInput): AsyncIterable<AgentStreamEv
 9. `transitionTerminal` + collector + parent aggregate + credential terminalize；
 10. release worker lease + tracker slot。
 
-**`routeAgents` 语义**
+**`routeAgents` 模式选择**
 
-- `parallel`：`mergeStreams(targets.map(runAgentTurn))`；每 target 独立 signal；一个失败不 abort 兄弟；流错误合成 `error + done`。
-- `serial`：for-loop；每次 `runAgentTurn` 完成后把 response 放入 `priorResponses`，供下一个 agent 看到。
-- v1 默认启用 `parallel`；`serial` 是同一个 `runAgentTurn` 的薄循环，保留接口但不默认启用。
+- v1 默认 `parallel`；
+- `serial` 是同一个 `runAgentTurn` 的薄循环，保留接口但不默认启用；
 - route 不做 prompt/context/session/response；这些全部在 `runAgentTurn`。
 
 **routeSerial 责任拆解**
@@ -768,6 +887,12 @@ async function* runAgentTurn(input: AgentTurnInput): AsyncIterable<AgentStreamEv
 | serial order / priorResponses | `routeAgents(mode="serial")` |
 | guide/concierge/memory/SOP/entity nudge | `runAgentTurn` feature hooks；v1 不挂 |
 | 静态 worklist 不 push 新 target | 保留：A2A hop 是新 queue entry |
+
+**v1 启用状态**
+
+- `parallel` 默认启用；
+- `serial` 保留薄循环，不默认启用；
+- guide/concierge/memory/SOP/entity nudge 只保留 hook 位，v1 不挂实现。
 
 **v1 不做**
 
