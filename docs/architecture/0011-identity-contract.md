@@ -84,19 +84,19 @@ userId
 
 ## 4. 命名规则
 
-1. **ID 命名对象，不命名用途**  
+1. **ID 命名对象，不命名用途**\
    `messageId` 是消息；`queueEntryId` 是队列行；`invocationRecordId` 是 parent；`turnExecutionId` 是 child。
-2. **引用一律 `<object>Id`**  
+2. **引用一律 `<object>Id`**\
    不允许裸 `id`、裸 `invocationId`、`entryId`。
-3. **`sourceRecordId` 与 `messageId` 分开**  
+3. **`sourceRecordId` 与 `messageId` 分开**\
    v1 相等，但队列身份要能承接未来 connector/private source；不要把两者合并。
-4. **`userMessageId` 是 parent 的消息指针**  
+4. **`userMessageId` 是 parent 的消息指针**\
    v1 = `messageId`；未来 connector 可为 null。
-5. **`a2aParentTurnExecutionId` 只指因果父**  
+5. **`a2aParentTurnExecutionId` 只指因果父**\
    lifecycle parent 永远是 `invocationRecordId`。
-6. **`attempt` 只出现在两个地方**  
+6. **`attempt` 只出现在两个地方**\
    `queueEntryId = hash(sourceRecordId, attempt)`；`turnExecutionId` 唯一键 `(invocationRecordId, agentId, attempt)`。
-7. **parent 上没有 `idempotencyKey`**  
+7. **parent 上没有 `idempotencyKey`**\
    message 创建用 `requestId`；队列准入用 `(sourceRecordId, attempt)`；parent 用 `sourceRecordId UNIQUE`。
 
 **例外**：`QueueTarget` 的 `{ kind, id }` 是 discriminated union 的 target selector，不是通用对象引用；`kind="agent"` 时 `id=agentId`，`kind="operator"` 时 `id=userId`。对外 wire 形状保持 `{kind,id}`，内部用 `targetKey()` 解析。
