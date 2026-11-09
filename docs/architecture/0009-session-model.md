@@ -3,7 +3,7 @@ title: "codeteam AgentSession v1 — active + resume"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-06
+updated: 2026-11-09
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06; corrected: sealed lifecycle also deferred to v2"
@@ -293,6 +293,28 @@ getSession(threadId, agentId): AgentSession | null
 > （unseal safety），`done` 时同一 invocation 不再重复 +1。v1 等价为
 > “每个 completed invocation 最多 +1，且只有有 user-visible output 的才算”。
 
+### 6.1 服务分层：Store / Lease / Manager
+
+`AgentSession` 是 durable row，但“拿到 session”和“拿到执行权”是两件事。v1 分三层，
+不把所有职责塞进一个 `SessionManager`：
+
+| 层 | 职责 | 状态 |
+|---|---|---|
+| `AgentSessionStore` | durable identity：`getActive` / `get` / `create` / `bind` / `replace` / `recordCompletedTurn` / `recordResumeFailure` / `resetResumeFailures` | SQLite |
+| `WorkerLeaseService` | 执行互斥：`acquire(agentSessionId)` / `heartbeat` / `release` | worker runtime + lease 行 |
+| `AgentSessionManager` | 薄 facade：`ensureActive(threadId, agentId)`（内部调 `getOrCreateSession`）/ resume / reset；组合前两层 | 无自有状态 |
+
+- `TurnExecution.agentSessionId` 只是指针；session 解析在
+  `AgentSessionManager.ensureActive(threadId, agentId)`，不在 child 里重复查映射。
+- 真正的执行互斥是 worker lease，不是进程内 tracker slot：旧 worker 未退出 →
+  `acquire` 失败 → `worker_busy`；reaper 也靠 lease/heartbeat 判活。
+- `worker_id` / `worker_binding_state` 仍留在 worker 层（§2.1），不写回 AgentSession
+  identity。
+- 与 Clowder 的差异：Clowder `SessionManager` 只维护
+  `(user, cat, thread) → sessionId` 映射；codeteam 的 session row 本身含
+  `threadId + agentId`，`getActive` 就是映射，因此不另建映射表；多出来的是
+  durable session 状态 + worker lease。
+
 ## 7. 事件
 
 写现有 `thread_events`/audit，不新增事件表：
@@ -362,3 +384,7 @@ getSession(threadId, agentId): AgentSession | null
 6. **`workspaceFingerprint` 不持久化**：v1 的 `workingDirectory` required 且不可变，resume 时直接比较规范化路径。
 7. **连续 3 次 resume 失败**：强制 fresh、清空绑定、计数归零；不 seal、不新建 codeteam session。
 8. **工作区变化**：`workingDirectory` 不可变；thread.projectPath 变化时 typed reject `session_workspace_changed`；重置/迁移是 v2。
+9. **服务分层（2026-11-09 Q&A）**：`AgentSessionStore`（durable identity）+
+   `WorkerLeaseService`（执行互斥/心跳）+ 薄 `AgentSessionManager`（ensure/resume/reset）；
+   `TurnExecution.agentSessionId` 只是指针；不把 session 状态、worker mutex 和映射塞进一个
+   SessionManager。

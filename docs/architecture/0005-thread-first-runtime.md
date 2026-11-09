@@ -3,7 +3,7 @@ title: "codeteam A2A runtime v1 — thread-first architecture"
 doc_kind: architecture
 status: draft-for-review
 created: 2026-11-03
-updated: 2026-11-07
+updated: 2026-11-09
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_direction: "2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery setup frozen/deprecated"
@@ -184,6 +184,12 @@ interface AgentSession {
 - `taskId` 不进入 session identity；旧 `agent_sessions.task_id` 只作为 legacy
   列保留到迁移完成，不读不写。
 - Session 不再有 `role`；workflow 分组只用 `AgentConfig.roleId`。
+- 服务分层：`AgentSessionStore`（durable identity）+ `WorkerLeaseService`（worker
+  lease/心跳，真正的执行互斥）+ 薄 `AgentSessionManager`（ensure/resume/reset）；
+  `TurnExecution.agentSessionId` 只是指针。详见 `0009-session-model.md` §6.1。
+- 历史加载：每个 `(threadId, agentId)` 一个 `AgentReadState.deliveryCursor`
+  （thread-global seq 的已消费位置），不是 per-target cursor；详见
+  `0010-a2a-runtime-chain.md` §3.5.1。
 
 ### 2.4 Message / Queue
 
@@ -202,6 +208,13 @@ interface AgentSession {
 - `queue_admissions` receipt 保住 admission 幂等：live row 删除后同一
   `(sourceRecordId, attempt)` 重放返回 `replayed`/`conflict`，不会二次派发。
 - `AgentRouter.routeAgents(mode)` 调 `runAgentTurn`：per-agent pipeline 拥有 session/prompt/invoke/response/terminal；route 只负责 parallel/serial 调度。
+- Message 是 durable 投递回执：input message 的 `lifecycle.kind="input"` 存 typed
+  `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId）；response
+  message 的 `lifecycle.kind="response"` 存 parent/child/target/终态。queue live row
+  派发后收缩/删除，`queue_admissions` 只做 admission 幂等，不替代投递回执。详见 0010 §3.1。
+- v1 response 与 terminal 同一事务（`settlement="settled"`）；schema 预留
+  `response_pending` + `listResponsePending`/`completeResponseSettlement` seam，未来异步
+  response 不改表。详见 0010 §3.6。
 - 详细链路见 `0010-a2a-runtime-chain.md`。
 
 ### 2.5 Credential
@@ -448,6 +461,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D5 | thread 创建 | v1 operator/CLI create；agent propose/approve 后续 | 工程默认 |
 | D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
 | D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/runAgentTurn/routeAgents/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 单体实现删除，serial 保留薄循环 | operator 2026-11-06 |
+| D8 | session / history / settlement | AgentSessionStore + WorkerLeaseService + 薄 AgentSessionManager；per-`(thread, agent)` deliveryCursor；v1 `settled`，schema 预留 `response_pending` seam | 工程结论 2026-11-09 Q&A |
 
 **术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；
 `TurnExecution` 是单 agent 一次执行；Session 是 thread×agent 的持久身份；

@@ -3,7 +3,7 @@ title: "F018 — A2A runtime v1 实施计划（R0-R5）"
 doc_kind: plan
 status: draft
 created: 2026-11-04
-updated: 2026-11-06
+updated: 2026-11-09
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
@@ -40,6 +40,10 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `queue_entries` → `invocation_queue`：只做调度；`InvocationRecord` 在 claim 后创建。
 - `invocation_credentials`：child TurnExecution capability；allowedTools/
   state/disposition；无 taskId/role/run。
+- `turn_executions.settlement`：`settled | response_pending`；v1 恒 `settled`，
+  schema 预留异步 response seam。
+- `agent_read_state`：`(thread_id, agent_id) → delivery_cursor`（thread-global seq）；
+  v1 只做 delivery cursor，不做 seenCursor/mentionAck。
 - `a2a_requests`：`thread_id` + `task_id` nullable；unique
   `(thread_id, agent_id, request_id)`；drop 旧 task-level unique。
 - 旧 `tasks`/`handoffs`/`custody_events`/`budgets`/`reviews`/`merges` 冻结 legacy，
@@ -55,7 +59,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   拒绝 post。
 - A2A target 从 AgentRegistry 解析；`enabled=false` / 未知 id / account 缺失
   都是 typed reject。
-- `buildThreadPrompt`：thread/participants/recent；无 `# Task`。
+- `buildThreadPrompt`：thread/participants/recent + delivery cursor；无 `# Task`。
 - tool policy：pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist
   在 InvocationCredential；AgentConfig 不定义 tool policy。
 - dispatch thread branch：QueueProcessor、InvocationRecord、TurnExecution、

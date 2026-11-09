@@ -3,7 +3,7 @@ title: "codeteam A2A runtime chain v1 — Clowder-aligned"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-07
+updated: 2026-11-09
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06"
@@ -385,6 +385,67 @@ source_record_id | attempt | queue_entry_id | fingerprint | admitted_at
 3. 都没有 → 插入 row + receipt → `enqueued`。
 
 fingerprint 只覆盖不可变字段（source、owner、kind、from、payload、requestedTargets、priority、execution），不覆盖 `targets/status/claim/delivery`。
+
+**Message lifecycle（durable history）**
+
+`invocation_queue` 只持有“尚未派发的 pending targets”；target 派发后 live row 会收缩或删除。
+durable 回执不能靠 queue row，必须落在 Message lifecycle：
+
+```ts
+type MessageFrom =
+  | { kind: "user"; id: string }     // id = userId
+  | { kind: "agent"; id: string }    // id = agentId
+  | { kind: "system"; id: string };  // id = service
+
+interface Message {
+  messageId: string;
+  threadId: string;
+  userId: string;
+  from: MessageFrom;                 // user | agent | system
+  kind: MessageKind;                 // 沿用现有值域；A2A v1 写 chat / agent_response
+  bodyMd: string;
+  richBlocks: unknown[];
+  replyTo: string | null;
+
+  targetAgentIds: string[];          // 仅 user message：本次 admission 的 agent targets
+
+  lifecycle?: MessageLifecycle;
+  seq: number;                       // thread-global visibility order
+  createdAt: number;
+  updatedAt: number;
+}
+
+type MessageLifecycle =
+  | { kind: "input"; dispatchRefs: DispatchRef[] }
+  | {
+      kind: "response";
+      invocationRecordId: string;
+      turnExecutionId: string;
+      target: QueueTarget;
+      status: "processing" | "completed" | "failed" | "interrupted" | "canceled";
+      startedAt: number;
+      endedAt?: number;
+    };
+
+interface DispatchRef {
+  target: QueueTarget;
+  queueEntryId: string;
+  attempt: number;
+  phase: "dispatched" | "settled";
+  responseMessageId?: string;
+  at: number;
+}
+```
+
+- `input` message 的 `dispatchRefs` 是每个 target 的 durable 投递回执：
+  `dispatched` → `settled`；同一 `(target, queueEntryId, attempt)` 唯一，重放不得二次 dispatch。
+- `response` message 的 lifecycle 记录 parent/child/target/终态；response 状态用 CAS 推进，
+  不覆盖 input 的 `dispatchRefs`。
+- queue live row 删除后，读模型仍可从 `messages.lifecycle` + `turn_executions` 还原
+  “发给了谁、谁处理、对应哪条 response”；`queue_admissions` 只负责 admission 幂等，
+  不替代投递回执。
+- v1 不做 Clowder 的 `appendAcceptance` / `inputRead` / `coveredMessageIds` /
+  `delivery_failure`；这些属于 durable streaming 与 carrier 审计，v2 再加。
 
 **v1 不做**
 - `author_intent_json`、message disposition、action/wait carrier、fence refs、cloud provenance、steer。
@@ -864,13 +925,14 @@ async function* routeSerial(input: RouteInput): AsyncIterable<AgentStreamEvent> 
 
 1. resolve AgentConfig（存在/enabled/provider/model）；
 2. ensure AgentSession（active-only）+ worker lease；
-3. build context（thread/participants/recent messages/priorResponses）；
+3. build context（thread/participants/recent messages/priorResponses；delivery cursor 见 §3.5.1）；
 4. `TurnExecutionStore.createRunning`（幂等）；
 5. `InvocationRegistry.create`（credential）；
 6. build prompt（system + history + context）；
 7. invoke pi worker（stream events）；
-8. persist response + usage；
-9. `transitionTerminal` + collector + parent aggregate + credential terminalize；
+8. persist response message + usage；
+9. `transitionTerminal` + collector + parent aggregate + credential terminalize
+   （v1 同一事务；未来 response_pending 路径见 §3.6）；
 10. release worker lease + tracker slot。
 
 **`routeAgents` 模式选择**
@@ -897,7 +959,68 @@ async function* routeSerial(input: RouteInput): AsyncIterable<AgentStreamEvent> 
 **v1 不做**
 
 - `routeSerial` 单体实现、intent-derived serial/parallel、per-cat prompt prep 的复制分支。
-- batching、delivery cursor、collective/custody。
+- batching、`seenCursor` / `mentionAck` / unread badge、collective/custody；
+  `deliveryCursor` 在 v1 做（§3.5.1）。
+
+### 3.5.1 History assembly + delivery cursor
+
+**问题**：同一 thread 的不同 agent 从哪个位置加载历史？不能共用“thread 最后一条”，
+也不能为每个 target 单独维护 cursor。
+
+**存储**
+
+```ts
+interface AgentReadState {
+  threadId: string;
+  agentId: string;
+  deliveryCursor: number;   // 已消费到的 thread-global messages.seq
+  updatedAt: number;
+}
+```
+
+- key = `(threadId, agentId)`；与 AgentSession 分开：session 是执行身份，
+  read state 是投递进度。
+- `messages.seq` 是 thread-global visibility order，不是 per-target 顺序。
+- v1 只做 `deliveryCursor`；`seenCursor` / `mentionAck` / unread badge 是 v2。
+- 存储接口 `AgentReadStateStore`：`get(threadId, agentId)` /
+  `ack(threadId, agentId, seq)` / `rewind(threadId, agentId, seq)`；`rewind` 只给
+  session fresh/reset 用。
+
+**加载**
+
+```text
+bootstrap（没有 read state）:
+  rows = messages.listRecent(threadId, BOOTSTRAP_WINDOW)   // 最近 N 条，默认 200
+  boundary = rows 中最大的 seq（thread tail）
+  agentReadState.ack(threadId, agentId, boundary)
+
+normal:
+  cursor = agentReadState.deliveryCursor ?? 0
+  rows = messages.listAfterSeq(threadId, cursor, BOOTSTRAP_WINDOW)
+  filter: broadcast / targetAgentIds 包含本 agent；默认排除自己刚写的 response
+  build prompt from rows（token budget 内）
+  boundary = rows 中最后一条的 seq
+  agentReadState.ack(threadId, agentId, boundary)  // 单调前进
+```
+
+- **cursor 是全局可见序，不是“发给这个 agent 的最后一条”**：A 的 cursor 会越过对 A
+  不可见的定向消息；B 仍会在自己的 cursor 位置看到它。不需要 per-target cursor。
+- MessageStore 读面只需要两个方法：`listRecent(threadId, limit)` 和
+  `listAfterSeq(threadId, afterSeq, limit)`，都按 `seq` 升序返回。
+- 先 fetch after cursor，再按 `targetAgentIds`/broadcast 过滤；被过滤掉的 message 也让
+  cursor 前进，避免下次重复拉取。
+- 同一 thread 的 A/B 各自一个 cursor；A 看到 msg1/msg3、B 看到 msg1/msg2/msg3 是正常的。
+- `boundary` 取**已消费**的最后 seq，而不是“进入 prompt 的最后一条”；token trim 不阻塞
+  cursor 前进。
+- normal 路径一次最多消费 `BOOTSTRAP_WINDOW` 条；待处理超过窗口时 cursor 只推进到本批末尾，
+  下一轮继续，不跳消息。
+- 新 agent 第一次执行走 bootstrap：只回放最近 `BOOTSTRAP_WINDOW` 条，更早历史不自动全量回放。
+- session fresh / reset：显式把该 agent 的 `deliveryCursor` rewind 到
+  `max(0, tailSeq - BOOTSTRAP_WINDOW)`，让新 pi session 拿到最近上下文；rewind 只能通过
+  reset API 发生，普通 ack 不允许回退。
+- 并发：`ack` 必须单调 CAS（`max(delivery_cursor, ?)`）；回退只允许显式 rewind。
+- v1 不做 `coveredMessageIds`、same-route isolation、`appendAcceptance` 驱动的投递边界；
+  这些是 v2 的审计/多 agent 精细投递能力。
 
 ### 3.6 invoke-single-agent + TurnExecutionStore + TurnExecutionRecord
 
@@ -934,6 +1057,7 @@ interface TurnExecution {
   modelFamily: string;
 
   status: "running" | "completed" | "failed" | "interrupted" | "canceled";
+  settlement: "settled" | "response_pending"; // v1 恒 settled；pending 是未来异步 response 的 seam
   responseMessageId: string | null;
   terminalReason: string | null;
   usage: TokenUsage | null;      // provider 返回的本 attempt 用量
@@ -948,6 +1072,11 @@ interface TurnExecution {
 ```ts
 createRunning(input): { outcome: "created" | "replayed" | "conflict"; record: TurnExecution };
 transitionTerminal(turnExecutionId, input): { outcome: "transitioned" | "already_terminal" | "not_found"; record: TurnExecution | null };
+listResponsePending(): TurnExecution[];
+completeResponseSettlement(turnExecutionId, responseMessageId): {
+  outcome: "settled" | "already_settled" | "not_pending" | "not_found";
+  record: TurnExecution | null;
+};
 get(turnExecutionId);
 listByInvocationRecord(invocationRecordId);
 listRunning();
@@ -956,8 +1085,35 @@ listRunning();
 - 唯一约束：`turnExecutionId`、`(invocationRecordId, agentId, attempt)`、`responseMessageId`（非空时）。
 - `createRunning` 的 identity = parent + agent + attempt + queueEntryId + trigger；不一致即 conflict。
 - `replayed` 时 `invoke-single-agent` 不启动 provider，按 duplicate 处理。
-- `transitionTerminal` 只允许一次；`completed + ordinary` 必须有 `responseMessageId`；`routing_guard + completed` 必须为 null；`failed/interrupted/canceled` 必须有 `terminalReason`。
+- `transitionTerminal` 只允许一次；`completed + ordinary` 在 `settled` 时必须有
+  `responseMessageId`、在 `response_pending` 时必须为 null；`routing_guard + completed`
+  必须为 null；`failed/interrupted/canceled` 必须有 `terminalReason`。
 - v1 不做 `causal.coveredMessageIds`、`outputFence`、`queueCompletionPolicy`；保留 `triggerMessageId`/`a2aTriggerMessageId`/`a2aDepth`。
+
+**Response settlement seam**
+
+v1 的 response 与 terminal 在同一个 SQLite 事务里完成（`settlement = "settled"`）。
+但 provider/append 未来可能跨进程或跨存储，不能假设永远能同事务；schema 预留 pending 路径：
+
+```text
+v1（response 已持久化）：
+  messages.append(response)
+  → transitionTerminal(completed, responseMessageId, settlement="settled")
+  → parent aggregate + credential terminalize        // 同一事务
+
+未来（response 不能同事务）：
+  → transitionTerminal(completed, responseMessageId=null, settlement="response_pending")
+  → response 异步落库 / provider 确认
+  → completeResponseSettlement(turnExecutionId, responseMessageId)
+  → parent aggregate + credential terminalize
+```
+
+- `settled` 的 `completed + ordinary` 必须有 `responseMessageId`；`response_pending` 时必须为 null。
+- `listResponsePending()` 是恢复入口；`InvocationStartupReconciler` 重启后扫描 pending 并补结算。
+- parent aggregate 和 credential terminalize 只在 `settled` 后发生；`response_pending` 的 child
+  不参与“completed 但无 response”的聚合。
+- v1 不实现 durable streaming / `appendAcceptance` / 完整 responsePending recovery ledger；
+  只保留字段、list/complete API 和恢复入口。
 
 **`invoke-single-agent` 顺序**
 1. 从 AgentConfig/AccountConfig 解析 provider/model/modelFamily；
@@ -966,7 +1122,8 @@ listRunning();
 4. `TurnExecutionStore.createRunning`（durable）；
 5. `InvocationRegistry.create`（credential，绑 child id）——codeteam 因 FK 先 child 后 auth；Clowder 是 auth-first，但“两者都在 provider 之前”不变；
 6. provider/prompt/stream；
-7. `transitionTerminal` + collector + parent 聚合 + credential terminalize（同一事务）。
+7. persist response + `transitionTerminal` + collector + parent 聚合 + credential terminalize
+   （v1 同一事务；未来 response_pending 路径见本节）。
 
 若第 4/5 步失败：不启动 provider；child 若已创建则 `transitionTerminal(failed,
 terminalReason='turn_admission_failed'|'credential_mint_failed')`，并更新
@@ -1260,6 +1417,8 @@ CREATE TABLE turn_executions (
   status TEXT NOT NULL CHECK (
     status IN ('running', 'completed', 'failed', 'interrupted', 'canceled')
   ),
+  settlement TEXT NOT NULL DEFAULT 'settled'
+    CHECK (settlement IN ('settled', 'response_pending')),
   response_message_id TEXT,
   terminal_reason TEXT,
   usage_json TEXT
@@ -1270,8 +1429,12 @@ CREATE TABLE turn_executions (
 
   CHECK (status = 'running' OR ended_at IS NOT NULL),
   CHECK (status = 'running' OR terminal_reason IS NOT NULL OR status = 'completed'),
-  CHECK (status <> 'completed' OR execution_kind <> 'ordinary' OR response_message_id IS NOT NULL),
+  CHECK (
+    status <> 'completed' OR execution_kind <> 'ordinary' OR
+    response_message_id IS NOT NULL OR settlement = 'response_pending'
+  ),
   CHECK (status <> 'completed' OR execution_kind <> 'routing_guard' OR response_message_id IS NULL),
+  CHECK (settlement = 'settled' OR (status = 'completed' AND execution_kind = 'ordinary')),
   CHECK (a2a_trigger_message_id IS NULL OR a2a_parent_turn_execution_id IS NOT NULL),
   UNIQUE (invocation_record_id, agent_id, attempt),
   FOREIGN KEY (invocation_record_id) REFERENCES invocation_records(invocation_record_id) ON DELETE RESTRICT,
@@ -1289,6 +1452,8 @@ CREATE INDEX turn_executions_running
   ON turn_executions(status, started_at);
 CREATE UNIQUE INDEX turn_executions_response
   ON turn_executions(response_message_id) WHERE response_message_id IS NOT NULL;
+CREATE INDEX turn_executions_response_pending
+  ON turn_executions(settlement) WHERE settlement = 'response_pending';
 ```
 
 - `queue_entry_id` 不加 FK：queue entry 是调度账本，dispatch 后可删除；字符串仍可 trace。
@@ -1296,6 +1461,8 @@ CREATE UNIQUE INDEX turn_executions_response
 - `usage_json` 是本 attempt 的 provider 用量；collector 汇总所有 attempt 到 parent `usageByAgent`。
 - `provider/model/model_family` 是执行快照；Session 不再持有模型。
 - `a2a_depth` 用于 loop guard；A2A child = parent.depth + 1。
+- `settlement='settled'` 是 v1 常态；`response_pending` 只给未来异步 response 的 seam，
+  v1 不产生该值，但 schema/恢复入口现在就固定，避免以后重建表。
 
 ### 4.4 `invocation_credentials`
 
@@ -1331,6 +1498,26 @@ CREATE TABLE invocation_credentials (
 - 一个 child TurnExecution 一个 credential。
 - 重试创建新 child + 新 credential；旧 credential terminalize。
 - token 只存 hash+salt；token 本体只经 `CODETEAM_TOKEN_FILE` 交给 pi extension。
+
+### 4.5 `agent_read_state`
+
+```sql
+CREATE TABLE agent_read_state (
+  thread_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  delivery_cursor INTEGER NOT NULL DEFAULT 0 CHECK (delivery_cursor >= 0),
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (thread_id, agent_id),
+  FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
+) STRICT;
+```
+
+- 只存 `deliveryCursor`；`seenCursor` / `mentionAck` / unread badge 是 v2。
+- `ack` 用单调 CAS：`INSERT ... ON CONFLICT DO UPDATE SET delivery_cursor =
+  max(delivery_cursor, excluded.delivery_cursor)`；普通 ack 不允许回退。
+- 与 `agent_sessions` 分开：session 是执行身份，read state 是投递进度；session fresh/reset
+  通过显式 rewind API 改 cursor，不删行。
+- 建表顺序排在 `threads` 之后；不依赖 `messages` 的 FK，消息可由 `thread_id + seq` 查询。
 
 ## 5. 状态机与聚合
 
@@ -1499,7 +1686,8 @@ parent partial_failed: successful=[A], failed=[B]
 | `outputFence` / `coveredMessageIds` / `queueCompletionPolicy` | v2 的 action/prompt/carrier 审计 |
 | `idempotencyKey` / `intent` | v1 用 `sourceRecordId` unique + queue receipt；usage 已保留为 `usageByAgent`/`usageRecordedAt` |
 | `InvocationTrajectoryProjector` 完整版 | v1 用简单 timeline；trajectory drilldown 后续 |
-| `responsePending` 复杂 ledger | v1 用同事务提交 response + terminal |
+| `responsePending` 复杂 ledger | v1 用同事务提交 response + terminal；schema 预留 `settlement='response_pending'` seam，不做 recovery ledger |
+| `seenCursor` / `mentionAck` / unread badge | v1 只做 `deliveryCursor`（§3.5.1） |
 | managed work / collective grants / compaction carrier | v2 |
 
 ## 8. 迁移
@@ -1636,3 +1824,15 @@ parent partial_failed: successful=[A], failed=[B]
 30. **Operator ingress 路由（DP-F018R-1=A）**：行首 @ 是 operator 侧 A2A admission；无 @ → 上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
 31. **Message.targetAgentIds（DP-F018R-2=A）**：仅 user message 持久化本次 admission 的 agent targets；与 message + queue entry 同事务写入。
 32. **runAgentTurn + routeAgents（DP-F018R-3=A）**：per-agent pipeline 抽成 `runAgentTurn`；v1 默认 parallel，serial 是同一 pipeline 的薄循环；route 只负责顺序/并发。
+33. **Session 服务分层（2026-11-09 Q&A）**：`AgentSessionStore`（durable identity）+
+    `WorkerLeaseService`（执行互斥/心跳）+ 薄 `AgentSessionManager`（ensure/resume/reset）；
+    `TurnExecution.agentSessionId` 只是指针；worker lease 是真正的执行互斥。
+34. **Message lifecycle 是 durable 投递回执（2026-11-09 Q&A）**：input message 存 typed
+    `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId）；response message 存
+    lifecycle；queue live row 派发后删除，`queue_admissions` 只做 admission 幂等。
+35. **Delivery cursor（2026-11-09 Q&A）**：v1 新增 `agent_read_state.delivery_cursor`，
+    按 `(threadId, agentId)` 存 thread-global seq 的已消费位置；fetch-after + filter +
+    monotonic ack；不做 per-target cursor / seenCursor。
+36. **Response settlement seam（2026-11-09 Q&A）**：v1 同事务 `settled`；schema 预留
+    `response_pending` + `listResponsePending`/`completeResponseSettlement`；未来异步 response
+    不改 schema。
