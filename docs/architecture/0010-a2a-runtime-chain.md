@@ -575,27 +575,80 @@ canceled       → terminal
 **InvocationTracker（进程内）**
 
 ```ts
+interface InvocationSlot {
+  threadId: string;
+  agentId: string;
+  userId: string;
+  turnExecutionId: string;
+  controller: AbortController;
+  startedAt: number;
+}
+
 class InvocationTracker {
-  start(threadId, agentId, turnExecutionId): AbortController;
-  tryStartThread(threadId, agentId, turnExecutionId): AbortController | null;
-  release(threadId, agentId): void;
-  cancel(threadId, agentId, reason): void;
+  start(threadId, agentId, userId, turnExecutionId): AbortController;
+  startAll(threadId, agentIds, userId, turnExecutionId): Map<string, AbortController>;
+  complete(threadId, agentId, turnExecutionId?): void;
+  completeAll(threadId, agentIds, turnExecutionId?): void;
+  cancel(threadId, agentId, reason): boolean;
+  cancelAll(threadId, reason): string[];
   has(threadId, agentId?): boolean;
+  isBusy(threadId, agentId): boolean;
+  getController(threadId, agentId): AbortController | undefined;
+  getExecutionId(threadId, agentId): string | undefined;
   getActiveSlots(threadId): Array<{ agentId; turnExecutionId; startedAt }>;
+  listStaleSlots(now): Array<{
+    threadId; agentId; userId; turnExecutionId; startedAt; ageMs;
+  }>;
 }
 ```
 
-- 同一 `(threadId, agentId)` 一个 active slot；
-- `start` 对同 slot 先 abort 旧执行（v1 采用 preempt；如果后续要拒绝并发，改为 `tryStartThread`）；
-- preempt 后旧 `TurnExecution` 必须 `transitionTerminal(interrupted, 'preempted')`，并更新 parent aggregate、terminalize 旧 credential；
-- 进程内，不持久化；durable truth 是 `TurnExecution.status`；
-- 重启后 tracker 为空，由 `TurnExecutionStartupReconciler` 收敛。
+**语义（DP-F018T-1=B / DP-F018T-2=B）**
 
-**InvocationOwnerReaper（v1 轻量）**
-- 扫描 tracker slot 超过 TTL 且无 worker/heartbeat；
-- release slot；对应 `TurnExecution` 标 `interrupted`；
-- 更新 parent aggregate；terminalize credential。
-- v1 不做 Clowder 的 exact owner lease/replacement；TTL + startup reconcile 足够。
+- 同一 `(threadId, agentId)` 一个 active slot。
+- `start` 是抢占语义：同 slot 旧 controller 先发中断信号；旧 `TurnExecution` 标 `interrupted/preempted`；新 slot 立刻登记。
+- 取消即释放：`cancel` 发中断信号后直接删除 slot；不保留 canceled 墓碑。
+- **真正的执行互斥在 AgentSession/worker lease**：新 `TurnExecution` 启动 provider 前必须拿到该 `(agentId, agentSessionId)` 的 worker lease；旧 worker 未退出时返回 `worker_busy`，QueueProcessor 释放 claim 稍后重试。
+- `startAll` all-or-nothing：任一 target 的 slot 或 worker lease 不可用则全部不启动。
+- `complete` / `completeAll` 只释放匹配 `turnExecutionId` 的 slot（ownership fence），防止 late terminal 清掉 replacement。
+- `isBusy` = slot active；取消即释放后不再有 pending teardown 状态；旧 worker 的忙由 session/worker lease 表达。
+- 进程内，不持久化；durable truth 是 `TurnExecution.status`。
+
+**Steer / 插队原语**
+
+- v1 提供：`cancel` + `priority:"urgent"` queue entry + `start` 抢占。
+- 后续 Steer：operator 选中当前执行 → 停止 → urgent entry 插队；旧 child 标 `interrupted/preempted`。
+- 普通消息默认不抢占；只有显式 Steer/停止动作走抢占路径。
+
+**InvocationOwnerReaper（v1，DP-F018T-3=A）**
+
+```ts
+interface InvocationOwnerReaperDeps {
+  tracker: InvocationTracker;
+  turnExecutions: TurnExecutionStore;
+  invocationRecords: InvocationRecordStore;
+  credentials: InvocationRegistry;
+  workers: WorkerStore;
+  clock: () => number;
+  log: Logger;
+}
+
+class InvocationOwnerReaper {
+  runOnce(): Promise<ReaperResult>;
+}
+```
+
+清理顺序：
+
+1. `TurnExecution.listRunning()` + tracker stale slots。
+2. child 已 terminal / 不存在 → 释放 tracker slot。
+3. child running + 该 `(agentId, agentSessionId)` 有 live worker/heartbeat/未过期 lease → 保留。
+4. child running + 无 live worker → `interrupted/owner_reaped`；credential terminalize；parent aggregate；释放 slot。
+5. worker 状态读不到 → defer，不误判。
+
+- 被抢占但旧 worker 还活着的 child：保留，等旧 worker 结束；session/worker lease 防止新旧叠跑。
+- 旧 worker 结束后 heartbeat/lease 过期；下一轮 reaper 再标 `interrupted/owner_reaped`。
+- 如果旧 worker 永久挂住且 heartbeat 一直有效，不清理；这是 DP-F018T-3=A 的接受代价。
+- `recoverStartup()` 做一次性扫描：tracker 为空时按同一 worker heartbeat 规则收敛。
 
 ### 3.5 AgentRouter + routeParallel
 
@@ -820,7 +873,8 @@ targets: Array<
    - 定时扫描 running 超过 TTL 且无 owner 的 TurnExecution；
    - 标 `interrupted`；更新 parent；terminalize credential。
 3. **InvocationOwnerReaper**
-   - tracker slot 超 TTL 无 heartbeat → release/cancel；
+   - 扫描 running TurnExecution + tracker stale slots；
+   - 无 live worker/heartbeat → `interrupted/owner_reaped`，parent aggregate，credential terminalize，释放 slot；
    - 与 Zombie recovery 共用逻辑；v1 可以合并成一个 reaper。
 4. **getThreadLiveInvocations**
    - = tracker active slots + durable running TurnExecution；
@@ -1187,7 +1241,8 @@ parent partial_failed: successful=[A], failed=[B]
   - TTL 超时 running 无 owner → `interrupted`；
   - 同上。
 - `InvocationOwnerReaper`：
-  - tracker slot 超时 → release/cancel。
+  - running TurnExecution 无 live worker/heartbeat → `interrupted/owner_reaped`；
+  - parent aggregate；credential terminalize；释放 tracker slot。
 - `getThreadLiveInvocations`：
   - tracker active slots + durable running TurnExecution。
 - `InvocationTrajectoryProjector`：
@@ -1200,7 +1255,7 @@ parent partial_failed: successful=[A], failed=[B]
 - `InvocationQueue`/`QueueEntry`：admission、target-level claim、lease、target 移除、operator 通知、正文快照。
 - `QueueProcessor`：claim、parent 创建、tracker、route、terminal 聚合、retry、startup recovery。
 - `InvocationRecord`：消息生命周期、target snapshot、successfulAgentIds、usageByAgent、retryCount、partial_failed。
-- `InvocationTracker`：thread×agent 活跃槽、cancel、live。
+- `InvocationTracker`：thread×agent 活跃槽、start 抢占、cancel 即释放、executionId fence、live。
 - `AgentRouter` + `routeParallel`：显式 targets、per-child AbortSignal。
 - `invoke-single-agent`：pi worker/session、child TurnExecution、credential、prompt/stream/terminal。
 - `TurnExecutionStore.createRunning/transitionTerminal`：执行幂等 + 单终态。
@@ -1289,7 +1344,7 @@ parent partial_failed: successful=[A], failed=[B]
 
 - daemon 重启：running TurnExecution 无 tracker/worker → interrupted；parent aggregate；credential terminal。
 - TTL zombie → interrupted。
-- tracker slot 超时 → release。
+- running TurnExecution 无 live worker/heartbeat → `interrupted/owner_reaped`；释放 tracker slot。
 - `getThreadLiveInvocations` 返回 tracker + durable running child。
 - `MessageDispatchSummary` 正确显示 targets/running/completed/failed/canceled。
 - v1 不测 trajectory projector（未实现）。
@@ -1309,7 +1364,7 @@ parent partial_failed: successful=[A], failed=[B]
 | `Message` + `InvocationQueue` + `QueueLedger` | `Message` + `invocation_queue` + `SqliteQueueLedgerStore` + `InvocationQueue` | 复用/改名；v1 轻量 |
 | `QueueProcessor` + `QueueEntry` | `QueueProcessor` + `QueueEntry` | 复用；拆分 DispatchService |
 | `InvocationRecordStore` + `InvocationRecord` | `InvocationRecordStore` + `InvocationRecord` | 复用；v1 轻量 |
-| `InvocationTracker` + `InvocationOwnerReaper` | `InvocationTracker` + `InvocationOwnerReaper` | 复用；v1 TTL |
+| `InvocationTracker` + `InvocationOwnerReaper` | `InvocationTracker` + `InvocationOwnerReaper` | 复用；start 抢占 + worker heartbeat |
 | `AgentRouter` + `routeSerial/routeParallel` | `AgentRouter` + `routeParallel` | routeSerial v1 删除 |
 | `invoke-single-cat` + `TurnExecutionStore` + `TurnExecutionRecord` | `invoke-single-agent` + `TurnExecutionStore` + `TurnExecution` | 复用；pi runtime |
 | `InvocationRegistry` | `InvocationRegistry` + `InvocationCredential` | 复用；MCP → pi extension |
@@ -1348,3 +1403,6 @@ parent partial_failed: successful=[A], failed=[B]
 24. **全局身份契约（0011）**：`sourceRecordId + attempt → queueEntryId`；`invocationRecordId`（parent）；`turnExecutionId`（child）；`credentialId`（auth）；`a2aParentTurnExecutionId`（因果父）；A2A runtime 禁用 `sourceMessageId` / `sourceId` / 裸 `invocationId` / `parentInvocationId` / `entryId` / parent `idempotencyKey`。
 25. **InvocationRecord 状态/字段**：保留 `partial_failed`；只存 `successfulAgentIds`，failed/canceled 由 child 推导；`requestRetry` 把 parent 置 `queued`，retry child 启动后再 `markRunning`。
 26. **InvocationRecord usage**：parent 存 `usageByAgent`（跨 attempt 累计）+ `usageRecordedAt`（首次写入）；`TurnExecution` 存 per-attempt `usage`；collector 汇总后由 `applyTerminalAggregate` 写入。
+27. **Tracker start 抢占（DP-F018T-1=B）**：同 slot 旧 controller 先发中断信号，旧 TurnExecution 标 `interrupted/preempted`；新 slot 立刻登记。普通消息默认不抢占，只有显式 Steer/停止动作走抢占。
+28. **取消即释放 slot（DP-F018T-2=B）**：tracker 不保留 canceled 墓碑；真正的执行互斥由 AgentSession/worker lease 承担，旧 worker 未退出时新 start 返回 `worker_busy`。
+29. **僵尸判定用 worker heartbeat（DP-F018T-3=A）**：running TurnExecution 无 live worker/heartbeat 才标 `interrupted/owner_reaped`；被抢占但旧 worker 还活着的 child 保留到旧 worker 结束。

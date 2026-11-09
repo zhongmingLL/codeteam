@@ -252,7 +252,7 @@ thread message / A2A tool
   → invocation_queue(threadId, sourceRecordId, attempt, targets)
   → QueueProcessor claim
   → InvocationRecord(parent, claim 后创建)
-  → InvocationTracker.start(thread, agent)
+  → InvocationTracker.start(threadId, agentId, turnExecutionId)
   → AgentRouter.routeParallel
   → TurnExecution(child, invocationRecordId, agentSessionId, attempt)
   → InvocationRegistry.create(child credential)
@@ -262,6 +262,13 @@ thread message / A2A tool
 ```
 
 没有 Task/worktree/review/merge/custody 分支。
+
+- `InvocationTracker`：per `(threadId, agentId)` slot；`start` 抢占同 slot 旧
+  controller，旧 child 标 `interrupted/preempted`；cancel 即释放 slot。
+- 真正执行互斥在 AgentSession/worker lease：旧 worker 未退出时新 start 返回
+  `worker_busy`。
+- `InvocationOwnerReaper`：running TurnExecution 无 live worker/heartbeat →
+  `interrupted/owner_reaped`；有 live worker 的长任务保留。
 
 ### 3.2 Worker contract
 
