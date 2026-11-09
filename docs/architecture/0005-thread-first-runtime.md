@@ -188,6 +188,8 @@ interface AgentSession {
 ### 2.4 Message / Queue
 
 - `messages.threadId` 必填；`taskId` 是 legacy 可空列，v1 不写。
+- `messages.targetAgentIds`：仅 user message；本次 admission 解析/隐式选中的 agent targets；与 message + queue entry 同事务写入。
+- operator 行首 `@` 是 operator 侧 A2A admission；无 @ → 上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
 - `queue_entries` 重命名为 `invocation_queue`；`QueueStore` →
   `SqliteQueueLedgerStore`（implements `QueueLedgerStore`）+ `InvocationQueue`
   服务。它只做 admission/claim/lease/target 移除，是唯一 pending-wake 账本。
@@ -199,6 +201,7 @@ interface AgentSession {
   entry 不持有消息终态。
 - `queue_admissions` receipt 保住 admission 幂等：live row 删除后同一
   `(sourceRecordId, attempt)` 重放返回 `replayed`/`conflict`，不会二次派发。
+- `AgentRouter.routeAgents(mode)` 调 `runAgentTurn`：per-agent pipeline 拥有 session/prompt/invoke/response/terminal；route 只负责 parallel/serial 调度。
 - 详细链路见 `0010-a2a-runtime-chain.md`。
 
 ### 2.5 Credential
@@ -253,7 +256,7 @@ thread message / A2A tool
   → QueueProcessor claim
   → InvocationRecord(parent, claim 后创建)
   → InvocationTracker.start(threadId, agentId, turnExecutionId)
-  → AgentRouter.routeParallel
+  → AgentRouter.routeAgents(mode)
   → TurnExecution(child, invocationRecordId, agentSessionId, attempt)
   → InvocationRegistry.create(child credential)
   → pi RPC worker（cwd=thread.projectPath）
@@ -342,6 +345,7 @@ thread message / A2A tool
 | `agent_sessions` | 只保留 thread×agent 单 active；`task_id`/`profile_id` legacy | 先 drain/terminal 有 running invocation 的 session；sealing/sealed 行不迁移，留 legacy；旧 task session 不合并进新 runtime；目标列 `agent_id` |
 | `runs` → `turn_executions` | 新 child 表：`turnExecutionId`、`invocationRecordId`、`a2aParentTurnExecutionId`、`agentSessionId`、`attempt`、provider/model、status/response/terminal；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
 | 新 `invocation_records` | 消息级 parent：`invocationRecordId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
+| `messages` | 新增 `target_agent_ids_json`（user message 的 admission targets） | 旧消息回填 `[]`；新 user message 由 ingress 写入 |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
 | `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、state/disposition、token hash/salt | 旧 task/role/run credential legacy |
 | `a2a_requests` | `thread_id` + `task_id` nullable；unique `(thread_id, agent_id, request_id)`；drop 旧 task-level unique | 旧行按 task.thread 回填；同一 `(thread, agent, requestId)` 多行时按 `created_at` 保留最新为 canonical，其余标 legacy；无 task 的旧行标 legacy；不删除历史 |
@@ -392,7 +396,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
   a2a_requests；
 - `auth`：InvocationRegistry + InvocationCredential；token 从 task scope 改为
   child TurnExecution / thread / agent / session；鉴权面为 pi extension tools；
-- `dispatch`：QueueProcessor（claim/drain）、AgentRouter/routeParallel、
+- `dispatch`：QueueProcessor（claim/drain）、AgentRouter/routeAgents/runAgentTurn、
   parent/child terminal aggregation；DispatchService 拆分；
 - `workers`：executor/harness/tool-policy/prompt；pi worker + A2A extension；
 - `a2a`：pi extension tools、principal、tool-surface、terminal/observation；
@@ -443,7 +447,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D4 | 数据迁移 | 新 thread-first schema + up/down；旧 code delivery 表 legacy 只读；running session 先 drain | 工程默认 |
 | D5 | thread 创建 | v1 operator/CLI create；agent propose/approve 后续 | 工程默认 |
 | D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
-| D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/routeParallel/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 删除 | operator 2026-11-06 |
+| D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/runAgentTurn/routeAgents/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 单体实现删除，serial 保留薄循环 | operator 2026-11-06 |
 
 **术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；
 `TurnExecution` 是单 agent 一次执行；Session 是 thread×agent 的持久身份；

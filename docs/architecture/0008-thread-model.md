@@ -52,6 +52,7 @@ interface Thread {
 
 - Thread access 由 `createdBy` + same user 决定；跨 user 拒绝。
 - `participants` 只做路由/上下文，不是 ACL 替代。
+- operator 无 `@` 时，隐式路由优先用最近一条 user message 的 `targetAgentIds`；其次最近成功 replier；再其次 participants 加入顺序；最后 default agent。v1 不做 `preferredCats`/`routingPolicy`。
 - 允许空 thread：operator/CLI 可以先建 thread，后拉 agent。
 - `participants` 可包含 disabled agent；target 它返回 `agent_disabled`，不路由。
 - 首次成功 invocation 后 agent 加入 participants；operator/CLI 也可显式加入。

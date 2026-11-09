@@ -23,7 +23,7 @@ related_features: [codeteam/F018, codeteam/F017]
 
 ## 0. 结论先行
 
-1. **10 个组件按 Clowder 结构复用**，只做 v1 轻量化；`routeSerial` 在 v1 去掉，只保留 `routeParallel`。
+1. **10 个组件按 Clowder 结构复用**，只做 v1 轻量化；`routeSerial` 单体实现去掉，per-agent pipeline 抽成 `runAgentTurn`，`routeAgents` 保留 parallel/serial 调度。
 2. **父/子/认证三层固定**：
    - `InvocationRecord`（parent）管消息生命周期；
    - `TurnExecution`（child）管单 agent 执行；
@@ -55,8 +55,8 @@ Message
   → QueueProcessor.drain/processEntry
       → InvocationRecordStore.create（parent，claim 后）
       → InvocationTracker.start(thread, agent)
-      → AgentRouter.route
-          → routeParallel
+      → AgentRouter.routeAgents
+          → runAgentTurn（parallel merge）
               → invoke-single-agent
                   → TurnExecutionStore.createRunning
                   → InvocationRegistry.create（credential）
@@ -84,6 +84,44 @@ TurnExecution A 调 post_message
 ```
 
 ## 3. 组件设计
+
+### 3.0 Operator ingress + target resolution
+
+**定位**：operator 没有 tools，行首 `@` 是 operator 侧的 A2A admission；agent 侧仍然用 typed tool targets。
+
+**Message 字段**
+
+```ts
+interface Message {
+  ...
+  targetAgentIds: string[];   // 仅 user message：本次 admission 的 agent targets
+}
+```
+
+**解析顺序**
+
+1. `parseOperatorMentions(body)`：纯函数，只解析行首 `@`（含列表/引用前缀），跳过 fenced/inline code；返回 handles。
+2. `resolveExplicitTargets(handles)`：AgentRegistry 校验存在/enabled；未知/歧义/disabled → typed reject（fail closed）。
+3. 无显式 `@` → `resolveImplicitTargets(threadId)`：
+   1. 最近一条 user message 的 `targetAgentIds`；
+   2. 最近成功响应过的 agent（TurnExecution completed）；
+   3. thread participants 的第一个（加入顺序）；
+   4. AgentRegistry `defaultAgentId`；
+   5. 都没有 → `no_target`。
+4. 同一事务：`messages.append({ targetAgentIds })` + `invocationQueue.enqueue({ sourceRecordId: message.id, messageId: message.id, attempt: 1, targets })`。
+
+**operator target**
+
+- operator 作为 target 只由 agent tools 传入 `{kind:"operator", id:userId}`；
+- operator 自己不发 operator target；行首 `@` 只解析为 agent target；
+- operator target 只通知/可见，不创建 parent/TurnExecution。
+
+**边界**
+
+- QueueProcessor / AgentRouter / invoke-single-agent 不再解析 `@`；
+- agent final response 不解析 `@`；
+- A2A tools 只接受 typed `{kind,id}`；
+- 未知/歧义/disabled handle 不静默当普通文本，fail closed。
 
 ### 3.1 Message + InvocationQueue / QueueLedger
 
@@ -187,7 +225,7 @@ interface QueueTerminalProjection {
 - 只解析**行首 `@handle`**（含列表/引用前缀）；正文中间 `@` 不路由。
 - 多个 `@` → 多个 `QueueTarget`；按 targetKey 去重。
 - 通过 AgentConfig handle/alias 解析；未知/歧义 → typed reject `unknown_target`；disabled → `agent_disabled`。
-- 没有行首 `@` → typed reject `no_target`（v1 不做“默认最近活跃 agent”隐式路由）。
+- 没有行首 `@` → 隐式路由（上一 human `targetAgentIds` → 最近成功 replier → participant → default agent）；都没有才 `no_target`。
 - **不解析 agent final response 的 `@`，也不解析 A2A tool 正文的 `@`。**
 - A2A tools 的 `targets` 是显式 `{kind,id}` 对象数组；operator target 只能从这里进入。
 
@@ -674,32 +712,67 @@ class InvocationOwnerReaper {
 - 如果旧 worker 永久挂住且 heartbeat 一直有效，不清理；这是 DP-F018T-3=A 的接受代价。
 - `recoverStartup()` 做一次性扫描：tracker 为空时按同一 worker heartbeat 规则收敛。
 
-### 3.5 AgentRouter + routeParallel
+### 3.5 AgentRouter + runAgentTurn + routeAgents
 
-**结论：v1 只保留 `routeParallel`；`routeSerial` 去掉。**
+**定位**
 
-原因：
-- `routeSerial` 的 worklist 是静态 target 列表，内循环不会把新 target push 回 worklist；
-- codeteam v1 的 A2A hop 是**新 message + 新 queue entry + 新 parent**，不是同一 route 内继续 push target；
-- 没有 `intent` 解析时，serial/parallel 没有选择依据；
-- 多 target @ 需要的是并行 fan-out，不是串行 worklist。
+- `AgentRouter`：target resolution + fan-out scheduler；
+- `runAgentTurn`：单 agent 完整生命周期（session/prompt/invoke/response/terminal）；
+- `routeAgents(mode)`：parallel = mergeStreams；serial = for-loop + priorResponses。
 
-**v1 路由**
+**接口**
 
 ```ts
-class AgentRouter {
-  route(targets, options): AsyncIterable<AgentMessage>; // 内部 routeParallel
+interface RouteInput {
+  threadId: string;
+  userId: string;
+  sourceMessageId: string;
+  content: string;
+  targetAgentIds: string[];
+  signalForAgent: (agentId: string) => AbortSignal | undefined;
 }
+
+class AgentRouter {
+  resolveTargets(...): ...;
+  routeAgents(input: RouteInput, mode: "parallel" | "serial"): AsyncIterable<AgentStreamEvent>;
+}
+
+async function* runAgentTurn(input: AgentTurnInput): AsyncIterable<AgentStreamEvent>;
 ```
 
-- 显式 targets，不做 @ 解析；
-- 每个 target 一个 child `TurnExecution`；
-- 每个 child 独立 AbortSignal；一个失败不 abort 兄弟；
-- A2A 链由 `post_message` 新建 message/queue entry 实现，不在 route 内递归。
+**`runAgentTurn` 顺序**
+
+1. resolve AgentConfig（存在/enabled/provider/model）；
+2. ensure AgentSession（active-only）+ worker lease；
+3. build context（thread/participants/recent messages/priorResponses）；
+4. `TurnExecutionStore.createRunning`（幂等）；
+5. `InvocationRegistry.create`（credential）；
+6. build prompt（system + history + context）；
+7. invoke pi worker（stream events）；
+8. persist response + usage；
+9. `transitionTerminal` + collector + parent aggregate + credential terminalize；
+10. release worker lease + tracker slot。
+
+**`routeAgents` 语义**
+
+- `parallel`：`mergeStreams(targets.map(runAgentTurn))`；每 target 独立 signal；一个失败不 abort 兄弟；流错误合成 `error + done`。
+- `serial`：for-loop；每次 `runAgentTurn` 完成后把 response 放入 `priorResponses`，供下一个 agent 看到。
+- v1 默认启用 `parallel`；`serial` 是同一个 `runAgentTurn` 的薄循环，保留接口但不默认启用。
+- route 不做 prompt/context/session/response；这些全部在 `runAgentTurn`。
+
+**routeSerial 责任拆解**
+
+| routeSerial 内容 | 去处 |
+|---|---|
+| session/prompt/context/invoke/response/terminal | `runAgentTurn` |
+| serial order / priorResponses | `routeAgents(mode="serial")` |
+| guide/concierge/memory/SOP/entity nudge | `runAgentTurn` feature hooks；v1 不挂 |
+| 静态 worklist 不 push 新 target | 保留：A2A hop 是新 queue entry |
 
 **v1 不做**
-- `routeSerial`、batching、intent-derived serial/parallel、per-cat prompt prep 的复杂分支。
-- 如果未来出现“同一 queue entry 内必须顺序执行”的需求，再加 `targetDispatchMode: "serial"`。
+
+- `routeSerial` 单体实现、intent-derived serial/parallel、per-cat prompt prep 的复制分支。
+- batching、delivery cursor、collective/custody。
 
 ### 3.6 invoke-single-agent + TurnExecutionStore + TurnExecutionRecord
 
@@ -1191,7 +1264,7 @@ m1（targets=[agent:A, agent:B]）
   → QueueProcessor claim q1
   → InvocationRecord invP 创建（status=queued）
   → InvocationTracker.start(A), start(B)
-  → routeParallel 创建 TurnExecution iA/iB（attempt=1）
+  → routeAgents("parallel") → runAgentTurn 创建 TurnExecution iA/iB（attempt=1）
   → invoke-single-agent:
        ensure AgentSession(sA/sB) + worker
        createRunning(iA/iB)
@@ -1280,7 +1353,7 @@ parent partial_failed: successful=[A], failed=[B]
 - `QueueProcessor`：claim、parent 创建、tracker、route、terminal 聚合、retry、startup recovery。
 - `InvocationRecord`：消息生命周期、target snapshot、successfulAgentIds、usageByAgent、retryCount、partial_failed。
 - `InvocationTracker`：thread×agent 活跃槽、start 抢占、cancel 即释放、executionId fence、live。
-- `AgentRouter` + `routeParallel`：显式 targets、per-child AbortSignal。
+- `AgentRouter` + `runAgentTurn` + `routeAgents`：显式 targets、per-child AbortSignal；parallel 默认，serial 保留薄循环。
 - `invoke-single-agent`：pi worker/session、child TurnExecution、credential、prompt/stream/terminal。
 - `TurnExecutionStore.createRunning/transitionTerminal`：执行幂等 + 单终态。
 - `InvocationRegistry`/`InvocationCredential`：pi extension tools 鉴权、allowed tools、terminalize、canonical repair。
@@ -1293,7 +1366,8 @@ parent partial_failed: successful=[A], failed=[B]
 | 能力 | 原因 |
 |---|---|
 | MCP callback / MCP tools | v1 用 pi extension + local control socket |
-| `routeSerial` / intent-derived serial | v1 显式 targets；A2A hop 是新 message，不需要静态 worklist |
+| `routeSerial` 单体实现 / intent-derived serial | v1 显式 targets；A2A hop 是新 message；serial 由 `routeAgents(mode)` 的薄循环表达 |
+| guide/concierge/memory/SOP/entity nudge 的 route 分支 | v1 不挂；后续作为 `runAgentTurn` feature hooks |
 | task/role/run/profile 坐标 | thread-first；credential 绑 child TurnExecution |
 | custody / action lease / wait continuation | v2 |
 | session sealed / compression / handoff | v1 active-only session（0009） |
@@ -1318,13 +1392,15 @@ parent partial_failed: successful=[A], failed=[B]
 ### 9.1 Queue / Processor
 
 - 一条消息 enqueue 一个 queue entry；同 source 重放收敛到同一 `id`；重复 `requestId` 返回同一 entry。
-- operator conversation 只解析行首 `@`；多个 @ 去重；未知/disabled typed reject；无 @ → `no_target`。
+- operator conversation 只解析行首 `@`；多个 @ 去重；未知/disabled typed reject。
+- 无显式 @ → 隐式路由：上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
+- `Message.targetAgentIds` 与 message + queue entry 同事务写入。
 - A2A tools 只接受显式 `{kind,id}` targets；正文 `@` 不路由。
 - operator-only entry：只通知，不创建 parent/TurnExecution；`delivery.operatorNotifiedAt` 写入。
 - target-level claim：`InvocationQueue.claim`；`claim.targetKeys` 是 pending 子集；过期/失败走 `releaseClaim` / `restoreExpiredClaims`。
 - 重放保护：live row 删除后，同一 `(source_record_id, attempt)` 仍由 `queue_admissions` 返回 `replayed`/`conflict`。
 - `processEntry` 只对 agent targets 创建 parent + N child；全部 target dispatch 后 queue entry 可删除。
-- `routeSerial` 不在 v1 registry / 代码路径；`routeParallel` 每个 child 独立 signal。
+- `routeAgents("parallel")` 每个 child 独立 signal；`routeAgents("serial")` 是同一 `runAgentTurn` 的薄循环，v1 不默认启用。
 
 ### 9.2 InvocationRecord
 
@@ -1358,6 +1434,8 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 9.5 A2A
 
+- operator 行首 @ → agent targets；agent tools → operator target 只通知；两个方向共用 `QueueTarget`。
+- 无 @ 的 operator message 按隐式链解析；`targetAgentIds` 持久化在 user message。
 - `post_message` 创建新 message + queue entry + parent；child `a2aParentTurnExecutionId`/`a2aDepth` 正确。
 - `cross_post_message` 跨 thread 同 user；不同 user 拒绝。
 - `thread_context` 只读，不入队。
@@ -1389,7 +1467,7 @@ parent partial_failed: successful=[A], failed=[B]
 | `QueueProcessor` + `QueueEntry` | `QueueProcessor` + `QueueEntry` | 复用；拆分 DispatchService |
 | `InvocationRecordStore` + `InvocationRecord` | `InvocationRecordStore` + `InvocationRecord` | 复用；v1 轻量 |
 | `InvocationTracker` + `InvocationOwnerReaper` | `InvocationTracker` + `InvocationOwnerReaper` | 复用；start 抢占 + worker heartbeat |
-| `AgentRouter` + `routeSerial/routeParallel` | `AgentRouter` + `routeParallel` | routeSerial v1 删除 |
+| `AgentRouter` + `routeSerial/routeParallel` | `AgentRouter` + `runAgentTurn` + `routeAgents(mode)` | per-agent pipeline 抽出；serial 薄循环 |
 | `invoke-single-cat` + `TurnExecutionStore` + `TurnExecutionRecord` | `invoke-single-agent` + `TurnExecutionStore` + `TurnExecution` | 复用；pi runtime |
 | `InvocationRegistry` | `InvocationRegistry` + `InvocationCredential` | 复用；MCP → pi extension |
 | `a2a/tools` + MCP | `a2a/tools` (pi extension) + control socket | 复用语义；换 transport |
@@ -1402,7 +1480,7 @@ parent partial_failed: successful=[A], failed=[B]
 ## 11. 决策记录
 
 1. **直接复用 Clowder A2A runtime 骨架**，不另造 child-only 链路；10 个组件按 Clowder 结构。
-2. **`routeSerial` v1 删除**：静态 worklist 不 push target；A2A hop 是新 message/queue entry；没有 intent 选择依据。
+2. **`routeSerial` 单体实现删除**：per-agent pipeline 抽成 `runAgentTurn`；`routeAgents(mode)` 保留 parallel/serial 薄循环；静态 worklist 不 push target，A2A hop 是新 queue entry。
 3. **Parent 在 QueueProcessor claim 后创建**：queue entry 是 admission/待处理账本；parent 是处理生命周期。
 4. **`TurnExecutionStore.createRunning` 是 provider 前幂等入口**：created/replayed/conflict；replayed 不授予第二次 provider lease。
 5. **`TurnExecution` 使用 `invocationRecordId`（fan-out parent）+ `a2aParentTurnExecutionId`（A2A 因果父）两个字段**，不共用一个 parent。
@@ -1411,7 +1489,7 @@ parent partial_failed: successful=[A], failed=[B]
 8. **Session active-only**（0009）：v1 不做 sealed/compression/handoff。
 9. **v1 不做 custody/action/wait/compaction/managed/collective**；全部 v2。
 10. **QueueEntry 多層次设计**：`owner/from/targets/payload/execution/delivery/claim` 分组；targets 是 `QueueTarget[]`（agent/operator）。
-11. **operator 对话只解析行首 `@`**；多个 @ 去重；未知/disabled typed reject；无 @ → `no_target`。
+11. **operator 对话只解析行首 `@`**；多个 @ 去重；未知/disabled typed reject；无 @ → 隐式路由链，只有无候选才 `no_target`。
 12. **operator-only 允许只通知不执行**：不创建 parent/TurnExecution，只写 `delivery.operatorNotifiedAt` 并删除 queue entry。
 13. **claim 复用 Clowder 的 target-level 语义**：`claim` / `retireTargets` / `releaseClaim` / `withdrawTargets`；`claim.targetKeys` 是 pending targets 子集。
 14. **QueueEntry 保留 admission 正文快照** `payload.content`；A2A tools 的 targets 用 `{kind:"agent"|"operator", id}` 对象数组，不解析正文 @。
@@ -1430,3 +1508,6 @@ parent partial_failed: successful=[A], failed=[B]
 27. **Tracker start 抢占（DP-F018T-1=B）**：同 slot 旧 controller 先发中断信号，旧 TurnExecution 标 `interrupted/preempted`；新 slot 立刻登记。普通消息默认不抢占，只有显式 Steer/停止动作走抢占。
 28. **取消即释放 slot（DP-F018T-2=B）**：tracker 不保留 canceled 墓碑；真正的执行互斥由 AgentSession/worker lease 承担，旧 worker 未退出时新 start 返回 `worker_busy`。
 29. **僵尸判定用 worker heartbeat（DP-F018T-3=A）**：running TurnExecution 无 live worker/heartbeat 才标 `interrupted/owner_reaped`；被抢占但旧 worker 还活着的 child 保留到旧 worker 结束。
+30. **Operator ingress 路由（DP-F018R-1=A）**：行首 @ 是 operator 侧 A2A admission；无 @ → 上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
+31. **Message.targetAgentIds（DP-F018R-2=A）**：仅 user message 持久化本次 admission 的 agent targets；与 message + queue entry 同事务写入。
+32. **runAgentTurn + routeAgents（DP-F018R-3=A）**：per-agent pipeline 抽成 `runAgentTurn`；v1 默认 parallel，serial 是同一 pipeline 的薄循环；route 只负责顺序/并发。
