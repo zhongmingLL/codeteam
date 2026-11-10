@@ -538,6 +538,8 @@ interface DispatchRef {
   `thinking?` 是可选的模型思考 sidecar，不放进 `contentBlocks`。
 - `userId` 不存 message：thread owner 派生；v1 单 user。完整矩阵见
   `0011-identity-contract.md` §11；Clowder 存 `StoredMessage.userId`，v1 有意省。
+  ingress 必须校验 user message 的 `from.userId === thread.created_by`；agent message
+  的 owner 是 thread owner。
 - `status` 不存 StoredMessage：持久消息即 complete；展示/流式状态由读模型投影。
 - `deletedAt` / `deletedBy` 保留软删除；`deliveryStatus` 不存（queue/lifecycle 派生）；
   `_tombstone` / `recall` v1 不做。
@@ -637,6 +639,8 @@ interface MessageStore {
   `from/content/contentBlocks/toolEvents/lifecycle/extra`。response lifecycle 必须绑定
   `invocationRecordId/turnExecutionId/target/status/startedAt`；processing R 用
   `status='processing'` + 空 content，在 dispatch 事务内创建。
+  user message 必须校验 `from.userId === thread.created_by`；agent message 的 owner 是
+  thread owner；message 不另存 userId。
 - `appendIdempotent`：与 `append` 相同，但按 `id`/幂等键返回 `replayed`；不同 payload → conflict。
 - `advanceLifecycleInputDispatch`：按 `(targetKey, queueEntryId, attempt)` 精确匹配；
   只允许 `dispatched → settled`；同 phase 同 payload = idempotent no-op。
@@ -901,6 +905,7 @@ canceled       → terminal
 
 **聚合/usage 语义**
 
+- `createQueued` 校验 `userId === thread.created_by`；不一致 fail closed（`0011` §11）。
 - `successfulAgentIds` 是唯一成功见证；`failedAgentIds`/`canceledAgentIds` 由
   `invocation_attempts` 每个 target 的最新 attempt 推导，不在 parent 存储。
 - `usageByAgent` 按 `agentId` 跨 attempt 累计；`applyTerminalAggregate` 接收的是**累计值**，不是 delta。
@@ -1764,7 +1769,8 @@ interface InvocationCredential {
 ```
 
 **Registry v1**
-- `create(userId, threadId, agentId, sessionId, turnExecutionId, allowedTools)`；
+- `create(userId, threadId, agentId, sessionId, turnExecutionId, allowedTools)`；校验
+  `userId === TurnExecution.userId === thread.created_by`，不一致 fail closed；
 - `verify(turnExecutionId, token)`：token hash+salt、state active、未过期、child running、parent status ∈ `queued | running`、tool allowed。
 - `commitTerminal(turnExecutionId, disposition)`；
 - `repairFromCanonical(turnExecutionId)`：child 已 terminal/不存在但 credential active → terminalize/revoke。
@@ -2332,7 +2338,6 @@ CREATE TABLE response_drafts (
   turn_execution_id TEXT NOT NULL UNIQUE,
   invocation_record_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
   content TEXT NOT NULL DEFAULT '',
   content_blocks_json TEXT NOT NULL DEFAULT '[]'
@@ -2355,7 +2360,8 @@ CREATE INDEX response_drafts_thread
 ```
 
 - 一行对应一个 attempt 的 in-flight response body；`attempt_id` / `turn_execution_id` 1:1。
-- `user_id` 是 draft store 的用户作用域；必须等于 attempt/TurnExecution 的 owner。
+- draft 不存 `userId`：它是 attempt/TurnExecution 的子记录，user 从 parent/thread 派生；
+  thread access 在 ingress 校验。若未来需要多 user draft 隔离，再加 `user_id`。
 - `content` 是 streamed text；`content_blocks_json` / `tool_events_json` 是工具/块事件；
   `thinking` 是可选思考流。它不是 message history，不分配 `messages.seq`。
 - `seq` 是 draft 更新序号，用于 bounded flush 的幂等/乱序保护；不是消息顺序。
@@ -2767,10 +2773,10 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 9.8 userId invariants
 
-- Thread owner → Session → InvocationRecord → TurnExecution → Credential → response_draft
-  的 owner 链一致；任一不一致 fail closed。
-- `InvocationAttempt` / `StoredMessage` / `AgentReadState` 不存 userId；从 parent/thread
-  派生；调用方 userId 与派生值冲突时拒绝。
+- Thread owner → Session → InvocationRecord → TurnExecution → Credential 的 owner 链一致；
+  任一不一致 fail closed。`response_draft` 不存 userId，通过 attempt/TurnExecution 派生。
+- `InvocationAttempt` / `StoredMessage` / `AgentReadState` / `response_drafts` 不存 userId；
+  从 parent/thread 派生；调用方 userId 与派生值冲突时拒绝。
 - 跨 user thread access 拒绝；system message/queue entry 不伪造 userId。
 - 完整矩阵见 `0011-identity-contract.md` §11。
 

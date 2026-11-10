@@ -133,8 +133,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - R1/R2 必须有 recovery 测试：`interruptRunningBefore` 收敛 running TurnExecution，
   attempt/settlement 同步收敛；`clearResponsePending` 是 attempt settlement 投影。
 - R1/R2 必须有 userId invariant 测试：Thread/Session/InvocationRecord/TurnExecution/
-  Credential/response_drafts 的 owner 链一致；InvocationAttempt/StoredMessage/
-  AgentReadState 不存 userId，冲突的调用方 userId fail closed。
+  Credential 的 owner 链一致；InvocationAttempt/StoredMessage/AgentReadState/
+  response_drafts 不存 userId，冲突的调用方 userId fail closed。
 
 ## 回滚
 
