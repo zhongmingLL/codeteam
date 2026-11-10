@@ -496,14 +496,11 @@ type MessageLifecycle =
       inputMessageId: string;
       requestedTargets: QueueTarget[];
       reason:
-        | "no_target"
-        | "unknown_agent"
-        | "agent_disabled"
-        | "account_missing"
-        | "thread_deleted"
         | "worker_capacity"
         | "worker_start_failed"
-        | "credential_mint_failed";
+        | "credential_mint_failed"
+        | "provider_start_failed"
+        | "response_missing";
       createdAt: number;
     };
 
@@ -529,8 +526,10 @@ interface DispatchRef {
   （DB `content_json`）；`toolEvents` 是执行回放（DB `tool_events_json`）；
   `extra.rich` 是 Hub 呈现块（不是 MessageContent）。
 - `extra` 是开放 bag；v1 只写 4 个 key：`kind` / `targetAgentIds` / `rich` / `crossPost`。
-  `kind` 是 codeteam 扩展；`targetAgentIds` 仅 user admission；agent A2A targets 走
-  `lifecycle.dispatchRefs`；`rich` 是 Hub presentation；`crossPost` 是跨 thread provenance。
+  `kind` 是 presentation/legacy 分类，不参与路由/identity/lifecycle 判定；路由只看
+  `from.kind` + `lifecycle.kind` + typed targets。`targetAgentIds` 仅 user admission；
+  agent A2A targets 走 `lifecycle.dispatchRefs`；`rich` 是 Hub presentation；
+  `crossPost` 是跨 thread provenance。
 - `extra.rich` 不是 `unknown[]`：它是 `RichMessageExtra = {v:1, blocks: RichBlock[]}`，
   kind 为 `card/diff/checklist/media_gallery/audio/interactive/html_widget/file`；
   block 具体形状复用 `0001-codeteam-architecture-v1.md` 的 RichBlock 契约，不在这里复制。
@@ -564,8 +563,9 @@ interface DispatchRef {
 
 **v1 不做**
 - `author_intent_json`、message disposition、action/wait carrier、fence refs、cloud provenance、steer。
-- 路由/解析错误：pre-admission 走 typed reject；admitted 后失败写 `delivery_failure`
-  system message；QueueEntry 不存 `routingWarnings`/`lastError`；audit 不再作为 A2A 错误面。
+- 路由/解析错误：pre-admission 走 typed reject；admitted 且 R 尚未创建时写
+  `delivery_failure` system message；R 已创建后的失败走 R terminal settlement。
+  QueueEntry 不存 `routingWarnings`/`lastError`；audit 不再作为 A2A 错误面。
 
 ### 3.1.1 MessageStore（基于 StoredMessage）
 
@@ -642,6 +642,9 @@ interface MessageStore {
   user message 必须校验 `from.userId === thread.created_by`；agent message 的 owner 是
   thread owner；message 不另存 userId。
 - `appendIdempotent`：与 `append` 相同，但按 `id`/幂等键返回 `replayed`；不同 payload → conflict。
+  幂等 scope：user message `(threadId, requestId)`；response R `(threadId,
+  turnExecutionId, kind='response')`；delivery_failure `(threadId, inputMessageId,
+  targetKey)`。v1 不引入 userId 到消息幂等键。
 - `advanceLifecycleInputDispatch`：按 `(targetKey, queueEntryId, attempt)` 精确匹配；
   只允许 `dispatched → settled`；同 phase 同 payload = idempotent no-op。
 - `commitLifecycleResponseTerminal`：只允许 response lifecycle；status 只能
@@ -650,9 +653,42 @@ interface MessageStore {
   必须带 reason。v1 durable streaming 的 R terminal 走这里。
 - `commitLifecyclePreAdmissionFailure`：同事务追加 system message（`from.kind='system'`,
   `service='message_delivery'`）+ settle source 的 `dispatchRefs`；reason 必须是
-  `no_target/unknown_agent/agent_disabled/account_missing/thread_deleted/worker_capacity/
-  worker_start_failed/credential_mint_failed`。只在 dispatch 事务未创建 processing R 时使用；
-  R 已创建后的失败走 R terminal settlement。
+  `worker_capacity/worker_start_failed/credential_mint_failed/provider_start_failed/
+  response_missing`。只在 dispatch 事务未创建 processing R 时使用；R 已创建后的失败走
+  R terminal settlement。
+
+**Ingress reject vs delivery_failure**
+
+| 场景 | 表面 | reason |
+|---|---|---|
+| 无 target / 未知 agent / disabled / account 缺失 / thread deleted | pre-admission typed reject | `no_target` / `unknown_agent` / `agent_disabled` / `account_missing` / `thread_deleted` |
+| 跨 user / 跨 thread access | pre-admission typed reject | `thread_access_denied` |
+| 显式 target 形状/归属非法 | pre-admission typed reject | `invalid_explicit_target` |
+| A2A depth > 15 / loop guard | pre-admission typed reject | `a2a_depth_exceeded` / `loop_guard` |
+| requestId 同 payload 重放 | **成功 replay**，不 reject | `replayed` |
+| requestId 不同 payload | pre-admission typed reject | `a2a_request_conflict` |
+| source 已撤回 | pre-admission typed reject | `source_withdrawn` |
+| admitted 后 worker/credential/provider 启动前失败 | `delivery_failure` system message | 上面 `worker_*` / `credential_mint_failed` / `provider_start_failed` |
+| R 已创建后的 provider 失败/中断/取消 | R terminal settlement | 不写 `delivery_failure` |
+
+```ts
+type IngressRejectReason =
+  | "no_target"
+  | "unknown_agent"
+  | "agent_disabled"
+  | "account_missing"
+  | "thread_deleted"
+  | "thread_access_denied"
+  | "invalid_explicit_target"
+  | "a2a_depth_exceeded"
+  | "loop_guard"
+  | "a2a_request_conflict"
+  | "source_withdrawn";
+```
+
+E6 的正文 `@`（agent final response / text）不路由、不报错；只有显式 typed target 非法才
+`invalid_explicit_target`。E8 走 `thread_access_denied`；E10 的 replay 是成功，
+conflict 才 reject；E11 走 `a2a_depth_exceeded` / `loop_guard`。
 - `updateExtra`：更新 `extra`（kind/targetAgentIds/rich/crossPost）；CAS 可选。
 - `softDelete`：写 `deleted_at/deleted_by`；不改 `seq`/lifecycle；默认读排除删除行。
 - `getBy*` 默认 `deleted_at IS NULL`；`includeDeleted` 给 read model 用。
@@ -1040,6 +1076,9 @@ class InvocationOwnerReaper {
 - 旧 worker 结束后 heartbeat/lease 过期；下一轮 reaper 再标 `interrupted/owner_reaped`。
 - 如果旧 worker 永久挂住且 heartbeat 一直有效，不清理；这是 DP-F018T-3=A 的接受代价。
 - `recoverStartup()` 做一次性扫描：tracker 为空时按同一 worker heartbeat 规则收敛。
+- `interruptRunningBefore` 是 **startup-only bulk cutoff**（进程重启/整批收敛）；
+  runtime reaper 不用它，因为 liveness 是 per-worker 的，必须逐个查 heartbeat/lease。
+  v1 不提供通用 reaper bulk interrupt API；`reap` 是 `listRunning + worker 判定`。
 
 ### 3.5 AgentRouter + runAgentTurn + routeAgents
 
@@ -1257,7 +1296,7 @@ interface AgentReadState {
 - v1 只做 `deliveryCursor`；`seenCursor` / `mentionAck` / unread badge 是 v2。
 - 存储接口 `AgentReadStateStore`：`get(threadId, agentId)` /
   `ack(threadId, agentId, seq)` / `rewind(threadId, agentId, seq)`；`rewind` 只给
-  session fresh/reset 用。
+  session fresh/reset 用。完整签名与事务边界见 `0009-session-model.md` §6.1。
 
 **加载**
 
@@ -1404,6 +1443,22 @@ reapExpired:
 
 **spawn 预算**：本地实测 RPC 启动到首个 `get_state` 约 475ms；带 worker-extension +
 session resume 约 0.49–0.53s（1–10MB session）。5min turn 下约 0.17%，不作为常驻理由。
+
+**worker_capacity / reaper / warmTtl=0**
+
+- `WorkerPool.ensure` 容量不足：先驱逐 idle；仍不足返回 typed `worker_capacity`。
+  QueueProcessor `releaseClaim` + `RetryDeferrals.defer`，target 保持 pending；此时还没有
+  attempt/child/R，不写 `delivery_failure`。若 child 已创建后 spawn 失败，则 attempt
+  failed + R failed，显式 retry，不自动热循环。
+- v1 只跑一个 `InvocationOwnerReaper` 循环：先 `WorkerPool.reap`（heartbeat/lease），
+  再 `TurnExecution.listRunning` 对账；不另开独立 `WorkerReaper` timer。这样 worker 与
+  child 的 stale 判定共享同一轮，避免两个清扫器互相踩。
+- `warmTtl=0` 下 turn 结束顺序：child terminal/attempt/parent/credential 事务 →
+  R settlement → retire worker（commit 后）→ release tracker。
+- crash 在 terminal 前：startup reconciler 收敛 child/attempt；reaper retire stale worker；
+  draft/R 由 response settlement 收敛。
+- crash 在 terminal 后、retire 前：child 已 terminal，reaper 只 retire stale worker，
+  不重复 terminal；tracker slot 由 release/startup 清理。
 
 ### 3.6 invoke-single-agent + TurnExecutionStore + TurnExecutionRecord
 
@@ -1610,6 +1665,8 @@ response settlement（通常紧接着；崩溃后由 reconciler 重放）:
 10. `settleResponseFromDraft`：commit R terminal + settle input dispatchRefs +
     delete draft + attempt `settled` + clear pending。
 
+9/10 由 `settleAgentTurn` 封装（§3.9）；`invoke-single-agent` 只负责 provider/stream。
+
 若 dispatch 事务内任一步失败：整个事务回滚，不启动 provider；写 `delivery_failure`
 system message（prestart 失败）。若 provider 启动后失败：child/attempt failed；
 R 由 settlement 提交为 failed/interrupted，不另写 `delivery_failure`。
@@ -1628,14 +1685,25 @@ codeteam 当前 `WorkerEventSink` 只处理 `message_end` 和 tool 事件，**�
 
 ```ts
 type AgentStreamEvent =
-  | { type: "start"; turnExecutionId: string; agentId: string }
-  | { type: "text_delta"; turnExecutionId: string; delta: string }
-  | { type: "tool_call_start"; turnExecutionId: string; toolName: string; toolId: string }
-  | { type: "tool_call_end"; turnExecutionId: string; toolId: string; status: "ok" | "error" | "unknown" }
-  | { type: "complete"; turnExecutionId: string; responseMessageId: string }
-  | { type: "error"; turnExecutionId: string; code: string; message: string };
+  | { type: "start"; turnExecutionId: string; agentId: string; seq: number }
+  | { type: "text_delta"; turnExecutionId: string; agentId: string; seq: number; delta: string }
+  | { type: "tool_call_start"; turnExecutionId: string; agentId: string; seq: number; toolName: string; toolId: string }
+  | { type: "tool_call_end"; turnExecutionId: string; agentId: string; seq: number; toolId: string; status: "ok" | "error" | "unknown" }
+  | { type: "complete"; turnExecutionId: string; agentId: string; seq: number; responseMessageId: string }
+  | { type: "error"; turnExecutionId: string; agentId: string; seq: number; code: string; message: string };
 ```
 
+- **transport**：走本地 control-plane event channel（与 pi extension/control socket 同一条
+  连接），daemon 广播给已连接的 Hub/CLI；**不写 `run_events`、不建 per-delta DB 行**。
+  没有客户端时事件直接丢弃，durable `response_drafts`/R 仍是真相。
+- **batch**：`WorkerEventSink` 按 100ms / 4KB（先到者）flush；同一批同时更新 draft 的
+  `seq` 并广播一个或多个 `AgentStreamEvent`，避免 per-token 事件。
+- **UI merge**：UI 以 `turnExecutionId` 维护 draft bubble；收到 `seq > draft.seq` 的
+  `text_delta` 才追加，`tool_call_*` 按 `toolId` 合并；`complete` 用
+  `responseMessageId` 替换为持久 R；刷新/重连先加载 processing R + draft（含 `seq`），
+  再接后续事件；`seq <= draft.seq` 的事件丢弃。
+- **error**：事件层 `error` 只标记 draft 错误；R 的 failed/interrupted/canceled 终态仍由
+  `settleResponseFromDraft` 提交，UI 不因事件丢失而提前改消息状态。
 - attempt start：同 dispatch 事务创建 attempt + processing R（`lifecycle.kind='response'`,
   `status='processing'`, `invocationId=turnExecutionId`），并把
   `attempt.response_message_id=R.id`、`attempt.settlement='streaming'`。
@@ -1835,6 +1903,45 @@ targets: Array<
    - terminalize credential；
    - parent `completed`/`canceled` 时移除 queue entry / 释放 tracker slot；
      `partial_failed`/`failed` 保留 queue entry 作为 retry anchor。
+
+**`settleAgentTurn` 接口（P0-1=A）**
+
+```ts
+type ResponseDraftSettlement =
+  | { kind: "committed"; responseMessageId: string }
+  | { kind: "already_terminal"; responseMessageId: string }
+  | { kind: "no_response" };
+
+interface SettleAgentTurnInput {
+  turnExecutionId: string;
+  attemptId: string;
+  status: "completed" | "failed" | "interrupted" | "canceled";
+  endedAt: number;
+  terminalReason?: string;
+  responseMessageId: string;
+  usage?: TokenUsage;
+}
+
+interface SettleAgentTurnResult {
+  turnExecution: TurnExecution;
+  attempt: InvocationAttempt;
+  parent: InvocationRecord;
+  credential: InvocationCredential;
+  responseSettlement: ResponseDraftSettlement;
+}
+
+function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnResult>;
+```
+
+- 校验 `attempt.turnExecutionId/turnExecutionId` 与 `attempt.responseMessageId/
+  responseMessageId` 一致；`completed` 不允许 `terminalReason`，其他 status 必须有。
+- 第一段事务（child terminal）：`TurnExecutionStore.transitionTerminal` +
+  `InvocationAttemptStore.transitionTerminal` + `setSettlement('response_pending')` +
+  collector/parent aggregate + `InvocationRegistry.commitTerminal`。
+- 第二段（response settlement）：调用 `settleResponseFromDraft`，提交 R terminal +
+  input dispatchRefs + attempt `settled` + clear pending；两段之间崩溃可恢复。
+- `settleAgentTurn` 不启动 provider、不写 response 正文；provider/stream 仍在
+  `invoke-single-agent`。
 
 **聚合规则**
 
@@ -2644,6 +2751,7 @@ parent partial_failed: successful=[A], failed=[B]
 | 完整跨 store draft reconciliation | v1 单 SQLite 用 `response_pending` + `response_drafts`；不做 Clowder 的跨 Redis/append acceptance 补偿 |
 | 已终态失败 target 的自动重跑 | v1 只对仍 pending 的 pre-handoff 失败做 bounded backoff；终态失败必须 operator `requestRetry` |
 | 跨重启持久化 retry 时间表 | v1 用 process-local `RetryDeferrals`（base 10s、上限 1h）；重启后 startup drain 重新尝试 pending target |
+| `dispatch_events` / `queue_retirement_audit` | v1 用 `invocation_attempts.queueEntryId` + `queue_admissions` + `lifecycle.dispatchRefs`；queue row 保留到 attempt 终态；完整 payload 审计/queue 行压缩留 v2 |
 | `seenCursor` / `mentionAck` / unread badge | v1 只做 `deliveryCursor`（§3.5.1） |
 | managed work / collective grants / compaction carrier | v2 |
 
@@ -2657,6 +2765,17 @@ parent partial_failed: successful=[A], failed=[B]
 5. **preflight**：`agentId`/`userId`/`workingDirectory`/`Task.sourceMessageId`（legacy 领域指针）无法确定的进入 preflight，不静默置空。
 6. **不迁移**：`task_id/role/stage_id/handoff_id/approval_id`、custody/action/wait/compaction 字段。
 7. **文档同步**：`0005` §2.2/2.4/2.5 指向本文；`docs/reuse/callback-auth.md` 从 per-run token 更新为 per-invocation tool capability。
+
+**MessageStore legacy mapping / preflight**
+
+| legacy | 新字段 | 映射 | 无法确定 → preflight |
+|---|---|---|---|
+| `messages.dispatch_refs_json` | `lifecycle.input.dispatchRefs` | target/queueEntryId/attempt/phase/responseMessageId/turnExecutionId 逐项映射 | 缺 target/queueEntryId/attempt、JSON 非法、与 lifecycle response 冲突 |
+| `messages.rich_blocks_json` | `extra.rich = {v:1, blocks}` | 逐 block 映射；approval kind 禁止 | 未知 kind / 非法 block / 旧 approval block |
+| `messages.kind` | `extra.kind` | 已知值映射；未知值不猜 | 未知 kind |
+| 旧 `targetAgentIds` / `dispatch_refs_json.targetIds` | `extra.targetAgentIds`（仅 user message） | 两处都存在且一致才写；agent message 不写 | 两处冲突 / 目标已 disabled 且无法判定历史语义 |
+| `messages.body_md` | `content` | 原样 | 无 |
+| `task_id/control_ref` | 不迁入 A2A identity | 仅 legacy 列 | 若被用来定位 A2A 身份 → preflight |
 
 ## 9. 验收标准
 
@@ -2674,6 +2793,10 @@ parent partial_failed: successful=[A], failed=[B]
   queue entry 保留到 attempt 终态，parent `completed`/`canceled` 后删除。
 - `partial_failed`/`failed` 的 queue row 释放 claim、保持 `queued` + 空 pending；
   `requestRetry` 通过 exact-entry claim 重新加入失败 target，不重新 admission。
+- `worker_capacity`：`WorkerPool.ensure` 驱逐 idle 后仍不足 → releaseClaim + defer；
+  target 保持 pending，不创建 attempt/R，不写 `delivery_failure`。
+- v1 不建 `dispatch_events` / `queue_retirement_audit`；trace 由
+  `invocation_attempts.queueEntryId` + `queue_admissions` + `lifecycle.dispatchRefs` 承担。
 - `routeAgents("parallel")` 每个 child 独立 signal；`routeAgents("serial")` 是同一 `runAgentTurn` 的薄循环，v1 不默认启用。
 
 ### 9.2 InvocationRecord
@@ -2746,6 +2869,13 @@ parent partial_failed: successful=[A], failed=[B]
 
 - operator 行首 @ → agent targets；agent tools → operator target 只通知；两个方向共用 `QueueTarget`。
 - 无 @ 的 operator message 按隐式链解析；`targetAgentIds` 持久化在 user message。
+- ingress reject 必须使用 typed code：`no_target/unknown_agent/agent_disabled/account_missing/
+  thread_deleted/thread_access_denied/invalid_explicit_target/a2a_depth_exceeded/loop_guard/
+  a2a_request_conflict/source_withdrawn`；同 requestId + 同 payload 是成功 `replayed`，不是 reject。
+- 正文 `@`（agent final response / text）不路由、不报错；只有显式 typed target 非法才
+  `invalid_explicit_target`。
+- `delivery_failure` 只用于 admitted prestart：`worker_capacity/worker_start_failed/
+  credential_mint_failed/provider_start_failed/response_missing`；R 已创建后的失败走 R terminal。
 - `post_message` 创建新 message + queue entry + parent；child `a2aParentTurnExecutionId`/`a2aDepth` 正确。
 - `cross_post_message` 跨 thread 同 user；不同 user 拒绝。
 - `thread_context` 只读，不入队。
@@ -2760,6 +2890,9 @@ parent partial_failed: successful=[A], failed=[B]
 - running TurnExecution 无 live worker/heartbeat → `interrupted/owner_reaped`；释放 tracker slot。
 - `getThreadLiveInvocations` 返回 tracker + durable running child。
 - `response_pending` 在重启后由 startup reconciler 结算；draft 删除、pending 清空。
+- 一个 `InvocationOwnerReaper` 循环先 `WorkerPool.reap` 再对账 running TurnExecution；
+  不另开 WorkerReaper timer。`warmTtl=0` 顺序：child terminal → R settlement →
+  retire worker → release tracker；crash 在 terminal 前/后分别由 reconciler/reaper 收敛。
 - `MessageDispatchSummary` 正确显示 targets/running/completed/failed/canceled。
 - v1 不测 trajectory projector（未实现）。
 
@@ -2878,3 +3011,6 @@ parent partial_failed: successful=[A], failed=[B]
     `invocation_attempts`；`TurnExecutionStore` 补 `interruptRunningBefore`，
     `completeResponseSettlement` 改名 `clearResponsePending`。v2 再做
     `coveredMessageIds`/`outputFence`/`listBySource`/`settleOutputFence`。
+44. **P0-1=A（2026-11-10 落盘）**：`invoke-single-agent` 只负责 provider/stream；
+    `settleAgentTurn` 封装 child terminal + attempt terminal + parent aggregate +
+    credential + response settlement 两段提交。

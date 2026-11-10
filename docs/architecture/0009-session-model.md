@@ -304,6 +304,47 @@ getSession(threadId, agentId): AgentSession | null
 | `WorkerPool` | ephemeral worker 生命周期：`ensure` / `retire` / `reap` / `heartbeat`；pi v1 一个 worker 只服务一个 session | SQLite `workers` + `worker_bindings` |
 | `AgentSessionManager` | 薄 facade：`ensureActive` / `acquireWorker` / `releaseWorker` / `reset`；组合前两层 | 无自有状态 |
 
+```ts
+interface AgentReadStateStore {
+  get(threadId: string, agentId: string): AgentReadState | null;
+  ack(threadId: string, agentId: string, seq: number, now?: number): AgentReadState;
+  rewind(threadId: string, agentId: string, seq: number, now?: number): AgentReadState;
+  listByThread(threadId: string): AgentReadState[];
+}
+
+interface WorkerBinding {
+  agentSessionId: string;
+  workerId: string;
+  generation: number;
+  state: "attached" | "idle" | "reattach_pending";
+  boundAt: number;
+  lastUsedAt: number;
+}
+
+interface AgentSessionManager {
+  ensureActive(threadId: string, agentId: string): AgentSession;
+  acquireWorker(threadId: string, agentId: string, turnExecutionId: string): Promise<WorkerBinding>;
+  releaseWorker(threadId: string, agentId: string, workerId: string, reason: string): Promise<void>;
+  reset(
+    threadId: string,
+    agentId: string,
+    reason: "fresh" | "workspace_changed" | "resume_failures",
+  ): Promise<AgentSession>;
+}
+```
+
+- `ensureActive`：`getActive(threadId, agentId)`；缺失则 `create`，`userId =
+  thread.created_by`、`workingDirectory = thread.projectPath`；不 spawn worker。
+- `acquireWorker`：`WorkerPool.ensure`；容量不足返回 typed `worker_capacity`，由
+  QueueProcessor 走 retry/backoff，不在 manager 内热循环。
+- `releaseWorker`：turn 结束/取消后 retire（`warmTtl=0`）；按 `workerId` + binding
+  generation 幂等，不误 retire replacement。
+- `reset` 顺序：先读 thread tail seq；同一事务内 `AgentReadStateStore.rewind` 到
+  `max(0, tail - BOOTSTRAP_WINDOW)` + `AgentSessionStore.resetResumeFailures/replace`；
+  commit 后再 retire worker / emit event。普通 `ack` 不允许 rewind。
+- `ack` 是单行单调 CAS（`max(delivery_cursor, seq)`）；`rewind` 只给 `reset` 用，
+  不能从普通 ingress 调用。
+
 - `TurnExecution.agentSessionId` 只是指针；session 解析在
   `AgentSessionManager.ensureActive(threadId, agentId)`，不在 child 里重复查映射。
 - worker 是 **ephemeral execution carrier**，不是 session 的常驻所有者：

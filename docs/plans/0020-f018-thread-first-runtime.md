@@ -136,6 +136,22 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   Credential 的 owner 链一致；InvocationAttempt/StoredMessage/AgentReadState/
   response_drafts 不存 userId，冲突的调用方 userId fail closed。
 
+## Phase A 遗留问题（2026-11-10 重新梳理）
+
+| # | 问题 | 设计状态 | 剩余动作 |
+|---|---|---|---|
+| 3 | AgentSessionManager / AgentReadStateStore 接口 | **已收口**：0009 §6.1 完整签名；get/ack/rewind、reset 顺序、事务边界已定 | R1 按接口实现 |
+| 4 | interruptRunningBefore / reaper bulk API | **已收口**：store 有 startup-only `interruptRunningBefore`；runtime reaper 用 `listRunning + worker liveness`，不提供通用 bulk | R2 实现 reaper |
+| 5 | live stream transport / UI draft | **已收口**：control socket event channel；100ms/4KB batch；`seq` 合并；刷新从 processing R + draft 恢复 | R2 实现 transport/UI |
+| 6 | durable partial response | **已收口**：DP-F018X-2=B；processing R + response_drafts + attempt settlement | R2 实现 |
+| 7 | delivery_failure reason taxonomy | **已收口**：pre-admission typed reject 与 admitted prestart `delivery_failure` 分离；E6/E8/E10/E11 映射已写 | R2/R3 实现并补负例 |
+| 8 | MessageStore migration unknowns | **契约已收口**：legacy→new mapping/preflight 表已写 | R1 执行 preflight，unknown 进清单 |
+| 9 | queue trace 完整 payload audit | **v1 决策**：不建 dispatch_events/queue_retirement_audit；attempt.queueEntryId + queue_admissions + dispatchRefs 足够 | 若未来要 forensic replay/queue 压缩，v2 再加 |
+| 10 | WorkerPool reaper/capacity | **契约已收口**：capacity backoff、单 reaper 循环、warmTtl=0 crash/cleanup 顺序已定 | R2 实现 |
+| P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **已收口**：`invoke-single-agent` 负责 provider/stream；`settleAgentTurn` 接口负责两段 terminal/settlement | R2 按接口实现 |
+| P2 | `extra.kind` 是否保留 | **已定**：保留为 presentation/legacy 分类；路由/lifecycle 只看 from/lifecycle/typed targets | 实现时不得把 `extra.kind` 当 authority |
+| P3 | PR #86 / 0005 review | **流程未收口**：PR open；0005 `delta_review` 仍 pending | 最终 Phase A review + merge |
+
 ## 回滚
 
 - R1：drop 新列/新表；旧部署 + 旧 schema 快照恢复。
