@@ -1428,7 +1428,7 @@ interface CreateTurnExecutionInput {
   turnExecutionId: string;       // Clowder invocationId
   invocationRecordId: string;    // Clowder parentInvocationId
   threadId: string;
-  userId: string;
+  userId: string;                // scope snapshot；必须等于 parent/thread owner
   agentId: string;               // Clowder catId
   executionKind: TurnExecutionKind;
   causal: TurnExecutionCausalRefs;
@@ -1479,6 +1479,9 @@ interface ClearResponsePendingResult {
 - `TurnExecution` 只保留 Clowder `TurnExecutionRecord` 的 core；session/worker/
   provider/model/usage/queueEntryId/attempt/settlement/responseMessageId 全部在
   `invocation_attempts`（§3.9 / §4.3.1）。
+- `userId` 是 **scope snapshot**，不是第二身份：创建时必须等于
+  `InvocationRecord.userId` 和 `Thread.created_by`；不一致 fail closed。v1 单 user
+  仍保留该字段，避免 recovery/security 退化为跨 user 查询；未来 multi-user 直接可用。
 - `routing_guard` 没有 attempt/R；它只有 core TurnExecution，status/routing reason 在
   `causal`。
 
@@ -2197,7 +2200,7 @@ CREATE TABLE turn_executions (
   turn_execution_id TEXT PRIMARY KEY,
   invocation_record_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,          -- scope snapshot；必须等于 parent/thread owner
   agent_id TEXT NOT NULL,
   execution_kind TEXT NOT NULL CHECK (execution_kind IN ('ordinary', 'routing_guard')),
   causal_json TEXT NOT NULL
@@ -2685,6 +2688,8 @@ parent partial_failed: successful=[A], failed=[B]
 - 新 id → `created`。
 - `turnExecutionId` 可从 `(invocationRecordId, agentId, attempt)` 确定性派生，或已持久化在
   attempt/queue admission 中；crash 后重试必须命中 `replayed`，不能每次生成新 id。
+- `TurnExecution.userId` 必须等于 `InvocationRecord.userId` 和 `Thread.created_by`；
+  不一致 fail closed。
 - 一个 TurnExecution 只能 transitionTerminal 一次；重复 → `already_terminal`。
 - ordinary running/terminal attempt 必须有 `responseMessageId`/`settlement`；
   `routing_guard` 没有 attempt/R。
