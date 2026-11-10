@@ -38,6 +38,9 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `runs` → `turn_executions` + `invocation_records`：parent 消息生命周期 +
   child 单 agent 执行；`execution_kind` 保持 `ordinary|routing_guard`；无 taskId。
 - `queue_entries` → `invocation_queue`：只做调度；`InvocationRecord` 在 claim 后创建。
+- `invocation_attempts`：append-only target attempt 台账；unique
+  `(invocation_record_id, target_agent_id, attempt)`；retry 追加新 attempt，旧行不改；
+  queue entry 保留到所有 target attempt 终态（`targets_json` 可为空）。
 - `invocation_credentials`：child TurnExecution capability；allowedTools/
   state/disposition；无 taskId/role/run。
 - `turn_executions.settlement`：`settled | response_pending`；v1 恒 `settled`，
@@ -73,10 +76,15 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - dispatch thread branch：QueueProcessor、InvocationRecord、TurnExecution、
   credential；不调用
   budget/deployment/managed-work guard。
+- retry：target-level `requestRetry`；同 parent/同 source message/同 queue entry，不重新
+  admission；已终态失败只接受显式 retry 追加 attempt+1；pre-handoff pending target 用
+  process-local bounded backoff（base 10s、上限 1h）自动重试。
 - worker：`WorkerPool.ensure` 按 poolKey 取/建 ephemeral worker；turn 结束默认 retire；
   记录 `worker_spawn_ms` / `worker_busy_ms` / `worker_evicted_count`。
 - live stream：`WorkerEventSink` 处理 `message_update.text_delta` + tool start/end，
   发 ephemeral `AgentStreamEvent`；response StoredMessage 仍在 terminal 一次写。
+- response settlement：v1 ephemeral stream；terminal 时 response StoredMessage +
+  TurnExecution terminal + attempt terminal + parent aggregate + credential 同一事务。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A
@@ -108,6 +116,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - 契约/数据/auth 面按 SOP 选一个非作者 reviewer；架构 0005 需 review 覆盖最终
   digest。
 - 合并前 `check:doc-index`、受影响测试、`git diff --check`。
+- R1/R2 必须有 attempt 台账测试：同身份不同 `startedAt` replay、retry 追加 attempt 不改旧行、
+  successful target 不重跑、queue entry 在 terminal 前后保留/删除。
 
 ## 回滚
 

@@ -7,7 +7,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
 created: 2026-11-04
-updated: 2026-11-06
+updated: 2026-11-10
 source_plan: "docs/plans/0020-f018-thread-first-runtime.md"
 source_architecture: "docs/architecture/0005-thread-first-runtime.md"
 source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery frozen"
@@ -41,13 +41,15 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 2. Invocation 拆两层：`InvocationRecord`（消息级 parent，targetAgentIds/
    status/successful/failed/canceled/retryCount）+ `TurnExecution`（单 agent
    child，invocationRecordId/a2aParentTurnExecutionId/agentSessionId/attempt）；
+   每个 target 的每次执行/重试另有 append-only `invocation_attempts` 台账；
    `executionKind=ordinary|routing_guard`，没有 conversation/code。
 3. Session 是 thread×agent 的持久身份；一个 active session；无 taskId。
 4. Agent 身份是 config-as-code：`.codeteam/agent-catalog.json` →
    `AgentConfig` → `AgentRegistry`；`AgentState` 是运行时状态。
 5. A2A v1 工具面：`codeteam_post_message` / `codeteam_cross_post_message` /
    `codeteam_multi_mention` / `codeteam_thread_context`。
-6. Queue 单账本：thread + sourceRecordId + attempt + targets；无 task 依赖。
+6. Queue 单账本：thread + sourceRecordId + attempt + targets；target attempt 台账
+   append-only；retry 不新建 queue entry、不重新 admission；无 task 依赖。
    身份/命名以 `docs/architecture/0011-identity-contract.md` 为准。
 7. Auth 以 child `TurnExecution`/thread/agent/session 为锚；pi extension tools
    allowlist 在 `InvocationCredential`；无 task/role/run 坐标。

@@ -3,7 +3,7 @@ title: "codeteam identity contract v1"
 doc_kind: architecture
 status: accepted
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-10
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 operator_signoff: "confirmed 2026-11-07"
 related_features: [codeteam/F018, codeteam/F017]
@@ -36,11 +36,13 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 | Message | 消息 | `messageId` | Message append | 永久 | 唯一消息身份 |
 | Admission | 工作来源 | `sourceRecordId` | ingress | 稳定 | 队列身份；v1 = `messageId` |
 | Admission | 领域记录（可选） | `originRecordId` | ingress | 永久 | run/backlog/schedule/handoff provenance |
-| Admission | 尝试序号 | `attempt` | QueueProcessor/retry | 每次 attempt | 1-based；不是 ID |
-| Queue | 队列 entry | `queueEntryId` | 派生 | 到 dispatch 完成 | `queue:<hash(sourceRecordId:attempt)>` |
+| Admission | 准入尝试序号 | `attempt` | ingress | 每次 admission | 1-based；不是 ID；retry 不新增 |
+| Queue | 队列 entry | `queueEntryId` | 派生 | 到 target attempt 终态 | `queue:<hash(sourceRecordId:attempt)>`；`failed`/`partial_failed` 保留为 retry anchor |
 | Queue | claim 租约 | `claimId` | QueueProcessor | 短时 | 可撤销；不是 durable 身份 |
 | Lifecycle | 消息级 parent | `invocationRecordId` | QueueProcessor | 永久 | 一个 source 一个 parent |
-| Execution | 单 agent 执行 | `turnExecutionId` | QueueProcessor | 永久 | 一个 agent × attempt 一个 child |
+| Attempt | target 执行尝试 | `attemptId` | InvocationAttemptStore | 永久 | 一个 target × attempt 一行；append-only |
+| Attempt | target 尝试序号 | `attempt`（target attempt） | QueueProcessor/retry | 每次 target attempt | 1-based；唯一键 `(invocationRecordId, agentId, attempt)` |
+| Execution | 单 agent 执行 | `turnExecutionId` | QueueProcessor | 永久 | 一个 `attemptId` 一个 child |
 | Auth | 工具能力凭证 | `credentialId` | InvocationRegistry | 到 terminal | 绑定 `turnExecutionId` |
 | Pointer | 触发消息 | `triggerMessageId` | ingress | 永久 | child 的来源消息 |
 | Pointer | A2A 触发消息 | `a2aTriggerMessageId` | A2A ingress | 永久 | A2A hop 的触发消息 |
@@ -49,7 +51,7 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 | Pointer | parent 的用户消息 | `userMessageId` | QueueProcessor | 永久 | v1 = `messageId`；未来可为 null |
 | Key | 消息创建幂等 | `requestId` | client | 短期 | 不是 ID |
 | Key | target 定位 | `targetKey` | 派生 | per target | `agent:<agentId>` / `operator:<userId>` |
-| Key | 队列准入幂等 | `(sourceRecordId, attempt)` | 派生 | 永久 | 复合 key；不是 ID |
+| Key | 队列准入幂等 | `(sourceRecordId, attempt)` | 派生 | 永久 | 复合 key；不是 ID；`attempt` 是 admission attempt |
 
 ## 3. 关系图
 
@@ -70,14 +72,15 @@ userId
         │              │
         │              ├── userMessageId = messageId
         │              │
-        │              └── turnExecutionId (child, one per agent × attempt)
-        │                       ├── agentId
-        │                       ├── agentSessionId
-        │                       ├── triggerMessageId
-        │                       ├── a2aTriggerMessageId
-        │                       ├── responseMessageId
-        │                       ├── a2aParentTurnExecutionId
-        │                       └── credentialId
+        │              └── attemptId (per agent × attempt, append-only)
+        │                       └── turnExecutionId (child, one per attemptId)
+        │                                ├── agentId
+        │                                ├── agentSessionId
+        │                                ├── triggerMessageId
+        │                                ├── a2aTriggerMessageId
+        │                                ├── responseMessageId
+        │                                ├── a2aParentTurnExecutionId
+        │                                └── credentialId
         │
         └── agentSessionId (per agent)
 ```
@@ -94,8 +97,10 @@ userId
    v1 = `messageId`；未来 connector 可为 null。
 5. **`a2aParentTurnExecutionId` 只指因果父**\
    lifecycle parent 永远是 `invocationRecordId`。
-6. **`attempt` 只出现在两个地方**\
-   `queueEntryId = hash(sourceRecordId, attempt)`；`turnExecutionId` 唯一键 `(invocationRecordId, agentId, attempt)`。
+6. **两个 attempt 不是同一个东西**\
+   admission `attempt` 只用于 `queueEntryId = hash(sourceRecordId, attempt)`，retry 不递增；
+   execution `attempt` 只用于 `invocation_attempts` 和 `turnExecutionId` 唯一键
+   `(invocationRecordId, agentId, attempt)`；对外引用用 `attemptId`。
 7. **parent 上没有 `idempotencyKey`**\
    message 创建用 `requestId`；队列准入用 `(sourceRecordId, attempt)`；parent 用 `sourceRecordId UNIQUE`。
 
@@ -129,6 +134,9 @@ userId
 | `QueueEntry.id` | 双方 | `queueEntryId` | 明确对象；派生 |
 | `QueueLedgerPayload.sourceRecordId` | Clowder | 保留 | 队列身份 |
 | `QueueLedgerPayload.messageId` | Clowder | 保留 | 消息指针 |
+| `QueueTargetAttempt.id` | Clowder | `attemptId` | 保留为对象 ID |
+| `QueueTargetAttempt.sequence` | Clowder | `attempt`（target attempt） | rename；per-target 尝试序号 |
+| `QueueTargetAttempt.invocationId` | Clowder | `turnExecutionId` | rename；它本来就是 child |
 
 `0001` 的 task-first `QueueEntry` / `Run` 是 legacy 实现；新 runtime 以本文为准。`Task.sourceMessageId`、artifact `provenance_json.sourceMessageId` 是领域指针，可保留旧名，但不得作为队列/parent 身份。
 
@@ -138,10 +146,11 @@ userId
 targetKey(target)   = "agent:" + target.id      // kind=agent
                     | "operator:" + target.id   // kind=operator
 
-queueEntryId        = "queue:" + sha256(sourceRecordId + ":" + attempt).slice(0, 32)
+queueEntryId        = "queue:" + sha256(sourceRecordId + ":" + attempt /* admission */).slice(0, 32)
+attemptId           = "attempt:" + sha256(invocationRecordId + ":" + agentId + ":" + attempt).slice(0, 32)
 
 invocationRecordId  = UUID   // unique(sourceRecordId)
-turnExecutionId     = UUID   // unique(invocationRecordId, agentId, attempt)
+turnExecutionId     = UUID   // unique(attemptId) or unique(invocationRecordId, agentId, attempt)
 credentialId        = UUID   // unique(turnExecutionId)
 ```
 
@@ -150,6 +159,7 @@ credentialId        = UUID   // unique(turnExecutionId)
 ```text
 queueEntryId（派生）
 invocationRecordId（parent）
+attemptId（target attempt）
 turnExecutionId（child）
 credentialId（auth）
 ```
@@ -166,6 +176,7 @@ credentialId（auth）
 - `parentInvocationId`
 - `entryId`
 - `idempotencyKey`（parent）
+- 把 admission `attempt` 当 execution attempt，或把 execution `attempt` 当 queue admission attempt
 
 允许的旧名只有：`Task.sourceMessageId`、artifact `provenance_json.sourceMessageId`（领域指针，带注释）。
 
