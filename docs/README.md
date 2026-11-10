@@ -72,6 +72,7 @@ updated: 2026-10-31
 | [`architecture/0009-session-model.md`](architecture/0009-session-model.md) | AgentSession v1：active-only 绑定、piSessionId/piSessionFile resume、连续失败上限、v2 推迟清单 |
 | [`architecture/0010-a2a-runtime-chain.md`](architecture/0010-a2a-runtime-chain.md) | A2A runtime v1 全链路：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/routeParallel/TurnExecution/InvocationRegistry/terminal+recovery，Clowder 对齐 + v1 轻量化 |
 | [`architecture/0011-identity-contract.md`](architecture/0011-identity-contract.md) | 全局身份契约：scope/message/admission/queue/lifecycle/execution/auth 分层、规范 ID、禁用名与 0001/Clowder 映射 |
+| [`architecture/0012-clowder-session-architecture.md`](architecture/0012-clowder-session-architecture.md) | Clowder session 全局架构梳理：五层、SessionRecord/RuntimeSession/DeliveryCursor/ACP pool 生命周期、codeteam 映射问题与复用建议 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
 | [`plans/0007-architecture-plan-coverage.md`](plans/0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵与缺口修复记录；三猫 accept，冻结为 DP→plans 唯一对账索引 |
 | [`architecture/decision-packets/README.md`](architecture/decision-packets/README.md) | 10 个 Decision Packet 索引与签字结论 |
