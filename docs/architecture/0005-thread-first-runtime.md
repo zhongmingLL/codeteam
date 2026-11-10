@@ -42,6 +42,45 @@ related_features: [codeteam/F018, codeteam/F017]
 8. **v1 不做**：TaskItem、worktree、code delivery、review/merge/gate、custody、
    SOP handoff；`multi_mention` 只做 fan-out，不做聚合回调。
 
+### 0.1 对象关系：Thread / Agent / Session / Message / pi session
+
+```text
+User
+ └─owns─> Thread
+            ├─< ThreadParticipant >─ AgentConfig（agent 身份，全局配置）
+            ├─< AgentSession（thread × agent）─1:1─ pi session（piSessionId/file）
+            ├─< AgentReadState（thread × agent）
+            ├─< Message（thread 级历史）
+            │     ├─ content: TextContent | ToolCallContent | ToolResultContent
+            │     └─ lifecycle: input.dispatchRefs / response
+            └─< InvocationRecord（source message 的 fan-out parent）
+                  └─< TurnExecution（child）─1:1─ AgentSession
+                        └─0..1─ Worker（ephemeral pi 进程）
+```
+
+| 对象 | 作用域 | 生命周期 | 关键关系 |
+|---|---|---|---|
+| `Thread` | user-owned 对话聚合 | durable | 拥有 Message / AgentSession / AgentReadState |
+| `AgentConfig` | 全局 agent 身份 | 配置级 | 被 AgentSession 引用；同一 agent 在不同 thread 有不同 session |
+| `AgentSession` | thread × agent | durable，v1 active-only | 1:1 `pi session`；0..1 live worker；不拥有 Message |
+| `pi session` | provider-native 对话文件 | durable 文件 | 每个 AgentSession 一个；worker 每轮加载/恢复 |
+| `Worker` | 运行时进程 | ephemeral | 同一时刻只服务一个 session；turn 结束 retire |
+| `Message` | thread | durable | 作者是 user/agent/system；不归属某个 session |
+| `AgentReadState` | thread × agent | durable | 投递 cursor；session fresh/reset 时 rewind |
+| `InvocationRecord` | source message 的 fan-out parent | durable | 一个 source 一个 parent；重试复用 |
+| `TurnExecution` | 单 agent 一次执行 | durable | 绑 InvocationRecord + AgentSession + trigger Message + worker |
+
+关键区别：
+
+- **Agent 是配置身份，Session 是 thread 内执行身份**；同一 agent 在两个 thread = 两个
+  AgentSession + 两个 pi session。
+- **Message 是 thread 级，不归属 session**；一条消息可被多个 agent 的 session 消费，
+  各自通过 `dispatchRefs` 记录。
+- **pi session 只属于一个 AgentSession**；不跨 thread、不跨 agent 共享。
+- **worker 是运行时载体**，可以换、可以 retire；session 和 pi session 不随 worker 消失。
+- **A2A 不共享 pi session**：A 的 response 是 thread 消息；B 用自己的 AgentSession/
+  pi session 读取和回复。
+
 ## 1. 与 Clowder 对齐的边界
 
 ### 1.1 Clowder 的真实形状（reference `5f8965e1`）
@@ -216,6 +255,9 @@ interface AgentSession {
   `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId/turnExecutionId）；
   response 的 `lifecycle.kind="response"` 存 parent/child/target/终态。queue live row
   派发后收缩/删除，`queue_admissions` 只做 admission 幂等，不替代投递回执。详见 0010 §3.1。
+- `content` 是权威语义内容：v1 为 `TextContent | ToolCallContent | ToolResultContent`；
+  `body_md` 是 text content 的派生投影；`rich_blocks_json` 只是 legacy presentation
+  sidecar，不是 MessageContent。
 - v1 response 与 terminal 同一事务（`settlement="settled"`）；schema 预留
   `response_pending` + `listResponsePending`/`completeResponseSettlement` seam，未来异步
   response 不改表。详见 0010 §3.6。
@@ -466,7 +508,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
 | D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/runAgentTurn/routeAgents/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 单体实现删除，serial 保留薄循环 | operator 2026-11-06 |
 | D8 | session / history / settlement | AgentSessionStore + ephemeral WorkerPool + 薄 AgentSessionManager；per-`(thread, agent)` deliveryCursor；v1 `settled`，schema 预留 `response_pending` seam | 工程结论 2026-11-09 Q&A；Worker 2026-11-10 拍板 |
-| D9 | Message 两层 | domain `Message` + internal `StoredMessage`；lifecycle/targetAgentIds/seq 在 StoredMessage；对外投影 Message；DB schema 不变 | operator 2026-11-10 确认 |
+| D9 | Message 两层 | domain `Message` + internal `StoredMessage`；lifecycle/targetAgentIds/seq 在 StoredMessage；`content_json` 权威、`body_md` 派生、`rich_blocks_json` legacy presentation；对外投影 Message | operator 2026-11-10 确认 |
 
 **术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；
 `TurnExecution` 是单 agent 一次执行；Session 是 thread×agent 的持久身份；

@@ -397,10 +397,22 @@ type MessageFrom = MessageSender; // Queue/storage alias
 
 type MessageStatus = "pending" | "streaming" | "complete" | "error";
 
-type MessageContent =
-  | { type: "text"; text: string }
-  | { type: "rich_block"; block: unknown };
-  // v1 最小集；后续可扩展 image/file/code/tool_call/tool_result
+type TextContent = { type: "text"; text: string };
+type ToolCallContent = {
+  type: "tool_call";
+  toolName: string;
+  toolId: string;
+  input: Record<string, unknown>;
+};
+type ToolResultContent = {
+  type: "tool_result";
+  toolId: string;
+  result: unknown;
+  isError?: boolean;
+};
+
+type MessageContent = TextContent | ToolCallContent | ToolResultContent;
+// v1 只做这三种；image/file/code/context_attachment 后续按 Clowder 扩展
 
 /** domain：对外/读模型；只回答“谁说了什么” */
 interface Message {
@@ -419,8 +431,8 @@ interface StoredMessage extends Message {
   userId: string;                    // thread owner
   seq: number;                       // thread-global visibility order
   kind: MessageKind;                 // 沿用现有值域；A2A v1 写 chat / agent_response
-  bodyMd: string;
-  richBlocks: unknown[];
+  bodyMd: string;                    // text content 的派生投影，供搜索/legacy 读
+  richBlocks: unknown[];             // legacy presentation sidecar；不是 MessageContent
   replyTo: string | null;
 
   targetAgentIds: string[];
@@ -455,10 +467,14 @@ interface DispatchRef {
 
 - `Message` 是 domain/读模型；`StoredMessage` 是 internal store/router 记录。
 - `MessageStore.get()` 返回 `StoredMessage`；对外 API 用 `toMessage(stored)` 投影成
-  `Message`（`bodyMd + richBlocks` → `content`）。
+  `Message`（直接使用 `content`；`bodyMd` 是派生文本，`richBlocks` 不进 content）。
 - `targetAgentIds` / `lifecycle` / `seq` / `replyTo` / `userId` / `kind` 只在
   `StoredMessage`；不污染 domain。`targetAgentIds` 保持 v1 语义：仅 user message；
   agent-authored A2A targets 走 `lifecycle.dispatchRefs`。
+- `richBlocks` 是 codeteam 既有 UI 载荷，**不是 MessageContent，也不是 Hub 消息语义**；
+  只作为 `StoredMessage` 的 legacy presentation sidecar 保留，R5 再决定去留。
+- `content` 是权威语义内容：response 要把 pi 的 text/tool_call/tool_result 事件按顺序
+  持久化；`bodyMd` 只是 text content 的派生投影。
 - `lifecycle` 是 server-owned typed sidecar；**不要**塞进 `Message.metadata`。
 - `Message.status` 是展示状态；执行成功/失败看 `lifecycle.response.status` /
   `TurnExecution.status`，两者不合并。
@@ -1984,6 +2000,6 @@ parent partial_failed: successful=[A], failed=[B]
     per-turn `worker_leases`；session 不持有 worker；spawn 实测约 0.5s，不作为常驻理由。
 38. **Message 两层拆分（2026-11-10 拍板）**：domain `Message`
     （id/threadId/sender/content/status/timestamps/metadata）与 internal `StoredMessage`
-    （+userId/seq/kind/bodyMd/richBlocks/replyTo/targetAgentIds/lifecycle）分离；
+    （+userId/seq/kind/content/bodyMd/richBlocks(legacy)/replyTo/targetAgentIds/lifecycle）分离；
     `MessageStore` 返回 `StoredMessage`，对外投影 `Message`；lifecycle 不进 metadata；
-    DB schema 不变。
+    `content_json` 是权威语义内容，`body_md` 派生，`rich_blocks_json` 只作 legacy presentation。
