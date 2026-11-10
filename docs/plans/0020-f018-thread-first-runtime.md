@@ -48,7 +48,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `agent_read_state`：`(thread_id, agent_id) → delivery_cursor`（thread-global seq）；
   v1 只做 delivery cursor，不做 seenCursor/mentionAck。
 - `messages`：加 `user_id` / `content_json` / `target_agent_ids_json` / `lifecycle_json`；
-  `content_json` 是权威语义内容（text/tool_call/tool_result），`body_md` 是派生文本；
+  `content_json` 是权威语义内容（text/tool_call/tool_result），`body_md` 是 plain text body；
   `rich_blocks_json` 仅作 legacy presentation sidecar；domain `Message` 与 internal
   `StoredMessage` 分层；legacy `task_id/control_ref/dispatch_refs_json` 停止写入，R5 drop。
 - `a2a_requests`：`thread_id` + `task_id` nullable；unique
