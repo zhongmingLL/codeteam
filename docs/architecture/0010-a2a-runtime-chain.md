@@ -1403,6 +1403,22 @@ CREATE TABLE worker_bindings (
 **接口**
 
 ```ts
+interface WorkerHandle {
+  workerId: string;
+  agentSessionId: string;
+  generation: number;
+  poolKey: {
+    projectPath: string;
+    accountRef: string;
+    provider: string;
+    model: string;
+  };
+  state: "starting" | "online" | "draining" | "stale" | "retired";
+  pid: number | null;
+  heartbeatAt: number;
+  leaseExpiresAt: number;
+}
+
 interface WorkerPool {
   ensure(input: {
     poolKey: { projectPath; accountRef; provider; model };
@@ -1416,6 +1432,26 @@ interface WorkerPool {
   snapshot(): WorkerSnapshot[];
 }
 ```
+
+**与 Clowder `AcpProcessPool` 对照**
+
+| 维度 | Clowder `AcpProcessPool` | codeteam `WorkerPool` v1 |
+|---|---|---|
+| 文件 | `packages/api/src/domains/cats/services/agents/providers/acp/AcpProcessPool.ts:114` | 本节 |
+| 进程 | 长驻进程池；`Acquire` 返回 `AcpLease` | ephemeral worker；一 worker 一 session |
+| key | `(projectPath, providerProfile)` | `(projectPath, accountRef, provider, model)` + session |
+| 复用 | idle TTL + LRU + maxLiveProcesses | `worker_bindings`；`warmTtl=0` 默认 turn 后 retire |
+| 容量 | `maxLiveProcesses` | `maxLiveWorkers=8`；capacity=1 |
+| 状态 | 内存 pool | SQLite `workers` + `worker_bindings` |
+| 并发 | ACP 池可复用进程 | pi v1 无 `session/new/load`，一进程一 session |
+
+- **为什么不是 ACP 池**：pi v1 RPC 进程启动时 session 固定，不能多 session 复用；
+  若常驻，100 个 thread×agent 会有 100 个空闲进程。v1 用 ephemeral worker + 0.5s spawn，
+  换资源利用率。
+- **为什么 worker 还要 durable 注册表**：reaper 需要 heartbeat/lease、crash 后清理；
+  `worker_bindings` 是当前 attachment 的权威，`invocation_attempts.worker_id` 只是 trace。
+- `worker_bindings.state='idle'` / `workers.idle_since` 是 warmTtl>0 的预留；v1 默认
+  `warmTtl=0`，正常路径只出现 `attached`；`reattach_pending` 用于 stale worker 恢复。
 
 **生命周期**
 

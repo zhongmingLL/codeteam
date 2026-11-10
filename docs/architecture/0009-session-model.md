@@ -319,11 +319,12 @@ interface WorkerBinding {
   boundAt: number;
   lastUsedAt: number;
 }
+// WorkerBinding 是 durable row；WorkerHandle 是 runtime handle，定义见 0010 §3.5.2。
 
 interface AgentSessionManager {
   ensureActive(threadId: string, agentId: string): AgentSession;
-  acquireWorker(threadId: string, agentId: string, turnExecutionId: string): Promise<WorkerBinding>;
-  releaseWorker(threadId: string, agentId: string, workerId: string, reason: string): Promise<void>;
+  acquireWorker(threadId: string, agentId: string, turnExecutionId: string): Promise<WorkerHandle>;
+  releaseWorker(handle: WorkerHandle, reason: string): Promise<void>;
   reset(
     threadId: string,
     agentId: string,
@@ -336,8 +337,8 @@ interface AgentSessionManager {
   thread.created_by`、`workingDirectory = thread.projectPath`；不 spawn worker。
 - `acquireWorker`：`WorkerPool.ensure`；容量不足返回 typed `worker_capacity`，由
   QueueProcessor 走 retry/backoff，不在 manager 内热循环。
-- `releaseWorker`：turn 结束/取消后 retire（`warmTtl=0`）；按 `workerId` + binding
-  generation 幂等，不误 retire replacement。
+- `releaseWorker(handle)`：turn 结束/取消后 retire（`warmTtl=0`）；按 `handle.generation`
+  幂等，不误 retire replacement。
 - `reset` 顺序：先读 thread tail seq；同一事务内 `AgentReadStateStore.rewind` 到
   `max(0, tail - BOOTSTRAP_WINDOW)` + `AgentSessionStore.resetResumeFailures/replace`；
   commit 后再 retire worker / emit event。普通 `ack` 不允许 rewind。
@@ -360,10 +361,23 @@ interface AgentSessionManager {
 
 | Clowder | codeteam | 关系 |
 |---|---|---|
-| `SessionManager.store/get/delete(userId, catId, threadId, sessionId)` | `AgentSessionStore.getActive/create/...` + `AgentSessionManager.ensureActive` | codeteam 的 session row 就是映射；不另建 map |
+| `SessionStore`（Redis key-value，`(userId,catId,threadId) → sessionId`，TTL 24h） | `AgentSessionStore` 的映射面（`getActive`/`create`） | Clowder SessionStore **不存 session 行**；codeteam 把映射和 resume 状态放进同一 relational row |
+| `RuntimeSessionStore`（runtime session metadata：runtime/runtimeSessionId/thread/cat/user/identityHistory/lifecycle） | `AgentSession.piSessionId/piSessionFile` + `WorkerBinding` | codeteam 不建独立 RuntimeSessionStore；runtime 绑定落在 session row + worker binding |
 | `SessionRecord`（cliSessionId/native binding/contextHealth/seal/compression/handoff） | `AgentSession`（piSessionId/file、messageCount、circuit breaker、active-only） | v1 只保留 resume 必需字段；sealed/compression/handoff 是 v2 |
-| Clowder 由 AgentService/CLI 调用路径 spawn/管理进程 | `WorkerPool.ensure/retire/reap` + `AgentSessionManager.acquireWorker/releaseWorker` | codeteam-specific pi RPC 适配；不是 Clowder SessionManager 的职责 |
+| `SessionManager.store/get/delete` | `AgentSessionStore.getActive/create/...` + `AgentSessionManager.ensureActive` | codeteam 的 session row 就是映射；不另建 map |
+| Clowder `AcpProcessPool` | `WorkerPool.ensure/release/reap` + `AgentSessionManager.acquireWorker/releaseWorker` | codeteam-specific pi RPC 适配；不是 Clowder SessionManager 的职责 |
 | `SessionManager.delete` | `AgentSessionManager.reset` + `AgentReadStateStore.rewind` | codeteam 把“换新 session + 回退 cursor”收成一个显式 reset |
+
+**为什么 AgentSessionStore 比 Clowder SessionStore 重**：
+
+1. **daemon 重启后 resume**：Clowder 的 `SessionStore` 只是 sessionId 映射，真正的
+   provider/session 内容在 runtime session/provider 侧；codeteam 的 pi RPC resume 需要
+   `piSessionId` + `piSessionFile` + `workingDirectory` 作为 durable row，不能只靠内存/Redis key。
+2. **worker lease/reaper 直接查**：codeteam 的 reaper 要在 SQLite 里按
+   `agent_session_id` 查 active session / worker binding，不能反过来问 provider。
+3. **active-only + circuit breaker**：`(threadId,agentId)` 唯一 active、3 次 resume 失败
+   reset，是 codeteam 的 durable 语义，Clowder SessionManager 不承担。
+4. 这是**有意加重**，不是误抄；如果未来 pi 支持 provider-side session registry，可再薄化。
 
 ## 7. 事件
 
