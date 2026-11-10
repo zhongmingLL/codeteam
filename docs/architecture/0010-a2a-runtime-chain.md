@@ -382,7 +382,7 @@ source_record_id | attempt | queue_entry_id | fingerprint | admitted_at
 
 fingerprint 只覆盖不可变字段（source、owner、kind、from、payload、requestedTargets、priority、execution），不覆盖 `targets/status/claim/delivery`。
 
-**Message / StoredMessage 两层（durable history）**
+**StoredMessage（单层，durable history）**
 
 `invocation_queue` 只持有“尚未派发的 pending targets”；target 派发后 live row 会收缩或删除。
 durable 回执不能靠 queue row，必须落在 Message lifecycle。对齐 Clowder 的两层模型：
@@ -394,8 +394,6 @@ type MessageSender =
   | { kind: "system"; service: string };
 
 type MessageFrom = MessageSender; // Queue/storage alias
-
-type MessageStatus = "pending" | "streaming" | "complete" | "error";
 
 type TextContent = { type: "text"; text: string };
 type ToolCallContent = {
@@ -414,53 +412,47 @@ type ToolResultContent = {
 type MessageContent = TextContent | ToolCallContent | ToolResultContent;
 // v1 只做这三种；image/file/code/context_attachment 后续按 Clowder 扩展
 
-/** domain：对外/读模型；只回答“谁说了什么” */
-interface Message {
+/** execution replay；与 contentBlocks 的语义内容分开 */
+interface StoredToolEvent {
   id: string;
-  threadId: string;
-  sender: MessageSender;
-  content: MessageContent[];
-  status: MessageStatus;             // 展示/流式状态；v1 持久消息 = complete
-  createdAt: number;
-  updatedAt: number;
-  metadata?: Record<string, unknown>; // cross-post provenance / display hints
+  executionRef?: string;             // turnExecutionId
+  type: "tool_use" | "tool_result";
+  label: string;
+  detail?: string;
+  timestamp: number;
+  toolUseId?: string;
+  status?: "ok" | "error" | "unknown";
+  startTimeMs?: number;
+  endTimeMs?: number;
+  toolName?: string;
 }
 
-/** storage/delivery：MessageStore 持久化/返回的记录；不是 Message 的子类 */
+/** storage：v1 唯一消息记录；不再定义 domain Message */
 interface StoredMessage {
   id: string;
   threadId: string;
-  userId: string;                    // thread owner
-  sender: MessageSender;
+
+  from: MessageFrom;                 // canonical sender；不另存 catId/agentId
   content: string;                   // plain text body（DB body_md）
-  contentBlocks: MessageContent[];   // typed blocks（DB content_json）
-  status: MessageStatus;             // persisted = complete
-  kind: MessageKind;                 // 沿用现有值域；A2A v1 写 chat / agent_response
-  replyTo: string | null;
-  targetAgentIds: string[];
-  // 仅 user message：本次 admission 的 agent targets
-  // agent-authored A2A targets 在 lifecycle.dispatchRefs
+  contentBlocks?: MessageContent[];  // semantic blocks（DB content_json）
+  toolEvents?: StoredToolEvent[];    // execution replay（DB tool_events_json）
 
-  lifecycle: MessageLifecycle | null;
-  richBlocks: unknown[];             // legacy presentation sidecar；不是 MessageContent
-  seq: number;                       // thread-global visibility order
-  createdAt: number;
+  lifecycle?: MessageLifecycle;      // input / response / delivery_failure
+  replyTo?: string;
+
+  seq: number;                       // thread-global order
+  timestamp: number;                 // message time
   updatedAt: number;
-  metadata?: Record<string, unknown>;
-}
 
-function toMessage(stored: StoredMessage): Message {
-  return {
-    id: stored.id,
-    threadId: stored.threadId,
-    sender: stored.sender,
-    content: stored.contentBlocks.length > 0
-      ? stored.contentBlocks
-      : [{ type: "text", text: stored.content }],
-    status: stored.status,
-    createdAt: stored.createdAt,
-    updatedAt: stored.updatedAt,
-    ...(stored.metadata ? { metadata: stored.metadata } : {}),
+  thinking?: string;                 // optional sidecar
+  deletedAt?: number;                // soft delete
+  deletedBy?: string;
+
+  extra?: {
+    kind?: MessageKind;              // codeteam extension
+    targetAgentIds?: string[];       // user admission snapshot
+    rich?: unknown[];                // Hub presentation blocks；不是 MessageContent
+    crossPost?: { sourceThreadId: string; sourceMessageId?: string };
   };
 }
 
@@ -474,6 +466,23 @@ type MessageLifecycle =
       status: "processing" | "completed" | "failed" | "interrupted" | "canceled";
       startedAt: number;
       endedAt?: number;
+    }
+  | {
+      kind: "delivery_failure";
+      status: "failed";
+      sourceEntryId: string;
+      inputMessageId: string;
+      requestedTargets: QueueTarget[];
+      reason:
+        | "no_target"
+        | "unknown_agent"
+        | "agent_disabled"
+        | "account_missing"
+        | "thread_deleted"
+        | "worker_capacity"
+        | "worker_start_failed"
+        | "credential_mint_failed";
+      createdAt: number;
     };
 
 interface DispatchRef {
@@ -487,35 +496,38 @@ interface DispatchRef {
 }
 ```
 
-- `Message` 是 domain/读模型；`StoredMessage` 是 **独立** 的 internal storage 记录，
-  不是 `Message` 的子类（Clowder 同样如此：stored `content` 是 string，
-  domain `content` 是 `MessageContent[]`）。
-- `MessageStore.get()` / `listAfterSeq()` / `listRecent()` 返回 `StoredMessage`；
-  对外 API 用 `toMessage(stored)` 投影成 `Message`。
-- `StoredMessage.content` 是 plain text body（DB `body_md`）；`contentBlocks` 是
-  typed `MessageContent[]`（DB `content_json`）；`richBlocks` 不进 content。
-- **一条 Message 只代表一条消息，不代表整个 thread**：`Message.threadId` 是归属指针；
-  thread 历史是同一 `threadId` 下的多条 `StoredMessage`，按 `seq` 排序，而不是把所有
-  thread 内容塞进一个 `Message.content`。
-- `targetAgentIds` / `lifecycle` / `seq` / `replyTo` / `userId` / `kind` 只在
-  `StoredMessage`；不污染 domain。`targetAgentIds` 保持 v1 语义：仅 user message；
-  agent-authored A2A targets 走 `lifecycle.dispatchRefs`。
-- `richBlocks` 是 codeteam 既有 UI 载荷，**不是 MessageContent，也不是 Hub 消息语义**；
-  只作为 `StoredMessage` 的 legacy presentation sidecar 保留，R5 再决定去留。
-- `contentBlocks` 是权威语义内容：response 要把 pi 的 text/tool_call/tool_result 事件
-  按顺序持久化；`StoredMessage.content` 是 plain text body（DB `body_md`）。
-- `lifecycle` 是 server-owned typed sidecar；**不要**塞进 `Message.metadata`。
-- `Message.status` 是展示状态；执行成功/失败看 `lifecycle.response.status` /
-  `TurnExecution.status`，两者不合并。
-- `input` message 的 `dispatchRefs` 是每个 target 的 durable 投递回执：
-  `dispatched` → `settled`；同一 `(target, queueEntryId, attempt)` 唯一，重放不得二次 dispatch。
-- `response` message 的 lifecycle 记录 parent/child/target/终态；response 状态用 CAS 推进，
-  不覆盖 input 的 `dispatchRefs`。
+- v1 **不定义 domain `Message`**：当前没有独立消费者；`StoredMessage` 就是唯一消息记录，
+  `MessageStore` 持久化/返回 `StoredMessage`，API/CLI 直接使用；以后出现外部 SDK/stream
+  contract 再加投影。
+- **一条 StoredMessage 只代表一条消息，不代表整个 thread**：`threadId` 是归属指针；
+  thread 历史是同一 `threadId` 下的多条 StoredMessage，按 `seq` 排序。
+- `from` 是 canonical sender；不另存 `catId`/`agentId` 兼容字段。Clowder 的 `catId` 是
+  `from.kind='agent'` 的兼容投影；codeteam 新 schema 不需要重复。
+- `content` 是 plain text body（DB `body_md`）；`contentBlocks` 是语义内容
+  （DB `content_json`）；`toolEvents` 是执行回放（DB `tool_events_json`）；
+  `extra.rich` 是 Hub 呈现块（不是 MessageContent）。
+- `extra` 是开放 bag；v1 只写 4 个 key：`kind` / `targetAgentIds` / `rich` / `crossPost`。
+  `kind` 是 codeteam 扩展；`targetAgentIds` 仅 user admission；agent A2A targets 走
+  `lifecycle.dispatchRefs`；`rich` 是 Hub presentation；`crossPost` 是跨 thread provenance。
+- `timestamp` 是消息时间；`updatedAt` 是修订时间；`seq` 是 thread 内顺序。
+  `thinking?` 是可选的模型思考 sidecar，不放进 `contentBlocks`。
+- `userId` 不存 message：thread owner 派生；v1 单 user。
+- `status` 不存 StoredMessage：持久消息即 complete；展示/流式状态由读模型投影。
+- `deletedAt` / `deletedBy` 保留软删除；`deliveryStatus` 不存（queue/lifecycle 派生）；
+  `_tombstone` / `recall` v1 不做。
+- `mentions` / `mentionsUser` 不存：A2A targets 是 typed `dispatchRefs`；
+  文本 `@` 不路由；UI 从 dispatchRefs 渲染目标。
+- `lifecycle` 是 server-owned typed sidecar；**不要**塞进 `extra`。
+- `input` 的 `dispatchRefs`：`dispatched` → `settled`；同一
+  `(target, queueEntryId, attempt)` 唯一，重放不得二次 dispatch。
+- `response` lifecycle 记录 parent/child/target/终态；response 状态用 CAS 推进。
+- `delivery_failure` 是 **独立 system message**（`from.kind='system'`,
+  `service='message_delivery'`）：记录 `inputMessageId` / `requestedTargets` / `reason`；
+  source 的 dispatchRefs 同时 settle；不创建 response/TurnExecution。
 - queue live row 删除后，读模型仍可从 `StoredMessage.lifecycle` + `turn_executions` 还原
-  “发给了谁、谁处理、对应哪条 response”；`queue_admissions` 只负责 admission 幂等，
-  不替代投递回执。
-- v1 不做 Clowder 的 `appendAcceptance` / `inputRead` / `coveredMessageIds` /
-  `delivery_failure`；这些属于 durable streaming 与 carrier 审计，v2 再加。
+  “发给了谁、谁处理、对应哪条 response”；`queue_admissions` 只负责 admission 幂等。
+- v1 不做 Clowder 的 `appendAcceptance` / `inputRead` / `coveredMessageIds`；
+  这些属于 durable streaming 与 carrier 审计，v2 再加。
 
 **v1 不做**
 - `author_intent_json`、message disposition、action/wait carrier、fence refs、cloud provenance、steer。
@@ -1080,7 +1092,7 @@ normal:
 - **cursor 是全局可见序，不是“发给这个 agent 的最后一条”**：A 的 cursor 会越过对 A
   不可见的定向消息；B 仍会在自己的 cursor 位置看到它。不需要 per-target cursor。
 - `MessageStore.listAfterSeq` / `listRecent` 返回的是 **`StoredMessage[]`**；cursor 组装的是
-  “thread 内从 cursor 之后的多条 StoredMessage 窗口”，不是单个 `Message.content`，
+  “thread 内从 cursor 之后的多条 StoredMessage 窗口”，不是单条消息的 content，
   也不是把整个 thread 塞进一条 Message。
 - MessageStore 读面只需要两个方法：`listRecent(threadId, limit)` 和
   `listAfterSeq(threadId, afterSeq, limit)`，都按 `seq` 升序返回。
@@ -2030,9 +2042,11 @@ parent partial_failed: successful=[A], failed=[B]
 37. **Worker v1（2026-11-10 拍板）**：worker 是 ephemeral execution carrier；pi v1
     `capacity=1`、一个 worker 一 session；`warmTtl=0`、`maxLiveWorkers=8`；不建
     per-turn `worker_leases`；session 不持有 worker；spawn 实测约 0.5s，不作为常驻理由。
-38. **Message 两层拆分（2026-11-10 拍板）**：domain `Message`
-    （id/threadId/sender/content/status/timestamps/metadata）与 internal `StoredMessage`
-    （独立 storage 记录，不 extends：userId/seq/kind/content string/contentBlocks/
-    richBlocks(legacy)/replyTo/targetAgentIds/lifecycle）分离；`MessageStore` 持久化并返回
-    `StoredMessage`，对外投影 `Message`；lifecycle 不进 metadata；`content_json` 是权威
-    语义内容，`body_md` 是 plain text，`rich_blocks_json` 只作 legacy presentation。
+38. **Message 单层（2026-11-10 拍板）**：v1 不定义 domain `Message`；`StoredMessage` 是
+    唯一消息记录（from/content/contentBlocks/toolEvents/lifecycle/replyTo/seq/timestamp/
+    updatedAt/thinking/deletedAt/deletedBy/extra{kind,targetAgentIds,rich,crossPost}）；
+    `MessageStore` 持久化/返回 `StoredMessage`；无 userId/status/deliveryStatus/mentions。
+39. **delivery_failure lifecycle（2026-11-10 拍板）**：admitted source 在 prestart 失败时
+    追加独立 system message（`from.service='message_delivery'`），lifecycle 记
+    `inputMessageId/requestedTargets/reason`；同时 settle source dispatchRefs；不创建
+    response/TurnExecution。

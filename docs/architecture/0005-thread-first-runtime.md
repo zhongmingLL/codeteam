@@ -248,20 +248,23 @@ interface AgentSession {
 - `queue_admissions` receipt 保住 admission 幂等：live row 删除后同一
   `(sourceRecordId, attempt)` 重放返回 `replayed`/`conflict`，不会二次派发。
 - `AgentRouter.routeAgents(mode)` 调 `runAgentTurn`：per-agent pipeline 拥有 session/prompt/invoke/response/terminal；route 只负责 parallel/serial 调度。
-- Message 两层：domain `Message`（单条消息：id/threadId/sender/content/status/
-  timestamps/metadata）+ internal `StoredMessage`（独立 storage 记录，不 extends：
-  userId/seq/kind/content string/contentBlocks/richBlocks(legacy)/replyTo/
-  targetAgentIds/lifecycle）。`Message.threadId` 只是归属指针，不代表整个 thread；
-  thread 历史是同 threadId 下的多条 `StoredMessage`，按 `seq` 排序。
-- `MessageStore` 持久化并返回 `StoredMessage`；对外 API 用 `toMessage` 投影
-  `Message`；`lifecycle` 不进 metadata。
-- `StoredMessage` 是 durable 投递回执：input 的 `lifecycle.kind="input"` 存 typed
-  `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId/turnExecutionId）；
-  response 的 `lifecycle.kind="response"` 存 parent/child/target/终态。queue live row
-  派发后收缩/删除，`queue_admissions` 只做 admission 幂等，不替代投递回执。详见 0010 §3.1。
-- `content` 是权威语义内容：v1 为 `TextContent | ToolCallContent | ToolResultContent`；
-  `content_json` / `contentBlocks` 存 typed blocks；`body_md` 是 plain text body；
-  `rich_blocks_json` 只是 legacy presentation sidecar，不是 MessageContent。
+- v1 **不定义 domain `Message`**：当前没有独立消费者；`StoredMessage` 是唯一消息记录，
+  `MessageStore` 持久化/返回 `StoredMessage`，API/CLI 直接使用。一条 StoredMessage
+  只代表一条消息，不代表整个 thread；thread 历史是同 threadId 下的多条记录，按 `seq` 排序。
+- `StoredMessage` 核心字段：`from`（canonical sender）、`content`（plain text）、
+  `contentBlocks?`（Text/ToolCall/ToolResult）、`toolEvents?`（执行回放）、
+  `lifecycle?`（input/response/delivery_failure）、`replyTo?`、`seq`、`timestamp`、
+  `updatedAt`、`thinking?`、`deletedAt?`/`deletedBy?`、
+  `extra?`（kind/targetAgentIds/rich/crossPost）。
+- 分层：`content` 是 plain text；`contentBlocks` 是语义内容；`toolEvents` 是执行回放；
+  `extra.rich` 是 Hub 呈现块（不是 MessageContent）。三者不互相替代。
+- `StoredMessage.lifecycle` 是 durable 投递回执：input 存 typed `dispatchRefs`
+  （target/queueEntryId/attempt/phase/responseMessageId/turnExecutionId）；response 存
+  parent/child/target/终态；delivery_failure 是独立 system message，记录 inputMessageId/
+  requestedTargets/reason。queue live row 派发后收缩/删除，`queue_admissions` 只做
+  admission 幂等，不替代投递回执。详见 0010 §3.1。
+- `mentions`/`mentionsUser` 不存：A2A targets 是 typed `dispatchRefs`；文本 `@` 不路由。
+- `userId`/`status`/`deliveryStatus` 不存：分别从 thread、lifecycle、queue 派生。
 - v1 response 与 terminal 同一事务（`settlement="settled"`）；schema 预留
   `response_pending` + `listResponsePending`/`completeResponseSettlement` seam，未来异步
   response 不改表。详见 0010 §3.6。
@@ -512,7 +515,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
 | D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/runAgentTurn/routeAgents/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 单体实现删除，serial 保留薄循环 | operator 2026-11-06 |
 | D8 | session / history / settlement | AgentSessionStore + ephemeral WorkerPool + 薄 AgentSessionManager；per-`(thread, agent)` deliveryCursor；v1 `settled`，schema 预留 `response_pending` seam | 工程结论 2026-11-09 Q&A；Worker 2026-11-10 拍板 |
-| D9 | Message 两层 | domain `Message`（单条消息）+ internal `StoredMessage`（独立 storage 记录）；lifecycle/targetAgentIds/seq 在 StoredMessage；`content_json`/contentBlocks 权威、`body_md` plain text、`rich_blocks_json` legacy presentation；对外投影 Message | operator 2026-11-10 确认 |
+| D9 | Message 单层 | v1 不定义 domain `Message`；`StoredMessage` 是唯一记录；from/content/contentBlocks/toolEvents/lifecycle/replyTo/seq/timestamp/thinking/deletedAt/extra(kind,targetAgentIds,rich,crossPost)；无 userId/status/deliveryStatus/mentions | operator 2026-11-10 确认 |
 
 **术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；
 `TurnExecution` 是单 agent 一次执行；Session 是 thread×agent 的持久身份；
