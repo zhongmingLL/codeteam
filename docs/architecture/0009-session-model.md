@@ -309,7 +309,6 @@ interface AgentReadStateStore {
   get(threadId: string, agentId: string): AgentReadState | null;
   ack(threadId: string, agentId: string, seq: number, now?: number): AgentReadState;
   rewind(threadId: string, agentId: string, seq: number, now?: number): AgentReadState;
-  listByThread(threadId: string): AgentReadState[];
 }
 
 interface WorkerBinding {
@@ -358,6 +357,13 @@ interface AgentSessionManager {
   `(user, cat, thread) → sessionId` 映射；codeteam 的 session row 本身含
   `threadId + agentId`，`getActive` 就是映射，因此不另建映射表；多出来的是
   durable session 状态 + 短命 worker attachment。
+
+| Clowder | codeteam | 关系 |
+|---|---|---|
+| `SessionManager.store/get/delete(userId, catId, threadId, sessionId)` | `AgentSessionStore.getActive/create/...` + `AgentSessionManager.ensureActive` | codeteam 的 session row 就是映射；不另建 map |
+| `SessionRecord`（cliSessionId/native binding/contextHealth/seal/compression/handoff） | `AgentSession`（piSessionId/file、messageCount、circuit breaker、active-only） | v1 只保留 resume 必需字段；sealed/compression/handoff 是 v2 |
+| Clowder 由 AgentService/CLI 调用路径 spawn/管理进程 | `WorkerPool.ensure/retire/reap` + `AgentSessionManager.acquireWorker/releaseWorker` | codeteam-specific pi RPC 适配；不是 Clowder SessionManager 的职责 |
+| `SessionManager.delete` | `AgentSessionManager.reset` + `AgentReadStateStore.rewind` | codeteam 把“换新 session + 回退 cursor”收成一个显式 reset |
 
 ## 7. 事件
 

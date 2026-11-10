@@ -1297,6 +1297,13 @@ interface AgentReadState {
   `ack(threadId, agentId, seq)` / `rewind(threadId, agentId, seq)`；`rewind` 只给
   session fresh/reset 用。完整签名与事务边界见 `0009-session-model.md` §6.1。
 
+| Clowder `DeliveryCursorStore` | codeteam `AgentReadStateStore` | 关系 |
+|---|---|---|
+| key `(userId, catId, threadId)` | key `(threadId, agentId)` | thread owner 隐含 user；v1 单 user |
+| string visibility cursor（v1 raw id / v2 visibility seq） | numeric `messages.seq` | codeteam 无独立 visibilitySeq（§3.5.1） |
+| `getCursor` / `ackCursor` + `ackSeenCursor` / `ackMentionCursor` | `get` / `ack` / `rewind` | v1 只做 delivery cursor；seen/mention 是 v2 |
+| 单调 CAS + canonicalizer/Redis fallback | SQLite `max(delivery_cursor, seq)` CAS | 存储适配；`rewind` 只给 reset |
+
 **加载**
 
 ```text
