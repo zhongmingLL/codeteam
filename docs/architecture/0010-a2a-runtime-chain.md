@@ -471,7 +471,6 @@ interface StoredMessage {
   deletedBy?: string;
 
   extra?: {
-    kind?: MessageKind;              // codeteam extension
     targetAgentIds?: string[];       // user admission snapshot
     rich?: RichMessageExtra;         // Hub presentation；不是 MessageContent
     crossPost?: { sourceThreadId: string; sourceMessageId?: string };
@@ -525,10 +524,9 @@ interface DispatchRef {
 - `content` 是 plain text body（DB `body_md`）；`contentBlocks` 是语义内容
   （DB `content_json`）；`toolEvents` 是执行回放（DB `tool_events_json`）；
   `extra.rich` 是 Hub 呈现块（不是 MessageContent）。
-- `extra` 是开放 bag；v1 只写 4 个 key：`kind` / `targetAgentIds` / `rich` / `crossPost`。
-  `kind` 是 presentation/legacy 分类，不参与路由/identity/lifecycle 判定；路由只看
-  `from.kind` + `lifecycle.kind` + typed targets。`targetAgentIds` 仅 user admission；
-  agent A2A targets 走 `lifecycle.dispatchRefs`；`rich` 是 Hub presentation；
+- `extra` 是开放 bag；v1 只写 3 个 key：`targetAgentIds` / `rich` / `crossPost`。
+  路由只看 `from.kind` + `lifecycle.kind` + typed targets；`targetAgentIds` 仅 user
+  admission；agent A2A targets 走 `lifecycle.dispatchRefs`；`rich` 是 Hub presentation；
   `crossPost` 是跨 thread provenance。
 - `extra.rich` 不是 `unknown[]`：它是 `RichMessageExtra = {v:1, blocks: RichBlock[]}`，
   kind 为 `card/diff/checklist/media_gallery/audio/interactive/html_widget/file`；
@@ -596,7 +594,8 @@ ALTER TABLE messages ADD COLUMN deleted_by TEXT;
 - `content_json` = `contentBlocks`；`tool_events_json` = `toolEvents`；
   `lifecycle_json` = `lifecycle`；`extra_json` = `extra`。
 - legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入；
-  R1 回填 `extra.kind` / `extra.rich` 后只读，R5 drop。
+  R1 只回填 `extra.rich`（以及 dispatchRefs/targetAgentIds）；`messages.kind` 不迁入 A2A
+  `extra`，作为 legacy 列只读，R5 drop。
 
 **接口**
 
@@ -689,7 +688,7 @@ type IngressRejectReason =
 E6 的正文 `@`（agent final response / text）不路由、不报错；只有显式 typed target 非法才
 `invalid_explicit_target`。E8 走 `thread_access_denied`；E10 的 replay 是成功，
 conflict 才 reject；E11 走 `a2a_depth_exceeded` / `loop_guard`。
-- `updateExtra`：更新 `extra`（kind/targetAgentIds/rich/crossPost）；CAS 可选。
+- `updateExtra`：更新 `extra`（targetAgentIds/rich/crossPost）；CAS 可选。
 - `softDelete`：写 `deleted_at/deleted_by`；不改 `seq`/lifecycle；默认读排除删除行。
 - `getBy*` 默认 `deleted_at IS NULL`；`includeDeleted` 给 read model 用。
 - **不拥有** queue/cursor/session；不做可见性过滤；`seq` 只保证 thread 内顺序。
@@ -2772,7 +2771,7 @@ parent partial_failed: successful=[A], failed=[B]
 |---|---|---|---|
 | `messages.dispatch_refs_json` | `lifecycle.input.dispatchRefs` | target/queueEntryId/attempt/phase/responseMessageId/turnExecutionId 逐项映射 | 缺 target/queueEntryId/attempt、JSON 非法、与 lifecycle response 冲突 |
 | `messages.rich_blocks_json` | `extra.rich = {v:1, blocks}` | 逐 block 映射；approval kind 禁止 | 未知 kind / 非法 block / 旧 approval block |
-| `messages.kind` | `extra.kind` | 已知值映射；未知值不猜 | 未知 kind |
+| `messages.kind` | 不迁入 A2A `extra` | legacy 列只读；R5 drop；旧 UI 需要时读 legacy 列 | 无（不进入 A2A contract） |
 | 旧 `targetAgentIds` / `dispatch_refs_json.targetIds` | `extra.targetAgentIds`（仅 user message） | 两处都存在且一致才写；agent message 不写 | 两处冲突 / 目标已 disabled 且无法判定历史语义 |
 | `messages.body_md` | `content` | 原样 | 无 |
 | `task_id/control_ref` | 不迁入 A2A identity | 仅 legacy 列 | 若被用来定位 A2A 身份 → preflight |
@@ -2986,7 +2985,7 @@ parent partial_failed: successful=[A], failed=[B]
     per-turn `worker_leases`；session 不持有 worker；spawn 实测约 0.5s，不作为常驻理由。
 38. **Message 单层（2026-11-10 拍板）**：v1 不定义 domain `Message`；`StoredMessage` 是
     唯一消息记录（from/content/contentBlocks/toolEvents/lifecycle/replyTo/seq/timestamp/
-    updatedAt/thinking/deletedAt/deletedBy/extra{kind,targetAgentIds,rich,crossPost}）；
+    updatedAt/thinking/deletedAt/deletedBy/extra{targetAgentIds,rich,crossPost}）；
     `MessageStore` 持久化/返回 `StoredMessage`；无 userId/status/deliveryStatus/mentions。
 39. **delivery_failure lifecycle（2026-11-10 拍板；B 修订）**：只有 dispatch 事务未创建
     processing R（createRunning/credential/R 创建失败）时，才追加独立 system message

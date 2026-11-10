@@ -263,7 +263,7 @@ interface AgentSession {
   `contentBlocks?`（Text/ToolCall/ToolResult）、`toolEvents?`（执行回放）、
   `lifecycle?`（input/response/delivery_failure）、`replyTo?`、`seq`、`timestamp`、
   `updatedAt`、`thinking?`、`deletedAt?`/`deletedBy?`、
-  `extra?`（kind/targetAgentIds/rich/crossPost）。
+  `extra?`（targetAgentIds/rich/crossPost）。
 - 分层：`content` 是 plain text；`contentBlocks` 是语义内容；`toolEvents` 是执行回放；
   `extra.rich` 是 Hub 呈现块（不是 MessageContent）。三者不互相替代。
 - `StoredMessage.lifecycle` 是 durable 投递回执：input 存 typed `dispatchRefs`
@@ -529,7 +529,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
 | D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/runAgentTurn/routeAgents/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 单体实现删除，serial 保留薄循环 | operator 2026-11-06 |
 | D8 | session / history / settlement | AgentSessionStore + ephemeral WorkerPool + 薄 AgentSessionManager；per-`(thread, agent)` deliveryCursor；v1 durable streaming：processing R + response_drafts + attempt settlement | 工程结论 2026-11-09 Q&A；Worker/stream 2026-11-10 拍板 |
-| D9 | Message 单层 | v1 不定义 domain `Message`；`StoredMessage` 是唯一记录；from/content/contentBlocks/toolEvents/lifecycle/replyTo/seq/timestamp/thinking/deletedAt/extra(kind,targetAgentIds,rich,crossPost)；无 userId/status/deliveryStatus/mentions；userId 存储策略见 0011 §11 | operator 2026-11-10 确认 |
+| D9 | Message 单层 | v1 不定义 domain `Message`；`StoredMessage` 是唯一记录；from/content/contentBlocks/toolEvents/lifecycle/replyTo/seq/timestamp/thinking/deletedAt/extra(targetAgentIds,rich,crossPost)；无 userId/status/deliveryStatus/mentions；userId 存储策略见 0011 §11 | operator 2026-11-10 确认 |
 
 **术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；
 `TurnExecution` 是单 agent 一次执行；Session 是 thread×agent 的持久身份；

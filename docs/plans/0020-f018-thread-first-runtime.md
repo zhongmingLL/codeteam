@@ -57,7 +57,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `messages`：v1 不定义 domain `Message`，`StoredMessage` 是唯一记录；加
   `content_json`（text/tool_call/tool_result）、`tool_events_json`、
   `lifecycle_json`、`thinking`、`deleted_at`/`deleted_by`、`extra_json`
-  （kind/targetAgentIds/rich `{v:1,blocks}`/crossPost）；`body_md` 是 plain text body；
+  （targetAgentIds/rich `{v:1,blocks}`/crossPost）；`body_md` 是 plain text body；
   legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json` 停止写入，R5 drop。
 - `a2a_requests`：`thread_id` + `task_id` nullable；unique
   `(thread_id, agent_id, request_id)`；drop 旧 task-level unique。
@@ -149,7 +149,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 | 9 | queue trace 完整 payload audit | **v1 决策**：不建 dispatch_events/queue_retirement_audit；attempt.queueEntryId + queue_admissions + dispatchRefs 足够 | 若未来要 forensic replay/queue 压缩，v2 再加 |
 | 10 | WorkerPool reaper/capacity | **契约已收口**：capacity backoff、单 reaper 循环、warmTtl=0 crash/cleanup 顺序已定 | R2 实现 |
 | P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **已收口**：`invoke-single-agent` 负责 provider/stream；`settleAgentTurn` 接口负责两段 terminal/settlement | R2 按接口实现 |
-| P2 | `extra.kind` 是否保留 | **已定**：保留为 presentation/legacy 分类；路由/lifecycle 只看 from/lifecycle/typed targets | 实现时不得把 `extra.kind` 当 authority |
+| P2 | `extra.kind` 是否保留 | **已删**：`kind` 是 task-first legacy；不迁入 A2A `extra`，legacy 列只读至 R5 drop | 实现时不得重新引入 |
 | P3 | PR #86 / 0005 review | **流程未收口**：PR open；0005 `delta_review` 仍 pending | 最终 Phase A review + merge |
 
 ## 回滚
