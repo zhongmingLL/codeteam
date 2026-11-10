@@ -320,7 +320,8 @@ getSession(threadId, agentId): AgentSession | null
 
 ## 7. 事件
 
-写现有 `thread_events`/audit，不新增事件表：
+写现有 `thread_events`，不新增事件表；`audit` 是 task-first legacy，不用于 A2A/session
+contract：
 
 | 事件 | 关键字段 |
 |---|---|

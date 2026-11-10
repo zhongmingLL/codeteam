@@ -42,7 +42,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   state/disposition；无 taskId/role/run。
 - `turn_executions.settlement`：`settled | response_pending`；v1 恒 `settled`，
   schema 预留异步 response seam。
-- `turn_executions.worker_id`：nullable runtime audit；同 `agent_session_id` 唯一 running。
+- `turn_executions.worker_id`：nullable runtime trace；同 `agent_session_id` 唯一 running。
 - `workers` + `worker_bindings`：ephemeral worker；pi v1 capacity=1、一 worker 一 session；
   `warmTtl=0`、`maxLiveWorkers=8`；session 不再持有 worker。
 - `agent_read_state`：`(thread_id, agent_id) → delivery_cursor`（thread-global seq）；

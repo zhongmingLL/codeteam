@@ -538,9 +538,9 @@ interface DispatchRef {
 - `delivery_failure` 是 **独立 system message**（`from.kind='system'`,
   `service='message_delivery'`）：记录 `inputMessageId` / `requestedTargets` / `reason`；
   source 的 dispatchRefs 同时 settle；不创建 response/TurnExecution。
-- **为什么不只用 audit**：`audit` 是 append-only 操作日志（actor/action/subject/args/ts），
-  不进入 thread history/read model，用户和 agent 看不到，也没有 `seq`/context/lifecycle；
-  delivery_failure 必须是一条可读、可排序、可审计的消息，audit 只能作为补充。
+- `audit` 是 task-first 遗留的运维日志（actor/action/subject/args/ts），不属于 A2A
+  message/lifecycle 契约，也不作为 delivery_failure 的替代；A2A 失败面只看
+  `delivery_failure` 消息 + `TurnExecution`。
 - queue live row 删除后，读模型仍可从 `StoredMessage.lifecycle` + `turn_executions` 还原
   “发给了谁、谁处理、对应哪条 response”；`queue_admissions` 只负责 admission 幂等。
 - v1 不做 Clowder 的 `appendAcceptance` / `inputRead` / `coveredMessageIds`；
@@ -548,7 +548,95 @@ interface DispatchRef {
 
 **v1 不做**
 - `author_intent_json`、message disposition、action/wait carrier、fence refs、cloud provenance、steer。
-- 路由/解析错误走 audit/observation；QueueEntry 不存 `routingWarnings`/`lastError`。
+- 路由/解析错误：pre-admission 走 typed reject；admitted 后失败写 `delivery_failure`
+  system message；QueueEntry 不存 `routingWarnings`/`lastError`；audit 不再作为 A2A 错误面。
+
+### 3.1.1 MessageStore（基于 StoredMessage）
+
+**表（物理映射）**
+
+```sql
+-- 现有列继续用：id / thread_id / author_kind / author_id / body_md /
+-- reply_to / seq / created_at / updated_at
+ALTER TABLE messages ADD COLUMN content_json TEXT
+  CHECK (content_json IS NULL OR
+    (json_valid(content_json) AND json_type(content_json) = 'array'));
+ALTER TABLE messages ADD COLUMN tool_events_json TEXT
+  CHECK (tool_events_json IS NULL OR
+    (json_valid(tool_events_json) AND json_type(tool_events_json) = 'array'));
+ALTER TABLE messages ADD COLUMN lifecycle_json TEXT
+  CHECK (lifecycle_json IS NULL OR
+    (json_valid(lifecycle_json) AND json_type(lifecycle_json) = 'object'));
+ALTER TABLE messages ADD COLUMN extra_json TEXT
+  CHECK (extra_json IS NULL OR
+    (json_valid(extra_json) AND json_type(extra_json) = 'object'));
+ALTER TABLE messages ADD COLUMN thinking TEXT;
+ALTER TABLE messages ADD COLUMN deleted_at INTEGER;
+ALTER TABLE messages ADD COLUMN deleted_by TEXT;
+```
+
+- `author_kind` + `author_id` 是 `StoredMessage.from` 的物理映射；不另加 `from` 列。
+- `body_md` 映射 `StoredMessage.content`；`created_at` 映射 `timestamp`。
+- `content_json` = `contentBlocks`；`tool_events_json` = `toolEvents`；
+  `lifecycle_json` = `lifecycle`；`extra_json` = `extra`。
+- legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入；
+  R1 回填 `extra.kind` / `extra.rich` 后只读，R5 drop。
+
+**接口**
+
+```ts
+interface MessageStore {
+  get(id: string, options?: { includeDeleted?: boolean }): StoredMessage | null;
+  latestSeq(threadId: string): number;
+
+  listAfterSeq(threadId: string, afterSeq: number, limit: number): StoredMessage[];
+  listRecent(threadId: string, limit: number): StoredMessage[];
+  listThread(threadId: string, options?: {
+    beforeSeq?: number; afterSeq?: number; limit?: number; includeDeleted?: boolean;
+  }): StoredMessage[];
+
+  append(input: AppendMessageInput): StoredMessage;
+  appendResponse(input: AppendResponseInput): StoredMessage;
+  appendDeliveryFailure(input: AppendDeliveryFailureInput): {
+    source: StoredMessage;
+    failure: StoredMessage;
+  };
+
+  advanceDispatch(input: AdvanceDispatchInput): StoredMessage;
+  updateResponseLifecycle(input: UpdateResponseLifecycleInput): StoredMessage;
+  softDelete(id: string, deletedBy: string, options?: { expectedUpdatedAt?: number }): StoredMessage;
+}
+```
+
+**方法语义**
+
+- `append`：分配 `seq = max(seq)+1`；同 `id` + 同 payload → replayed；不同 → conflict；
+  `expectedSeq` 可选 CAS。写入 `from/content/contentBlocks/toolEvents/lifecycle/extra`。
+- `appendResponse`：强制 `lifecycle.kind='response'`；response 必须绑定
+  `invocationRecordId/turnExecutionId/target/status/startedAt`。
+- `appendDeliveryFailure`：同事务追加 system message（`from.kind='system'`,
+  `service='message_delivery'`）+ settle source 的 `dispatchRefs`；reason 必须是
+  `no_target/unknown_agent/agent_disabled/account_missing/thread_deleted/worker_capacity/
+  worker_start_failed/credential_mint_failed`。
+- `advanceDispatch`：按 `(targetKey, queueEntryId, attempt)` 精确匹配；只允许
+  `dispatched → settled`；同 phase 同 payload = idempotent no-op。
+- `updateResponseLifecycle`：status 只能
+  `processing → completed|failed|interrupted|canceled`；terminal 后不可改。
+- `softDelete`：写 `deleted_at/deleted_by`；不改 `seq`/lifecycle；默认读排除删除行。
+- `get/list*` 默认 `deleted_at IS NULL`；`includeDeleted` 给 read model/审计用。
+- **不拥有** queue/cursor/session；不做可见性过滤；`seq` 只保证 thread 内顺序。
+
+**事务边界**
+
+| 场景 | 同一事务 |
+|---|---|
+| admission | `append` + `InvocationQueue.enqueue` + `queue_admissions` |
+| dispatch | `advanceDispatch(dispatched)` + parent/child/credential + `retireTargets` |
+| response settlement | `appendResponse` + `advanceDispatch(settled)` + `transitionTerminal` + parent aggregate + credential |
+| delivery failure | `appendDeliveryFailure` + source dispatchRefs settle |
+| soft delete | `softDelete`（可选 thread event） |
+
+`ControlTransaction` 可重入；上层 service 打开事务，store 内调用不会重复 BEGIN。
 
 ### 3.2 QueueProcessor + QueueEntry
 
@@ -1243,7 +1331,7 @@ interface TurnExecution {
   userId: string;
   agentId: string;
   agentSessionId: string;
-  workerId: string | null;             // runtime audit；worker 是 ephemeral
+  workerId: string | null;             // runtime trace；worker 是 ephemeral
 
   a2aParentTurnExecutionId: string | null; // A2A 因果父（上游 TurnExecution）
   queueEntryId: string | null;
@@ -2025,7 +2113,8 @@ parent partial_failed: successful=[A], failed=[B]
 12. **operator-only 允许只通知不执行**：不创建 parent/TurnExecution，只写 `delivery.operatorNotifiedAt` 并删除 queue entry。
 13. **claim 复用 Clowder 的 target-level 语义**：`claim` / `retireTargets` / `releaseClaim` / `withdrawTargets`；`claim.targetKeys` 是 pending targets 子集。
 14. **QueueEntry 保留 admission 正文快照** `payload.content`；A2A tools 的 targets 用 `{kind:"agent"|"operator", id}` 对象数组，不解析正文 @。
-15. **v1 路由/解析错误走 audit/observation**，QueueEntry 不存 `routingWarnings`/`lastError`。
+15. **v1 路由/解析错误不走 audit**：pre-admission typed reject；admitted 后失败写
+    `delivery_failure` system message；QueueEntry 不存 `routingWarnings`/`lastError`。
 16. **Queue durable/projection 状态分层（DP-F018Q-2=B）**：`QueueLedgerStatus` 保留四值 union；`QueueEntry.status` 只取 `queued|claimed`；`processing|terminal` 只出现在 transition projection。
 17. **QueueLedgerStore + InvocationQueue 接口（DP-F018Q-1=A）**：store 只做持久化/CAS；InvocationQueue 负责 admission/claim/retire/release/withdraw/recovery；`claimNext` 从服务接口移除，候选选择留在 QueueProcessor。
 18. **重放保护（DP-F018Q-3=A）**：新增 `queue_admissions` receipt；live row 删除后按 fingerprint 返回 `replayed`/`conflict`。
