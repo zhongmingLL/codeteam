@@ -3,7 +3,7 @@ title: "codeteam AgentSession v1 — active + resume"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-09
+updated: 2026-11-10
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06; corrected: sealed lifecycle also deferred to v2"
@@ -109,7 +109,7 @@ export interface AgentSession {
 | `compression_count` / `latest_resume_session_id` | 删除（v2） | compression / bg carrier 是 v2。 |
 | `last_usage_json` | 删除（v2） | usage 展示是 v2。 |
 | `workspace_fingerprint` | 删除 | v1 直接比较规范化后的 `workingDirectory`。 |
-| `worker_id` / `worker_binding_state` | 留在 worker 层 | 是 worker runtime 状态，不是 session identity。 |
+| `worker_id` / `worker_binding_state` | 迁到 `worker_bindings` | worker attachment 是运行时状态，不是 session identity；session 行不再持有 worker。 |
 | `message_count` / `working_directory` / `user_id` | 保留 | 基础字段。 |
 
 **关于 `nativeSessionBinding`**：Clowder 的 `carrier` 只有
@@ -293,27 +293,30 @@ getSession(threadId, agentId): AgentSession | null
 > （unseal safety），`done` 时同一 invocation 不再重复 +1。v1 等价为
 > “每个 completed invocation 最多 +1，且只有有 user-visible output 的才算”。
 
-### 6.1 服务分层：Store / Lease / Manager
+### 6.1 服务分层：Store / WorkerPool / Manager
 
-`AgentSession` 是 durable row，但“拿到 session”和“拿到执行权”是两件事。v1 分三层，
+`AgentSession` 是 durable row，但“拿到 session”和“拿到执行载体”是两件事。v1 分三层，
 不把所有职责塞进一个 `SessionManager`：
 
 | 层 | 职责 | 状态 |
 |---|---|---|
 | `AgentSessionStore` | durable identity：`getActive` / `get` / `create` / `bind` / `replace` / `recordCompletedTurn` / `recordResumeFailure` / `resetResumeFailures` | SQLite |
-| `WorkerLeaseService` | 执行互斥：`acquire(agentSessionId)` / `heartbeat` / `release` | worker runtime + lease 行 |
-| `AgentSessionManager` | 薄 facade：`ensureActive(threadId, agentId)`（内部调 `getOrCreateSession`）/ resume / reset；组合前两层 | 无自有状态 |
+| `WorkerPool` | ephemeral worker 生命周期：`ensure` / `retire` / `reap` / `heartbeat`；pi v1 一个 worker 只服务一个 session | SQLite `workers` + `worker_bindings` |
+| `AgentSessionManager` | 薄 facade：`ensureActive` / `acquireWorker` / `releaseWorker` / `reset`；组合前两层 | 无自有状态 |
 
 - `TurnExecution.agentSessionId` 只是指针；session 解析在
   `AgentSessionManager.ensureActive(threadId, agentId)`，不在 child 里重复查映射。
-- 真正的执行互斥是 worker lease，不是进程内 tracker slot：旧 worker 未退出 →
-  `acquire` 失败 → `worker_busy`；reaper 也靠 lease/heartbeat 判活。
-- `worker_id` / `worker_binding_state` 仍留在 worker 层（§2.1），不写回 AgentSession
-  identity。
+- worker 是 **ephemeral execution carrier**，不是 session 的常驻所有者：
+  turn 结束默认 retire（`warmTtl=0`），空闲 session 不占进程；`maxLiveWorkers=8`
+  只限制同时存在的 worker。
+- 执行互斥不靠 per-turn `worker_leases` 表：`TurnExecution` 的唯一 running per session
+  + `RpcConnection.prompting` + `worker_bindings.generation` 承担。
+- `worker_id` / `worker_binding_state` 迁到 `worker_bindings`（§2.1），不写回
+  AgentSession identity。
 - 与 Clowder 的差异：Clowder `SessionManager` 只维护
   `(user, cat, thread) → sessionId` 映射；codeteam 的 session row 本身含
   `threadId + agentId`，`getActive` 就是映射，因此不另建映射表；多出来的是
-  durable session 状态 + worker lease。
+  durable session 状态 + 短命 worker attachment。
 
 ## 7. 事件
 
@@ -384,7 +387,7 @@ getSession(threadId, agentId): AgentSession | null
 6. **`workspaceFingerprint` 不持久化**：v1 的 `workingDirectory` required 且不可变，resume 时直接比较规范化路径。
 7. **连续 3 次 resume 失败**：强制 fresh、清空绑定、计数归零；不 seal、不新建 codeteam session。
 8. **工作区变化**：`workingDirectory` 不可变；thread.projectPath 变化时 typed reject `session_workspace_changed`；重置/迁移是 v2。
-9. **服务分层（2026-11-09 Q&A）**：`AgentSessionStore`（durable identity）+
-   `WorkerLeaseService`（执行互斥/心跳）+ 薄 `AgentSessionManager`（ensure/resume/reset）；
-   `TurnExecution.agentSessionId` 只是指针；不把 session 状态、worker mutex 和映射塞进一个
-   SessionManager。
+9. **Worker v1 = ephemeral execution carrier（2026-11-10 拍板）**：
+   `WorkerPool` 管短命 worker（`warmTtl=0`、`maxLiveWorkers=8`、一个 worker 只服务
+   一个 session）；session 不持有 worker；执行互斥由 `TurnExecution` 唯一 running +
+   `RpcConnection.prompting` + binding generation 承担。spawn 实测约 0.5s，不作为常驻理由。

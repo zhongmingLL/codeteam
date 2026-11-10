@@ -3,7 +3,7 @@ title: "F018 — A2A runtime v1 实施计划（R0-R5）"
 doc_kind: plan
 status: draft
 created: 2026-11-04
-updated: 2026-11-09
+updated: 2026-11-10
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
@@ -42,6 +42,9 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   state/disposition；无 taskId/role/run。
 - `turn_executions.settlement`：`settled | response_pending`；v1 恒 `settled`，
   schema 预留异步 response seam。
+- `turn_executions.worker_id`：nullable runtime audit；同 `agent_session_id` 唯一 running。
+- `workers` + `worker_bindings`：ephemeral worker；pi v1 capacity=1、一 worker 一 session；
+  `warmTtl=0`、`maxLiveWorkers=8`；session 不再持有 worker。
 - `agent_read_state`：`(thread_id, agent_id) → delivery_cursor`（thread-global seq）；
   v1 只做 delivery cursor，不做 seenCursor/mentionAck。
 - `a2a_requests`：`thread_id` + `task_id` nullable；unique
@@ -65,6 +68,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - dispatch thread branch：QueueProcessor、InvocationRecord、TurnExecution、
   credential；不调用
   budget/deployment/managed-work guard。
+- worker：`WorkerPool.ensure` 按 poolKey 取/建 ephemeral worker；turn 结束默认 retire；
+  记录 `worker_spawn_ms` / `worker_busy_ms` / `worker_evicted_count`。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A

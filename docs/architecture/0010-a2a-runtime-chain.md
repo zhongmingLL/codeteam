@@ -3,7 +3,7 @@ title: "codeteam A2A runtime chain v1 — Clowder-aligned"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-09
+updated: 2026-11-10
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06"
@@ -710,10 +710,10 @@ class InvocationTracker {
 - 同一 `(threadId, agentId)` 一个 active slot。
 - `start` 是抢占语义：同 slot 旧 controller 先发中断信号；旧 `TurnExecution` 标 `interrupted/preempted`；新 slot 立刻登记。
 - 取消即释放：`cancel` 发中断信号后直接删除 slot；不保留 canceled 墓碑。
-- **真正的执行互斥在 AgentSession/worker lease**：新 `TurnExecution` 启动 provider 前必须拿到该 `(agentId, agentSessionId)` 的 worker lease；旧 worker 未退出时返回 `worker_busy`，QueueProcessor 释放 claim 稍后重试。
-- `startAll` all-or-nothing：任一 target 的 slot 或 worker lease 不可用则全部不启动。
+- **真正的执行互斥在 `TurnExecution` + worker binding**：`turn_executions` 对同一 `agent_session_id` 只允许一条 `running`；`RpcConnection.prompting` 保证进程单飞；旧 worker 未退出时新 start 返回 `worker_busy`，QueueProcessor 释放 claim 稍后重试。
+- `startAll` all-or-nothing：任一 target 的 slot 或 worker 不可用则全部不启动。
 - `complete` / `completeAll` 只释放匹配 `turnExecutionId` 的 slot（ownership fence），防止 late terminal 清掉 replacement。
-- `isBusy` = slot active；取消即释放后不再有 pending teardown 状态；旧 worker 的忙由 session/worker lease 表达。
+- `isBusy` = slot active；取消即释放后不再有 pending teardown 状态；旧 worker 的忙由 `TurnExecution` 唯一 running + `RpcConnection.prompting` 表达。
 - 进程内，不持久化；durable truth 是 `TurnExecution.status`。
 
 **Steer / 插队原语**
@@ -742,7 +742,7 @@ class InvocationTracker {
 5. operator 可 retry：新 attempt → 新 queue entry → 新 child
 ```
 
-**注意**：被抢占但旧 worker 还活着的 child 不算僵尸；它保留到旧 worker 结束。session/worker lease 负责防止新旧叠跑。
+**注意**：被抢占但旧 worker 还活着的 child 不算僵尸；它保留到旧 worker 结束。`TurnExecution` 唯一 running + worker binding generation 负责防止新旧叠跑。
 
 ```ts
 interface InvocationOwnerReaperDeps {
@@ -768,7 +768,7 @@ class InvocationOwnerReaper {
 4. child running + 无 live worker → `interrupted/owner_reaped`；credential terminalize；parent aggregate；释放 slot。
 5. worker 状态读不到 → defer，不误判。
 
-- 被抢占但旧 worker 还活着的 child：保留，等旧 worker 结束；session/worker lease 防止新旧叠跑。
+- 被抢占但旧 worker 还活着的 child：保留，等旧 worker 结束；`TurnExecution` 唯一 running + worker binding generation 防止新旧叠跑。
 - 旧 worker 结束后 heartbeat/lease 过期；下一轮 reaper 再标 `interrupted/owner_reaped`。
 - 如果旧 worker 永久挂住且 heartbeat 一直有效，不清理；这是 DP-F018T-3=A 的接受代价。
 - `recoverStartup()` 做一次性扫描：tracker 为空时按同一 worker heartbeat 规则收敛。
@@ -797,15 +797,15 @@ AgentRouter
 
 runAgentTurn
   1. resolve AgentConfig
-  2. ensure AgentSession + worker lease
-  3. build context
-  4. TurnExecution.createRunning
+  2. ensure AgentSession（active-only）
+  3. TurnExecution.createRunning（同 session 唯一 running）
+  4. workerPool.ensure（ephemeral；spawn ~0.5s）
   5. InvocationCredential.create
-  6. build prompt
+  6. build context + prompt
   7. invoke pi worker
   8. persist response + usage
   9. transitionTerminal + collector + parent aggregate + credential terminalize
- 10. release worker lease / tracker slot
+ 10. retire worker（warmTtl=0）/ release tracker slot
 ```
 
 **定位与边界**
@@ -924,16 +924,16 @@ async function* routeSerial(input: RouteInput): AsyncIterable<AgentStreamEvent> 
 **`runAgentTurn` 顺序**
 
 1. resolve AgentConfig（存在/enabled/provider/model）；
-2. ensure AgentSession（active-only）+ worker lease；
-3. build context（thread/participants/recent messages/priorResponses；delivery cursor 见 §3.5.1）；
-4. `TurnExecutionStore.createRunning`（幂等）；
+2. ensure AgentSession（active-only）；
+3. `TurnExecutionStore.createRunning`（幂等；同 session 唯一 running）；
+4. `workerPool.ensure`（ephemeral；spawn ~0.5s；pi v1 一 worker 一 session）；
 5. `InvocationRegistry.create`（credential）；
-6. build prompt（system + history + context）；
+6. build context（thread/participants/recent messages/priorResponses；delivery cursor 见 §3.5.1）+ build prompt（system + history + context）；
 7. invoke pi worker（stream events）；
 8. persist response message + usage；
 9. `transitionTerminal` + collector + parent aggregate + credential terminalize
    （v1 同一事务；未来 response_pending 路径见 §3.6）；
-10. release worker lease + tracker slot。
+10. retire worker（warmTtl=0）+ release tracker slot。
 
 **`routeAgents` 模式选择**
 
@@ -1022,6 +1022,101 @@ normal:
 - v1 不做 `coveredMessageIds`、same-route isolation、`appendAcceptance` 驱动的投递边界；
   这些是 v2 的审计/多 agent 精细投递能力。
 
+### 3.5.2 WorkerPool + WorkerBinding（ephemeral）
+
+**定位**：worker 是每次 turn 的执行载体，不是 session 的常驻所有者。Session 的连续性由
+`AgentSession.piSessionFile` 保证；worker 退出不影响 session identity。
+
+**表**
+
+```sql
+CREATE TABLE workers (
+  id TEXT PRIMARY KEY,
+  project_path TEXT NOT NULL,
+  account_ref TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('starting','online','draining','stale','retired')),
+  capacity INTEGER NOT NULL DEFAULT 1 CHECK (capacity = 1),
+  pid INTEGER,
+  heartbeat_at INTEGER NOT NULL,
+  lease_expires_at INTEGER NOT NULL,
+  idle_since INTEGER,
+  retired_at INTEGER,
+  last_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  CHECK (state <> 'retired' OR retired_at IS NOT NULL)
+) STRICT;
+
+CREATE TABLE worker_bindings (
+  agent_session_id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL UNIQUE,
+  generation INTEGER NOT NULL DEFAULT 1,
+  state TEXT NOT NULL CHECK (state IN ('attached','idle','reattach_pending')),
+  bound_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL,
+  FOREIGN KEY (agent_session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+) STRICT;
+```
+
+- `agent_session_id` 主键：一个 session 同时只绑一个 worker。
+- `worker_id UNIQUE`：pi v1 一个 worker 同时只服务一个 session；未来 pi 支持
+  `session/new` / `session/load` 时再放开。
+- `capacity=1` 是 pi v1 的诚实约束；不做 multiplexing。
+- session 不再有 `worker_id` / `worker_binding_state`。
+
+**接口**
+
+```ts
+interface WorkerPool {
+  ensure(input: {
+    poolKey: { projectPath; accountRef; provider; model };
+    session: AgentSession;
+  }): Promise<WorkerHandle>;
+
+  release(handle: WorkerHandle, reason: string): Promise<void>; // warmTtl=0 → retire
+  revokeSession(agentSessionId: string, reason: string): Promise<void>;
+  heartbeat(workerId: string, pid?: number | null): Promise<void>;
+  reapExpired(now: number): Promise<ReapResult>;
+  snapshot(): WorkerSnapshot[];
+}
+```
+
+**生命周期**
+
+```text
+ensure:
+  1. 有 binding 且 worker live + poolKey 匹配 → 复用
+  2. 无 binding / worker dead / poolKey 不匹配 → spawn
+     - piSessionFile 存在则 --session，否则 --session-id
+     - spawn 到 online；写 worker_bindings(state=attached)
+  3. live workers >= maxLiveWorkers(8) → 先驱逐 idle；否则 worker_capacity
+
+release（v1 默认 warmTtl=0）:
+  RpcConnection.finish → worker retire → 删 binding
+
+reapExpired:
+  - heartbeat/lease 过期 → stale；binding reattach_pending；
+    running TurnExecution → interrupted/owner_reaped
+  - idle_since + warmTtl < now → retire + 删 binding
+
+配置变化:
+  project/account/provider/model 任一变化 → 旧 worker retire，新 worker spawn
+```
+
+**执行互斥**
+
+- `TurnExecution` 唯一 running per session：
+  `CREATE UNIQUE INDEX turn_executions_one_running_per_session ON turn_executions(agent_session_id) WHERE status = 'running';`
+- `RpcConnection.prompting` 进程级单飞。
+- `worker_bindings.generation`：旧 release 在 generation 变化后 no-op。
+- 不建 per-turn `worker_leases` 表。
+
+**spawn 预算**：本地实测 RPC 启动到首个 `get_state` 约 475ms；带 worker-extension +
+session resume 约 0.49–0.53s（1–10MB session）。5min turn 下约 0.17%，不作为常驻理由。
+
 ### 3.6 invoke-single-agent + TurnExecutionStore + TurnExecutionRecord
 
 **`createRunning` 是什么**
@@ -1042,6 +1137,7 @@ interface TurnExecution {
   userId: string;
   agentId: string;
   agentSessionId: string;
+  workerId: string | null;             // runtime audit；worker 是 ephemeral
 
   a2aParentTurnExecutionId: string | null; // A2A 因果父（上游 TurnExecution）
   queueEntryId: string | null;
@@ -1401,6 +1497,7 @@ CREATE TABLE turn_executions (
   user_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
   agent_session_id TEXT NOT NULL,
+  worker_id TEXT,
   a2a_parent_turn_execution_id TEXT,
   queue_entry_id TEXT,
   attempt INTEGER NOT NULL CHECK (attempt >= 1),
@@ -1440,6 +1537,7 @@ CREATE TABLE turn_executions (
   FOREIGN KEY (invocation_record_id) REFERENCES invocation_records(invocation_record_id) ON DELETE RESTRICT,
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
   FOREIGN KEY (agent_session_id) REFERENCES agent_sessions(id) ON DELETE RESTRICT,
+  FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE SET NULL,
   FOREIGN KEY (a2a_parent_turn_execution_id) REFERENCES turn_executions(turn_execution_id) ON DELETE SET NULL,
   FOREIGN KEY (trigger_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
   FOREIGN KEY (a2a_trigger_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
@@ -1450,6 +1548,8 @@ CREATE INDEX turn_executions_invocation
   ON turn_executions(invocation_record_id, agent_id, attempt);
 CREATE INDEX turn_executions_running
   ON turn_executions(status, started_at);
+CREATE UNIQUE INDEX turn_executions_one_running_per_session
+  ON turn_executions(agent_session_id) WHERE status = 'running';
 CREATE UNIQUE INDEX turn_executions_response
   ON turn_executions(response_message_id) WHERE response_message_id IS NOT NULL;
 CREATE INDEX turn_executions_response_pending
@@ -1457,6 +1557,8 @@ CREATE INDEX turn_executions_response_pending
 ```
 
 - `queue_entry_id` 不加 FK：queue entry 是调度账本，dispatch 后可删除；字符串仍可 trace。
+- `worker_id` 是运行时审计字段；worker retire 后置 NULL，不参与 session identity。
+- 同一 `agent_session_id` 最多一条 `running` TurnExecution；这是会话级执行互斥。
 - `a2a_parent_turn_execution_id` 是 A2A 因果父，不是 fan-out parent；fan-out parent 是 `invocation_record_id`。
 - `usage_json` 是本 attempt 的 provider 用量；collector 汇总所有 attempt 到 parent `usageByAgent`。
 - `provider/model/model_family` 是执行快照；Session 不再持有模型。
@@ -1518,6 +1620,15 @@ CREATE TABLE agent_read_state (
 - 与 `agent_sessions` 分开：session 是执行身份，read state 是投递进度；session fresh/reset
   通过显式 rewind API 改 cursor，不删行。
 - 建表顺序排在 `threads` 之后；不依赖 `messages` 的 FK，消息可由 `thread_id + seq` 查询。
+
+### 4.6 `workers` / `worker_bindings`
+
+- 表定义见 §3.5.2；worker 是 ephemeral execution carrier，不是 session 常驻所有者。
+- 建表顺序：`agent_sessions` → `workers` → `worker_bindings` → `turn_executions`
+  （`turn_executions.worker_id` FK 指向 `workers`）。
+- 索引：`workers(state, lease_expires_at)`、`worker_bindings(worker_id)`。
+- `turn_executions.worker_id` 用 `ON DELETE SET NULL`；worker retire 不删历史 child。
+- worker retire → 删 `worker_bindings`；session 保留，下一轮重新 spawn + resume。
 
 ## 5. 状态机与聚合
 
@@ -1668,6 +1779,8 @@ parent partial_failed: successful=[A], failed=[B]
 - `AgentRouter` + `runAgentTurn` + `routeAgents`：显式 targets、per-child AbortSignal；parallel 默认，serial 保留薄循环。
 - `invoke-single-agent`：pi worker/session、child TurnExecution、credential、prompt/stream/terminal。
 - `TurnExecutionStore.createRunning/transitionTerminal`：执行幂等 + 单终态。
+- `WorkerPool` + `worker_bindings`：ephemeral worker（一 worker 一 session）、spawn/retire、
+  heartbeat/stale、binding generation；`warmTtl=0` 默认，空闲不占进程。
 - `InvocationRegistry`/`InvocationCredential`：pi extension tools 鉴权、allowed tools、terminalize、canonical repair。
 - `a2a/tools`：post/cross/thread_context，typed targets（agent/operator），新 message/queue entry，parent/depth；operator-only 只通知不执行。
 - `PerAgentTerminalDispositionCollector`：parent aggregate。
@@ -1819,14 +1932,14 @@ parent partial_failed: successful=[A], failed=[B]
 25. **InvocationRecord 状态/字段**：保留 `partial_failed`；只存 `successfulAgentIds`，failed/canceled 由 child 推导；`requestRetry` 把 parent 置 `queued`，retry child 启动后再 `markRunning`。
 26. **InvocationRecord usage**：parent 存 `usageByAgent`（跨 attempt 累计）+ `usageRecordedAt`（首次写入）；`TurnExecution` 存 per-attempt `usage`；collector 汇总后由 `applyTerminalAggregate` 写入。
 27. **Tracker start 抢占（DP-F018T-1=B）**：同 slot 旧 controller 先发中断信号，旧 TurnExecution 标 `interrupted/preempted`；新 slot 立刻登记。普通消息默认不抢占，只有显式 Steer/停止动作走抢占。
-28. **取消即释放 slot（DP-F018T-2=B）**：tracker 不保留 canceled 墓碑；真正的执行互斥由 AgentSession/worker lease 承担，旧 worker 未退出时新 start 返回 `worker_busy`。
+28. **取消即释放 slot（DP-F018T-2=B）**：tracker 不保留 canceled 墓碑；真正的执行互斥由 `TurnExecution` 唯一 running + `RpcConnection.prompting` + worker binding generation 承担；旧 worker 未退出时新 start 返回 `worker_busy`。
 29. **僵尸判定用 worker heartbeat（DP-F018T-3=A）**：running TurnExecution 无 live worker/heartbeat 才标 `interrupted/owner_reaped`；被抢占但旧 worker 还活着的 child 保留到旧 worker 结束。
 30. **Operator ingress 路由（DP-F018R-1=A）**：行首 @ 是 operator 侧 A2A admission；无 @ → 上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
 31. **Message.targetAgentIds（DP-F018R-2=A）**：仅 user message 持久化本次 admission 的 agent targets；与 message + queue entry 同事务写入。
 32. **runAgentTurn + routeAgents（DP-F018R-3=A）**：per-agent pipeline 抽成 `runAgentTurn`；v1 默认 parallel，serial 是同一 pipeline 的薄循环；route 只负责顺序/并发。
-33. **Session 服务分层（2026-11-09 Q&A）**：`AgentSessionStore`（durable identity）+
-    `WorkerLeaseService`（执行互斥/心跳）+ 薄 `AgentSessionManager`（ensure/resume/reset）；
-    `TurnExecution.agentSessionId` 只是指针；worker lease 是真正的执行互斥。
+33. **Session 服务分层（2026-11-09 Q&A；2026-11-10 Worker 定稿）**：
+    `AgentSessionStore`（durable identity）+ `WorkerPool`（ephemeral worker）+
+    薄 `AgentSessionManager`；`TurnExecution.agentSessionId` 只是指针。
 34. **Message lifecycle 是 durable 投递回执（2026-11-09 Q&A）**：input message 存 typed
     `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId）；response message 存
     lifecycle；queue live row 派发后删除，`queue_admissions` 只做 admission 幂等。
@@ -1836,3 +1949,6 @@ parent partial_failed: successful=[A], failed=[B]
 36. **Response settlement seam（2026-11-09 Q&A）**：v1 同事务 `settled`；schema 预留
     `response_pending` + `listResponsePending`/`completeResponseSettlement`；未来异步 response
     不改 schema。
+37. **Worker v1（2026-11-10 拍板）**：worker 是 ephemeral execution carrier；pi v1
+    `capacity=1`、一个 worker 一 session；`warmTtl=0`、`maxLiveWorkers=8`；不建
+    per-turn `worker_leases`；session 不持有 worker；spawn 实测约 0.5s，不作为常驻理由。
