@@ -1591,6 +1591,77 @@ type AgentStreamEvent =
 - 差异：Clowder 用 message idempotency key 跨 store；codeteam 用
   `responseMessageId` FK；Clowder 有 `outputFence`/`appendAcceptance`，codeteam v1 不做。
 
+### 3.6.2 与 Clowder TurnExecution / TurnExecutionStore 对照
+
+**结论先行**：codeteam 的 core 与 Clowder 基本 1:1；当前“差异大”主要不是 core
+语义不同，而是把 execution binding、retry trace、response settlement 都塞进了
+`TurnExecution`。建议把 extension 移到 `invocation_attempts`，让 `TurnExecution`
+回到 Clowder 的薄记录。
+
+**字段对照**
+
+| Clowder `TurnExecutionRecord` | codeteam `TurnExecution` | 分类 |
+|---|---|---|
+| `invocationId` | `turnExecutionId` | 命名 |
+| `parentInvocationId` | `invocationRecordId` | 命名 |
+| `threadId` / `userId` | 同 | 1:1 |
+| `catId` | `agentId` | 命名 |
+| `executionKind` | 同 | 1:1 |
+| `startedAt` | 同 | 1:1；但不进 codeteam identity（DP-F018X-1=A） |
+| `causal.triggerMessageId` | `triggerMessageId`（当前平铺） | 建议收进 `causal` |
+| `status` / `endedAt` / `terminalReason` | 同；`succeeded` → `completed` | 命名 |
+| `causal.coveredMessageIds` | 无 | v2（`coveredMessageIds`） |
+| `outputFence` / `queueCompletionPolicy` | 无 | v2（action fence / carrier 审计） |
+| — | `agentSessionId` | extension；建议移到 `invocation_attempts` |
+| — | `workerId` | extension；建议移到 `invocation_attempts` |
+| — | `provider` / `model` / `modelFamily` | extension；建议移到 `invocation_attempts` |
+| — | `usage` | extension；建议移到 `invocation_attempts` |
+| — | `queueEntryId` / `attempt` | 已在 `invocation_attempts`；建议从 TurnExecution 删除 |
+| — | `a2aParentTurnExecutionId` / `a2aTriggerMessageId` / `a2aDepth` | extension；建议收进 `causal` 或 attempt |
+| — | `settlement` / `responseMessageId` | extension；建议移到 `invocation_attempts` / response settlement |
+
+**方法对照**
+
+| Clowder `ITurnExecutionStore` | codeteam `TurnExecutionStore` | 处置 |
+|---|---|---|
+| `createRunning` | 同 | 保留；identity 不含 `startedAt`（有意） |
+| `transitionTerminal` | 同 | 保留 |
+| `get` | 同 | 保留 |
+| `listByParent` | `listByInvocationRecord` | 命名；保留 codeteam 名或加 alias |
+| `listRunningByUser` | `listRunning` | v1 单 user；`listRunning` 是等价简化 |
+| `interruptRunningBefore` | 无 | **建议补**；startup reconciler 可直接对齐 |
+| `listResponsePending` | 同 | 保留；若 settlement 移到 attempt，则做 join 投影 |
+| `clearResponsePending` | `completeResponseSettlement` | 语义相同；建议改名对齐 |
+| `bindCoveredMessageIds` | 无 | v2（`coveredMessageIds`） |
+| `listBySource` | 无 | v2（recovery/trace 不在 v1 主路径） |
+| `settleOutputFence` | 无 | v2（action fence） |
+
+**差异分类**
+
+1. **命名/状态词**：`invocationId`/`parentInvocationId`/`catId`/`succeeded` 改名；
+   无行为差异。
+2. **存储表示**：Clowder Redis + Lua CAS、`responsePending` set、R 用 message
+   idempotency key 定位；codeteam SQLite 唯一约束/事务、`settlement` 列、
+   `responseMessageId` FK。语义等价，属于 runtime 适配。
+3. **Additive extension**：session/worker/provider/model/usage/queueEntryId/attempt/
+   a2a refs/settlement/responseMessageId。它们不是 Clowder `TurnExecutionRecord`
+   的一部分；其中大部分更适合放在 `invocation_attempts`（per-target execution snapshot）。
+4. **v1 scope**：`coveredMessageIds`、`outputFence`、`settleOutputFence`、
+   `listBySource`、`queueCompletionPolicy` 留 v2。
+5. **可去掉的重复**：`queueEntryId`/`attempt` 已在 `invocation_attempts`；`usage`
+   已在 parent/attempt 的用量账本；`settlement`/`responseMessageId` 属于 per-attempt
+   response，不应让 TurnExecution 承担。
+
+**建议（待拍板）**
+
+- **A（推荐）**：`TurnExecution` 收敛为 Clowder core + `causal`；extension 移到
+  `invocation_attempts`；`TurnExecutionStore` 补 `interruptRunningBefore`，把
+  `completeResponseSettlement` 改名为 `clearResponsePending`。这样字段/方法接近 1:1。
+- **B**：保留当前 superset，在文档中明确标为 codeteam extension；改动小，但后续实现
+  会把执行/重试/response 三类事实继续耦合在 TurnExecution。
+
+我建议 A；确认后我改 `0010`/`0011`/`0020` 和 schema。
+
 ### 3.7 InvocationRegistry + InvocationCredential（MCP → pi extension）
 
 **定位**：`InvocationRegistry` 是 service；`InvocationCredential` 是存储记录。鉴权对象从 MCP callback 改为 pi extension tools。
@@ -1723,10 +1794,19 @@ targets: Array<
 
 Clowder 同时存在两条语义不同的 retry；混用会把 ordinary A2A 做成 cloud delivery：
 
+> 以下 Clowder 路径均为参考仓 repo-relative，仅作实现对照，不进入 codeteam runtime。
+
 | 路径 | 入口 | 语义 | codeteam v1 |
 |---|---|---|---|
-| ordinary route recovery | `POST /api/threads/:threadId/messages/:sourceMessageId/routing-targets/:targetCatId/retry` → `QueueProcessor.retryRoutingTarget` | 同一个 queue entry、exact target；要求 `entry.status='queued'`、target 仍在 pending、`routingHeldTargetIds`；`claimExactSteerEntryDurable` + `retryDeferrals.forget` 后重新 start | **采用** |
-| cloud delivery retry | `POST /api/messages/:sourceMessageId/delivery-targets/:targetCatId/retry` | fresh source/attempt；failed History delivery 不可变；Queue 只接收新的 pending work，绝不 reopen terminal row | 不采用（connector/cloud 专用；v1 不做） |
+| ordinary route recovery | `packages/api/src/routes/queue-routing-recovery.ts:98` → `QueueProcessor.retryRoutingTarget`（`QueueProcessor.ts:3324`） | 同一个 queue entry、exact target；要求 `entry.status='queued'`、target 仍在 pending、`routingHeldTargetIds`；`claimExactSteerEntryDurable` + `retryDeferrals.forget` 后重新 start | **采用** |
+| cloud delivery retry | `packages/api/src/routes/messages.ts:928` | fresh source/attempt；failed History delivery 不可变；Queue 只接收新的 pending work，绝不 reopen terminal row | 不采用（connector/cloud 专用；v1 不做） |
+
+- 自动退避只在 pre-handoff 仍 pending 的 target：`QueueProcessor.deferFailedAttempt`
+  （`QueueProcessor.ts:2913`）→ `QueueRetryDeferrals.defer`（`queue-retry-deferrals.ts:29`）；
+  默认 base 10s、上限 1h（`:19-20`）。
+- immutable attempt 的 Clowder read model 是 `QueueTargetAttempt`
+  （`packages/shared/src/types/queue-receipt.ts:271`）；retry 永远 append 新 attempt，
+  不重写旧 attempt。codeteam 用 `invocation_attempts` 表承载同一语义。
 
 codeteam 的 ordinary A2A 复用 Clowder 的 route/invocation/target，retry 也必须复用
 route recovery，而不是 cloud delivery 的“新 source/attempt”。之前“新 queue entry +
