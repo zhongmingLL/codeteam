@@ -1412,6 +1412,10 @@ session resume 约 0.49–0.53s（1–10MB session）。5min turn 下约 0.17%�
 **v1 `TurnExecution`（Clowder core，DP-F018TE-1=A）**
 
 ```ts
+type TurnExecutionKind = "ordinary" | "routing_guard";
+type TurnExecutionStatus = "running" | "completed" | "failed" | "interrupted" | "canceled";
+type TurnExecutionTerminalStatus = Exclude<TurnExecutionStatus, "running">;
+
 interface TurnExecutionCausalRefs {
   triggerMessageId: string;
   a2aParentTurnExecutionId?: string;
@@ -1420,18 +1424,55 @@ interface TurnExecutionCausalRefs {
   routingGuardReason?: "missing_routing_exit";
 }
 
-interface TurnExecution {
+interface CreateTurnExecutionInput {
   turnExecutionId: string;       // Clowder invocationId
   invocationRecordId: string;    // Clowder parentInvocationId
   threadId: string;
   userId: string;
   agentId: string;               // Clowder catId
-  executionKind: "ordinary" | "routing_guard";
+  executionKind: TurnExecutionKind;
   causal: TurnExecutionCausalRefs;
-  status: "running" | "completed" | "failed" | "interrupted" | "canceled";
-  terminalReason: string | null;
   startedAt: number;
+}
+
+interface TurnExecution extends CreateTurnExecutionInput {
+  status: TurnExecutionStatus;
+  terminalReason: string | null;
   endedAt: number | null;
+}
+
+interface TurnExecutionTerminalInput {
+  status: TurnExecutionTerminalStatus;
+  endedAt: number;
+  terminalReason?: string | null;
+}
+
+interface InterruptRunningTurnExecutionsInput {
+  endedAt: number;
+  terminalReason: string;
+  excludedTurnExecutionIds?: readonly string[];
+}
+
+type CreateTurnExecutionOutcome = "created" | "replayed" | "conflict";
+interface CreateTurnExecutionResult {
+  outcome: CreateTurnExecutionOutcome;
+  record: TurnExecution;
+}
+
+type TransitionTurnExecutionOutcome = "transitioned" | "already_terminal" | "not_found";
+interface TransitionTurnExecutionResult {
+  outcome: TransitionTurnExecutionOutcome;
+  record: TurnExecution | null;
+}
+
+type ClearResponsePendingOutcome =
+  | "settled"
+  | "already_settled"
+  | "not_pending"
+  | "not_found";
+interface ClearResponsePendingResult {
+  outcome: ClearResponsePendingOutcome;
+  record: TurnExecution | null;
 }
 ```
 
@@ -1444,23 +1485,40 @@ interface TurnExecution {
 **`TurnExecutionStore` v1**
 
 ```ts
-createRunning(input): { outcome: "created" | "replayed" | "conflict"; record: TurnExecution };
-transitionTerminal(turnExecutionId, input): {
-  outcome: "transitioned" | "already_terminal" | "not_found";
-  record: TurnExecution | null;
-};
-interruptRunningBefore(cutoffStartedAt, input): TurnExecution[];
-get(turnExecutionId);
-listByInvocationRecord(invocationRecordId);
-listRunning();
-listResponsePending(): TurnExecution[];       // projection over invocation_attempts
-clearResponsePending(turnExecutionId): {
-  outcome: "settled" | "already_settled" | "not_pending" | "not_found";
-  record: TurnExecution | null;
-};
+interface TurnExecutionStore {
+  createRunning(input: CreateTurnExecutionInput): CreateTurnExecutionResult;
+
+  transitionTerminal(
+    turnExecutionId: string,
+    input: TurnExecutionTerminalInput,
+  ): TransitionTurnExecutionResult;
+
+  interruptRunningBefore(
+    cutoffStartedAt: number,
+    input: InterruptRunningTurnExecutionsInput,
+  ): TurnExecution[];
+
+  get(turnExecutionId: string): TurnExecution | null;
+  listByInvocationRecord(invocationRecordId: string): TurnExecution[];
+  listRunning(): TurnExecution[];
+
+  /** Join over invocation_attempts.settlement='response_pending'. */
+  listResponsePending(): TurnExecution[];
+  /** Update the attempt settlement for this child to 'settled'. */
+  clearResponsePending(turnExecutionId: string): ClearResponsePendingResult;
+}
 ```
 
 - 唯一约束：`turnExecutionId`；`invocation_attempts.turn_execution_id` 非空时唯一。
+- `TurnExecutionTerminalInput.status` 只能是 terminal status；`endedAt >= startedAt`；
+  非 `completed` 必须有 `terminalReason`。
+- `interruptRunningBefore` 只匹配 `status='running' AND startedAt < cutoffStartedAt`；
+  `excludedTurnExecutionIds` 不收敛；返回被收敛记录；attempt/credential 由调用方在同一
+  恢复流程处理。
+- `get` / `listByInvocationRecord` / `listRunning` 只读；`listByInvocationRecord` 对应
+  Clowder `listByParent`；`listRunning` 是 v1 单 user 的 `listRunningByUser` 等价。
+- `listResponsePending` / `clearResponsePending` 是 `invocation_attempts.settlement` 的
+  投影；不直接改 attempt 的 execution state。
 - ordinary `createRunning` input：`turnExecutionId + invocationRecordId + threadId +
   userId + agentId + executionKind + causal`；`routing_guard` 同，但没有 attempt/R。
 - **`createRunning` identity（DP-F018X-1=A）** = `turnExecutionId + invocationRecordId +
