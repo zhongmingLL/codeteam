@@ -250,6 +250,8 @@ interface AgentSession {
   作为 retry anchor。
 - retry 不新建 queue entry、不重新 admission 消息；已终态失败只接受显式
   `requestRetry`；pre-handoff pending target 用 process-local bounded backoff。
+- ordinary A2A retry 复用 Clowder route recovery（`retryRoutingTarget`：同 queue entry、
+  exact target），不是 cloud delivery 的 fresh source/attempt。
 - `queue_admissions` receipt 保住 admission 幂等：live row 删除后同一
   `(sourceRecordId, attempt)` 重放返回 `replayed`/`conflict`，不会二次派发。
 - `AgentRouter.routeAgents(mode)` 调 `runAgentTurn`：per-agent pipeline 拥有 session/prompt/invoke/response/terminal；route 只负责 parallel/serial 调度。
@@ -265,15 +267,17 @@ interface AgentSession {
   `extra.rich` 是 Hub 呈现块（不是 MessageContent）。三者不互相替代。
 - `StoredMessage.lifecycle` 是 durable 投递回执：input 存 typed `dispatchRefs`
   （target/queueEntryId/attempt/phase/responseMessageId/turnExecutionId）；response 存
-  parent/child/target/终态；delivery_failure 是独立 system message，记录 inputMessageId/
+  parent/child/target/status（processing|terminal）/startedAt/completedAt/reason；
+  delivery_failure 是独立 system message，记录 inputMessageId/
   requestedTargets/reason。queue live row 保留到 target attempt 终态（`completed`/
   `canceled` 后删除；`partial_failed`/`failed` 作为 retry anchor），`queue_admissions`
   只做 admission 幂等，不替代投递回执。详见 0010 §3.1。
 - `mentions`/`mentionsUser` 不存：A2A targets 是 typed `dispatchRefs`；文本 `@` 不路由。
 - `userId`/`status`/`deliveryStatus` 不存：分别从 thread、lifecycle、queue 派生。
-- v1 response 与 terminal 同一事务（`settlement="settled"`）；schema 预留
-  `response_pending` + `listResponsePending`/`completeResponseSettlement` seam，未来异步
-  response 不改表。详见 0010 §3.6。
+- v1 response 采用 durable streaming（DP-F018X-2=B）：attempt start 创建 processing R；
+  stream 写 `response_drafts`；child terminal 标 `response_pending`；settlement 提交 R
+  terminal + settle inputs + 清 pending；`listResponsePending`/`settleResponseFromDraft`
+  是恢复入口。详见 0010 §3.6。
 - 详细链路见 `0010-a2a-runtime-chain.md`。
 
 ### 2.5 Credential
@@ -418,6 +422,7 @@ thread message / A2A tool
 | `runs` → `turn_executions` | 新 child 表：`turnExecutionId`、`invocationRecordId`、`a2aParentTurnExecutionId`、`agentSessionId`、`attempt`、provider/model、status/response/terminal；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
 | 新 `invocation_records` | 消息级 parent：`invocationRecordId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
 | 新 `invocation_attempts` | append-only target attempt：attemptId、invocationRecordId、queueEntryId、targetAgentId、attempt、state、turnExecutionId、terminalReason | 与 createRunning/child terminal 同事务写入；retry 追加新行；旧行不改 |
+| 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、contentBlocks、toolEvents、thinking、seq | dispatch 事务创建 R；stream bounded flush；R terminal 后删除 |
 | `messages` | 新增 `target_agent_ids_json`（user message 的 admission targets） | 旧消息回填 `[]`；新 user message 由 ingress 写入 |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
 | `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、state/disposition、token hash/salt | 旧 task/role/run credential legacy |
@@ -521,7 +526,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D5 | thread 创建 | v1 operator/CLI create；agent propose/approve 后续 | 工程默认 |
 | D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
 | D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/runAgentTurn/routeAgents/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 单体实现删除，serial 保留薄循环 | operator 2026-11-06 |
-| D8 | session / history / settlement | AgentSessionStore + ephemeral WorkerPool + 薄 AgentSessionManager；per-`(thread, agent)` deliveryCursor；v1 `settled`，schema 预留 `response_pending` seam | 工程结论 2026-11-09 Q&A；Worker 2026-11-10 拍板 |
+| D8 | session / history / settlement | AgentSessionStore + ephemeral WorkerPool + 薄 AgentSessionManager；per-`(thread, agent)` deliveryCursor；v1 durable streaming：processing R + response_drafts + response_pending settlement | 工程结论 2026-11-09 Q&A；Worker/stream 2026-11-10 拍板 |
 | D9 | Message 单层 | v1 不定义 domain `Message`；`StoredMessage` 是唯一记录；from/content/contentBlocks/toolEvents/lifecycle/replyTo/seq/timestamp/thinking/deletedAt/extra(kind,targetAgentIds,rich,crossPost)；无 userId/status/deliveryStatus/mentions | operator 2026-11-10 确认 |
 
 **术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；

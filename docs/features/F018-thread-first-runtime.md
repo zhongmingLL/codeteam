@@ -42,6 +42,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
    status/successful/failed/canceled/retryCount）+ `TurnExecution`（单 agent
    child，invocationRecordId/a2aParentTurnExecutionId/agentSessionId/attempt）；
    每个 target 的每次执行/重试另有 append-only `invocation_attempts` 台账；
+   response 采用 durable streaming（processing R + `response_drafts` + `responsePending`）；
    `executionKind=ordinary|routing_guard`，没有 conversation/code。
 3. Session 是 thread×agent 的持久身份；一个 active session；无 taskId。
 4. Agent 身份是 config-as-code：`.codeteam/agent-catalog.json` →
@@ -50,6 +51,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
    `codeteam_multi_mention` / `codeteam_thread_context`。
 6. Queue 单账本：thread + sourceRecordId + attempt + targets；target attempt 台账
    append-only；retry 不新建 queue entry、不重新 admission；无 task 依赖。
+   ordinary A2A retry 复用 Clowder route recovery，不是 cloud delivery 的
+   fresh source/attempt。
    身份/命名以 `docs/architecture/0011-identity-contract.md` 为准。
 7. Auth 以 child `TurnExecution`/thread/agent/session 为锚；pi extension tools
    allowlist 在 `InvocationCredential`；无 task/role/run 坐标。

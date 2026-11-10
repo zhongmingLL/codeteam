@@ -41,10 +41,13 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `invocation_attempts`：append-only target attempt 台账；unique
   `(invocation_record_id, target_agent_id, attempt)`；retry 追加新 attempt，旧行不改；
   queue entry 保留到所有 target attempt 终态（`targets_json` 可为空）。
+- `response_drafts`：processing R 的 in-flight body；`attempt_id`/`turn_execution_id`
+  1:1；stream 按 100ms/4KB bounded flush；R terminal 后删除。
 - `invocation_credentials`：child TurnExecution capability；allowedTools/
   state/disposition；无 taskId/role/run。
-- `turn_executions.settlement`：`settled | response_pending`；v1 恒 `settled`，
-  schema 预留异步 response seam。
+- `turn_executions.settlement`：`streaming | response_pending | settled`；ordinary child
+  从 attempt start 绑定 processing R；child terminal → `response_pending`；settlement →
+  `settled`。
 - `turn_executions.worker_id`：nullable runtime trace；同 `agent_session_id` 唯一 running。
 - `workers` + `worker_bindings`：ephemeral worker；pi v1 capacity=1、一 worker 一 session；
   `warmTtl=0`、`maxLiveWorkers=8`；session 不再持有 worker。
@@ -79,12 +82,16 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - retry：target-level `requestRetry`；同 parent/同 source message/同 queue entry，不重新
   admission；已终态失败只接受显式 retry 追加 attempt+1；pre-handoff pending target 用
   process-local bounded backoff（base 10s、上限 1h）自动重试。
+- retry 采用 Clowder route recovery（`retryRoutingTarget`），不是 cloud delivery 的
+  fresh source/attempt；不新建 queue entry、不产生第二条用户消息。
 - worker：`WorkerPool.ensure` 按 poolKey 取/建 ephemeral worker；turn 结束默认 retire；
   记录 `worker_spawn_ms` / `worker_busy_ms` / `worker_evicted_count`。
-- live stream：`WorkerEventSink` 处理 `message_update.text_delta` + tool start/end，
-  发 ephemeral `AgentStreamEvent`；response StoredMessage 仍在 terminal 一次写。
-- response settlement：v1 ephemeral stream；terminal 时 response StoredMessage +
-  TurnExecution terminal + attempt terminal + parent aggregate + credential 同一事务。
+- live stream（DP-F018X-2=B）：attempt start 创建 processing R；`WorkerEventSink` 处理
+  `message_update.text_delta` + tool start/end，写 `response_drafts`，同时发 ephemeral
+  `AgentStreamEvent` 给 UI；不按 delta 写 messages。
+- response settlement：child terminal + attempt terminal + parent aggregate + credential
+  同一事务并标 `response_pending`；随后 `settleResponseFromDraft` 提交 R terminal +
+  settle inputs + delete draft + clear pending；崩溃后 startup reconciler 重放。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A
@@ -118,6 +125,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - 合并前 `check:doc-index`、受影响测试、`git diff --check`。
 - R1/R2 必须有 attempt 台账测试：同身份不同 `startedAt` replay、retry 追加 attempt 不改旧行、
   successful target 不重跑、queue entry 在 terminal 前后保留/删除。
+- R1/R2 必须有 durable stream 测试：processing R 原子创建、delta 只写 draft、child terminal
+  标 pending、settlement 提交 R terminal 并清 pending、crash 后 reconciler 恢复。
 
 ## 回滚
 
