@@ -536,7 +536,8 @@ interface DispatchRef {
   block 具体形状复用 `0001-codeteam-architecture-v1.md` 的 RichBlock 契约，不在这里复制。
 - `timestamp` 是消息时间；`updatedAt` 是修订时间；`seq` 是 thread 内顺序。
   `thinking?` 是可选的模型思考 sidecar，不放进 `contentBlocks`。
-- `userId` 不存 message：thread owner 派生；v1 单 user。
+- `userId` 不存 message：thread owner 派生；v1 单 user。完整矩阵见
+  `0011-identity-contract.md` §11；Clowder 存 `StoredMessage.userId`，v1 有意省。
 - `status` 不存 StoredMessage：持久消息即 complete；展示/流式状态由读模型投影。
 - `deletedAt` / `deletedBy` 保留软删除；`deliveryStatus` 不存（queue/lifecycle 派生）；
   `_tombstone` / `recall` v1 不做。
@@ -1482,6 +1483,7 @@ interface ClearResponsePendingResult {
 - `userId` 是 **scope snapshot**，不是第二身份：创建时必须等于
   `InvocationRecord.userId` 和 `Thread.created_by`；不一致 fail closed。v1 单 user
   仍保留该字段，避免 recovery/security 退化为跨 user 查询；未来 multi-user 直接可用。
+  完整矩阵见 `0011-identity-contract.md` §11。
 - `routing_guard` 没有 attempt/R；它只有 core TurnExecution，status/routing reason 在
   `causal`。
 
@@ -2186,6 +2188,7 @@ CREATE INDEX invocation_records_thread_status
 ```
 
 - `source_record_id` unique：一个 source 一个 parent；重试复用同一 parent。
+- `user_id` 是 parent ownership snapshot；必须等于 `thread.created_by`（`0011` §11）。
 - `user_message_id` 是 parent 的用户消息指针；v1 = `messageId`，未来 connector 可为 null。
 - `target_agent_ids_json` 是 admission 快照，不可变。
 - `successful_agent_ids_json` 单调递增；failed/canceled 不落库，由 `invocation_attempts`
@@ -2309,6 +2312,7 @@ CREATE UNIQUE INDEX invocation_attempts_one_running_per_session
 - **append-only**：每个 agent target 每次执行/重试一行；retry 追加 `attempt+1`，旧行永不改写。
 - `queue_entry_id` 不加 FK：queue row 在 parent terminal 后可删除，attempt 仍保留 route 证据。
 - `turn_execution_id` 在 `createRunning` 成功后回填，非空时唯一；`queued` attempt 允许为空。
+- attempt 不存 `userId`；从 `invocationRecordId`/`threadId` 派生（`0011` §11）。
 - `agent_session_id` / `worker_id` / `provider` / `model` / `model_family` / `usage_json`
   是本 attempt 的 execution binding/snapshot；`bindExecution` 写入。
 - `settlement` 是 response 状态，不是 execution state：`NULL`（queued，无 R）、
@@ -2351,6 +2355,7 @@ CREATE INDEX response_drafts_thread
 ```
 
 - 一行对应一个 attempt 的 in-flight response body；`attempt_id` / `turn_execution_id` 1:1。
+- `user_id` 是 draft store 的用户作用域；必须等于 attempt/TurnExecution 的 owner。
 - `content` 是 streamed text；`content_blocks_json` / `tool_events_json` 是工具/块事件；
   `thinking` 是可选思考流。它不是 message history，不分配 `messages.seq`。
 - `seq` 是 draft 更新序号，用于 bounded flush 的幂等/乱序保护；不是消息顺序。
@@ -2389,6 +2394,7 @@ CREATE TABLE invocation_credentials (
 ```
 
 - 一个 child TurnExecution 一个 credential。
+- `user_id` 是 auth scope；必须等于 child TurnExecution/thread owner（`0011` §11）。
 - 重试创建新 child + 新 credential；旧 credential terminalize。
 - token 只存 hash+salt；token 本体只经 `CODETEAM_TOKEN_FILE` 交给 pi extension。
 
@@ -2406,6 +2412,8 @@ CREATE TABLE agent_read_state (
 ```
 
 - 只存 `deliveryCursor`；`seenCursor` / `mentionAck` / unread badge 是 v2。
+- 不存 `userId`：thread owner 隐含 user；v1 单 user 用 `(thread_id, agent_id)` 足够，
+  详见 `0011-identity-contract.md` §11。
 - `ack` 用单调 CAS：`INSERT ... ON CONFLICT DO UPDATE SET delivery_cursor =
   max(delivery_cursor, excluded.delivery_cursor)`；普通 ack 不允许回退。
 - 与 `agent_sessions` 分开：session 是执行身份，read state 是投递进度；session fresh/reset
@@ -2756,6 +2764,15 @@ parent partial_failed: successful=[A], failed=[B]
 - A2A hop：child A post 给 C；C 的 parent/depth 正确；深度限制生效。
 - daemon 重启：running child 收敛；live 列表正确。
 - 迁移：task-first 数据 legacy；新 runtime 不读。
+
+### 9.8 userId invariants
+
+- Thread owner → Session → InvocationRecord → TurnExecution → Credential → response_draft
+  的 owner 链一致；任一不一致 fail closed。
+- `InvocationAttempt` / `StoredMessage` / `AgentReadState` 不存 userId；从 parent/thread
+  派生；调用方 userId 与派生值冲突时拒绝。
+- 跨 user thread access 拒绝；system message/queue entry 不伪造 userId。
+- 完整矩阵见 `0011-identity-contract.md` §11。
 
 ## 10. Clowder 映射
 

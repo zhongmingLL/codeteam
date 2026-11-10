@@ -189,4 +189,57 @@ credentialId（auth）
 - `0005-thread-first-runtime.md`：runtime chain 与字段同步。
 - `0001-codeteam-architecture-v1.md`：legacy `QueueEntry` / `Run` 保留实现原貌，新增注释指向本文。
 
+## 11. userId 存储策略（v1）
+
+**原则**：`userId` 是 scope/ownership 坐标，不是 payload。只在“所有权/授权/恢复根”或
+“用户作用域 store”持久化；内容/子记录通过 `threadId`/parent 派生。
+
+| 对象/表 | 持久化 userId? | 位置 | 规则 |
+|---|---|---|---|
+| Thread | **是** | `threads.created_by` | 唯一 ownership root |
+| Thread participants | 否 | `thread_participants(thread_id, agent_id)` | participants 是 agent；user 由 thread owner 承担 |
+| AgentSession | **是** | `agent_sessions.user_id` | session 身份坐标；必须等于 thread owner |
+| StoredMessage | 否 | `from` + `thread_id` | user message 的 `from.userId`；agent message 由 thread owner 派生；Clowder 存 userId，v1 有意省 |
+| InvocationQueue / QueueEntry | **是（owner 内）** | `owner_json` 的 `{kind:'user', userId}` / `{kind:'system'}` | admission owner；不另设 user_id 列 |
+| InvocationRecord | **是** | `invocation_records.user_id` | parent ownership；必须等于 thread owner |
+| InvocationAttempt | 否 | 通过 `invocation_record_id`/`thread_id` | 子台账；从 parent/thread 派生 |
+| TurnExecution | **是** | `turn_executions.user_id` | execution scope snapshot；必须等于 parent/thread owner |
+| InvocationCredential | **是** | `invocation_credentials.user_id` | auth scope；必须等于 child/TurnExecution owner |
+| AgentReadState | 否 | 主键 `(thread_id, agent_id)` | thread owner 隐含 user；v1 单 user 简化 |
+| response_drafts | **是** | `response_drafts.user_id` | 用户作用域 draft store；必须等于 attempt/TurnExecution owner |
+| workers / worker_bindings | 否 | project/account | execution carrier，不是 user-owned |
+| a2a_requests | 否 | `(thread_id, agent_id, request_id)` | thread/agent scoped；user 由 thread owner 派生 |
+| InvocationTracker / QueueProcessor（内存） | 否（不持久化） | `start(...userId...)` / `processNext(...userId...)` | ownership/auth fence；不是存储 |
+
+### 11.1 不变量
+
+1. `threads.created_by` 是唯一 ownership root。
+2. 任何持久化 userId 都必须等于 `threads.created_by`；`TurnExecution`/`InvocationRecord`/
+   `AgentSession`/`InvocationCredential`/`response_drafts` 还要与 parent/child 链一致；
+   不一致 fail closed。
+3. 不持久化 userId 的子记录不得接受调用方 userId 作为作用域；从 FK/thread 派生；调用方
+   userId 与派生值冲突时拒绝。
+4. system message / system-owned queue entry 用 `from.kind='system'` /
+   `owner.kind='system'`，不伪造 userId。
+5. 跨 user 访问只在 thread ingress/read 层校验；v1 单 user 不引入 row-level userId 过滤。
+
+### 11.2 与 Clowder 的差异
+
+| Clowder | codeteam v1 | 原因 / 触发条件 |
+|---|---|---|
+| `StoredMessage.userId` | 不存；`from` + thread owner | v1 单 user、无 whisper/mention；若做跨 user 可见性/mention/按 user 的消息幂等，再加字段并回填 |
+| DeliveryCursor key `(userId, catId, threadId)` | `agent_read_state(thread_id, agent_id)` | thread owner 隐含 user；跨 user thread 可见性时再加 userId |
+| InvocationRecord idempotency `(threadId,userId,key)` | `sourceRecordId UNIQUE` | v1 单 user；multi-user 时改复合 key |
+| `TurnExecutionStore.listRunningByUser` | `listRunning()` | v1 单 user；userId 已在 TurnExecution，multi-user 时加过滤 |
+| DraftStore `(userId, threadId, invocationId)` | `response_drafts.user_id` + attempt/turnExecution | 已对齐；draft 是用户作用域 store |
+| `TurnExecution`/`InvocationRecord`/`InvocationCredential`/Session userId | 同 | 已对齐；作为根/恢复/授权 scope |
+
+### 11.3 v1 决策
+
+- **保留**：Thread owner、AgentSession、InvocationRecord、TurnExecution、InvocationCredential、
+  QueueEntry.owner、response_drafts 的 userId。
+- **不加**：StoredMessage、InvocationAttempt、AgentReadState、workers、a2a_requests。
+- **不变量测试**：上述 userId 链不一致 fail closed；跨 user thread access 拒绝；
+  `response_drafts.user_id` 与 attempt/TurnExecution 不一致拒绝。
+
 [宪宪/deepseek-flash🐾]

@@ -84,7 +84,7 @@ export interface AgentSession {
 
 | 字段 | 为什么在 v1 |
 |---|---|
-| `id/threadId/agentId/userId` | session 的身份坐标；一个 thread×agent 唯一一行。 |
+| `id/threadId/agentId/userId` | session 的身份坐标；一个 thread×agent 唯一一行；`userId` 必须等于 `thread.created_by`，不是第二 owner（0011 §11）。 |
 | `piSessionId` | pi 的 session 身份；resume 后必须和 `get_state().sessionId` 一致。 |
 | `piSessionFile` | pi 的 JSONL 文件路径；显式 resume 目标，文件缺失时能安全 fresh。 |
 | `workingDirectory` | session 的实际工作区；必须等于创建时的 `thread.projectPath`。 |
