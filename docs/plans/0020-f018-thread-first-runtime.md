@@ -50,7 +50,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `messages`：v1 不定义 domain `Message`，`StoredMessage` 是唯一记录；加
   `content_json`（text/tool_call/tool_result）、`tool_events_json`、
   `lifecycle_json`、`thinking`、`deleted_at`/`deleted_by`、`extra_json`
-  （kind/targetAgentIds/rich/crossPost）；`body_md` 是 plain text body；
+  （kind/targetAgentIds/rich `{v:1,blocks}`/crossPost）；`body_md` 是 plain text body；
   legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json` 停止写入，R5 drop。
 - `a2a_requests`：`thread_id` + `task_id` nullable；unique
   `(thread_id, agent_id, request_id)`；drop 旧 task-level unique。

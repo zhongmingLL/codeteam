@@ -412,6 +412,17 @@ type ToolResultContent = {
 type MessageContent = TextContent | ToolCallContent | ToolResultContent;
 // v1 只做这三种；image/file/code/context_attachment 后续按 Clowder 扩展
 
+type RichBlockKind =
+  | "card" | "diff" | "checklist" | "media_gallery"
+  | "audio" | "interactive" | "html_widget" | "file";
+
+/** Hub 呈现块容器；RichBlock 的具体形状按 0001 的 RichBlock 契约，
+ *  不在 MessageStore 里复制 8 种 block 的字段。 */
+interface RichMessageExtra {
+  v: 1;
+  blocks: Array<{ id: string; kind: RichBlockKind; v: 1; [key: string]: unknown }>;
+}
+
 /** execution replay；与 contentBlocks 的语义内容分开 */
 interface StoredToolEvent {
   id: string;
@@ -451,7 +462,7 @@ interface StoredMessage {
   extra?: {
     kind?: MessageKind;              // codeteam extension
     targetAgentIds?: string[];       // user admission snapshot
-    rich?: unknown[];                // Hub presentation blocks；不是 MessageContent
+    rich?: RichMessageExtra;         // Hub presentation；不是 MessageContent
     crossPost?: { sourceThreadId: string; sourceMessageId?: string };
   };
 }
@@ -509,6 +520,9 @@ interface DispatchRef {
 - `extra` 是开放 bag；v1 只写 4 个 key：`kind` / `targetAgentIds` / `rich` / `crossPost`。
   `kind` 是 codeteam 扩展；`targetAgentIds` 仅 user admission；agent A2A targets 走
   `lifecycle.dispatchRefs`；`rich` 是 Hub presentation；`crossPost` 是跨 thread provenance。
+- `extra.rich` 不是 `unknown[]`：它是 `RichMessageExtra = {v:1, blocks: RichBlock[]}`，
+  kind 为 `card/diff/checklist/media_gallery/audio/interactive/html_widget/file`；
+  block 具体形状复用 `0001-codeteam-architecture-v1.md` 的 RichBlock 契约，不在这里复制。
 - `timestamp` 是消息时间；`updatedAt` 是修订时间；`seq` 是 thread 内顺序。
   `thinking?` 是可选的模型思考 sidecar，不放进 `contentBlocks`。
 - `userId` 不存 message：thread owner 派生；v1 单 user。
@@ -524,6 +538,9 @@ interface DispatchRef {
 - `delivery_failure` 是 **独立 system message**（`from.kind='system'`,
   `service='message_delivery'`）：记录 `inputMessageId` / `requestedTargets` / `reason`；
   source 的 dispatchRefs 同时 settle；不创建 response/TurnExecution。
+- **为什么不只用 audit**：`audit` 是 append-only 操作日志（actor/action/subject/args/ts），
+  不进入 thread history/read model，用户和 agent 看不到，也没有 `seq`/context/lifecycle；
+  delivery_failure 必须是一条可读、可排序、可审计的消息，audit 只能作为补充。
 - queue live row 删除后，读模型仍可从 `StoredMessage.lifecycle` + `turn_executions` 还原
   “发给了谁、谁处理、对应哪条 response”；`queue_admissions` 只负责 admission 幂等。
 - v1 不做 Clowder 的 `appendAcceptance` / `inputRead` / `coveredMessageIds`；
