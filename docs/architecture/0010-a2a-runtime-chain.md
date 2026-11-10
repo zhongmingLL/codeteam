@@ -586,44 +586,56 @@ ALTER TABLE messages ADD COLUMN deleted_by TEXT;
 
 ```ts
 interface MessageStore {
-  get(id: string, options?: { includeDeleted?: boolean }): StoredMessage | null;
+  getById(id: string, options?: { includeDeleted?: boolean }): StoredMessage | null;
   latestSeq(threadId: string): number;
 
-  listAfterSeq(threadId: string, afterSeq: number, limit: number): StoredMessage[];
-  listRecent(threadId: string, limit: number): StoredMessage[];
-  listThread(threadId: string, options?: {
-    beforeSeq?: number; afterSeq?: number; limit?: number; includeDeleted?: boolean;
+  getByThread(threadId: string, limit: number, options?: {
+    includeDeleted?: boolean;
+  }): StoredMessage[];
+  getByThreadAfter(threadId: string, afterSeq: number, limit: number, options?: {
+    includeDeleted?: boolean;
+  }): StoredMessage[];
+  getByThreadBefore(threadId: string, beforeSeq: number, limit: number, options?: {
+    includeDeleted?: boolean;
   }): StoredMessage[];
 
   append(input: AppendMessageInput): StoredMessage;
-  appendResponse(input: AppendResponseInput): StoredMessage;
-  appendDeliveryFailure(input: AppendDeliveryFailureInput): {
+  appendIdempotent(input: AppendMessageInput): {
+    message: StoredMessage;
+    replayed: boolean;
+  };
+
+  advanceLifecycleInputDispatch(id: string, patch: LifecycleInputDispatchPatch): StoredMessage;
+  commitLifecycleResponseTerminal(id: string, patch: LifecycleResponseTerminalPatch): StoredMessage;
+  commitLifecyclePreAdmissionFailure(input: LifecyclePreAdmissionFailureInput): {
     source: StoredMessage;
     failure: StoredMessage;
   };
 
-  advanceDispatch(input: AdvanceDispatchInput): StoredMessage;
-  updateResponseLifecycle(input: UpdateResponseLifecycleInput): StoredMessage;
+  updateExtra(id: string, extra: NonNullable<StoredMessage["extra"]>): StoredMessage | null;
   softDelete(id: string, deletedBy: string, options?: { expectedUpdatedAt?: number }): StoredMessage;
 }
 ```
 
 **方法语义**
 
-- `append`：分配 `seq = max(seq)+1`；同 `id` + 同 payload → replayed；不同 → conflict；
-  `expectedSeq` 可选 CAS。写入 `from/content/contentBlocks/toolEvents/lifecycle/extra`。
-- `appendResponse`：强制 `lifecycle.kind='response'`；response 必须绑定
+- `append`：分配 `seq = max(seq)+1`；`expectedSeq` 可选 CAS；写入
+  `from/content/contentBlocks/toolEvents/lifecycle/extra`。response lifecycle 必须绑定
   `invocationRecordId/turnExecutionId/target/status/startedAt`。
-- `appendDeliveryFailure`：同事务追加 system message（`from.kind='system'`,
+- `appendIdempotent`：与 `append` 相同，但按 `id`/幂等键返回 `replayed`；不同 payload → conflict。
+- `advanceLifecycleInputDispatch`：按 `(targetKey, queueEntryId, attempt)` 精确匹配；
+  只允许 `dispatched → settled`；同 phase 同 payload = idempotent no-op。
+- `commitLifecycleResponseTerminal`：只允许 response lifecycle；status 只能
+  `processing → completed|failed|interrupted|canceled`；terminal 后不可改。
+  v1 若 response 在 terminal 才创建，可直接用 `append` + response lifecycle；
+  该方法是 Clowder 对齐入口，给未来 streaming/processing response 用。
+- `commitLifecyclePreAdmissionFailure`：同事务追加 system message（`from.kind='system'`,
   `service='message_delivery'`）+ settle source 的 `dispatchRefs`；reason 必须是
   `no_target/unknown_agent/agent_disabled/account_missing/thread_deleted/worker_capacity/
   worker_start_failed/credential_mint_failed`。
-- `advanceDispatch`：按 `(targetKey, queueEntryId, attempt)` 精确匹配；只允许
-  `dispatched → settled`；同 phase 同 payload = idempotent no-op。
-- `updateResponseLifecycle`：status 只能
-  `processing → completed|failed|interrupted|canceled`；terminal 后不可改。
+- `updateExtra`：更新 `extra`（kind/targetAgentIds/rich/crossPost）；CAS 可选。
 - `softDelete`：写 `deleted_at/deleted_by`；不改 `seq`/lifecycle；默认读排除删除行。
-- `get/list*` 默认 `deleted_at IS NULL`；`includeDeleted` 给 read model/审计用。
+- `getBy*` 默认 `deleted_at IS NULL`；`includeDeleted` 给 read model 用。
 - **不拥有** queue/cursor/session；不做可见性过滤；`seq` 只保证 thread 内顺序。
 
 **事务边界**
@@ -631,12 +643,29 @@ interface MessageStore {
 | 场景 | 同一事务 |
 |---|---|
 | admission | `append` + `InvocationQueue.enqueue` + `queue_admissions` |
-| dispatch | `advanceDispatch(dispatched)` + parent/child/credential + `retireTargets` |
-| response settlement | `appendResponse` + `advanceDispatch(settled)` + `transitionTerminal` + parent aggregate + credential |
-| delivery failure | `appendDeliveryFailure` + source dispatchRefs settle |
+| dispatch | `advanceLifecycleInputDispatch(dispatched)` + parent/child/credential + `retireTargets` |
+| response settlement | `append`（terminal response）或 `commitLifecycleResponseTerminal` + `advanceLifecycleInputDispatch(settled)` + `transitionTerminal` + parent aggregate + credential |
+| delivery failure | `commitLifecyclePreAdmissionFailure` + source dispatchRefs settle |
 | soft delete | `softDelete`（可选 thread event） |
 
 `ControlTransaction` 可重入；上层 service 打开事务，store 内调用不会重复 BEGIN。
+
+**与 Clowder `IMessageStore` 的关系**
+
+- 核心方法名/语义对齐 Clowder：`getById` / `append` / `appendIdempotent` /
+  `getByThread` / `getByThreadAfter` / `getByThreadBefore` /
+  `advanceLifecycleInputDispatch` / `commitLifecycleResponseTerminal` /
+  `commitLifecyclePreAdmissionFailure` / `softDelete` / `updateExtra`。
+- Clowder 的 `IMessageStore` 还有约 40 个 surface-specific 方法：mention inbox、
+  composer drafts、recall/restore、whisper、connector source、delivery status、
+  hard delete、stream metadata、custody/plugin、unread projection 等。v1 纯 A2A
+  不需要，故意不加，避免造死接口。
+- Clowder 的 `appendWithQueueLedgerAdmission` 是 message+queue 的原子便捷方法；
+  codeteam 用可重入 `ControlTransaction` 包住 `append` + `InvocationQueue.enqueue`
+  达到同一语义，不复制一个依赖 queue store 的复合方法。
+- Clowder 的 response 是 streaming 的 processing row → terminal；
+  codeteam v1 response 在 terminal 一次 append。`commitLifecycleResponseTerminal`
+  保留给未来 processing/streaming response；v1 可用 `append` + response lifecycle。
 
 ### 3.2 QueueProcessor + QueueEntry
 
@@ -1177,13 +1206,13 @@ interface AgentReadState {
 
 ```text
 bootstrap（没有 read state）:
-  rows = messages.listRecent(threadId, BOOTSTRAP_WINDOW)   // 最近 N 条，默认 200
+  rows = messages.getByThread(threadId, BOOTSTRAP_WINDOW)   // 最近 N 条，默认 200
   boundary = rows 中最大的 seq（thread tail）
   agentReadState.ack(threadId, agentId, boundary)
 
 normal:
   cursor = agentReadState.deliveryCursor ?? 0
-  rows = messages.listAfterSeq(threadId, cursor, BOOTSTRAP_WINDOW)
+  rows = messages.getByThreadAfter(threadId, cursor, BOOTSTRAP_WINDOW)
   filter:
     - response message → broadcast；默认排除自己刚写的 response
     - input message 有 targetAgentIds → 仅包含本 agent 的
@@ -1196,11 +1225,11 @@ normal:
 
 - **cursor 是全局可见序，不是“发给这个 agent 的最后一条”**：A 的 cursor 会越过对 A
   不可见的定向消息；B 仍会在自己的 cursor 位置看到它。不需要 per-target cursor。
-- `MessageStore.listAfterSeq` / `listRecent` 返回的是 **`StoredMessage[]`**；cursor 组装的是
+- `MessageStore.getByThreadAfter` / `getByThread` 返回的是 **`StoredMessage[]`**；cursor 组装的是
   “thread 内从 cursor 之后的多条 StoredMessage 窗口”，不是单条消息的 content，
   也不是把整个 thread 塞进一条 Message。
-- MessageStore 读面只需要两个方法：`listRecent(threadId, limit)` 和
-  `listAfterSeq(threadId, afterSeq, limit)`，都按 `seq` 升序返回。
+- MessageStore 读面只需要两个方法：`getByThread(threadId, limit)` 和
+  `getByThreadAfter(threadId, afterSeq, limit)`，都按 `seq` 升序返回。
 - 先 fetch after cursor，再按上面的可见性规则过滤；被过滤掉的 message 也让 cursor
   前进，避免下次重复拉取。
 - 同一 thread 的 A/B 各自一个 cursor；A 看到 msg1/msg3、B 看到 msg1/msg2/msg3 是正常的。
