@@ -1105,13 +1105,14 @@ runAgentTurn
   1. resolve AgentConfig
   2. ensure AgentSession（active-only）
   3. attempt(queued) + TurnExecution.createRunning（同 session 唯一 running）
-  4. bind attempt（session/worker/provider/model/R/settlement=streaming）
-  5. workerPool.ensure（ephemeral；spawn ~0.5s）
-  6. InvocationCredential.create
-  7. build context + prompt
-  8. invoke pi worker；stream → response_drafts；usage → attempt
+  4. bind attempt（session/provider/model/R/settlement=streaming；worker=null）
+  5. loadHistory（§3.5.1）→ deliveryBoundarySeq
+  6. workerPool.ensure（ephemeral；spawn ~0.5s）+ attempt.bindWorker
+  7. InvocationCredential.create
+  8. build prompt + invoke pi worker；prompt RPC 接收后 markPromptDelivered；
+     stream → response_drafts；usage → attempt
   9. transitionTerminal + attempt terminal/settlement=response_pending + collector +
-     parent aggregate + credential terminalize
+     parent aggregate + credential terminalize + recordTurnTerminal（messageCount + ack）
  10. settle R + attempt settled + retire worker（warmTtl=0）/ release tracker slot
 ```
 
@@ -1309,8 +1310,8 @@ interface AgentReadState {
 ```text
 bootstrap（没有 read state）:
   rows = messages.getByThread(threadId, BOOTSTRAP_WINDOW)   // 最近 N 条，默认 200
-  boundary = rows 中最大的 seq（thread tail）
-  agentReadState.ack(threadId, agentId, boundary)
+  boundarySeq = rows 的可见边界（见下方 processing R 规则；通常是 thread tail）
+  return { mode: 'bootstrap', rows, boundarySeq }            // 不 ack
 
 normal:
   cursor = agentReadState.deliveryCursor ?? 0
@@ -1321,13 +1322,42 @@ normal:
     - 否则 input lifecycle.dispatchRefs 有 agent targets → 仅这些 agent
     - 都没有 → broadcast/system
   build prompt from rows（token budget 内）
-  boundary = rows 中最后一条的 seq
-  agentReadState.ack(threadId, agentId, boundary)  // 单调前进
+  boundarySeq = rows 的可见边界（见下方 processing R 规则）
+  return { mode: 'incremental', rows, boundarySeq }          // 不 ack
 ```
 
-- **processing R 不推进 cursor 越过它**：boundary 只能取 earliest processing response 的前一条；
+- **processing R 不推进 cursor 越过它**：`boundarySeq` 只能取 earliest processing response 的前一条；
   否则并行的另一个 agent 可能只看到空 processing R，错过最终 terminal response。
-- terminal R 正常 ack；`response_drafts` 不是 history，不单独进入 prompt。
+- `response_drafts` 不是 history，不单独进入 prompt。
+
+**ack 时序（关键）**
+
+`loadHistory` 只返回 `boundarySeq`，**不在构建 prompt 时 ack**。ack 发生在
+`settleAgentTurn` 的 child terminal 事务 A 内：
+
+```text
+tx A:
+  TurnExecution terminal
+  + attempt terminal
+  + attempt.settlement = 'response_pending'
+  + parent aggregate / credential terminalize
+  + AgentSessionStore.recordCompletedTurn({ userVisibleOutput })  // outcome=completed 时
+  + AgentReadStateStore.ack(threadId, agentId, deliveryBoundarySeq)
+      仅当 attempt.promptDeliveredAt != null
+```
+
+- `boundarySeq` 与 `promptDeliveredAt` 在 provider RPC 真正接收 prompt 后一起写入
+  `invocation_attempts.delivery_boundary_seq` / `prompt_delivered_at`；loadHistory
+  只把 boundary 留在本轮内存里，prompt 未送达就不持久化。
+- prompt 未送达（worker_capacity、spawn/credential/prompt 构建失败）→ 不 ack；
+  下一轮重放同一批消息。
+- prompt 已送达后 provider 失败/取消 → tx A 照常 ack；否则下一轮会无限重放同一批
+  消息（Clowder 在 “messages were assembled into the prompt” 后也 ack，语义一致）。
+- 崩溃在 tx A 前 → 不 ack；startup reconciler 收敛 attempt 后，按
+  `promptDeliveredAt` 决定是否补 ack。
+- 崩溃在 tx A 后、R settlement 前 → ack 已随 terminal 持久化；response reconciler
+  只收敛 R，不重放输入。
+- ack 是单调 CAS；reconciler / 重试重复调用安全。
 
 - **cursor 是全局可见序，不是“发给这个 agent 的最后一条”**：A 的 cursor 会越过对 A
   不可见的定向消息；B 仍会在自己的 cursor 位置看到它。不需要 per-target cursor。
@@ -1340,13 +1370,13 @@ normal:
   也不是把整个 thread 塞进一条 Message。
 - MessageStore 读面只需要两个方法：`getByThread(threadId, limit)` 和
   `getByThreadAfter(threadId, afterSeq, limit)`，都按 `seq` 升序返回。
-- 先 fetch after cursor，再按上面的可见性规则过滤；被过滤掉的 message 也让 cursor
-  前进，避免下次重复拉取。
+- 先 fetch after cursor，再按上面的可见性规则过滤；被过滤掉的 message 也计入
+  boundary，ack 后不会重复拉取。
 - 同一 thread 的 A/B 各自一个 cursor；A 看到 msg1/msg3、B 看到 msg1/msg2/msg3 是正常的。
-- `boundary` 取**已消费**的最后 seq，而不是“进入 prompt 的最后一条”；token trim 不阻塞
-  cursor 前进。
-- normal 路径一次最多消费 `BOOTSTRAP_WINDOW` 条；待处理超过窗口时 cursor 只推进到本批末尾，
-  下一轮继续，不跳消息。
+- `boundarySeq` 取**已消费**的最后 seq，而不是“进入 prompt 的最后一条”；token trim
+  不阻塞 boundary/ack 前进。
+- normal 路径一次最多消费 `BOOTSTRAP_WINDOW` 条；待处理超过窗口时 boundary 只到本批
+  末尾，ack 后下一轮继续，不跳消息。
 - 新 agent 第一次执行走 bootstrap：只回放最近 `BOOTSTRAP_WINDOW` 条，更早历史不自动全量回放。
 - session fresh / reset：显式把该 agent 的 `deliveryCursor` rewind 到
   `max(0, tailSeq - BOOTSTRAP_WINDOW)`，让新 pi session 拿到最近上下文；rewind 只能通过
@@ -1695,19 +1725,25 @@ response settlement（通常紧接着；崩溃后由 reconciler 重放）:
 
 **`invoke-single-agent` 顺序**
 1. 从 AgentConfig/AccountConfig 解析 provider/model/modelFamily；
-2. ensure `AgentSession`（active-only）+ worker；
+2. ensure `AgentSession`（active-only）；worker 在 history 之后；
 3. 读取/派生可重放的 `turnExecutionId`（`invocation_attempts` 已有则复用）；
 4. 同一 dispatch 事务创建 attempt(queued) + processing R（`invocationId=turnExecutionId`）；
 5. `TurnExecutionStore.createRunning`（core）；
-6. 回填 attempt `turn_execution_id`/`response_message_id`/`settlement='streaming'`；
-7. `InvocationRegistry.create`（credential，绑 child id）——codeteam 因 FK 先 child 后 auth；Clowder 是 auth-first，但“两者都在 provider 之前”不变；
-8. provider/prompt/stream；deltas/tool events 写 `response_drafts`；
-9. child terminal：TurnExecution terminal + attempt terminal + attempt
-   `settlement='response_pending'` + parent aggregate + credential terminalize；
-10. `settleResponseFromDraft`：commit R terminal + settle input dispatchRefs +
+6. 回填 attempt `turn_execution_id`/`response_message_id`/`settlement='streaming'`
+   （`worker_id=null`）；
+7. `loadHistory`（§3.5.1）→ `deliveryBoundarySeq`；
+8. `WorkerPool.ensure` + `attempt.bindWorker(workerId)`；
+9. `InvocationRegistry.create`（credential，绑 child id）——codeteam 因 FK 先 child 后 auth；Clowder 是 auth-first，但“两者都在 provider 之前”不变；
+10. build prompt + provider/prompt/stream；prompt RPC 接收后
+    `markPromptDelivered(deliveryBoundarySeq, promptDeliveredAt)`；deltas/tool events
+    写 `response_drafts`；
+11. child terminal：TurnExecution terminal + attempt terminal + attempt
+   `settlement='response_pending'` + parent aggregate + credential terminalize +
+   `recordTurnTerminal`（messageCount + cursor ack）；
+12. `settleResponseFromDraft`：commit R terminal + settle input dispatchRefs +
     delete draft + attempt `settled` + clear pending。
 
-9/10 由 `settleAgentTurn` 封装（§3.9）；`invoke-single-agent` 只负责 provider/stream。
+11/12 由 `settleAgentTurn` 封装（§3.9）；`invoke-single-agent` 只负责 provider/stream。
 
 若 dispatch 事务内任一步失败：整个事务回滚，不启动 provider；写 `delivery_failure`
 system message（prestart 失败）。若 provider 启动后失败：child/attempt failed；
@@ -1961,6 +1997,7 @@ interface SettleAgentTurnInput {
   endedAt: number;
   terminalReason?: string;
   responseMessageId: string;
+  userVisibleOutput: boolean;
   usage?: TokenUsage;
 }
 
@@ -1979,7 +2016,10 @@ function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnRe
   responseMessageId` 一致；`completed` 不允许 `terminalReason`，其他 status 必须有。
 - 第一段事务（child terminal）：`TurnExecutionStore.transitionTerminal` +
   `InvocationAttemptStore.transitionTerminal` + `setSettlement('response_pending')` +
-  collector/parent aggregate + `InvocationRegistry.commitTerminal`。
+  collector/parent aggregate + `InvocationRegistry.commitTerminal` +
+  `AgentSessionManager.recordTurnTerminal`。后者读取 attempt 的
+  `deliveryBoundarySeq` / `promptDeliveredAt`，在同一事务内完成
+  `recordCompletedTurn` 与 cursor ack；详见 `0009 §6.1`。
 - 第二段（response settlement）：调用 `settleResponseFromDraft`，提交 R terminal +
   input dispatchRefs + attempt `settled` + clear pending；两段之间崩溃可恢复。
 - `settleAgentTurn` 不启动 provider、不写 response 正文；provider/stream 仍在
@@ -2111,6 +2151,10 @@ interface InvocationAttempt {
   settlement: "streaming" | "response_pending" | "settled" | null;
   responseMessageId: string | null;
 
+  // delivery boundary / prompt delivery
+  deliveryBoundarySeq: number | null;
+  promptDeliveredAt: number | null;
+
   createdAt: number;
   startedAt: number | null;
   endedAt: number | null;
@@ -2130,11 +2174,21 @@ interface InvocationAttemptStore {
   bindExecution(attemptId: string, input: {
     turnExecutionId: string;
     agentSessionId: string;
-    workerId: string | null;
+    workerId: string | null;       // 可在 bindWorker 时再填
     provider: string;
     model: string;
     modelFamily: string;
     responseMessageId: string;
+    now: number;
+  }): InvocationAttempt | null;
+
+  bindWorker(attemptId: string, input: {
+    workerId: string;
+    now: number;
+  }): InvocationAttempt | null;
+
+  markPromptDelivered(attemptId: string, input: {
+    deliveryBoundarySeq: number;
     now: number;
   }): InvocationAttempt | null;
 
@@ -2165,8 +2219,14 @@ interface InvocationAttemptStore {
 
 - `appendQueued` 以 `(invocationRecordId, targetAgentId, attempt)` 幂等；同 key 不同
   `queueEntryId` 即 conflict。
-- `bindExecution` 只接受 `queued → running`，写 `turnExecutionId`/session/worker/
-  provider/model、`responseMessageId` 和 `settlement='streaming'`；已 running 幂等。
+- `bindExecution` 只接受 `queued → running`，写 `turnExecutionId`/session/
+  provider/model、`responseMessageId` 和 `settlement='streaming'`；`workerId`
+  允许为 null，后续由 `bindWorker` 填入；已 running 幂等。
+- `bindWorker` 只接受 `running`；`worker_id` 为空时写入，相同 no-op，不同 fail
+  closed（running attempt 不换 worker；先 cancel/terminal 再换）。
+- `markPromptDelivered` 只接受 `running`；同时写 `prompt_delivered_at` 与
+  `delivery_boundary_seq`。相同值幂等，不同值 fail closed。只有 provider RPC
+  真正接收 prompt 后调用；worker spawn/credential/prompt 构建失败不调用。
 - `recordUsage` 只写本 attempt 的 usage；parent `usageByAgent` 由 collector 汇总。
 - `setSettlement` 只允许 `streaming → response_pending → settled`；R terminal 后清 pending。
 - `transitionTerminal` 只接受一次；`completed` 允许 `terminalReason=null`，其他终态必须
@@ -2425,6 +2485,9 @@ CREATE TABLE invocation_attempts (
   settlement TEXT
     CHECK (settlement IS NULL OR settlement IN ('streaming', 'response_pending', 'settled')),
   response_message_id TEXT UNIQUE,
+  delivery_boundary_seq INTEGER
+    CHECK (delivery_boundary_seq IS NULL OR delivery_boundary_seq >= 0),
+  prompt_delivered_at INTEGER,
 
   created_at INTEGER NOT NULL,
   started_at INTEGER,
@@ -2442,6 +2505,11 @@ CREATE TABLE invocation_attempts (
   CHECK (settlement <> 'response_pending' OR state NOT IN ('queued', 'running')),
   CHECK (settlement <> 'settled' OR state NOT IN ('queued', 'running')),
   CHECK (response_message_id IS NULL OR state <> 'queued'),
+  CHECK (delivery_boundary_seq IS NULL OR state <> 'queued'),
+  CHECK (prompt_delivered_at IS NULL OR delivery_boundary_seq IS NOT NULL),
+  CHECK (prompt_delivered_at IS NULL OR worker_id IS NOT NULL),
+  CHECK (prompt_delivered_at IS NULL OR prompt_delivered_at >= started_at),
+  CHECK (state <> 'completed' OR prompt_delivered_at IS NOT NULL),
   UNIQUE (invocation_record_id, target_agent_id, attempt),
   FOREIGN KEY (invocation_record_id)
     REFERENCES invocation_records(invocation_record_id) ON DELETE RESTRICT,

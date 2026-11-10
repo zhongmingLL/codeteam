@@ -190,6 +190,8 @@ Fresh 不是“静默成功”；必须留下事件，UI/日志能看出这次�
   - 不尝试 resume；
   - 清空 `piSessionId/piSessionFile`（强制 fresh）；
   - `consecutiveResumeFailures = 0`；
+  - 通过 `AgentSessionManager.reset(reason='resume_failures')` 把该 agent 的
+    `deliveryCursor` rewind 到 `max(0, tailSeq - BOOTSTRAP_WINDOW)`；
   - 写 `session_resume_circuit_breaker` 事件（action=binding_reset）；
   - 同一轮启动 fresh pi session，继续当前 invocation。
 - **不 seal、不新建 codeteam session**；旧 pi 文件保留。
@@ -261,27 +263,59 @@ CREATE INDEX agent_sessions_agent
 
 ## 6. Store / API 契约
 
+`AgentSessionStore` 是 session 的唯一持久化入口；方法按 turn 生命周期分组，不把
+history、worker、credential 塞进同一个接口。
+
 ```ts
-getOrCreateSession({ threadId, agentId, userId, workingDirectory }): AgentSession
-bindPiSession(id, { piSessionId, piSessionFile }): AgentSession
-replacePiSession(id, { piSessionId, piSessionFile, reason }): AgentSession
-recordCompletedTurn(id): AgentSession
-recordResumeFailure(id): number
-resetResumeFailures(id): AgentSession
-getSession(threadId, agentId): AgentSession | null
+interface AgentSessionStore {
+  getActive(threadId: string, agentId: string): AgentSession | null;
+  get(id: string): AgentSession | null;
+
+  create(input: {
+    threadId: string;
+    agentId: string;
+    userId: string;
+    workingDirectory: string;
+    now: number;
+  }): AgentSession;
+
+  bindPiSession(id: string, input: {
+    piSessionId: string;
+    piSessionFile: string;
+    now: number;
+  }): AgentSession;
+
+  replacePiSession(id: string, input: {
+    piSessionId: string | null;
+    piSessionFile: string | null;
+    now: number;
+  }): AgentSession;
+
+  recordCompletedTurn(id: string, input: {
+    userVisibleOutput: boolean;
+    now: number;
+  }): AgentSession;
+  recordResumeFailure(id: string, now: number): { session: AgentSession; failures: number };
+  resetResumeFailures(id: string, now: number): AgentSession;
+}
 ```
 
-- `getOrCreateSession`：已有行直接返回；没有则创建。`workingDirectory` 必须
-  等于 `thread.projectPath`；不一致 → `invalid_input`。
-- `bindPiSession`：首次绑定两个值必须同时提供；已绑定且相同 → no-op；不同 →
-  必须走 `replacePiSession`（resume failure 专用）。
-- `replacePiSession`：只允许在 resume 失败路径调用；更新两个值并写 degraded 事件。
-- `recordCompletedTurn`：`messageCount += 1`，`consecutiveResumeFailures = 0`；
-  与 invocation terminal 同一事务。
-- `recordResumeFailure`：`consecutiveResumeFailures += 1`，返回新值。
-- `resetResumeFailures`：清空 pi 绑定 + 计数归零，用于 3 次上限。
-- `getSession`：按 `(thread_id, agent_id)` 返回唯一行。
-- **没有 `sealSession` / `restoreSession`**；这些是 v2 API。
+- `getActive`：`(thread_id, agent_id)` 唯一行；v1 行存在即 active。
+- `create`：`userId = thread.created_by`，`workingDirectory = canonical(thread.projectPath)`；
+  初始 pi 绑定为 null。并发 create 由 `UNIQUE(thread_id, agent_id)` 收敛为同一行
+  （`INSERT ... ON CONFLICT DO NOTHING` + select，或事务内 select-or-create）。
+- `bindPiSession`：首次绑定；两个值必须同时非空；与已有值相同 → no-op；不同 →
+  `invalid_input`，必须走 `replacePiSession`。
+- `replacePiSession`：只允许 resume failure / reset 路径；两个值同时为空（fresh 前）
+  或同时非空（fresh 后重新绑定）；事件由 `AgentSessionManager` 写。
+- `recordCompletedTurn`：`consecutive_resume_failures = 0`；`userVisibleOutput === true`
+  时 `message_count += 1`。调用方保证每个 completed invocation 最多调用一次。
+- `recordResumeFailure`：`consecutive_resume_failures += 1`；返回新值；不在这里清绑定。
+- `resetResumeFailures`：清空 pi 绑定 + 计数归零；v1 的 fresh/circuit-breaker
+  共用这个 clear-pi-binding 操作。
+- 没有 `sealSession` / `restoreSession`；这些是 v2 API。
+- **事务边界**：`recordCompletedTurn` / `recordResumeFailure` / `resetResumeFailures`
+  必须与调用方的事务一起提交；store 接受 tx handle，不自己开事务。
 
 **代码接线点**：`control/stores/types.ts`（接口收敛）、
 `control/stores/sessions.ts`（列映射与新方法）、`control/migrations/001-core.ts`
@@ -293,16 +327,17 @@ getSession(threadId, agentId): AgentSession | null
 > （unseal safety），`done` 时同一 invocation 不再重复 +1。v1 等价为
 > “每个 completed invocation 最多 +1，且只有有 user-visible output 的才算”。
 
-### 6.1 服务分层：Store / WorkerPool / Manager
+### 6.1 服务分层与一个 turn 的协作
 
-`AgentSession` 是 durable row，但“拿到 session”和“拿到执行载体”是两件事。v1 分三层，
-不把所有职责塞进一个 `SessionManager`：
+`AgentSession` 是 durable row，但“拿到 session”“拿到历史”“拿到执行载体”是三件事。
+v1 分四层，`AgentSessionManager` 只做组合，不持有状态：
 
 | 层 | 职责 | 状态 |
 |---|---|---|
-| `AgentSessionStore` | durable identity：`getActive` / `get` / `create` / `bind` / `replace` / `recordCompletedTurn` / `recordResumeFailure` / `resetResumeFailures` | SQLite |
-| `WorkerPool` | ephemeral worker 生命周期：`ensure` / `retire` / `reap` / `heartbeat`；pi v1 一个 worker 只服务一个 session | SQLite `workers` + `worker_bindings` |
-| `AgentSessionManager` | 薄 facade：`ensureActive` / `acquireWorker` / `releaseWorker` / `reset`；组合前两层 | 无自有状态 |
+| `AgentSessionStore` | durable identity + resume：`getActive` / `get` / `create` / `bindPiSession` / `replacePiSession` / `recordCompletedTurn` / `recordResumeFailure` / `resetResumeFailures` | SQLite `agent_sessions` |
+| `AgentReadStateStore` | per-`(thread, agent)` 投递进度：`get` / `ack` / `rewind` | SQLite `agent_read_state` |
+| `WorkerPool` | ephemeral execution carrier：`ensure` / `release` / `revokeSession` / `heartbeat` / `reapExpired` | SQLite `workers` + `worker_bindings` |
+| `AgentSessionManager` | 薄 facade：`ensureActive` / `loadHistory` / `acquireWorker` / `releaseWorker` / `recordTurnTerminal` / `reset` | 无自有状态 |
 
 ```ts
 interface AgentReadStateStore {
@@ -311,73 +346,200 @@ interface AgentReadStateStore {
   rewind(threadId: string, agentId: string, seq: number, now?: number): AgentReadState;
 }
 
-interface WorkerBinding {
-  agentSessionId: string;
-  workerId: string;
-  generation: number;
-  state: "attached" | "idle" | "reattach_pending";
-  boundAt: number;
-  lastUsedAt: number;
+interface HistoryWindow {
+  mode: "bootstrap" | "incremental";
+  rows: StoredMessage[];        // StoredMessage 定义见 0010 §3.1
+  boundarySeq: number;
+  degraded?: string;
 }
-// WorkerBinding 是 durable row；WorkerHandle 是 runtime handle，定义见 0010 §3.5.2。
 
 interface AgentSessionManager {
   ensureActive(threadId: string, agentId: string): AgentSession;
-  acquireWorker(threadId: string, agentId: string, turnExecutionId: string): Promise<WorkerHandle>;
+  loadHistory(input: { threadId: string; agentId: string }): Promise<HistoryWindow>;
+
+  acquireWorker(input: {
+    threadId: string;
+    agentId: string;
+    turnExecutionId: string;
+    session: AgentSession;
+  }): Promise<WorkerHandle>;    // WorkerHandle 定义见 0010 §3.5.2
+
   releaseWorker(handle: WorkerHandle, reason: string): Promise<void>;
+
+  /** 必须在 settleAgentTurn 的 child terminal 事务内调用。 */
+  recordTurnTerminal(input: {
+    session: AgentSession;
+    deliveryBoundarySeq: number | null;
+    promptDelivered: boolean;
+    outcome: "completed" | "failed" | "interrupted" | "canceled";
+    userVisibleOutput: boolean;
+    now: number;
+  }): void;
+
   reset(
     threadId: string,
     agentId: string,
-    reason: "fresh" | "workspace_changed" | "resume_failures",
+    reason: "fresh" | "resume_failures",
   ): Promise<AgentSession>;
 }
 ```
 
-- `ensureActive`：`getActive(threadId, agentId)`；缺失则 `create`，`userId =
-  thread.created_by`、`workingDirectory = thread.projectPath`；不 spawn worker。
-- `acquireWorker`：`WorkerPool.ensure`；容量不足返回 typed `worker_capacity`，由
-  QueueProcessor 走 retry/backoff，不在 manager 内热循环。
-- `releaseWorker(handle)`：turn 结束/取消后 retire（`warmTtl=0`）；按 `handle.generation`
-  幂等，不误 retire replacement。
-- `reset` 顺序：先读 thread tail seq；同一事务内 `AgentReadStateStore.rewind` 到
-  `max(0, tail - BOOTSTRAP_WINDOW)` + `AgentSessionStore.resetResumeFailures/replace`；
-  commit 后再 retire worker / emit event。普通 `ack` 不允许 rewind。
-- `ack` 是单行单调 CAS（`max(delivery_cursor, seq)`）；`rewind` 只给 `reset` 用，
-  不能从普通 ingress 调用。
-
-- `TurnExecution.agentSessionId` 只是指针；session 解析在
-  `AgentSessionManager.ensureActive(threadId, agentId)`，不在 child 里重复查映射。
-- worker 是 **ephemeral execution carrier**，不是 session 的常驻所有者：
+- `ensureActive`：
+  - `getActive`；缺失则 `create`，`userId = thread.created_by`、
+    `workingDirectory = canonical(thread.projectPath)`；不 spawn worker。
+  - 已有行的 `workingDirectory` 与 `thread.projectPath` 规范化后不一致 →
+    typed `session_workspace_changed`，不静默换目录。v1 的换工作区是 v2 显式操作。
+  - `consecutiveResumeFailures >= 3` → 走 `reset(reason='resume_failures')`：
+    清 pi 绑定、计数归零、cursor rewind，然后本轮 fresh。
+  - 该 reset 若遇到同 session 的 running attempt（另一个并发 turn），返回 typed
+    `session_busy`；调用方 defer，不强行 reset。
+- `loadHistory`：委托 `HistoryAssembler`（0010 §3.5.1 的只读加载器），只读 `AgentReadStateStore` 与
+  `MessageStore`；返回 `rows + boundarySeq + mode`。**这里不 ack**。完整规则见
+  `0010 §3.5.1`。
+- `acquireWorker`：`WorkerPool.ensure`；容量不足返回 typed `worker_capacity`，
+  由 QueueProcessor `releaseClaim + defer`，不在 manager 内热循环。
+- `releaseWorker(handle)`：turn 结束/取消后 retire（`warmTtl=0`）；按
+  `handle.generation` 幂等，不误 retire replacement。
+- `recordTurnTerminal`：在 child terminal 事务内完成三件事：
+  1. `outcome === 'completed'` → `recordCompletedTurn({ userVisibleOutput })`；
+     失败计数归零，user-visible output 才 `message_count += 1`；
+  2. `outcome !== 'completed'` → 不碰 messageCount / 失败计数；
+  3. `promptDelivered && deliveryBoundarySeq != null` →
+     `AgentReadStateStore.ack(threadId, agentId, deliveryBoundarySeq)`。
+  这三步与 TurnExecution/attempt terminal 同事务；要么全成，要么全回滚。
+- `reset`：见 §6.1.2。
+- `TurnExecution.agentSessionId` 只是指针；session 解析只在
+  `ensureActive(threadId, agentId)`，不在 child 里重复查映射。
+- worker 是 **ephemeral execution carrier**，不是 session 的常驻所有者；
   turn 结束默认 retire（`warmTtl=0`），空闲 session 不占进程；`maxLiveWorkers=8`
   只限制同时存在的 worker。
-- 执行互斥不靠 per-turn `worker_leases` 表：`TurnExecution` 的唯一 running per session
-  + `RpcConnection.prompting` + `worker_bindings.generation` 承担。
-- `worker_id` / `worker_binding_state` 迁到 `worker_bindings`（§2.1），不写回
-  AgentSession identity。
-- 与 Clowder 的差异：Clowder `SessionManager` 只维护
-  `(user, cat, thread) → sessionId` 映射；codeteam 的 session row 本身含
-  `threadId + agentId`，`getActive` 就是映射，因此不另建映射表；多出来的是
-  durable session 状态 + 短命 worker attachment。
+- 执行互斥不靠 per-turn `worker_leases` 表：`TurnExecution` 的唯一 running per
+  session + `RpcConnection.prompting` + `worker_bindings.generation` 承担。
 
-| Clowder | codeteam | 关系 |
+#### 6.1.1 一个 turn 的协作时序
+
+```text
+runAgentTurn
+  1. ensureActive(threadId, agentId)
+       → session 行；可能先做 resume 前置检查 / circuit breaker reset
+  2. attempt(queued) + TurnExecution.createRunning
+       → 唯一 running per session，先拿执行互斥
+  3. bindExecution(running; workerId = null)
+  4. loadHistory(threadId, agentId)
+       → rows + boundarySeq；只读 cursor，不 ack
+  5. acquireWorker(session)
+       → WorkerHandle；attempt.bindWorker(handle.workerId)
+  6. InvocationCredential.create
+  7. build prompt + provider prompt
+       → RPC send 成功后 attempt.markPromptDelivered({ deliveryBoundarySeq, now })
+  8. stream → response_drafts；usage → attempt
+  9. settleAgentTurn tx A（child terminal）：
+       TurnExecution terminal + attempt terminal
+       + settlement='response_pending'
+       + parent aggregate + credential terminalize
+       + sessionManager.recordTurnTerminal(...)
+         (messageCount + cursor ack，条件见 §6.1)
+ 10. R settlement tx B + worker.release(handle)
+```
+
+顺序理由：
+
+- **互斥先于 history/worker**：`bindExecution` 在 spawn 前拿唯一 running，
+  避免两个并发 turn 都构建 history、都 spawn worker。
+- **history 先于 worker**：prompt 构建失败/上下文不可读时，不浪费一次
+  ~0.5s 的 worker spawn；history 只读 cursor，不改变投递状态。
+- **ack 在 child terminal 事务内**：cursor 只在本轮有 durable terminal 时前进；
+  崩溃在 tx A 之前 → 不 ack，下一轮重放；tx A 提交后 → ack 已持久化，
+  R settlement 独立可恢复。不会出现“prompt 已构建但响应未落库，消息却被吞掉”。
+- **worker release 在 tx B 之后**：R settlement 还要用 worker 的连接/会话上下文；
+  release 失败由 reaper 兜底，按 generation 幂等。
+
+#### 6.1.2 Reset 语义
+
+```text
+reset(threadId, agentId, reason):
+  precondition: 该 session 没有 running attempt；有 → typed session_busy
+  tail = messages.tailSeq(threadId)
+  tx:
+    AgentReadStateStore.rewind(threadId, agentId,
+      max(0, tail - BOOTSTRAP_WINDOW))
+    AgentSessionStore.resetResumeFailures(session.id)
+    emit session_reset (same tx or outbox)
+  after commit:
+    WorkerPool.revokeSession(session.id, reason)
+```
+
+- `reason='fresh'`：显式换新 pi session；`reason='resume_failures'`：3 次上限
+  的 circuit breaker。
+- v1 不把 `workspace_changed` 作为 reset reason：`ensureActive` 先 typed reject
+  `session_workspace_changed`；换工作区是 v2 显式操作。
+- reset 不删除 `AgentSession` 行，也不删除旧 `piSessionFile`；只清空/替换 pi 绑定。
+- reset 后本轮按 `loadHistory` 从 rewound cursor 取最近 `BOOTSTRAP_WINDOW` 条；
+  `mode` 可能仍是 `incremental`，但窗口内容等价于 bootstrap。
+- reset 必须幂等：重复调用不清两次 cursor、不重复写事件。
+
+#### 6.1.3 失败矩阵
+
+| 失败点 | 持久状态 | cursor | 下一轮行为 |
+|---|---|---|---|
+| worker_capacity / spawn 前失败 | attempt failed（无 promptDelivered） | 不 ack | 重放同一批消息；QueueProcessor defer |
+| credential / prompt 构建失败 | attempt failed（无 promptDelivered） | 不 ack | 重放同一批消息 |
+| provider prompt 已接收后失败 | attempt failed/interrupted + R failed | tx A ack（promptDelivered=true） | 不重放；下一轮看到 failed R |
+| 取消在 prompt 前 | attempt canceled | 不 ack | 重放 |
+| 取消在 prompt 后 | attempt canceled + R canceled | tx A ack | 不重放 |
+| 崩溃在 tx A 前 | attempt running | 不 ack | startup reconciler terminalize；按 promptDelivered 决定是否 ack |
+| 崩溃在 tx A 后、R settlement 前 | settlement=response_pending | 已 ack | response reconciler 收敛 R；不重放 |
+| 崩溃在 R settlement 后、worker release 前 | worker stale | 已 ack | reaper retire；不重放 |
+
+#### 6.1.4 与 Clowder 对照
+
+| Clowder | codeteam v1 | 关系/差异 |
 |---|---|---|
-| `SessionStore`（Redis key-value，`(userId,catId,threadId) → sessionId`，TTL 24h） | `AgentSessionStore` 的映射面（`getActive`/`create`） | Clowder SessionStore **不存 session 行**；codeteam 把映射和 resume 状态放进同一 relational row |
-| `RuntimeSessionStore`（runtime session metadata：runtime/runtimeSessionId/thread/cat/user/identityHistory/lifecycle） | `AgentSession.piSessionId/piSessionFile` + `WorkerBinding` | codeteam 不建独立 RuntimeSessionStore；runtime 绑定落在 session row + worker binding |
-| `SessionRecord`（cliSessionId/native binding/contextHealth/seal/compression/handoff） | `AgentSession`（piSessionId/file、messageCount、circuit breaker、active-only） | v1 只保留 resume 必需字段；sealed/compression/handoff 是 v2 |
-| `SessionManager.store/get/delete` | `AgentSessionStore.getActive/create/...` + `AgentSessionManager.ensureActive` | codeteam 的 session row 就是映射；不另建 map |
-| Clowder `AcpProcessPool` | `WorkerPool.ensure/release/reap` + `AgentSessionManager.acquireWorker/releaseWorker` | codeteam-specific pi RPC 适配；不是 Clowder SessionManager 的职责 |
-| `SessionManager.delete` | `AgentSessionManager.reset` + `AgentReadStateStore.rewind` | codeteam 把“换新 session + 回退 cursor”收成一个显式 reset |
+| `SessionManager.store/get/delete`（`packages/api/src/domains/cats/services/session/SessionManager.ts`） | `AgentSessionStore.getActive/create` + `AgentSessionManager.ensureActive` | Clowder 只维护映射；codeteam 的 session row 本身就是映射，不另建 map |
+| `SessionStore`（`packages/shared/src/utils/redis.ts:209`，Redis KV，`(userId,catId,threadId) → sessionId`，TTL 24h） | `AgentSessionStore` 的映射面 | Clowder 不存 session 行；codeteam 把映射 + resume 状态放进同一 relational row，持久化、无 TTL/内存 fallback |
+| `SessionChainStore` / `SessionRecord`（cliSessionId/status/seq/messageCount/consecutiveRestoreFailures/seal/compression/handoff） | `AgentSession`（piSessionId/file、workingDirectory、messageCount、consecutiveResumeFailures） | v1 只保留 resume 必需字段；sealed/chain/compression/handoff 是 v2 |
+| `RuntimeSessionStore`（runtime/runtimeSessionId/thread/cat/user/identityHistory/lifecycle） | `AgentSession.piSessionId/piSessionFile` + `WorkerBinding` | codeteam 不建独立 runtime metadata store；pi 是唯一 backend，runtime 绑定落在 session row + worker binding |
+| `DeliveryCursorStore.getCursor/ackCursor`（`stores/ports/DeliveryCursorStore.ts`） | `AgentReadStateStore.get/ack/rewind` | 同为 monotonic cursor；Clowder 是 visibility cursor `v2:<seq>:<messageId>` + delivery/mention/seen 三 namespace；codeteam v1 只有 delivery + numeric `messages.seq` |
+| `ContextAssembler` + incremental context（`route-helpers.ts` `assembleIncrementalContextInternal`） | `HistoryAssembler`（0010 §3.5.1） | 同样是 fetch-after-cursor → visibility filter → boundary；codeteam 去掉 smart window/seen/mention/overlay，v1 只做 delivery |
+| `AcpProcessPool`（`providers/acp/AcpProcessPool.ts:114`） | `WorkerPool`（0010 §3.5.2） | Clowder 长驻、可 multiplexing、内存 pool；codeteam ephemeral、一 worker 一 session、SQLite registry（pi RPC 无 session/new/load） |
+| `SessionManager.delete` + `SessionChainStore` seal | `AgentSessionManager.reset` + `AgentReadStateStore.rewind` | codeteam 把“换新 pi session + cursor 回退”收成一个显式 reset；不 seal codeteam row |
+| `messageCount` / `consecutiveRestoreFailures` | `messageCount` / `consecutiveResumeFailures` | 语义对齐：每个有 user-visible output 的 completed turn 最多 +1；连续失败 3 次 fresh |
+| sealed/restore/chain | v2 | v1 只做 A2A runtime，快速真实模型 E2E，不要求长 session |
 
-**为什么 AgentSessionStore 比 Clowder SessionStore 重**：
+**为什么 `AgentSessionStore` 比 Clowder `SessionStore` 重**：
 
 1. **daemon 重启后 resume**：Clowder 的 `SessionStore` 只是 sessionId 映射，真正的
    provider/session 内容在 runtime session/provider 侧；codeteam 的 pi RPC resume 需要
-   `piSessionId` + `piSessionFile` + `workingDirectory` 作为 durable row，不能只靠内存/Redis key。
+   `piSessionId` + `piSessionFile` + `workingDirectory` 作为 durable row。
 2. **worker lease/reaper 直接查**：codeteam 的 reaper 要在 SQLite 里按
    `agent_session_id` 查 active session / worker binding，不能反过来问 provider。
 3. **active-only + circuit breaker**：`(threadId,agentId)` 唯一 active、3 次 resume 失败
-   reset，是 codeteam 的 durable 语义，Clowder SessionManager 不承担。
+   reset，是 codeteam 的 durable 语义，Clowder `SessionManager` 不承担。
 4. 这是**有意加重**，不是误抄；如果未来 pi 支持 provider-side session registry，可再薄化。
+
+**为什么 `WorkerPool` 不是 `AcpProcessPool`**：
+
+- Clowder ACP 池可以 multiplexing，多个 lease 共享一个进程；pi v1 的 RPC 进程启动时
+  session 固定，没有 `session/new` / `session/load`，一进程只能服务一个 session。
+- 若照搬长驻池，100 个 thread×agent 会留下 100 个空闲进程；codeteam 用
+  ephemeral worker + 0.5s spawn 换资源利用率。
+- worker 仍需 durable `workers` + `worker_bindings`：reaper 要看 heartbeat/lease，
+  crash 后要清理；Clowder 的 `sessionOwners` 是内存映射，重启即丢，不满足 daemon
+  crash recovery。
+
+#### 6.1.5 关键不变量
+
+1. `(thread_id, agent_id)` 唯一一行；行存在即 active。
+2. `piSessionId` 与 `piSessionFile` 同时为空或同时非空；`piSessionId` 非空时全局唯一。
+3. `workingDirectory` 非空；只允许在创建时写入；v1 换工作区 → typed reject。
+4. `messageCount` 单调不减；每个 completed invocation 最多 +1，且必须有 user-visible output。
+5. `consecutiveResumeFailures`：resume 失败 +1，成功 completed turn 归零，3 次触发 reset。
+6. `deliveryCursor` 单调前进；只有 `promptDelivered && terminal` 才 ack；只有 reset 能 rewind。
+7. 同一 session 同时最多一个 running attempt；同一 worker 同时只服务一个 session。
+8. worker release 按 `handle.generation` 幂等；stale release 不能 retire replacement。
+9. child terminal 事务 A 要么同时提交 terminal + messageCount + cursor ack，要么全回滚。
+10. v1 没有 seal/restore/chain；旧行/旧 pi 文件保留，不删除。
+11. `WorkerBinding` 是 durable row；`WorkerHandle` 是 runtime handle，定义见 `0010 §3.5.2`；`worker_id` / `worker_binding_state` 不写回 AgentSession identity。
 
 ## 7. 事件
 
@@ -399,10 +561,11 @@ contract：
 
 **Schema / Store**
 
-- 同一 `(thread, agent)` 只有一行；重复 `getOrCreateSession` 返回同一行。
+- 同一 `(thread, agent)` 只有一行；重复 `ensureActive` / 并发 `create` 返回同一行。
 - `piSessionId` 非空时全局唯一。
 - `piSessionId/piSessionFile` 同时为空或同时非空。
-- `workingDirectory` 必须等于 `thread.projectPath`；不一致 → `invalid_input`。
+- `workingDirectory` 必须等于 `thread.projectPath`；不一致 → typed
+  `session_workspace_changed`，不静默换目录。
 - `messageCount`：一次 invocation 内多条 message/rich block 只 +1；无
   user-visible output 不 +1；同一 invocation 的 `done` 不重复 +1。
 - `bindPiSession` 不能覆盖已绑定值；`replacePiSession` 只能走 resume failure。
@@ -416,6 +579,17 @@ contract：
 - 连续 3 次失败 → 强制 fresh、清空绑定、计数归零；不 seal、不新建 session。
 - 成功 completed turn → 计数归零。
 - daemon 重启后能 resume；没有 sealed/restore 路径可测。
+
+**Session × history × worker**
+
+- `loadHistory` 不 ack；ack 只在 child terminal 事务内且 `promptDelivered=true`。
+- worker_capacity / spawn 前失败 → 不 ack；下一轮重放同一批消息。
+- prompt 已送达后 provider failed/canceled → tx A 照常 ack；不重放。
+- 崩溃在 tx A 前 → 不 ack；崩溃在 tx A 后 → ack 已随 terminal 持久化。
+- child terminal 事务回滚时，messageCount / cursor ack 一起回滚。
+- reset：cursor rewind + pi binding clear 同事务；worker revoke 在 commit 后。
+- 同一 session 同时最多一个 running attempt；`worker_bindings` 一 session 一 worker。
+- `session_workspace_changed` 是 typed reject，不自动 reset。
 
 **Migration**
 
@@ -453,3 +627,10 @@ contract：
    `WorkerPool` 管短命 worker（`warmTtl=0`、`maxLiveWorkers=8`、一个 worker 只服务
    一个 session）；session 不持有 worker；执行互斥由 `TurnExecution` 唯一 running +
    `RpcConnection.prompting` + binding generation 承担。spawn 实测约 0.5s，不作为常驻理由。
+10. **History cursor ack 在 child terminal 事务内（2026-11-11）**：
+    `loadHistory` 只返回 `boundarySeq`，不 ack；ack 与 `recordCompletedTurn` 一起在
+    child terminal 事务内提交，条件是 `promptDelivered=true`。崩溃在 terminal 前 →
+    重放；terminal 后 → ack 已持久化。Clowder 也是“prompt 已组装后 ack”，但
+    codeteam 用单 SQLite 事务把 terminal + cursor 变成原子操作。
+11. **`AgentSessionManager` 是薄组合层**：不持有状态；组合 `AgentSessionStore` +
+    `AgentReadStateStore` + `WorkerPool`；`recordTurnTerminal` 是唯一跨 store 写入口。
