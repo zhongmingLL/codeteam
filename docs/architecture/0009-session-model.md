@@ -493,6 +493,34 @@ reset(threadId, agentId, reason):
 
 #### 6.1.4 与 Clowder 对照
 
+**命名先澄清**：Clowder 没有 `AgentSessionStore` 这个类/接口。`SessionStore`
+（`packages/shared/src/utils/redis.ts:209`）是 **Redis 存储适配器**：同一个类里放了
+sessionId 映射、delivery/mention/seen cursor、cat state 等多组 key。Clowder 的 domain
+接口是 `SessionManager`（映射）、`SessionChainStore`（session record）、
+`DeliveryCursorStore`（cursor 语义）、`RuntimeSessionStore`（runtime metadata）。
+codeteam 的 `AgentSessionStore` 对应的是 **SessionManager + SessionChainStore 的
+domain 子集**，不是 Clowder 的 Redis adapter。不能按类名 1:1 对表。
+
+**Clowder `SessionStore` 方法 → codeteam 落点**
+
+| Clowder `SessionStore` 方法 | codeteam |
+|---|---|
+| `getSessionId` / `setSessionId` / `deleteSession` | `AgentSessionStore.getActive/create` + `AgentSessionManager.ensureActive/reset` |
+| `getDeliveryCursor` / `setDeliveryCursor` / `deleteDeliveryCursor` | `AgentReadStateStore.get/ack/rewind` |
+| `getMentionAckCursor` / `setMentionAckCursor` / `deleteMentionAckCursor` | v2；v1 不做 mention ack |
+| `getSeenCursor` / `setSeenCursor` / `deleteSeenCursor` | v2；v1 不做 seen cursor |
+| `reconcile*CursorFormat` / `replace*CursorIfEqual` | v1 不需要：SQLite 单一 schema，没有 v1/v2 cursor 格式迁移 |
+| `getCatState` / `setCatState` | `AgentState`（0007），runtime state，不是 session |
+
+**为什么 DeliveryCursor 不放进 `AgentSessionStore`**：
+
+- session identity 和 delivery progress 生命周期不同：session 行可以跨 turn 长期存在，
+  cursor 在 reset 时要 rewind；混在一起会让 reset/ack 的事务边界变模糊。
+- Clowder 自己也是 `DeliveryCursorStore` 管语义、`SessionStore` 只是共用 Redis 适配器；
+  adapter 的 key 放在同一个类里是存储便利，不是 domain 边界。
+- codeteam 单 SQLite 可以共库，但 `AgentReadStateStore` 独立后，单调 ack / rewind /
+  promptDelivered 条件可以单独测试，不必把 session 的 resume 语义卷进来。
+
 | Clowder | codeteam v1 | 关系/差异 |
 |---|---|---|
 | `SessionManager.store/get/delete`（`packages/api/src/domains/cats/services/session/SessionManager.ts`） | `AgentSessionStore.getActive/create` + `AgentSessionManager.ensureActive` | Clowder 只维护映射；codeteam 的 session row 本身就是映射，不另建 map |
