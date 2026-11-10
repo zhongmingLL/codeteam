@@ -47,7 +47,7 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 | Pointer | 触发消息 | `triggerMessageId` | ingress | 永久 | child 的来源消息 |
 | Pointer | A2A 触发消息 | `a2aTriggerMessageId` | A2A ingress | 永久 | A2A hop 的触发消息 |
 | Pointer | 响应消息 | `responseMessageId` | terminal | 永久 | child 产出的消息 |
-| Pointer | A2A 因果父 | `a2aParentTurnExecutionId` | A2A ingress | 永久 | 上游 child，不是 lifecycle parent |
+| Pointer | A2A 因果父 | `causal.a2aParentTurnExecutionId` | A2A ingress | 永久 | 上游 child，不是 lifecycle parent |
 | Pointer | parent 的用户消息 | `userMessageId` | QueueProcessor | 永久 | v1 = `messageId`；未来可为 null |
 | Key | 消息创建幂等 | `requestId` | client | 短期 | 不是 ID |
 | Key | target 定位 | `targetKey` | 派生 | per target | `agent:<agentId>` / `operator:<userId>` |
@@ -73,13 +73,15 @@ userId
         │              ├── userMessageId = messageId
         │              │
         │              └── attemptId (per agent × attempt, append-only)
-        │                       └── turnExecutionId (child, one per attemptId)
+        │                       ├── agentSessionId / workerId
+        │                       ├── provider / model / modelFamily / usage
+        │                       ├── queueEntryId / attempt
+        │                       ├── settlement / responseMessageId
+        │                       └── turnExecutionId (child core, one per attemptId)
         │                                ├── agentId
-        │                                ├── agentSessionId
-        │                                ├── triggerMessageId
-        │                                ├── a2aTriggerMessageId
-        │                                ├── responseMessageId
-        │                                ├── a2aParentTurnExecutionId
+        │                                ├── causal.triggerMessageId
+        │                                ├── causal.a2aTriggerMessageId
+        │                                ├── causal.a2aParentTurnExecutionId
         │                                └── credentialId
         │
         └── agentSessionId (per agent)
@@ -99,8 +101,9 @@ userId
    lifecycle parent 永远是 `invocationRecordId`。
 6. **两个 attempt 不是同一个东西**\
    admission `attempt` 只用于 `queueEntryId = hash(sourceRecordId, attempt)`，retry 不递增；
-   execution `attempt` 只用于 `invocation_attempts` 和 `turnExecutionId` 唯一键
-   `(invocationRecordId, agentId, attempt)`；对外引用用 `attemptId`。
+   execution `attempt` 只用于 `invocation_attempts` 的
+   `(invocationRecordId, agentId, attempt)` 唯一键；`turnExecutionId` 由 attempt 绑定，
+   非空时唯一；对外引用用 `attemptId`。
 7. **parent 上没有 `idempotencyKey`**\
    message 创建用 `requestId`；队列准入用 `(sourceRecordId, attempt)`；parent 用 `sourceRecordId UNIQUE`。
 
@@ -129,7 +132,7 @@ userId
 | `InvocationRecord.userMessageId` | Clowder | 保留 | v1 = `messageId` |
 | `InvocationRecord.idempotencyKey` | Clowder | 删除 | v1 用 `sourceRecordId UNIQUE` + queue receipt |
 | auth `invocationId` | Clowder | `turnExecutionId` | rename；它本来就是 child |
-| `TurnExecution.parentInvocationId` | 0010 | `a2aParentTurnExecutionId` | rename；因果父，不是 lifecycle parent |
+| `TurnExecution.parentInvocationId` | 0010 | `causal.a2aParentTurnExecutionId` | rename；因果父，不是 lifecycle parent |
 | `TurnExecution.invocationRecordId` | 0010 | 保留 | lifecycle parent |
 | `QueueEntry.id` | 双方 | `queueEntryId` | 明确对象；派生 |
 | `QueueLedgerPayload.sourceRecordId` | Clowder | 保留 | 队列身份 |
