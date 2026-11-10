@@ -91,12 +91,8 @@ TurnExecution A 调 post_message
 
 **Message 字段**
 
-```ts
-interface Message {
-  ...
-  targetAgentIds: string[];   // 仅 user message：本次 admission 的 agent targets
-}
-```
+`StoredMessage.targetAgentIds` 保存 user message 本次 admission 的 agent targets；
+agent-authored A2A message 的 targets 由 `lifecycle.dispatchRefs` 承载。
 
 **解析顺序**
 
@@ -386,33 +382,52 @@ source_record_id | attempt | queue_entry_id | fingerprint | admitted_at
 
 fingerprint 只覆盖不可变字段（source、owner、kind、from、payload、requestedTargets、priority、execution），不覆盖 `targets/status/claim/delivery`。
 
-**Message lifecycle（durable history）**
+**Message / StoredMessage 两层（durable history）**
 
 `invocation_queue` 只持有“尚未派发的 pending targets”；target 派发后 live row 会收缩或删除。
-durable 回执不能靠 queue row，必须落在 Message lifecycle：
+durable 回执不能靠 queue row，必须落在 Message lifecycle。对齐 Clowder 的两层模型：
 
 ```ts
-type MessageFrom =
-  | { kind: "user"; id: string }     // id = userId
-  | { kind: "agent"; id: string }    // id = agentId
-  | { kind: "system"; id: string };  // id = service
+type MessageSender =
+  | { kind: "user"; userId: string }
+  | { kind: "agent"; agentId: string }
+  | { kind: "system"; service: string };
 
+type MessageFrom = MessageSender; // Queue/storage alias
+
+type MessageStatus = "pending" | "streaming" | "complete" | "error";
+
+type MessageContent =
+  | { type: "text"; text: string }
+  | { type: "rich_block"; block: unknown };
+  // v1 最小集；后续可扩展 image/file/code/tool_call/tool_result
+
+/** domain：对外/读模型；只回答“谁说了什么” */
 interface Message {
-  messageId: string;
+  id: string;
   threadId: string;
-  userId: string;
-  from: MessageFrom;                 // user | agent | system
+  sender: MessageSender;
+  content: MessageContent[];
+  status: MessageStatus;             // 展示/流式状态；v1 持久消息 = complete
+  createdAt: number;
+  updatedAt: number;
+  metadata?: Record<string, unknown>; // cross-post provenance / display hints
+}
+
+/** storage/delivery：内部 store/路由；lifecycle 是 server-owned sidecar */
+interface StoredMessage extends Message {
+  userId: string;                    // thread owner
+  seq: number;                       // thread-global visibility order
   kind: MessageKind;                 // 沿用现有值域；A2A v1 写 chat / agent_response
   bodyMd: string;
   richBlocks: unknown[];
   replyTo: string | null;
 
-  targetAgentIds: string[];          // 仅 user message：本次 admission 的 agent targets
+  targetAgentIds: string[];
+  // 仅 user message：本次 admission 的 agent targets
+  // agent-authored A2A targets 在 lifecycle.dispatchRefs
 
-  lifecycle?: MessageLifecycle;
-  seq: number;                       // thread-global visibility order
-  createdAt: number;
-  updatedAt: number;
+  lifecycle: MessageLifecycle | null;
 }
 
 type MessageLifecycle =
@@ -433,15 +448,25 @@ interface DispatchRef {
   attempt: number;
   phase: "dispatched" | "settled";
   responseMessageId?: string;
+  turnExecutionId?: string;
   at: number;
 }
 ```
 
+- `Message` 是 domain/读模型；`StoredMessage` 是 internal store/router 记录。
+- `MessageStore.get()` 返回 `StoredMessage`；对外 API 用 `toMessage(stored)` 投影成
+  `Message`（`bodyMd + richBlocks` → `content`）。
+- `targetAgentIds` / `lifecycle` / `seq` / `replyTo` / `userId` / `kind` 只在
+  `StoredMessage`；不污染 domain。`targetAgentIds` 保持 v1 语义：仅 user message；
+  agent-authored A2A targets 走 `lifecycle.dispatchRefs`。
+- `lifecycle` 是 server-owned typed sidecar；**不要**塞进 `Message.metadata`。
+- `Message.status` 是展示状态；执行成功/失败看 `lifecycle.response.status` /
+  `TurnExecution.status`，两者不合并。
 - `input` message 的 `dispatchRefs` 是每个 target 的 durable 投递回执：
   `dispatched` → `settled`；同一 `(target, queueEntryId, attempt)` 唯一，重放不得二次 dispatch。
 - `response` message 的 lifecycle 记录 parent/child/target/终态；response 状态用 CAS 推进，
   不覆盖 input 的 `dispatchRefs`。
-- queue live row 删除后，读模型仍可从 `messages.lifecycle` + `turn_executions` 还原
+- queue live row 删除后，读模型仍可从 `StoredMessage.lifecycle` + `turn_executions` 还原
   “发给了谁、谁处理、对应哪条 response”；`queue_admissions` 只负责 admission 幂等，
   不替代投递回执。
 - v1 不做 Clowder 的 `appendAcceptance` / `inputRead` / `coveredMessageIds` /
@@ -781,7 +806,7 @@ class InvocationOwnerReaper {
 OperatorMessageIngress
   ├─ parseOperatorMentions(body)
   ├─ resolveExplicitTargets / resolveImplicitTargets
-  └─ transaction: Message.targetAgentIds + invocation_queue(targets, attempt=1)
+  └─ transaction: StoredMessage.targetAgentIds + invocation_queue(targets, attempt=1)
 
 QueueProcessor
   ├─ claim queue entry
@@ -812,7 +837,7 @@ runAgentTurn
 
 | 组件 | 拥有 | 不拥有 |
 |---|---|---|
-| OperatorMessageIngress | 行首 @ 解析、隐式路由、`Message.targetAgentIds`、message+queue 事务 | child/execution |
+| OperatorMessageIngress | 行首 @ 解析、隐式路由、`StoredMessage.targetAgentIds`、message+queue 事务 | child/execution |
 | AgentRouter | target 校验、parallel/serial 调度、per-target signal | prompt/session/response/terminal |
 | routeParallel | 并行 merge、单 target 错误隔离 | 写 response、parent aggregate |
 | routeSerial | 顺序循环、priorResponses | 单体 per-agent 逻辑 |
@@ -997,7 +1022,11 @@ bootstrap（没有 read state）:
 normal:
   cursor = agentReadState.deliveryCursor ?? 0
   rows = messages.listAfterSeq(threadId, cursor, BOOTSTRAP_WINDOW)
-  filter: broadcast / targetAgentIds 包含本 agent；默认排除自己刚写的 response
+  filter:
+    - response message → broadcast；默认排除自己刚写的 response
+    - input message 有 targetAgentIds → 仅包含本 agent 的
+    - 否则 input lifecycle.dispatchRefs 有 agent targets → 仅这些 agent
+    - 都没有 → broadcast/system
   build prompt from rows（token budget 内）
   boundary = rows 中最后一条的 seq
   agentReadState.ack(threadId, agentId, boundary)  // 单调前进
@@ -1007,8 +1036,8 @@ normal:
   不可见的定向消息；B 仍会在自己的 cursor 位置看到它。不需要 per-target cursor。
 - MessageStore 读面只需要两个方法：`listRecent(threadId, limit)` 和
   `listAfterSeq(threadId, afterSeq, limit)`，都按 `seq` 升序返回。
-- 先 fetch after cursor，再按 `targetAgentIds`/broadcast 过滤；被过滤掉的 message 也让
-  cursor 前进，避免下次重复拉取。
+- 先 fetch after cursor，再按上面的可见性规则过滤；被过滤掉的 message 也让 cursor
+  前进，避免下次重复拉取。
 - 同一 thread 的 A/B 各自一个 cursor；A 看到 msg1/msg3、B 看到 msg1/msg2/msg3 是正常的。
 - `boundary` 取**已消费**的最后 seq，而不是“进入 prompt 的最后一条”；token trim 不阻塞
   cursor 前进。
@@ -1820,7 +1849,7 @@ parent partial_failed: successful=[A], failed=[B]
 - 一条消息 enqueue 一个 queue entry；同 source 重放收敛到同一 `id`；重复 `requestId` 返回同一 entry。
 - operator conversation 只解析行首 `@`；多个 @ 去重；未知/disabled typed reject。
 - 无显式 @ → 隐式路由：上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
-- `Message.targetAgentIds` 与 message + queue entry 同事务写入。
+- `StoredMessage.targetAgentIds` 与 message + queue entry 同事务写入（仅 user message；agent A2A targets 在 lifecycle.dispatchRefs）。
 - A2A tools 只接受显式 `{kind,id}` targets；正文 `@` 不路由。
 - operator-only entry：只通知，不创建 parent/TurnExecution；`delivery.operatorNotifiedAt` 写入。
 - target-level claim：`InvocationQueue.claim`；`claim.targetKeys` 是 pending 子集；过期/失败走 `releaseClaim` / `restoreExpiredClaims`。
@@ -1935,14 +1964,15 @@ parent partial_failed: successful=[A], failed=[B]
 28. **取消即释放 slot（DP-F018T-2=B）**：tracker 不保留 canceled 墓碑；真正的执行互斥由 `TurnExecution` 唯一 running + `RpcConnection.prompting` + worker binding generation 承担；旧 worker 未退出时新 start 返回 `worker_busy`。
 29. **僵尸判定用 worker heartbeat（DP-F018T-3=A）**：running TurnExecution 无 live worker/heartbeat 才标 `interrupted/owner_reaped`；被抢占但旧 worker 还活着的 child 保留到旧 worker 结束。
 30. **Operator ingress 路由（DP-F018R-1=A）**：行首 @ 是 operator 侧 A2A admission；无 @ → 上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
-31. **Message.targetAgentIds（DP-F018R-2=A）**：仅 user message 持久化本次 admission 的 agent targets；与 message + queue entry 同事务写入。
+31. **StoredMessage.targetAgentIds（DP-F018R-2=A）**：仅 user message 持久化本次 admission 的 agent targets；与 message + queue entry 同事务写入；agent-authored A2A targets 走 `lifecycle.dispatchRefs`。
 32. **runAgentTurn + routeAgents（DP-F018R-3=A）**：per-agent pipeline 抽成 `runAgentTurn`；v1 默认 parallel，serial 是同一 pipeline 的薄循环；route 只负责顺序/并发。
 33. **Session 服务分层（2026-11-09 Q&A；2026-11-10 Worker 定稿）**：
     `AgentSessionStore`（durable identity）+ `WorkerPool`（ephemeral worker）+
     薄 `AgentSessionManager`；`TurnExecution.agentSessionId` 只是指针。
-34. **Message lifecycle 是 durable 投递回执（2026-11-09 Q&A）**：input message 存 typed
-    `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId）；response message 存
-    lifecycle；queue live row 派发后删除，`queue_admissions` 只做 admission 幂等。
+34. **Message lifecycle 是 durable 投递回执（2026-11-09 Q&A）**：`StoredMessage.lifecycle`
+    的 input 存 typed `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId/
+    turnExecutionId）；response 存 parent/child/target/终态；queue live row 派发后删除，
+    `queue_admissions` 只做 admission 幂等。
 35. **Delivery cursor（2026-11-09 Q&A）**：v1 新增 `agent_read_state.delivery_cursor`，
     按 `(threadId, agentId)` 存 thread-global seq 的已消费位置；fetch-after + filter +
     monotonic ack；不做 per-target cursor / seenCursor。
@@ -1952,3 +1982,8 @@ parent partial_failed: successful=[A], failed=[B]
 37. **Worker v1（2026-11-10 拍板）**：worker 是 ephemeral execution carrier；pi v1
     `capacity=1`、一个 worker 一 session；`warmTtl=0`、`maxLiveWorkers=8`；不建
     per-turn `worker_leases`；session 不持有 worker；spawn 实测约 0.5s，不作为常驻理由。
+38. **Message 两层拆分（2026-11-10 拍板）**：domain `Message`
+    （id/threadId/sender/content/status/timestamps/metadata）与 internal `StoredMessage`
+    （+userId/seq/kind/bodyMd/richBlocks/replyTo/targetAgentIds/lifecycle）分离；
+    `MessageStore` 返回 `StoredMessage`，对外投影 `Message`；lifecycle 不进 metadata；
+    DB schema 不变。

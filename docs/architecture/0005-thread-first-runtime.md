@@ -209,9 +209,12 @@ interface AgentSession {
 - `queue_admissions` receipt 保住 admission 幂等：live row 删除后同一
   `(sourceRecordId, attempt)` 重放返回 `replayed`/`conflict`，不会二次派发。
 - `AgentRouter.routeAgents(mode)` 调 `runAgentTurn`：per-agent pipeline 拥有 session/prompt/invoke/response/terminal；route 只负责 parallel/serial 调度。
-- Message 是 durable 投递回执：input message 的 `lifecycle.kind="input"` 存 typed
-  `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId）；response
-  message 的 `lifecycle.kind="response"` 存 parent/child/target/终态。queue live row
+- Message 两层：domain `Message`（id/threadId/sender/content/status/timestamps/
+  metadata）+ internal `StoredMessage`（+userId/seq/kind/bodyMd/richBlocks/replyTo/
+  targetAgentIds/lifecycle）；对外 API 投影 `Message`，`lifecycle` 不进 metadata。
+- `StoredMessage` 是 durable 投递回执：input 的 `lifecycle.kind="input"` 存 typed
+  `dispatchRefs`（target/queueEntryId/attempt/phase/responseMessageId/turnExecutionId）；
+  response 的 `lifecycle.kind="response"` 存 parent/child/target/终态。queue live row
   派发后收缩/删除，`queue_admissions` 只做 admission 幂等，不替代投递回执。详见 0010 §3.1。
 - v1 response 与 terminal 同一事务（`settlement="settled"`）；schema 预留
   `response_pending` + `listResponsePending`/`completeResponseSettlement` seam，未来异步
@@ -463,6 +466,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
 | D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/runAgentTurn/routeAgents/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 单体实现删除，serial 保留薄循环 | operator 2026-11-06 |
 | D8 | session / history / settlement | AgentSessionStore + ephemeral WorkerPool + 薄 AgentSessionManager；per-`(thread, agent)` deliveryCursor；v1 `settled`，schema 预留 `response_pending` seam | 工程结论 2026-11-09 Q&A；Worker 2026-11-10 拍板 |
+| D9 | Message 两层 | domain `Message` + internal `StoredMessage`；lifecycle/targetAgentIds/seq 在 StoredMessage；对外投影 Message；DB schema 不变 | operator 2026-11-10 确认 |
 
 **术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；
 `TurnExecution` 是单 agent 一次执行；Session 是 thread×agent 的持久身份；

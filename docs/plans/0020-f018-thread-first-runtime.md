@@ -47,6 +47,9 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   `warmTtl=0`、`maxLiveWorkers=8`；session 不再持有 worker。
 - `agent_read_state`：`(thread_id, agent_id) → delivery_cursor`（thread-global seq）；
   v1 只做 delivery cursor，不做 seenCursor/mentionAck。
+- `messages`：加 `user_id` / `target_agent_ids_json` / `lifecycle_json`；domain
+  `Message` 与 internal `StoredMessage` 分层；legacy `task_id/control_ref/
+  dispatch_refs_json` 停止写入，R5 drop。
 - `a2a_requests`：`thread_id` + `task_id` nullable；unique
   `(thread_id, agent_id, request_id)`；drop 旧 task-level unique。
 - 旧 `tasks`/`handoffs`/`custody_events`/`budgets`/`reviews`/`merges` 冻结 legacy，
