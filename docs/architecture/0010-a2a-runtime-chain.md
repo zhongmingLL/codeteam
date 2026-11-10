@@ -660,9 +660,11 @@ interface MessageStore {
   composer drafts、recall/restore、whisper、connector source、delivery status、
   hard delete、stream metadata、custody/plugin、unread projection 等。v1 纯 A2A
   不需要，故意不加，避免造死接口。
-- Clowder 的 `appendWithQueueLedgerAdmission` 是 message+queue 的原子便捷方法；
-  codeteam 用可重入 `ControlTransaction` 包住 `append` + `InvocationQueue.enqueue`
-  达到同一语义，不复制一个依赖 queue store 的复合方法。
+- Clowder 的 `appendWithQueueLedgerAdmission` 和 codeteam 的“`append` +
+  `InvocationQueue.enqueue` 外包 `ControlTransaction`”**语义相同**，没有理论差异；
+  差别只是 API 边界：Clowder 把它做成依赖同一 Redis ledger 的 store 复合方法，
+  codeteam 放在 service transaction 里。若需要 API 对齐，可加一个薄 wrapper，
+  不需要改存储语义。
 - Clowder 的 response 是 streaming 的 processing row → terminal；
   codeteam v1 response 在 terminal 一次 append。`commitLifecycleResponseTerminal`
   保留给未来 processing/streaming response；v1 可用 `append` + response lifecycle。
@@ -1225,6 +1227,10 @@ normal:
 
 - **cursor 是全局可见序，不是“发给这个 agent 的最后一条”**：A 的 cursor 会越过对 A
   不可见的定向消息；B 仍会在自己的 cursor 位置看到它。不需要 per-target cursor。
+- codeteam v1 **没有单独的 `visibilitySeq`**：`messages.seq` 同时承担 thread-global
+  order 和 visibility coordinate；`AgentReadState.deliveryCursor` 指向 `seq`。
+  Clowder 的 visibility cursor 是 `v2:<seq>:<messageId>`，因为它有 whisper/queued
+  visibility；codeteam v1 没有这些 gating，`seq` 就是可见序。
 - `MessageStore.getByThreadAfter` / `getByThread` 返回的是 **`StoredMessage[]`**；cursor 组装的是
   “thread 内从 cursor 之后的多条 StoredMessage 窗口”，不是单条消息的 content，
   也不是把整个 thread 塞进一条 Message。
@@ -1431,8 +1437,9 @@ v1（response 已持久化）：
 - `listResponsePending()` 是恢复入口；`InvocationStartupReconciler` 重启后扫描 pending 并补结算。
 - parent aggregate 和 credential terminalize 只在 `settled` 后发生；`response_pending` 的 child
   不参与“completed 但无 response”的聚合。
-- v1 不实现 durable streaming / `appendAcceptance` / 完整 responsePending recovery ledger；
-  只保留字段、list/complete API 和恢复入口。
+- v1 实现 **live ephemeral stream**（§3.6.1），但不实现 durable streaming
+  （processing response row / 每 delta 持久化）/ `appendAcceptance` / 完整
+  responsePending recovery ledger；只保留字段、list/complete API 和恢复入口。
 
 **`invoke-single-agent` 顺序**
 1. 从 AgentConfig/AccountConfig 解析 provider/model/modelFamily；
@@ -1447,6 +1454,46 @@ v1（response 已持久化）：
 若第 4/5 步失败：不启动 provider；child 若已创建则 `transitionTerminal(failed,
 terminalReason='turn_admission_failed'|'credential_mint_failed')`，并更新
 parent aggregate；credential 若已创建则 terminalize。
+
+### 3.6.1 Live response stream（v1）
+
+**问题**：v1 如果只在 terminal 一次 append response，用户在模型跑 2min 期间看不到任何输出。
+这是不可接受的；v1 必须有 live stream，但不需要把每个 delta 写进 messages。
+
+**pi RPC 已有事件**：`message_start` / `message_update`（含 `text_delta`）/
+`message_end` / `tool_execution_start` / `tool_execution_end` / `agent_settled`。
+codeteam 当前 `WorkerEventSink` 只处理 `message_end` 和 tool 事件，**忽略了
+`message_update`**；这是要补的。
+
+**v1 设计：ephemeral stream + terminal message**
+
+```ts
+type AgentStreamEvent =
+  | { type: "start"; turnExecutionId: string; agentId: string }
+  | { type: "text_delta"; turnExecutionId: string; delta: string }
+  | { type: "tool_call_start"; turnExecutionId: string; toolName: string; toolId: string }
+  | { type: "tool_call_end"; turnExecutionId: string; toolId: string; status: "ok" | "error" | "unknown" }
+  | { type: "complete"; turnExecutionId: string; responseMessageId: string }
+  | { type: "error"; turnExecutionId: string; code: string; message: string };
+```
+
+- `WorkerEventSink` 处理 `message_update.text_delta` → 发 `text_delta`；
+- tool start/end → `tool_call_start/end`；
+- `message_end` 累积最终 text/tool 事件，terminal settlement 时写 StoredMessage；
+- `agent_settled` → `complete`（或 error）；
+- **每个 delta 不写 messages/run_events**；走 control-plane event channel，
+  或批量（如 100ms）写 bounded stream event，避免 DB 写放大；
+- UI 用 `turnExecutionId` 维护一个 draft bubble；`complete` 后用
+  `responseMessageId` 替换为持久消息；
+- daemon 崩溃/中断：draft 丢弃；`TurnExecution` terminal；不产生半截持久消息。
+
+**为什么 v1 不建 processing response row**：
+
+- 避免每个 delta 写 DB；
+- 避免 crash 后留下 orphan processing message；
+- response 只在 terminal 一次成文，`contentBlocks`/`toolEvents`/`rich` 都是最终值；
+- 如果以后要“刷新页面也能看到半截回答”，再加 `response_drafts` 或 processing
+  response row + `commitLifecycleResponseTerminal`；这是 v2 durable streaming。
 
 ### 3.7 InvocationRegistry + InvocationCredential（MCP → pi extension）
 

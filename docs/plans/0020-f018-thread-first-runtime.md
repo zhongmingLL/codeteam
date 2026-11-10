@@ -75,6 +75,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   budget/deployment/managed-work guard。
 - worker：`WorkerPool.ensure` 按 poolKey 取/建 ephemeral worker；turn 结束默认 retire；
   记录 `worker_spawn_ms` / `worker_busy_ms` / `worker_evicted_count`。
+- live stream：`WorkerEventSink` 处理 `message_update.text_delta` + tool start/end，
+  发 ephemeral `AgentStreamEvent`；response StoredMessage 仍在 terminal 一次写。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A
