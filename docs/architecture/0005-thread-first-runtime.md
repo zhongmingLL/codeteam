@@ -180,7 +180,7 @@ A2A runtime 的调用链拆成两层，详细字段/状态机/链路见
 - `InvocationRecord`（parent）：一条消息的消息级生命周期；
   `sourceRecordId` unique、`userMessageId`、`targetAgentIds[]`、`status`、
   `successfulAgentIds`、`usageByAgent`/`usageRecordedAt`、`retryCount`、`partial_failed`。
-- `TurnExecution`（child）：Clowder core 单 agent 执行；`invocationRecordId`
+- `TurnExecution`（child）：Clowder core 单 agent 执行；`parentInvocationId`
   （fan-out parent）、`causal`（trigger/a2a）、`status`/`terminalReason`/时间。
 - `invocation_attempts`：per-target execution binding + retry trace + response
   settlement；`agentSessionId`/`workerId`/provider/model/usage/R/settlement 都在这里。
@@ -334,8 +334,8 @@ thread message / A2A tool
   → InvocationRecord(parent, claim 后创建)
   → InvocationTracker.start(threadId, agentId, turnExecutionId)
   → AgentRouter.routeAgents(mode)
-  → invocation_attempts(child binding: invocationRecordId/agentSessionId/attempt)
-  → TurnExecution(core: invocationRecordId/causal)
+  → invocation_attempts(child binding: parentInvocationId/agentSessionId/attempt)
+  → TurnExecution(core: parentInvocationId/causal)
   → InvocationRegistry.create(child credential)
   → pi RPC worker（cwd=thread.projectPath）
   → response bubble + TurnExecution terminal
@@ -421,9 +421,9 @@ thread message / A2A tool
 |---|---|---|
 | `threads` | 新增 `created_by`, `project_path`（必填）, `title_source`, `last_active_at`, `deleted_at`；`thread_participants` 新表 | owner 从 operator/最早 message/session 回填；projectPath 从 repo/task.worktree 共同根或 operator 配置回填；无法回填的 thread 进入 preflight 清单，不静默置空；archived → deleted_at |
 | `agent_sessions` | 只保留 thread×agent 单 active；`task_id`/`profile_id` legacy | 先 drain/terminal 有 running invocation 的 session；sealing/sealed 行不迁移，留 legacy；旧 task session 不合并进新 runtime；目标列 `agent_id` |
-| `runs` → `turn_executions` | 新 child core 表：`turnExecutionId`、`invocationRecordId`、`causal`、status/terminalReason/时间；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
-| 新 `invocation_records` | 消息级 parent：`invocationRecordId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
-| 新 `invocation_attempts` | append-only target attempt + execution binding：attemptId、invocationRecordId、queueEntryId、targetAgentId、attempt、state、turnExecutionId、agentSessionId、workerId、provider/model、usage、settlement、responseMessageId | 与 createRunning/child terminal 同事务写入；retry 追加新行；旧行不改 |
+| `runs` → `turn_executions` | 新 child core 表：`turnExecutionId`、`parentInvocationId`、`causal`、status/terminalReason/时间；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
+| 新 `invocation_records` | 消息级 parent：`invocationId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
+| 新 `invocation_attempts` | append-only target attempt + execution binding：attemptId、parentInvocationId、queueEntryId、targetAgentId、attempt、state、turnExecutionId、agentSessionId、workerId、provider/model、usage、settlement、responseMessageId | 与 createRunning/child terminal 同事务写入；retry 追加新行；旧行不改 |
 | 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、contentBlocks、toolEvents、thinking、seq | dispatch 事务创建 R；stream bounded flush；R terminal 后删除 |
 | `messages` | 新增 `target_agent_ids_json`（user message 的 admission targets） | 旧消息回填 `[]`；新 user message 由 ingress 写入 |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |

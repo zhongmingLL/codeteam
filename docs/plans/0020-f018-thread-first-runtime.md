@@ -39,7 +39,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   child 执行 core（Clowder `TurnExecutionRecord`：identity/causal/status/时间）；无 taskId。
 - `queue_entries` → `invocation_queue`：只做调度；`InvocationRecord` 在 claim 后创建。
 - `invocation_attempts`：append-only target attempt 台账；unique
-  `(invocation_record_id, target_agent_id, attempt)`；retry 追加新 attempt，旧行不改；
+  `(parent_invocation_id, target_agent_id, attempt)`；retry 追加新 attempt，旧行不改；
   queue entry 保留到所有 target attempt 终态（`targets_json` 可为空）；承载
   session/worker/provider/model/usage + `settlement`/`response_message_id`。
 - `response_drafts`：processing R 的 in-flight body；`attempt_id`/`turn_execution_id`

@@ -38,9 +38,9 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 1. Thread 是主聚合根：user-owned、participants、projectPath、active/deleted、
    lastActiveAt。
-2. Invocation 拆两层：`InvocationRecord`（消息级 parent，targetAgentIds/
+2. Invocation 拆两层：`InvocationRecord`（消息级 parent，invocationId/targetAgentIds/
    status/successful/failed/canceled/retryCount）+ `TurnExecution`（Clowder core：
-   invocationRecordId/causal/status/时间）；每个 target 的每次执行/重试另有 append-only
+   parentInvocationId/causal/status/时间）；每个 target 的每次执行/重试另有 append-only
    `invocation_attempts` 台账（session/worker/provider/model/usage/settlement/R）；
    response 采用 durable streaming（processing R + `response_drafts` + `responsePending`）；
    `executionKind=ordinary|routing_guard`，没有 conversation/code。

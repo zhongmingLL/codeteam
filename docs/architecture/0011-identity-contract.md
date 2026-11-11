@@ -23,7 +23,7 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 |---|---|---|
 | `sourceMessageId` | codeteam 旧域词（Task/Artifact/Schedule 的触发消息）；`0010` 又拿它当队列身份 + parent unique | 一个词三个语义 |
 | `sourceId` / `sourceRecordId` | `0001` 现有队列：`sourceId` = message，`sourceRecordId` = run/backlog 等领域记录；`0010` 的 `sourceRecordId` 又变成队列身份 | 同名反义 |
-| `invocationId` / `parentInvocationId` / `invocationRecordId` | auth 的 `invocationId` 指 child；`parentInvocationId` 指 A2A 因果父；`invocationRecordId` 指生命周期 parent | 三个都叫 invocation |
+| `invocationId` / `parentInvocationId` / `turnExecutionId` | Clowder 的 `invocationId` 是 child；codeteam 把 parent record 叫 `invocationId`、child 叫 `turnExecutionId`、child→parent FK 叫 `parentInvocationId` | 同名不同层；A2A 因果父单独用 `a2aParentTurnExecutionId` |
 
 ## 2. 规范分层
 
@@ -39,10 +39,10 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 | Admission | 准入尝试序号 | `attempt` | ingress | 每次 admission | 1-based；不是 ID；retry 不新增 |
 | Queue | 队列 entry | `queueEntryId` | 派生 | 到 target attempt 终态 | `queue:<hash(sourceRecordId:attempt)>`；`failed`/`partial_failed` 保留为 retry anchor |
 | Queue | claim 租约 | `claimId` | QueueProcessor | 短时 | 可撤销；不是 durable 身份 |
-| Lifecycle | 消息级 parent | `invocationRecordId` | QueueProcessor | 永久 | 一个 source 一个 parent |
+| Lifecycle | 消息级 parent | `invocationId` | QueueProcessor | 永久 | 一个 source 一个 parent；`InvocationRecord` 的 PK |
 | Attempt | target 执行尝试 | `attemptId` | InvocationAttemptStore | 永久 | 一个 target × attempt 一行；append-only |
-| Attempt | target 尝试序号 | `attempt`（target attempt） | QueueProcessor/retry | 每次 target attempt | 1-based；唯一键 `(invocationRecordId, agentId, attempt)` |
-| Execution | 单 agent 执行 | `turnExecutionId` | QueueProcessor | 永久 | 一个 `attemptId` 一个 child |
+| Attempt | target 尝试序号 | `attempt`（target attempt） | QueueProcessor/retry | 每次 target attempt | 1-based；唯一键 `(parentInvocationId, agentId, attempt)` |
+| Execution | 单 agent 执行 | `turnExecutionId` | QueueProcessor | 永久 | 一个 `attemptId` 一个 child；`parentInvocationId` 是它的 parent FK |
 | Auth | 工具能力凭证 | `credentialId` | InvocationRegistry | 到 terminal | 绑定 `turnExecutionId` |
 | Pointer | 触发消息 | `triggerMessageId` | ingress | 永久 | child 的来源消息 |
 | Pointer | A2A 触发消息 | `a2aTriggerMessageId` | A2A ingress | 永久 | A2A hop 的触发消息 |
@@ -68,7 +68,7 @@ userId
         │     │                 ├── claimId (ephemeral)
         │     │                 └── targetKey
         │     │
-        │     └── invocationRecordId (parent, one per sourceRecordId)
+        │     └── invocationId (parent, one per sourceRecordId)
         │              │
         │              ├── userMessageId = messageId
         │              │
@@ -78,6 +78,7 @@ userId
         │                       ├── queueEntryId / attempt
         │                       ├── settlement / responseMessageId
         │                       └── turnExecutionId (child core, one per attemptId)
+        │                                ├── parentInvocationId = invocationId
         │                                ├── agentId
         │                                ├── causal.triggerMessageId
         │                                ├── causal.a2aTriggerMessageId
@@ -90,19 +91,19 @@ userId
 ## 4. 命名规则
 
 1. **ID 命名对象，不命名用途**\
-   `messageId` 是消息；`queueEntryId` 是队列行；`invocationRecordId` 是 parent；`turnExecutionId` 是 child。
+   `messageId` 是消息；`queueEntryId` 是队列行；`invocationId` 是 parent；`turnExecutionId` 是 child；`parentInvocationId` 是 child→parent FK。
 2. **引用一律 `<object>Id`**\
-   不允许裸 `id`、裸 `invocationId`、`entryId`。
+   不允许裸 `id`、`entryId`；`invocationId` 是 parent record 的规范 ID，不能用来指 child。
 3. **`sourceRecordId` 与 `messageId` 分开**\
    v1 相等，但队列身份要能承接未来 connector/private source；不要把两者合并。
 4. **`userMessageId` 是 parent 的消息指针**\
    v1 = `messageId`；未来 connector 可为 null。
 5. **`a2aParentTurnExecutionId` 只指因果父**\
-   lifecycle parent 永远是 `invocationRecordId`。
+   lifecycle parent 是 `invocationId`；child 通过 `parentInvocationId` 指向它。
 6. **两个 attempt 不是同一个东西**\
    admission `attempt` 只用于 `queueEntryId = hash(sourceRecordId, attempt)`，retry 不递增；
    execution `attempt` 只用于 `invocation_attempts` 的
-   `(invocationRecordId, agentId, attempt)` 唯一键；`turnExecutionId` 由 attempt 绑定，
+   `(parentInvocationId, agentId, attempt)` 唯一键；`turnExecutionId` 由 attempt 绑定，
    非空时唯一；对外引用用 `attemptId`。
 7. **parent 上没有 `idempotencyKey`**\
    message 创建用 `requestId`；队列准入用 `(sourceRecordId, attempt)`；parent 用 `sourceRecordId UNIQUE`。
@@ -115,8 +116,9 @@ userId
 |---|---|---|
 | `sourceMessageId`（A2A runtime） | `messageId` 或 `sourceRecordId` | 旧域词；混淆消息身份和队列身份 |
 | `sourceId` | `messageId` 或 `sourceRecordId` | 语义不明确 |
-| `invocationId`（单独使用） | `invocationRecordId` 或 `turnExecutionId` | 分不清 parent/child |
-| `parentInvocationId` | `invocationRecordId` 或 `a2aParentTurnExecutionId` | 分不清 lifecycle parent 和因果父 |
+| `invocationRecordId` | `invocationId`（parent record）或 `parentInvocationId`（child FK） | 旧名；分不清 parent record 和 child FK |
+| `invocationId` 指 child | `turnExecutionId` | child 执行必须用 `turnExecutionId` |
+| `parentInvocationId` 指 A2A 因果父 | `a2aParentTurnExecutionId` | 因果父不是 lifecycle parent |
 | `entryId` | `queueEntryId` | 明确对象 |
 | `idempotencyKey`（parent） | `requestId` 或 `(sourceRecordId, attempt)` | v1 不需要 parent 级 key |
 | `sourceRecordId`（旧义：run/backlog） | `originRecordId` | 给队列身份让路 |
@@ -132,8 +134,9 @@ userId
 | `InvocationRecord.userMessageId` | Clowder | 保留 | v1 = `messageId` |
 | `InvocationRecord.idempotencyKey` | Clowder | 删除 | v1 用 `sourceRecordId UNIQUE` + queue receipt |
 | auth `invocationId` | Clowder | `turnExecutionId` | rename；它本来就是 child |
-| `TurnExecution.parentInvocationId` | 0010 | `causal.a2aParentTurnExecutionId` | rename；因果父，不是 lifecycle parent |
-| `TurnExecution.invocationRecordId` | 0010 | 保留 | lifecycle parent |
+| Clowder `parentInvocationId` | Clowder | `parentInvocationId` | 保留；child → lifecycle parent |
+| `InvocationRecord.invocationRecordId` | 0010 | `invocationId` | rename；parent record id |
+| `TurnExecution.invocationRecordId` | 0010 | `parentInvocationId` | rename；child FK |
 | `QueueEntry.id` | 双方 | `queueEntryId` | 明确对象；派生 |
 | `QueueLedgerPayload.sourceRecordId` | Clowder | 保留 | 队列身份 |
 | `QueueLedgerPayload.messageId` | Clowder | 保留 | 消息指针 |
@@ -150,10 +153,10 @@ targetKey(target)   = "agent:" + target.id      // kind=agent
                     | "operator:" + target.id   // kind=operator
 
 queueEntryId        = "queue:" + sha256(sourceRecordId + ":" + attempt /* admission */).slice(0, 32)
-attemptId           = "attempt:" + sha256(invocationRecordId + ":" + agentId + ":" + attempt).slice(0, 32)
+attemptId           = "attempt:" + sha256(invocationId + ":" + agentId + ":" + attempt).slice(0, 32)
 
-invocationRecordId  = UUID   // unique(sourceRecordId)
-turnExecutionId     = UUID   // unique(attemptId) or unique(invocationRecordId, agentId, attempt)
+invocationId        = UUID   // parent record; unique(sourceRecordId)
+turnExecutionId     = UUID   // child; unique(attemptId) or unique(parentInvocationId, agentId, attempt)
 credentialId        = UUID   // unique(turnExecutionId)
 ```
 
@@ -161,7 +164,7 @@ credentialId        = UUID   // unique(turnExecutionId)
 
 ```text
 queueEntryId（派生）
-invocationRecordId（parent）
+invocationId（parent）
 attemptId（target attempt）
 turnExecutionId（child）
 credentialId（auth）
@@ -175,8 +178,9 @@ credentialId（auth）
 
 - `sourceMessageId`（A2A runtime）
 - `sourceId`（队列/执行）
-- `invocationId`（单独使用）
-- `parentInvocationId`
+- `invocationRecordId`（旧名；用 `invocationId` 或 `parentInvocationId`）
+- `invocationId` 指 child（用 `turnExecutionId`）
+- `parentInvocationId` 指 A2A 因果父（用 `a2aParentTurnExecutionId`）
 - `entryId`
 - `idempotencyKey`（parent）
 - 把 admission `attempt` 当 execution attempt，或把 execution `attempt` 当 queue admission attempt
@@ -202,9 +206,9 @@ credentialId（auth）
 | StoredMessage | 否 | `from` + `thread_id` | user message 的 `from.userId`；agent message 由 thread owner 派生；Clowder 存 userId，v1 有意省 |
 | InvocationQueue / QueueEntry | **是（owner 内）** | `owner_json` 的 `{kind:'user', userId}` / `{kind:'system'}` | admission owner；不另设 user_id 列 |
 | InvocationRecord | **是** | `invocation_records.user_id` | parent ownership；必须等于 thread owner |
-| InvocationAttempt | 否 | 通过 `invocation_record_id`/`thread_id` | 子台账；从 parent/thread 派生 |
+| InvocationAttempt | 否 | 通过 `parent_invocation_id`/`thread_id` | 子台账；从 parent/thread 派生 |
 | TurnExecution | **是** | `turn_executions.user_id` | execution scope snapshot；必须等于 parent/thread owner |
-| InvocationCredential | **是** | `invocation_credentials.user_id` | auth scope；必须等于 child/TurnExecution owner；`turnExecutionId` 是 auth anchor，`invocationRecordId` 是 parent reference |
+| InvocationCredential | **是** | `invocation_credentials.user_id` | auth scope；必须等于 child/TurnExecution owner；`turnExecutionId` 是 auth anchor，`parentInvocationId` 是 parent reference |
 | AgentReadState | 否 | 主键 `(thread_id, agent_id)` | thread owner 隐含 user；v1 单 user 简化 |
 | response_drafts | 否 | 通过 `attempt_id`/`turn_execution_id` | attempt/TurnExecution 的子记录；user 从 parent/thread 派生；多 user draft 隔离时再加 |
 | workers / worker_bindings | 否 | project/account | execution carrier，不是 user-owned |

@@ -107,8 +107,9 @@ binding 是正确的 pi extension 安全边界；要换的是坐标，不是机�
 行数不是瓶颈，token 失效边界才是。
 
 > **命名澄清**：Clowder 的 `invocationId` 就是 child execution id；codeteam 为避免
-> parent/child 混淆，把 child 叫 `turnExecutionId`、parent 叫 `invocationRecordId`。
-> credential 可存 `invocationRecordId` 作为 scope/aggregation reference，但 auth
+> parent/child 混淆，把 child 叫 `turnExecutionId`、parent record id 叫 `invocationId`，
+> child 的 parent FK 叫 `parentInvocationId`。credential 可存 `parentInvocationId`
+> 作为 scope/aggregation reference，但 auth
 > anchor 始终是 `turnExecutionId`，不绑 parent。
 
 **附带自决**：`disposition` 增加 `replaced`，并增加
@@ -177,7 +178,7 @@ child/run terminal → terminalize；running unowned → interrupt 后 terminali
 | identity 来源 | 从 credential + child/worker/session 派生；payload 不得覆盖 agent/thread/user | 当前 `resolveWorkerBinding` + `resolveRunPrincipal` |
 | allowedTools | 服务端铸造，credential 生命周期内不可扩；extension 只能使用 | 当前 `credentialToolDecision` |
 | `callbackAllowlist` | F018 删除；pi extension 路径没有 HTTP callback 语义 | 当前字段是 task-first callback 遗留 |
-| `task_id/role/agent_profile_id/parent_run_id` | 迁移为 `turn_execution_id/agent_id/invocation_record_id`；不保留 task/role 坐标 | F018 thread-first |
+| `task_id/role/agent_profile_id/parent_run_id` | 迁移为 `turn_execution_id/agent_id/parent_invocation_id`；不保留 task/role 坐标 | F018 thread-first |
 | `lastRefreshAt` | v1 无 refresh 流程则删除；active credential 不设 TTL | Clowder active 无 deadline |
 
 ## 9. 拍板结果（2026-11-11）
