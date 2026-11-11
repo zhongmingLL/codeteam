@@ -35,7 +35,7 @@ related_features: [codeteam/F018, codeteam/F017]
 6. **终态路径只有一条**：`transitionTerminal` → `PerAgentTerminalDispositionCollector` →
    parent aggregate → credential terminalize，同一事务；R terminal 由
    `response_pending` settlement 作为可恢复的第二段提交。
-7. **v1 不做**：MCP、task/role/run 字段、custody/action/wait、compaction、full session seal/transcript/digest/restore、outputFence/coveredMessageIds、trajectory projector、idempotencyKey/intent。
+7. **v1 不做**：MCP、task/role/run 字段、custody/action/wait、compaction、full session seal/transcript/digest/restore、outputFence/coveredMessageIds、trajectory projector、Clowder action successor 的 `idempotencyKey`/`intent`。
 
 ## 1. 设计原则
 
@@ -3190,7 +3190,7 @@ parent partial_failed: successful=[A], failed=[B]
 | custody / action lease / wait continuation | v2 |
 | full session seal / transcript / digest / restore / compression / handoff | v1 lightweight seal only（0009） |
 | `outputFence` / `coveredMessageIds` / `queueCompletionPolicy` / `appendAcceptance` | v2 的 action/prompt/carrier/phase 审计 |
-| `idempotencyKey` / `intent` | v1 用 `sourceRecordId` unique + queue receipt；usage 已保留为 `usageByAgent`/`usageRecordedAt` |
+| Clowder action successor 的 `idempotencyKey` / `intent` | v1 A2A 消息用 `piExtToolCallId` + `intentHash`；没有 action successor 的 parent key/usage intent；usage 保留为 `usageByAgent`/`usageRecordedAt` |
 | `InvocationTrajectoryProjector` 完整版 | v1 用简单 timeline；trajectory drilldown 后续 |
 | 每 delta 写 messages | v1 用 `response_drafts` bounded flush；不把每个 delta 变成 message 行/`seq` |
 | 完整跨 store draft reconciliation | v1 单 SQLite 用 `response_pending` + `response_drafts`；不做 Clowder 的跨 Redis/append acceptance 补偿 |
@@ -3276,12 +3276,14 @@ parent partial_failed: successful=[A], failed=[B]
 - `TurnExecution.userId` 必须等于 `InvocationRecord.userId` 和 `Thread.created_by`；
   不一致 fail closed。
 - 一个 TurnExecution 只能 transitionTerminal 一次；重复 → `already_terminal`。
-- ordinary running/terminal attempt 必须有 `responseMessageId`/`settlement`；
-  `routing_guard` 没有 attempt/R。
+- ordinary attempt 一旦创建 processing R，running/terminal 必须有
+  `responseMessageId`/`settlement`；prestart 未创建 R 的 failed attempt 例外，走
+  `delivery_failure`；`routing_guard` 没有 attempt/R。
 - failed/interrupted/canceled 必须有 terminalReason。
 - 一个 agent 可有多 attempt；唯一 `(parent, agent, attempt)`。
 - 每个 attempt 必须有 `invocation_attempts` 行；child terminal 与 attempt terminal 同事务；
-  attempt 只能走 `queued → running → terminal`，旧 attempt 不可改写。
+  attempt 只能走 `queued → running → terminal`，或 `queued → canceled`（source 撤回）；
+  旧 attempt 不可改写。
 - attempt `turn_execution_id` 非空时唯一；`response_message_id` 非空时唯一。
 - `interruptRunningBefore(cutoff)` 只收敛 `startedAt < cutoff` 的 running TurnExecution；
   attempt/credential 由恢复流程在同一轮收敛。
@@ -3306,8 +3308,8 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 9.4 Auth
 
-- credential 只能绑 child TurnExecution；一个 child 一个 active credential。
-- `verify` 校验 token hash/salt、state、expiry、child running、parent 未 canceled、tool allowed。
+- credential 只能绑 child TurnExecution；一个 child 一个 credential（active 或 terminal tombstone）。
+- `verify` 校验 token hash/salt、state、expiry、child running、parent status ∈ `queued|running`、tool allowed。
 - 身份从 credential + child/thread/session 派生；payload 不得覆盖 agent/thread/user。
 - pi extension → daemon 走 control socket：`{ type:"a2a_call", workerId, token, piExtToolCallId, toolName, input }`；
   token 文件 `ct1.<credentialId>.<secret>`，0600，extension 每次调用重读。
@@ -3425,7 +3427,7 @@ parent partial_failed: successful=[A], failed=[B]
 26. **InvocationRecord usage**：parent 存 `usageByAgent`（跨 attempt 累计）+ `usageRecordedAt`（首次写入）；`invocation_attempts.usage` 存 per-attempt 用量；collector 汇总后由 `applyTerminalAggregate` 写入。
 27. **Tracker start 抢占（DP-F018T-1=B）**：同 slot 旧 controller 先发中断信号，旧 TurnExecution 标 `interrupted/preempted`；新 slot 立刻登记。普通消息默认不抢占，只有显式 Steer/停止动作走抢占。
 28. **取消即释放 slot（DP-F018T-2=B）**：tracker 不保留 canceled 墓碑；真正的执行互斥由 `TurnExecution` 唯一 running + `RpcConnection.prompting` + worker binding generation 承担；旧 worker 未退出时新 start 返回 `worker_busy`。
-29. **僵尸判定用 worker heartbeat（DP-F018T-3=A）**：running TurnExecution 无 live worker/heartbeat 才标 `interrupted/owner_reaped`；被抢占但旧 worker 还活着的 child 保留到旧 worker 结束。
+29. **僵尸判定用 worker heartbeat（DP-F018T-3=A；2026-11-11 由 DP-F018RECOVERY-2 收紧）**：TTL 只做候选；running TurnExecution 必须 stale lease + 独立 owner absence 才标 `interrupted/owner_reaped`；被抢占但旧 worker 还活着的 child 保留到旧 worker 结束。
 30. **Operator ingress 路由（DP-F018R-1=A）**：行首 @ 是 operator 侧 A2A admission；无 @ → 上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
 31. **StoredMessage.targetAgentIds（DP-F018R-2=A）**：仅 user message 持久化本次 admission 的 agent targets；与 message + queue entry 同事务写入；agent-authored A2A targets 走 `lifecycle.dispatchRefs`。
 32. **runAgentTurn + routeAgents（DP-F018R-3=A）**：per-agent pipeline 抽成 `runAgentTurn`；v1 默认 parallel，serial 是同一 pipeline 的薄循环；route 只负责顺序/并发。
@@ -3485,8 +3487,8 @@ parent partial_failed: successful=[A], failed=[B]
     `canceled`；auto-retry pending 保持 `queued`/`running`；每个 child terminal 释放
     tracker slot；terminal first-write-wins + `terminal_conflict`；`requestRetry` 只由
     store 改 parent state/retryCount，QueueProcessor 编排且只 retry failed/interrupted；
-    dispatchRefs 更新 latest attempt；failed entry 显式 abandon/30d TTL；parent 持久化
-    `primaryTerminalError`。
+    dispatchRefs 更新 latest attempt；failed entry 显式 abandon/30d TTL；parent
+    `terminalReason` 持久化 collector 的 `primaryTerminalError`。
 47. **DP-F018RECOVERY=A/A/A/A/A/A/A（2026-11-11 拍板）**：startup 用
     `processStartedAt+1` + protected IDs，只结算上一进程 ended turn；单 serialized reaper；
     zombie 用 stale lease + owner absence，收敛 child R→queue→parent→credential→slot；
