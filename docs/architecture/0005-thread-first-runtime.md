@@ -373,7 +373,7 @@ thread message / A2A tool
 | 工具 | 作用 | 必填 | 不变量 |
 |---|---|---|---|
 | `codeteam_post_message` | 同 thread 发言并唤醒 targets | `targets`, `bodyMd` | targets 是 `{kind:"agent"|"operator", id}`；正文 @ 不路由；operator-only 只通知 |
-| `codeteam_cross_post_message` | 跨 thread 发言并唤醒 targets | `threadId`, `targets`, `bodyMd` | source/target thread 必须同 user 可见；depth/loop guard；targets 同上 |
+| `codeteam_cross_post_message` | 跨 thread 发言并唤醒 targets | `threadId`, `targets`, `bodyMd` | source/target thread 同 user；target thread active/not deleted/有 projectPath；写 `extra.crossPost`；depth/loop guard；targets 同上 |
 | `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent | `targets` (2-3 agents), `question`, `context?`, `requestId?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；响应是独立消息；无聚合回调 |
 | `codeteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
 
@@ -405,6 +405,8 @@ thread message / A2A tool
   `a2a_request_conflict`。
 - 目标 thread 不存在、soft-deleted、跨 user、target agent disabled 都是 typed
   reject，不静默降级。
+- `cross_post_message` 的 target thread 还必须满足 `projectPath` 非空；message 写
+  `extra.crossPost = { sourceThreadId, sourceMessageId }`。
 - `multi_mention` 的聚合回调不在 v1；fan-out 本身是 v1 能力。
 
 ## 4. 迁移与 cutover

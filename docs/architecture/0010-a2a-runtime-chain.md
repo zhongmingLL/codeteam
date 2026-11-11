@@ -2020,6 +2020,11 @@ targets: Array<
 - `multi_mention` targets 仅 agent（2-3 个），不做聚合回调。
 - agent targets 为 N 个时，统一为 **1 message + 1 queue entry + 1 parent
   `InvocationRecord` + N child `TurnExecution`**；不是 N 条 message，也不是 N 个 parent。
+- `cross_post_message`：`threadId` 必须存在且不等于 caller thread；target thread 必须
+  active、未 soft-deleted、有 `projectPath`，且与 source 同 user；message 写
+  `extra.crossPost = { sourceThreadId, sourceMessageId }`；不同 user → `thread_access_denied`，
+  soft-deleted → `thread_deleted`，缺 projectPath → `thread_project_path_required`，
+  同 thread → `use_post_message`。
 
 **`post_message` / `cross_post_message` 流程**
 1. 校验 caller credential + target/thread access + A2A depth/loop guard
@@ -3121,7 +3126,8 @@ parent partial_failed: successful=[A], failed=[B]
 - `delivery_failure` 只用于 admitted prestart：`worker_capacity/worker_start_failed/
   credential_mint_failed/provider_start_failed/response_missing`；R 已创建后的失败走 R terminal。
 - `post_message` 创建新 message + queue entry + parent；child `a2aParentTurnExecutionId`/`a2aDepth` 正确。
-- `cross_post_message` 跨 thread 同 user；不同 user 拒绝。
+- `cross_post_message` 跨 thread 同 user；target thread 必须 active/not deleted/有
+  projectPath；message 写 `extra.crossPost`；不同 user/deleted/缺 projectPath 都 typed reject。
 - `thread_context` 只读，不入队。
 - depth > 15 拒绝。
 - 不存在 `a2a_send`/`handoff_*` 注册。
