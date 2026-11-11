@@ -19,6 +19,7 @@ Operator 拍板包。每个 packet 只给价值取舍、推荐、证据和“不
 | 2026-11-09 | `2026-11-09-dp-f018-tracker-reaper.md` | decided: B/B/A | `../0010-a2a-runtime-chain.md` |
 | 2026-11-09 | `2026-11-09-dp-f018-operator-routing.md` | decided: A/A/A | `../0010-a2a-runtime-chain.md` |
 | 2026-11-11 | `2026-11-11-dp-f018-auth-credential.md` | decided: A/A/B/A/A | `../0010-a2a-runtime-chain.md` |
+| 2026-11-11 | `2026-11-11-dp-f018-a2a-tools.md` | open | `../0010-a2a-runtime-chain.md` |
 
 拍板格式：`DP-XXX-N=A`，多项一行。2026-10-25 已 decided：ball-custody A/A/A、memory A/A/A、observability A/A/B、bubble-pipeline A（W1 冻结，W7 approved-for-direction）、github-signals A/A（GitHub-only + 复用 tasks/waits/audit/forge_deliveries，含 audit 收窄护栏）、plugin A/A（skill surface only + repo-local curated）、skill 内容迁移 A/A/A（矩阵 + W0/W4 范围 + 一次性 fork）；merge authority **D**（clowder parity；A 仅零-secret 临时偏差，不得写成 clowder SOP；漂移审计见 `../merge-authority-drift-audit.md`）；W0–W4 dogfood **`DP-MERGE-2=A`**（D-first，local `MergeExecutor`；W8 GitHub adapter）；harness-eval **A/A/A**（P0 envelope/finding/lifecycle；artifacts+events；review/eval 分账）；前端复用 **`DP-WEB-1=B`**（W7a C + W7b Console 均 classic）。
 
