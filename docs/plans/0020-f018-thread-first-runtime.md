@@ -3,7 +3,7 @@ title: "F018 — A2A runtime v1 实施计划（R0-R5）"
 doc_kind: plan
 status: draft
 created: 2026-11-04
-updated: 2026-11-10
+updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
@@ -147,7 +147,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   且 `promptDelivered=true` 才 ack；worker_capacity/spawn 前失败不 ack；prompt 后
   failed/canceled 仍 ack；reset 的 cursor rewind 与 pi binding clear 同事务。
 
-## Phase A 遗留问题（2026-11-10 重新梳理）
+## Phase A 遗留问题（2026-11-10 梳理；2026-11-11 终审）
 
 | # | 问题 | 设计状态 | 剩余动作 |
 |---|---|---|---|
@@ -161,7 +161,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 | 10 | WorkerPool reaper/capacity | **契约已收口**：capacity backoff、单 reaper 循环、warmTtl=0 crash/cleanup 顺序已定 | R2 实现 |
 | P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **已收口**：`invoke-single-agent` 负责 provider/stream；`settleAgentTurn` 接口负责两段 terminal/settlement | R2 按接口实现 |
 | P2 | `extra.kind` 是否保留 | **已删**：`kind` 是 task-first legacy；不迁入 A2A `extra`，legacy 列只读至 R5 drop | 实现时不得重新引入 |
-| P3 | PR #86 / 0005 review | **operator 2026-11-11 暂停外部 review**：先完成 session/history/worker 设计整合 | 设计冻结后再最终 Phase A review + merge |
+| P3 | PR #86 / 0005 review | **设计整合已完成（2026-11-11）**：session/history/worker 与 0005/0010 的一致性终审已收口；operator 暂停外部 review 的前置条件已满足 | 进入最终 Phase A review；非作者 verdict 覆盖 exact HEAD 后再 merge |
 
 ## 回滚
 
