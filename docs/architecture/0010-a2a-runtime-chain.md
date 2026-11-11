@@ -3,11 +3,11 @@ title: "codeteam A2A runtime chain v1 — Clowder-aligned"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-10
+updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06"
-operator_direction: "直接复用 Clowder A2A runtime 骨架；v1 轻量化；MCP callback → pi extension tools + local control socket；不做 task-first/custody/action/wait/compaction；session active-only"
+operator_direction: "直接复用 Clowder A2A runtime 骨架；v1 轻量化；MCP callback → pi extension tools + local control socket；不做 task-first/custody/action/wait/compaction；session active + lightweight seal"
 related_features: [codeteam/F018, codeteam/F017]
 ---
 
@@ -16,7 +16,7 @@ related_features: [codeteam/F018, codeteam/F017]
 > 直接复用 Clowder 已经验证过的 A2A runtime 骨架：
 > **Message/InvocationQueue → QueueProcessor → InvocationRecord → InvocationTracker → AgentRouter → invoke-single-agent/TurnExecution → InvocationRegistry → A2A tools → terminal collector → recovery/read models**。
 >
-> codeteam 只替换 runtime 适配：pi 执行层、pi extension tools、active-only session；
+> codeteam 只替换 runtime 适配：pi 执行层、pi extension tools、active + lightweight seal session；
 > 不另造一套缺 tracker/processor/collector 的轻量链路。
 >
 > 身份/引用命名以 `0011-identity-contract.md` 为准；本文旧名只出现在迁移/映射表。
@@ -35,7 +35,7 @@ related_features: [codeteam/F018, codeteam/F017]
 6. **终态路径只有一条**：`transitionTerminal` → `PerAgentTerminalDispositionCollector` →
    parent aggregate → credential terminalize，同一事务；R terminal 由
    `response_pending` settlement 作为可恢复的第二段提交。
-7. **v1 不做**：MCP、task/role/run 字段、custody/action/wait、compaction、session sealed、outputFence/coveredMessageIds、trajectory projector、idempotencyKey/intent。
+7. **v1 不做**：MCP、task/role/run 字段、custody/action/wait、compaction、full session seal/transcript/digest/restore、outputFence/coveredMessageIds、trajectory projector、idempotencyKey/intent。
 
 ## 1. 设计原则
 
@@ -1103,14 +1103,14 @@ AgentRouter
 
 runAgentTurn
   1. resolve AgentConfig
-  2. ensure AgentSession（active-only）
+  2. ensure AgentSession（active；circuit breaker/fresh 时 lightweight seal + seq+1）
   3. attempt(queued) + TurnExecution.createRunning（同 session 唯一 running）
   4. bind attempt（session/provider/model/R/settlement=streaming；worker=null）
   5. loadHistory（§3.5.1）→ deliveryBoundarySeq
   6. workerPool.ensure（ephemeral；spawn ~0.5s）+ attempt.bindWorker
   7. InvocationCredential.create
   8. build prompt + invoke pi worker；prompt RPC 接收后 markPromptDelivered；
-     stream → response_drafts；usage → attempt
+     stream → response_drafts；首次可见输出 → recordUserVisibleOutput；usage → attempt
   9. transitionTerminal + attempt terminal/settlement=response_pending + collector +
      parent aggregate + credential terminalize + recordTurnTerminal（messageCount + ack）
  10. settle R + attempt settled + retire worker（warmTtl=0）/ release tracker slot
@@ -1232,7 +1232,7 @@ async function* routeSerial(input: RouteInput): AsyncIterable<AgentStreamEvent> 
 **`runAgentTurn` 顺序**
 
 1. resolve AgentConfig（存在/enabled/provider/model）；
-2. ensure AgentSession（active-only）；
+2. ensure AgentSession（active；circuit breaker/fresh 时 lightweight seal + seq+1）；
 3. 读取/派生可重放的 `turnExecutionId`；
 4. 同一 dispatch 事务创建 attempt(queued) + processing R（`parentInvocationId` + `turnExecutionId`）；
 5. `TurnExecutionStore.createRunning`（core；幂等；同 session 唯一 running）；
@@ -1725,7 +1725,7 @@ response settlement（通常紧接着；崩溃后由 reconciler 重放）:
 
 **`invoke-single-agent` 顺序**
 1. 从 AgentConfig/AccountConfig 解析 provider/model/modelFamily；
-2. ensure `AgentSession`（active-only）；worker 在 history 之后；
+2. ensure `AgentSession`（active；circuit breaker/fresh 时 lightweight seal + seq+1）；worker 在 history 之后；
 3. 读取/派生可重放的 `turnExecutionId`（`invocation_attempts` 已有则复用）；
 4. 同一 dispatch 事务创建 attempt(queued) + processing R（`parentInvocationId` + `turnExecutionId`）；
 5. `TurnExecutionStore.createRunning`（core）；
@@ -2104,7 +2104,9 @@ function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnRe
   collector/parent aggregate + `InvocationRegistry.commitTerminal` +
   `AgentSessionManager.recordTurnTerminal`。后者读取 attempt 的
   `deliveryBoundarySeq` / `promptDeliveredAt`，在同一事务内完成
-  `recordCompletedTurn` 与 cursor ack；详见 `0009 §6.1`。
+  `recordCompletedTurn` 与 cursor ack；首次可见输出已由 stream 提前
+  `recordUserVisibleOutput` 0→1，done 用 `lastCountedTurnExecutionId` 去重；
+  详见 `0009 §6.1`。
 - 第二段（response settlement）：调用 `settleResponseFromDraft`，提交 R terminal +
   input dispatchRefs + attempt `settled` + clear pending；两段之间崩溃可恢复。
 - `settleAgentTurn` 不启动 provider、不写 response 正文；provider/stream 仍在
@@ -2953,7 +2955,7 @@ parent partial_failed: successful=[A], failed=[B]
 | guide/concierge/memory/SOP/entity nudge 的 route 分支 | v1 不挂；后续作为 `runAgentTurn` feature hooks |
 | task/role/run/profile 坐标 | thread-first；credential 绑 child TurnExecution |
 | custody / action lease / wait continuation | v2 |
-| session sealed / compression / handoff | v1 active-only session（0009） |
+| full session seal / transcript / digest / restore / compression / handoff | v1 lightweight seal only（0009） |
 | `outputFence` / `coveredMessageIds` / `queueCompletionPolicy` / `appendAcceptance` | v2 的 action/prompt/carrier/phase 审计 |
 | `idempotencyKey` / `intent` | v1 用 `sourceRecordId` unique + queue receipt；usage 已保留为 `usageByAgent`/`usageRecordedAt` |
 | `InvocationTrajectoryProjector` 完整版 | v1 用简单 timeline；trajectory drilldown 后续 |
@@ -3160,7 +3162,8 @@ parent partial_failed: successful=[A], failed=[B]
 6. **Auth 从 MCP callback 改为 pi extension tool capability**：credential 绑 child TurnExecution，allowedTools 限 A2A tools；transport 是 local control socket；MCP/task/role/run 字段删除。
 7. **终态同事务**：child terminal + attempt terminal + parent aggregate + credential
    terminalize；另用 responsePending ledger 把 R settlement 作为可恢复的第二段提交。
-8. **Session active-only**（0009）：v1 不做 sealed/compression/handoff。
+8. **Session active + lightweight seal**（0009）：v1 做 `active → sealed + seq+1`，
+   不做 transcript/digest/restore/compression/handoff。
 9. **v1 不做 custody/action/wait/compaction/managed/collective**；全部 v2。
 10. **QueueEntry 多層次设计**：`owner/from/targets/payload/execution/delivery/claim` 分组；targets 是 `QueueTarget[]`（agent/operator）。
 11. **operator 对话只解析行首 `@`**；多个 @ 去重；未知/disabled typed reject；无 @ → 隐式路由链，只有无候选才 `no_target`。

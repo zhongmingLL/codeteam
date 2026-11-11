@@ -251,12 +251,12 @@ provider PreCompact hook
 | codeteam 当前假设 | Clowder 实际 | 后果 |
 |---|---|---|
 | `AgentSessionStore` ≈ Clowder `SessionStore` | `SessionStore` 是 Redis adapter；domain 是 `SessionManager + SessionChainStore` | 丢失 DeliveryCursor、cat state、chain 的归属 |
-| active-only 一行就够 | SessionRecord 有 active/sealing/sealed + chain(seq) + restore | v1 可缩，但接口不能把生命周期当成“永远不会 seal” |
+| active + lightweight seal 一行就够 | SessionRecord 有 active/sealing/sealed + chain(seq) + restore | v1 保留 `seq/status/sealReason/sealedAt` 和 `active → sealed`；full seal/restore/chain 导航放 v2 |
 | DeliveryCursor 是附属 | 它是 history 读边界，与 session identity 不同生命周期 | 容易在 reset/ack/restore 时吞消息或重放 |
-| messageCount 每 turn +1 | 首次 output 0→1，done 只 +1 一次 | 计数偏高/偏低，影响 unseal safety |
-| consecutiveResumeFailures 只是计数 | 3 次会 seal 旧 session + fresh | 只清 binding 会留下旧 logical session 继续被选中 |
+| messageCount 只计有输出的 turn | 首次 output 0→1，done 只 +1 一次；无输出 completed turn 也 +1 | 计数偏高/偏低，影响 unseal safety |
+| consecutiveResumeFailures 只是计数 | 3 次会 seal 旧 session + fresh | v1 已改为 lightweight seal + `seq+1`；只清 binding 会留下旧 logical session 继续被选中 |
 | `WorkerPool` ≈ `AcpProcessPool` | ACP 长驻/multiplexing/lease；pi 一进程一 session | worker 语义可适配，但不能复用 lease/affinity 假设 |
-| seal/restore/policy/runtime session 都是 v2，可以先不管 | 它们反过来决定 SessionRecord 字段和状态机 | 后期加 chain/restore 需要迁移现有 active-only 行 |
+| full seal/restore/policy/runtime session 都是 v2，可以先不管 | 它们反过来决定 SessionRecord 字段和状态机 | v1 已保留 lightweight seal 字段；full restore/chain 仍需迁移/扩展 |
 | userId 可省 | Clowder 有 owner-scoped active index 和 cursor key | v1 单 user 可简化，但 owner 边界必须保留 |
 
 ## 9. 复用建议（按层，不按类名）
@@ -266,11 +266,12 @@ provider PreCompact hook
 - 坐标：`(userId, catId, threadId)`；同一坐标只有一个 active logical session。
 - logical session 在 provider launch 前创建；`session_init` 只绑定 runtime id。
 - `cliSessionId` 是 provider runtime id，不是 logical session id。
-- `messageCount` 语义：首次 output 0→1，completed turn 最多 +1，done 不重复。
+- `messageCount` 语义：首次 output 0→1；done 时本 turn 未计数则 +1（无输出
+  completed turn 也 +1），不重复。
 - `consecutiveRestoreFailures` + 3 次 circuit breaker。
 - delivery cursor 的 fetch-after / monotonic ack / boundary 语义。
-- `SessionRecord` 的 `id/seq/status/workingDirectory/createdAt/updatedAt` 作为
-  v2 chain/restore 的扩展点。
+- `SessionRecord` 的 `id/seq/status/workingDirectory/createdAt/updatedAt`；
+  v1 已用 lightweight seal，full chain/restore 是 v2 扩展点。
 
 ### v1 适配
 
@@ -283,7 +284,7 @@ provider PreCompact hook
 
 ### v1 明确推迟，但保留扩展点
 
-- `SessionRecord` 的 sealing/sealed/chain/restore；
+- `SessionRecord` 的 sealing 中间态 / transcript / digest / restore / chain 导航；
 - context strategy / policy snapshot / compression / capacity pin；
 - RuntimeSessionStore / external runtime seal reaper；
 - external import / native binding；
@@ -296,18 +297,20 @@ provider PreCompact hook
 - 不要按类名对表；按 L0/L1/L2 的 owner 对表；
 - 不要把 delivery cursor 塞回 session row 语义，也不要把 session 生命周期压成
   “永远 active”；
-- 不要在 v1 假装 seal/restore 不存在：可以不做，但接口/字段必须能扩展。
+- 不要在 v1 假装生命周期不存在：v1 做 lightweight seal，full restore/chain
+  可以不做，但接口/字段必须能扩展。
 
 ## 10. 开放问题
 
-1. v1 是否保留 `seq/status/sealReason/sealedAt` 作为 reserved columns，还是严格
-   active-only、v2 再做迁移？保留会让 v2 restore/chain 平滑；不保留会让表更小。
-2. v1 `messageCount` 是否按 Clowder 的“首次 output 0→1 + done 去重”实现，还是
-   只做简单 completed-turn 计数？
+1. **已拍板（2026-11-11）**：v1 保留 `seq/status/sealReason/sealedAt`，做
+   lightweight seal（`active → sealed + 新行 seq+1`）。
+2. **已拍板（2026-11-11）**：v1 `messageCount` 按 Clowder：首次 output 0→1；
+   done 时本 turn 未计数则 +1（无输出 completed turn 也 +1）。
 3. v1 delivery cursor 用 numeric `messages.seq`，还是预留 visibility cursor
    `v2:<seq>:<messageId>` 的扩展点？
-4. v1 是否需要 `AgentState`（cat runtime state）？当前 `AgentState` 在 0007，
-   不跟 session 混；但要确认 `SessionStore.getCatState` 的调用点是否有遗漏。
+4. **已拍板（2026-11-11）**：`AgentState` 留在 0007 运行时层，不建 DB 表；
+   多 thread 用 `(threadId, agentId)` 投影，`AgentState` 只做 per-agent 汇总。
+   Clowder `SessionStore.getCatState/setCatState` 在参考仓 0 调用点，无遗漏。
 5. v1 是否需要 `RuntimeSessionStore`？如果只跑 pi RPC，答案是 v2；如果未来接
    Antigravity/IDE，则现在就要留 key。
 

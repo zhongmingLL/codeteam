@@ -62,7 +62,7 @@ User
 |---|---|---|---|
 | `Thread` | user-owned 对话聚合 | durable | 拥有 Message / AgentSession / AgentReadState |
 | `AgentConfig` | 全局 agent 身份 | 配置级 | 被 AgentSession 引用；同一 agent 在不同 thread 有不同 session |
-| `AgentSession` | thread × agent | durable，v1 active-only | 1:1 `pi session`；0..1 live worker；不拥有 Message |
+| `AgentSession` | thread × agent | durable，v1 active + lightweight seal | 1:1 `pi session`；0..1 live worker；不拥有 Message |
 | `pi session` | provider-native 对话文件 | durable 文件 | 每个 AgentSession 一个；worker 每轮加载/恢复 |
 | `Worker` | 运行时进程 | ephemeral | 同一时刻只服务一个 session；turn 结束 retire |
 | `Message` | thread | durable | 作者是 user/agent/system；不归属某个 session |
@@ -210,17 +210,17 @@ interface AgentSession {
 
 - 详细字段、resume 前置检查、fresh/熔断、schema 与迁移见
   `docs/architecture/0009-session-model.md`；本节只保留架构摘要。
-- v1 只有 active session：一个 `(thread_id, agent_id)` 一行；没有
-  `sealing/sealed/restore/seq`，这些整体放 v2。原因是 v1 只做 A2A runtime，
-  验收要求快速真实模型 E2E，不要求长 session。
+- v1 是 active + lightweight seal session：一个 `(thread_id, agent_id)` 同时只有
+  一行 active；`seq/status/sealReason/sealedAt` 保留，circuit breaker/fresh 时
+  旧行 sealed + 新行 `seq+1`。transcript/digest/restore/chain 导航放 v2。
 - `workingDirectory = thread.projectPath` 必填；`projectPath` 为空时
   `thread_project_path_required` typed reject。
 - `provider/model/modelFamily` 不在 session；它们属于 `TurnExecution`，每轮从
   AgentConfig/AccountConfig 解析。
-- `messageCount` 对齐 Clowder 语义：每个有 user-visible output 的 completed
-  invocation +1，不是原始 message 行数。
-- `consecutiveResumeFailures` 连续 3 次 resume 失败时强制 fresh、清空 pi
-  绑定、计数归零；不 seal、不新建 codeteam session。
+- `messageCount` 对齐 Clowder 语义：首次可见输出 0→1；done 时本 turn 未计数则
+  +1（无可见输出的 completed turn 也 +1）；不是原始 message 行数。
+- `consecutiveResumeFailures` 连续 3 次 resume 失败时 lightweight seal 旧行、
+  新建 `seq+1` active 行、cursor rewind；旧行/旧 pi 文件保留。
 - `taskId` 不进入 session identity；旧 `agent_sessions.task_id` 只作为 legacy
   列保留到迁移完成，不读不写。
 - Session 不再有 `role`；workflow 分组只用 `AgentConfig.roleId`。

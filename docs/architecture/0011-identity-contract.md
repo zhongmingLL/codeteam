@@ -32,7 +32,7 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 | Scope | 用户 | `userId` | auth | 永久 | 外部身份 |
 | Scope | Thread | `threadId` | Thread 创建 | 永久 | 会话容器 |
 | Scope | Agent 配置 | `agentId` | AgentConfig | 永久 | 稳定身份 |
-| Scope | Agent 会话 | `agentSessionId` | AgentSession 创建 | active-only | 执行快照 |
+| Scope | Agent 会话 | `agentSessionId` | AgentSession 创建 | active + lightweight seal | 执行快照 |
 | Message | 消息 | `messageId` | Message append | 永久 | 唯一消息身份 |
 | Admission | 工作来源 | `sourceRecordId` | ingress | 稳定 | 队列身份；v1 = `messageId` |
 | Admission | 领域记录（可选） | `originRecordId` | ingress | 永久 | run/backlog/schedule/handoff provenance |

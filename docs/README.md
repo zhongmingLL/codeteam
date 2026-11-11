@@ -69,7 +69,7 @@ updated: 2026-10-31
 | [`architecture/0006-task-first-legacy.md`](architecture/0006-task-first-legacy.md) | Task-first legacy inventory：旧模块/表/工具/feature 的识别、标记与处置，防止误导新开发 |
 | [`architecture/0007-agent-config.md`](architecture/0007-agent-config.md) | AgentConfig v1：config-as-code AgentCatalog/AgentConfig/AgentRegistry/AgentState、AccountConfig、roleId workflow key、迁移与校验 |
 | [`architecture/0008-thread-model.md`](architecture/0008-thread-model.md) | Thread v1：projectPath 必填、active/deleted、lastActiveAt、titleSource、空 thread、迁移 preflight |
-| [`architecture/0009-session-model.md`](architecture/0009-session-model.md) | AgentSession v1：active-only 绑定、piSessionId/piSessionFile resume、连续失败上限、v2 推迟清单 |
+| [`architecture/0009-session-model.md`](architecture/0009-session-model.md) | AgentSession v1：active + lightweight seal、piSessionId/piSessionFile resume、Clowder messageCount、连续失败上限、v2 推迟清单 |
 | [`architecture/0010-a2a-runtime-chain.md`](architecture/0010-a2a-runtime-chain.md) | A2A runtime v1 全链路：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/routeParallel/TurnExecution/InvocationRegistry/terminal+recovery，Clowder 对齐 + v1 轻量化 |
 | [`architecture/0011-identity-contract.md`](architecture/0011-identity-contract.md) | 全局身份契约：scope/message/admission/queue/lifecycle/execution/auth 分层、规范 ID、禁用名与 0001/Clowder 映射 |
 | [`architecture/0012-clowder-session-architecture.md`](architecture/0012-clowder-session-architecture.md) | Clowder session 全局架构梳理：五层、SessionRecord/RuntimeSession/DeliveryCursor/ACP pool 生命周期、codeteam 映射问题与复用建议 |

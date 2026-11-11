@@ -79,9 +79,30 @@ interface AgentState {
   sessionId?: string;
   lastActiveAt: number;
 }
+
+interface ThreadAgentState {
+  threadId: string;
+  agentId: string;
+  status: "idle" | "thinking" | "working" | "error" | "offline";
+  currentTurnExecutionId?: string;
+  currentInvocationId?: string;
+  lastActiveAt: number;
+}
 ```
 
 `AgentRegistry`：`Map<agentId, AgentConfig>` + revision；启动时加载 catalog，config 变化后 reconcile。`AgentState` 运行时状态，不写进 catalog。
+
+**状态归属（2026-11-11 拍板）**：Clowder 的 cat 状态不是 server-side store，而是
+`InvocationTracker` + queue/active-invocation + WebSocket 事件的读模型；`SessionStore`
+里的 `getCatState/setCatState` 在当前参考仓 0 个调用点，是遗留接口。codeteam 同样
+不建 AgentState 表：
+
+- `(threadId, agentId)` 维度的 `ThreadAgentState` 由 `InvocationTracker` 投影：
+  claim 时 `thinking`，prompt 送达后 `working`，terminal 后 `idle`/`error`；
+  `WorkerPool.reapExpired` 标记 `offline`/`error`。
+- `AgentState` 只是 per-agent 汇总视图，用于目录/状态展示；多 thread 并行时不能用它
+  互相覆盖，展示层优先读 `ThreadAgentState`。
+- `InvocationCredential` / `AgentSession` 都不写 AgentState。
 
 ## 2. 文件与加载
 
