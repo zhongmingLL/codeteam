@@ -2526,6 +2526,9 @@ interface InvocationAttemptStore {
 
 ### 3.10 StartupReconciler / ZombieTerminalRecovery / TrajectoryProjector / LiveInvocations
 
+> startup/reaper/live 的 operator 取舍见 `decision-packets/2026-11-11-dp-f018-recovery-liveness.md`；
+> 拍板后本节同步。
+
 **9) 和 10) 的关系**：9) 是正常终态路径；10) 是异常/重启/读模型路径；两者共用 `TurnExecution.status` 和 parent aggregate。
 
 1. **TurnExecutionStartupReconciler**
