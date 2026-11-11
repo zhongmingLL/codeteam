@@ -24,8 +24,9 @@ related: [0010-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-code
 ## DP-A 关键边界
 
 - `QueueTarget` 只允许 agent。
-- `post_message` targets 为空时，正文必须行首 `@operator`；只写 message
-  `mentionsUser=true`，不创建 queue/parent/TurnExecution。
+- `post_message` targets 为空 = message-only write：只写 message，不创建
+  queue/parent/TurnExecution；`@operator` 只是额外写 `mentionsUser`。普通 final
+  response 已经是 message，operator decision 不需要再调用 `post_message`。
 - `post_message` targets 非空时，operator mention 只作为同一 message 的额外标记，
   不进入 parent aggregate/retry。
 - operator 回复是一条新的 user message，重新走 ingress；不是“恢复 agentB 的等待”。

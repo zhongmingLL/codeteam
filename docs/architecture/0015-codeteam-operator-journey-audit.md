@@ -419,6 +419,29 @@ child terminal + attempt terminal + parent aggregate + credential + response set
 > DP-C/DP-D 的修正涉及 0010 §3.9/§4.3.1 和 plan P0-1；当前标记为
 > **investigation complete, pending operator confirmation**，不先改 normative schema。
 
+### 3.5 设计史：为什么 codeteam 会留下这两个重叠
+
+不是 Clowder 原有问题，而是 codeteam 两次设计动作的叠加：
+
+1. **`28cfee444`（adopt Clowder-style target attempt retry）**：为了做
+   append-only target attempt retry，引入 `invocation_attempts`。目标是“retry 追加
+   attempt、旧 attempt 不可变”；但 schema 把 attempt state 写成了 TurnExecution 的
+   五态（queued/running/completed/failed/...），而不是 Clowder `QueueTargetAttempt`
+   的投递状态。于是 child 有了两个终态 writer。
+2. **`086b4b1f2`（close Phase A contract gaps after re-triage）**：为了把
+   provider/stream 与 terminal/settlement 分开，新增 `settleAgentTurn`（P0-1=A），
+   把 child terminal + attempt terminal + parent aggregate + credential + R
+   settlement 合成一个接口。它解决的是“routeSerial/routeParallel/QueueProcessor
+   都写 terminal 会重复”的局部问题，但把 Clowder 已有的四层 owner 合并了。
+3. **`a654788e5` / `09bdb678d`（runAgentTurn + routeAgents）**：routeSerial/routeParallel
+   被抽成薄 scheduler，provider/stream 移到 invoke-single-agent；terminal/R/draft
+   的归属随之下沉。`settleAgentTurn` 被设计成共享出口，但没有重新分配
+   invoke/route/QueueProcessor 的 writer 边界，导致三处都能触发 settlement。
+
+结论：这两个问题不是“Clowder 复用失败”，而是 codeteam 在两次局部收敛中用了
+新的抽象（attempt 五态、god-service）替代 Clowder 已有的分层。修正方向应回到
+Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
+
 ## 4. 当前 codeteam 还缺什么
 
 按 owner 分，不要把所有缺件都塞给 F018。F018 是核心 runtime；Hub/CLI 是 W7a；

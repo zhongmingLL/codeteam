@@ -2061,22 +2061,26 @@ targets: Array<{ kind: "agent"; id: string }>
 ```
 
 - 不解析正文行首 `@`；tool body 的 `@` 只是内容。
-- `post_message` 的 targets 可以为空，但仅当正文行首 `@operator`（operator-mention-only
-  message）；否则至少一个 agent target。空 targets 不创建 queue/parent；
-  `cross_post_message` 仍要求至少一个 agent target。
+- `post_message` / `cross_post_message` 的 targets 可以为空，表示 **message-only
+  write**：只写一条 agent message，不唤醒任何 agent，不创建 queue/parent。
+  `@operator` 只是额外设置 `mentionsUser`，不是允许空 targets 的条件。
+- 普通 final response 本身已经是一条 message；agent 要“只给 operator 留言”不需要
+  再调用 `post_message`，直接结束本轮并在正文行首 `@operator` 即可。
 - 非空 agent target 必须存在且 enabled。
 - agent 正文行首 `@operator`（或配置 handle）只设置 message `mentionsUser=true`；
   这不是 target，不创建 queue/parent/TurnExecution。
 - `multi_mention` targets 仅 agent（2-3 个），支持完整 orchestrator（见本节
   `multi_mention` 小节）。
-- agent targets 为 N 个时，统一为 **1 message + 1 queue entry + 1 parent
+- agent targets 为 N>=1 个时，统一为 **1 message + 1 queue entry + 1 parent
   `InvocationRecord` + N child `TurnExecution`**；不是 N 条 message，也不是 N 个 parent。
+  targets 为空时只有 1 条 message，没有 queue/parent。
 - `cross_post_message`：`threadId` 必须存在且不等于 caller thread；target thread 必须
   active、未 soft-deleted、有 `projectPath`，且与 source 同 user；message 写
   `extra.crossPost = { sourceThreadId, sourceTriggerMessageId }`，其中
   `sourceTriggerMessageId = caller.causal.triggerMessageId`；不同 user → `thread_access_denied`，
   soft-deleted → `thread_deleted`，缺 projectPath → `thread_project_path_required`，
-  同 thread → `use_post_message`。
+  同 thread → `use_post_message`。`projectPath` 只在 targets 非空时要求；message-only
+  cross-post 不需要 projectPath（不会启动 worker）。
 - `targets` 按 `targetKey` 去重；`post_message` / `cross_post_message` 最多 8 个 target，
   `multi_mention` 固定 2-3 个 agent。target 可以是 caller 自己；这会创建一个新 child
   并参与 `a2aDepth` / loop guard。
@@ -2099,7 +2103,7 @@ targets: Array<{ kind: "agent"; id: string }>
    已有且 intentHash 相同 → 返回原 message/queue（replayed）；不同 →
    `pi_ext_tool_call_conflict`；
 3. 创建 message；正文行首 `@operator` 时写 `mentionsUser=true`（仅通知，不进入 Queue）；
-4. 若 targets 非空：`InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、piExtToolCallId、priority）；targets 为空且 `mentionsUser=true` 时跳过 enqueue；
+4. 若 targets 非空：`InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、piExtToolCallId、priority）；targets 为空（message-only write）时跳过 enqueue；
 5. 同一事务内 `reserveToolCallClaim(...)` +（有 targets 时）queue admission；
    若并发 race 返回已有 claim，整笔回滚并按 replay/conflict 返回；
 6. targets 非空时，QueueProcessor claim 后创建一个 parent `InvocationRecord`
@@ -2273,7 +2277,7 @@ CREATE TABLE multi_mention_responses (
 
 | code | 触发 |
 |---|---|
-| `multi_mention_invalid_targets` | targets 非 2-3、含 caller/callbackTo、重复 |
+| `multi_mention_invalid_targets` | targets 非 2-3、含 callbackTo、重复 |
 | `multi_mention_invalid_callback` | callbackTo 不存在/disabled/在 targets 内 |
 | `multi_mention_invalid_timeout` | timeout 不在 3-20 |
 | `multi_mention_cascade` | caller 是 active multi_mention target |
@@ -2349,7 +2353,7 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
 | 层 | code | 触发 |
 |---|---|---|
 | input | `invalid_input` | 未知字段、空 body、超限、缺少 `piExtToolCallId` |
-| target | `invalid_explicit_target` | 空 targets 且无 `@operator`、形状非法、targetKey 重复到冲突、multi_mention 非 2-3 agents |
+| target | `invalid_explicit_target` | 形状非法、targetKey 重复到冲突、multi_mention 非 2-3 agents |
 | target | `agent_not_found` / `agent_disabled` / `account_missing` | agent 不存在/禁用/账号缺失 |
 | thread | `thread_not_found` / `thread_deleted` / `thread_access_denied` | 目标 thread 不存在/deleted/跨 user |
 | thread | `thread_project_path_required` | target thread 没有 projectPath |

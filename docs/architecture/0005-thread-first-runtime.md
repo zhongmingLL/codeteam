@@ -382,7 +382,7 @@ thread message / A2A tool
 
 | 工具 | 作用 | 必填 | 不变量 |
 |---|---|---|---|
-| `codeteam_post_message` | 同 thread 发言并唤醒 agents | `targets`, `bodyMd` | targets 是 `{kind:"agent", id}`；可为空仅当行首 `@operator`；正文 `@` 不路由；operator mention 只写 `mentionsUser` |
+| `codeteam_post_message` | 同 thread 写消息；可唤醒 agents | `targets`, `bodyMd` | targets 是 `{kind:"agent", id}`；可为空 = message-only write，不唤醒；`@operator` 只写 `mentionsUser` |
 | `codeteam_cross_post_message` | 跨 thread 发言并唤醒 agents | `threadId`, `targets`, `bodyMd` | source/target thread 同 user；target thread active/not deleted/有 projectPath；写 `extra.crossPost`；depth/loop guard；targets 同上 |
 | `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent，并聚合结果 | `targets` (2-3 agents), `question`, `context?`, `callbackTo`, `timeoutMinutes?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；status/timeout/callback/aggregate；`callbackTo` 只收聚合结果，不新建 child |
 | `codeteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
@@ -393,9 +393,10 @@ thread message / A2A tool
   legacy alias、不提供 custody 工具窗口。
 - operator conversation 只解析**行首 `@`**（含列表/引用前缀）为 agent targets；
   A2A tools / final response 的正文 `@` 不路由，只由 typed `targets` 决定。
-- `post_message` / `cross_post_message` targets 只允许 agent；`post_message` targets
-  可为空，但仅当正文行首 `@operator`。operator mention 写 message `mentionsUser`，
-  不创建 queue/parent/TurnExecution；operator 回复是新的 user message。
+- `post_message` / `cross_post_message` targets 只允许 agent；targets 可为空 =
+  message-only write，不创建 queue/parent/TurnExecution。operator mention 写 message
+  `mentionsUser`；普通 final response 已是 message，operator decision 不需要再调
+  `post_message`。
 - `post_message` / `cross_post_message` / `multi_mention` 的幂等键统一为
   `piExtToolCallId`；它由 pi extension 从 `toolCallId + toolName` 派生并注入 control
   envelope，**不进入 model-facing tool input**；scope 是 credential（child TurnExecution），

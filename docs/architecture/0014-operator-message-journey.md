@@ -400,12 +400,16 @@ operator POST /api/messages: "@agentB 选 B，因为..."
 codeteam v1 目标态与 Clowder 一致：
 
 ```text
-agentB post_message(targets=[], body 行首 @operator)
-  → message `mentionsUser=true`；没有 queue entry（targets 为空）
-  → operator 通知由 message/read model 投影；没有 operator queue/parent
+agentB 结束本轮，final response 行首 @operator
+  → response message `mentionsUser=true`；没有 queue/parent
+  → operator 通知由 message/read model 投影
   → operator 回复是新的 user message，target B
   → B 新 parent/child，读历史后结束
 ```
+
+如果 agent 需要在**不结束本轮**时单独写一条 message（例如给另一个 thread 的 letter），
+才使用 `post_message`/`cross_post_message` targets=[]；这不是 operator decision 的
+必需路径。
 
 ### 7.3 Journey C：@agentA @agentB 并行回答
 

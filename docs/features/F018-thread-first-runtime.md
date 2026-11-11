@@ -83,8 +83,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - [ ] A2A targets 用 agentId；消息展示用 displayName。
 - [ ] operator 不是 QueueTarget；agent 正文行首 `@operator` 只写 message
       `mentionsUser`，operator 回复是新的 user message。
-- [ ] 空 thread 可创建；post 无 targets 且无 `@operator` → typed reject；有 `@operator`
-      只写 `mentionsUser`、不建 queue；soft-deleted thread post reject；
+- [ ] 空 thread 可创建；post targets 为空 = message-only write，不建 queue/parent；
+      `@operator` 只写 `mentionsUser`；soft-deleted thread post reject；
       projectPath 必填且 legacy preflight 可列出需补路径的 thread。
 - [ ] 任意 enabled agent 加入 participants；thread access 同 user。
 - [ ] token scope 负例 E7；target thread 负例 E8。
