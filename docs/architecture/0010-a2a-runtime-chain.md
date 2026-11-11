@@ -22,6 +22,8 @@ related_features: [codeteam/F018, codeteam/F017]
 > 身份/引用命名以 `0011-identity-contract.md` 为准；本文旧名只出现在迁移/映射表。
 > operator 从 Hub 发消息到流式答复的端到端 journey（含 A2A operator 决策、
 > 并行、单/全取消、失败重试、排队）见 `0014-operator-message-journey.md`。
+> codeteam 侧的逐组件缺件/设计问题审计与 R1 前决策见
+> `0015-codeteam-operator-journey-audit.md`。
 
 ## 0. 结论先行
 

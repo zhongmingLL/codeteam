@@ -18,6 +18,7 @@ source: "Clowder local reference checkout; codeteam F018 0005/0010/0011/0013"
 >
 > 参考实现：Clowder 本地只读 checkout。本文路径均为 repo-relative，不是 codeteam 的
 > runtime dependency。codeteam v1 的规范契约仍以 `0005`、`0010`、`0011`、`0013` 为准。
+> codeteam 侧的逐组件缺件/差异审计见 `0015-codeteam-operator-journey-audit.md`。
 
 ## 0. 结论先行
 
