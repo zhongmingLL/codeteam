@@ -90,6 +90,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - [ ] v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges E14。
 - [ ] session 迁移跳过 running invocation E15。
 - [ ] piExtToolCallId replay/conflict、replyTo、loop guard E10/E11/E17。
+- [ ] terminal aggregate/retry：all-canceled、auto-retry pending、terminal idempotency、
+  每个 child terminal 释放 tracker、canceled 不 retry、failed entry abandon/TTL。
 
 ## 非目标
 

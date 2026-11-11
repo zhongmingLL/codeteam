@@ -1,13 +1,13 @@
 ---
 title: "DP-F018TERM: A2A terminal aggregate / retry / collector 拍板包"
 doc_kind: decision-packet
-status: open
+status: decided
 created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related: ../0010-a2a-runtime-chain.md
 related_features: [codeteam/F018]
-operator_decision: pending
+operator_decision: "DP-F018TERM-1=A, DP-F018TERM-2=A, DP-F018TERM-3=A, DP-F018TERM-4=A, DP-F018TERM-5=A, DP-F018TERM-6=A, DP-F018TERM-7=A (2026-11-11)"
 ---
 
 # DP-F018TERM: A2A terminal aggregate / retry / collector
@@ -142,7 +142,7 @@ codeteam 应把同一信息落到 parent `terminalReason`。
 
 | 事项 | 决定 | 依据 |
 |---|---|---|
-| parent aggregate 并发 | 加 `revision` CAS 或 `BEGIN IMMEDIATE` 串行化；`successfulAgentIds` 单调 union，不能覆盖 | 多 child 并行 terminal；SQLite 写事务必须串行 |
+| parent aggregate 并发 | 使用现有 `ControlTransaction`（`BEGIN IMMEDIATE`）串行化；拿到写锁后重读 attempts；`successfulAgentIds` 单调 union，不覆盖 | 多 child 并行 terminal；不需要额外 revision 字段 |
 | collector 等价性 | DB latest-attempt collector 必须依赖 `transitionTerminal` first-write-wins；补 late `done` after error/cancel、旧 failed + 新 running、target 不在 parent 的测试 | Clowder event-stream collector 的 disqualify 语义 |
 | `settleAgentTurn` `no_response` | R 在 attempt start 创建；删除 `no_response`，或只在无 R 的 prestart failure 使用并让 `responseMessageId` 条件必填 | 现有接口 `responseMessageId` 必填，和 `no_response` 矛盾 |
 | `markRunning` 归属 | QueueProcessor 在 child 创建 + tracker start 的同一事务调用 | 避免 parent queued/running 抖动 |
@@ -170,5 +170,19 @@ codeteam 应把同一信息落到 parent `terminalReason`。
 `DP-F018TERM-1=A, DP-F018TERM-2=A, DP-F018TERM-3=A, DP-F018TERM-4=A, DP-F018TERM-5=A, DP-F018TERM-6=A, DP-F018TERM-7=A`
 
 若某项要改选，只写改选项，例如 `DP-F018TERM-2=B`。
+
+## 13. 拍板结果（2026-11-11）
+
+全部按推荐 A：
+
+| 决策 | 结果 |
+|---|---|
+| DP-F018TERM-1 | **A**：全部 target canceled → parent `canceled` |
+| DP-F018TERM-2 | **A**：auto-retry pending 时 parent 保持 `queued`/`running` |
+| DP-F018TERM-3 | **A**：每个 child terminal 释放 tracker slot |
+| DP-F018TERM-4 | **A**：first-write-wins + `terminal_conflict` |
+| DP-F018TERM-5 | **A**：store 只改 parent state/retryCount；QueueProcessor 编排；只 retry failed/interrupted |
+| DP-F018TERM-6 | **A**：每个 target 一个 dispatchRef，retry 更新为最新 attempt；failed entry 显式 abandon + TTL |
+| DP-F018TERM-7 | **A**：parent 持久化 `primaryTerminalError` |
 
 [宪宪/deepseek-flash🐾]

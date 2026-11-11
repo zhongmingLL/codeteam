@@ -514,6 +514,11 @@ interface DispatchRef {
 }
 ```
 
+- **retry 复用同一个 ref**：`requestRetry` 把 `attempt+1`、清 `responseMessageId`、
+  新 child 创建后写 `turnExecutionId`、phase 回 `dispatched`、`at=now`；旧 attempt 的
+  R/response 保留在 `invocation_attempts`/message 历史，不覆盖。每个 target 只有一条
+  current ref，历史看 attempt 台账。
+
 - v1 **不定义 domain `Message`**：当前没有独立消费者；`StoredMessage` 就是唯一消息记录，
   `MessageStore` 持久化/返回 `StoredMessage`，API/CLI 直接使用；以后出现外部 SDK/stream
   contract 再加投影。
@@ -815,7 +820,7 @@ for entry of entries:
 - queue entry 是 route anchor，不再在全部 target dispatch 后立即删除：保留到所有
   agent target 的 attempt 终态；`targets_json` 可以为空（pending targets 为空），
   但 row 仍承载 retry/terminal 关联。parent `completed`/`canceled` 后才删除；
-  `partial_failed`/`failed` 保留到显式 retry 或 operator abandon。
+  `partial_failed`/`failed` 保留到显式 retry、operator abandon 或 30d TTL。
 - `partial_failed`/`failed` 保留时释放 claim、durable status 回到 `queued`、
   `targets_json=[]`；`listQueued` 过滤空 pending，不会自动 dispatch；`requestRetry`
   用 exact-entry claim 重新加入失败 target。`completed`/`canceled` 直接删除 row。
@@ -922,7 +927,7 @@ interface InvocationRecordStore {
   ): InvocationRecord | null;
   requestRetry(
     invocationId: string,
-    input?: { targetAgentIds?: string[]; now?: number },
+    input?: { now?: number },
   ): InvocationRecord | null;
 }
 ```
@@ -945,17 +950,24 @@ canceled       → terminal
   `invocation_attempts` 每个 target 的最新 attempt 推导，不在 parent 存储。
 - `usageByAgent` 按 `agentId` 跨 attempt 累计；`applyTerminalAggregate` 接收的是**累计值**，不是 delta。
 - `usageRecordedAt` 只在第一次写入 usage 时设置；之后不覆盖（backfill 显式传入除外）。
-- `requestRetry` 保留 `usageByAgent`/`usageRecordedAt`；status `failed|partial_failed → queued`，
-  `retryCount++`，清 `endedAt`/`terminalReason`。省略 `input.targetAgentIds` 表示所有失败/取消
-  target；显式传入时必须是 `targetAgentIds - successfulAgentIds` 的子集。
+- `requestRetry` **只做 parent 状态**：保留 `usageByAgent`/`usageRecordedAt`；
+  `failed|partial_failed → queued`、`retryCount++`、清 `endedAt`/`terminalReason`。
+  target 选择、queue entry exact claim、attempt+1、pending target 回填由 QueueProcessor
+  `retryTargets` 在同一 `ControlTransaction` 完成；store 不碰 queue/attempt。
+- retry 只 retry **failed/interrupted** target；canceled target 不 retry。
 - retry 不新建 queue entry、不重新 admission 消息；`InvocationAttemptStore` 为每个被重试
-  target 追加 `attempt+1`，旧 attempt 不可改写。parent 在 retry child 启动后由
-  `markRunning` 进入 running。`retryCount` 是显式重试波次计数，不是 target attempt。
+  target 追加 `attempt+1`，旧 attempt 不可改写。parent 在 retry child `createRunning` +
+  tracker start 的同一事务由 QueueProcessor 调 `markRunning`。`retryCount` 是显式重试
+  波次计数，不是 target attempt。
 
 **`markRunning` / `applyTerminalAggregate` 校验**
 
 - `markRunning`：`queued → running`；已是 `running` 幂等返回；terminal 返回 null。
-- `applyTerminalAggregate`：只接受 `running`；`successfulAgentIds ⊆ targetAgentIds` 且单调递增；`completed` 必须等于全部 targets；`partial_failed` 非空且不等于全部；`failed` 为空；`canceled` 允许任意子集。
+- `applyTerminalAggregate`：只接受 `running`；`successfulAgentIds ⊆ targetAgentIds` 且单调
+  union（按 `targetAgentIds` 顺序）；`completed` 必须等于全部 targets；`partial_failed`
+  非空且不等于全部；`failed` 为空；`canceled` 允许任意子集（全 canceled 由 collector
+  判 `canceled`）。必须在 `ControlTransaction`（`BEGIN IMMEDIATE`）内、拿到写锁后重新
+  读取 `invocation_attempts` 再计算，不能基于旧快照覆盖。
 - `terminalReason`：`completed` 为 null；其余非 null。
 
 **operator target 边界**
@@ -2178,8 +2190,7 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
 
 ### 3.9 PerAgentTerminalDispositionCollector + transitionTerminal + QueueProcessor
 
-> 终态/重试的 operator 取舍见 `decision-packets/2026-11-11-dp-f018-terminal-aggregate.md`；
-> 拍板后本节同步。
+> 终态/重试取舍已按 `DP-F018TERM=A/A/A/A/A/A/A` 拍板（2026-11-11），本节已同步。
 
 **正常终态路径**
 
@@ -2189,23 +2200,28 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
    - 只允许一次；返回 child 终态。
 2. `PerAgentTerminalDispositionCollector`：
    - 输入 parent `targetAgentIds` + `invocation_attempts` 中每个 target 的**最新 attempt**
-     （join 对应 child；不是从 queue 行或随机 child 猜）；
-   - 产出 `successfulAgentIds` + parent status；`failedAgentIds`/`canceledAgentIds` 只是派生视图，不写 parent。
+     （join 对应 child；不是从 queue 行或随机 child 猜）+ queue entry 当前 pending
+     targetKeys + `RetryDeferrals` 的 targetKeys；
+   - 产出 `successfulAgentIds`、`primaryTerminalError`、`retryablePendingAgentIds`、
+     `allTargetsCanceled` + parent status；`failedAgentIds`/`canceledAgentIds` 只是派生视图，不写 parent。
+   - 同 target 的旧 attempt 不能覆盖新 attempt；terminal error/canceled 的 target 不能被后续
+     `done` 重新计为 successful（依赖 `transitionTerminal` first-write-wins）。
 3. `QueueProcessor`：
    - 在 child terminal 的同一事务里写 TurnExecution terminal + attempt 终态 +
      attempt settlement、调用 collector；
    - 写 parent aggregate；
    - terminalize credential；
-   - parent `completed`/`canceled` 时移除 queue entry / 释放 tracker slot；
-     `partial_failed`/`failed` 保留 queue entry 作为 retry anchor。
+   - **每个 child terminal 都释放对应 `(threadId, agentId)` tracker slot**（按
+     `turnExecutionId` ownership fence），与 parent 是否 terminal 无关；
+   - queue entry：parent `completed`/`canceled` 删除；`partial_failed`/`failed` 保留为
+     retry anchor，直到显式 abandon 或 TTL。
 
 **`settleAgentTurn` 接口（P0-1=A）**
 
 ```ts
 type ResponseDraftSettlement =
   | { kind: "committed"; responseMessageId: string }
-  | { kind: "already_terminal"; responseMessageId: string }
-  | { kind: "no_response" };
+  | { kind: "already_terminal"; responseMessageId: string };
 
 interface SettleAgentTurnInput {
   turnExecutionId: string;
@@ -2219,6 +2235,8 @@ interface SettleAgentTurnInput {
 }
 
 interface SettleAgentTurnResult {
+  outcome: "settled" | "already_terminal" | "terminal_conflict";
+  existingTerminalStatus?: "completed" | "failed" | "interrupted" | "canceled";
   turnExecution: TurnExecution;
   attempt: InvocationAttempt;
   parent: InvocationRecord;
@@ -2231,6 +2249,10 @@ function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnRe
 
 - 校验 `attempt.turnExecutionId/turnExecutionId` 与 `attempt.responseMessageId/
   responseMessageId` 一致；`completed` 不允许 `terminalReason`，其他 status 必须有。
+- **终态幂等**：child/attempt 已 terminal 且 status 相同 → `already_terminal`，返回
+  已有结果，不重复 `recordTurnTerminal`/ack/credential；status 不同 →
+  `terminal_conflict`，保留原终态，不回滚、不覆盖。credential 已 terminal 且
+  disposition 相同 → no-op；不同 → lifecycle conflict signal，child terminal 事务不回滚。
 - 第一段事务（child terminal）：`TurnExecutionStore.transitionTerminal` +
   `InvocationAttemptStore.transitionTerminal` + `setSettlement('response_pending')` +
   collector/parent aggregate + `InvocationRegistry.commitTerminal` +
@@ -2239,24 +2261,38 @@ function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnRe
   `recordCompletedTurn` 与 cursor ack；首次可见输出已由 stream 提前
   `recordUserVisibleOutput` 0→1，done 用 `lastCountedTurnExecutionId` 去重；
   详见 `0009 §6.1`。
+- 第一段事务必须在 `ControlTransaction`（`BEGIN IMMEDIATE`）内完成；collector 在拿到
+  写锁后**重新读取** `invocation_attempts` 并计算 parent，避免两个 child 并行 terminal
+  的 lost update。`successfulAgentIds` 用单调 union，不覆盖。
 - 第二段（response settlement）：调用 `settleResponseFromDraft`，提交 R terminal +
   input dispatchRefs + attempt `settled` + clear pending；两段之间崩溃可恢复。
 - `settleAgentTurn` 不启动 provider、不写 response 正文；provider/stream 仍在
   `invoke-single-agent`。
+- R 在 attempt start 创建，因此 `responseMessageId` 始终存在；v1 删除 `no_response`
+  分支。prestart 无 R 的失败走 `delivery_failure`，不调用 `settleAgentTurn`。
 
 **聚合规则**
 
 | 条件 | parent status |
 |---|---|
 | 首次 attempt 还没有 child 开始且 retryCount=0 | `queued` |
-| 任一最新 attempt 的 child running，或还有 target 没有 child | `running` |
+| retry 已受理、parent 显式 `queued`、新 child 未创建 | `queued` |
+| 任一最新 attempt 的 child running，或 target 没有 child 且不是 `retryablePending` | `running` |
 | 所有 target 最新 attempt 的 child completed | `completed` |
-| ≥1 completed + ≥1 failed/interrupted/canceled，且无 running | `partial_failed` |
-| 0 completed，且所有 target failed/interrupted/canceled，且无 running | `failed` |
+| ≥1 completed + ≥1 failed/interrupted/canceled，且无 running / `retryablePending` | `partial_failed` |
+| 0 completed，全部 target canceled（无 failed/interrupted），且无 running / `retryablePending` | `canceled` |
+| 0 completed，≥1 failed/interrupted，且无 running / `retryablePending` | `failed` |
 | operator 取消整个消息 | `canceled` |
 
-- `interrupted` 归入失败面（可重试）；`canceled` 归入取消面。
-- `successfulAgentIds` 单调递增；failed/canceled 由每个 agent 最新 attempt 推导。
+- `retryablePending`：target 最新 attempt 是 failed/interrupted，但仍留在 queue entry 的
+  pending targets，并有 `RetryDeferrals` 条目；它阻止 parent 进入 terminal，直到 retry
+  成功、耗尽或 target 被显式 abandon。
+- `interrupted` 归入失败面（可重试）；`canceled` 归入取消面，**不可被 `requestRetry`
+  复活**；`requestRetry` 只接受 failed/interrupted。
+- `successfulAgentIds` 单调递增，按 `targetAgentIds` 顺序返回；failed/canceled 由每个
+  agent 最新 attempt 推导。
+- collector 额外返回 `primaryTerminalError`；parent `terminalReason` 持久化首个
+  terminal error（`failed`/`partial_failed` 非空）。
 - `requestRetry` 受理后 parent 进入 `queued`；retry child 创建并启动后由 `markRunning` 进入 `running`。
 
 **重试与 attempt 台账（Clowder 逻辑，2026-11-10 拍板）**
@@ -2270,20 +2306,35 @@ function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnRe
   重新 drain，并追加新 attempt。进程重启后 startup drain 重新尝试（Clowder 同样把 backoff
   定为 process-local）。
 - 已进入终态失败的 target **不自动重跑**；operator 调 `requestRetry` 后，只为
-  `targetAgentIds - successfulAgentIds` 追加 `attempt+1`；parent 先 `queued`，新 child
-  启动后 `markRunning`。
+  **failed/interrupted** 且非 successful 的 target 追加 `attempt+1`；canceled target
+  不可 retry（要重试请发新消息）。parent 先 `queued`，新 child 启动后 `markRunning`。
 - 已成功 agent 永不重跑；`successfulAgentIds` 单调递增；每个 target 的聚合取
   `invocation_attempts` 最新 attempt，而不是从 queue 行或 child 集合猜。
 - queue entry 保留到所有 target attempt 终态：`targets_json` 为空时仍保留为
   retry/terminal anchor；parent `completed`/`canceled` 后删除；`partial_failed`/`failed`
-  保留到显式 retry 或 operator abandon。
+  保留到显式 retry、operator abandon 或 30d TTL。
 - retry 前 queue row 必须是 `queued` + 空 pending；`requestRetry` 用 exact-entry claim
-  （不是重新 admission）把失败 target 放回 pending。
-- `requestRetry` 是 QueueProcessor 编排，不是单个 store 方法：同一事务里把 parent
-  置 `queued`、追加 target 的 attempt+1、把 target 放回 queue entry 的 pending
-  targets；随后由正常 drain 启动新 child。
+  （不是重新 admission）把 failed/interrupted target 放回 pending。
+- **API 边界**：`InvocationRecordStore.requestRetry` 只做 parent
+  `failed|partial_failed → queued`、`retryCount++`、清 `endedAt`/`terminalReason`；
+  QueueProcessor `retryTargets` 在同一 `ControlTransaction` 做 exact-entry claim、
+  attempt+1、pending target 回填、dispatchRef 更新，并在新 child `createRunning` +
+  tracker start 的同一事务调用 `markRunning`。store 不碰 queue/attempt。
+- retry 复用同一 message/queue entry；`DispatchRef` 每个 target 一条，retry 时更新
+  `attempt`/`turnExecutionId`、清 `responseMessageId`、phase 回 `dispatched`；旧
+  attempt 的 R/response 保留在 `invocation_attempts`/message 历史，不覆盖。
+- `partial_failed`/`failed` 的 queue entry 保留到显式 `abandon` 或
+  `FAILED_ENTRY_TTL_MS`（建议 30 天，audited）；未 abandon 的失败 entry 不应永久占 queue。
 - `requestRetry` 只接受旧 attempt `settled`；若仍是 `response_pending`，先
   `settleResponseFromDraft` 或返回 typed `response_pending`，不并发写同一 R。
+
+**Abandon（v1）**
+
+- `abandon(invocationId)` 只接受 `failed|partial_failed` 且无 running child 的 parent；
+  同一事务把 parent 置 `canceled`（`terminalReason='operator_abandon'`）、删除 queue
+  entry、保留 attempts/R；重复调用幂等返回已 canceled。
+- `FAILED_ENTRY_TTL_MS` reaper 对超过 30 天、无 running child 的 failed/partial_failed
+  entry 执行同一收敛，reason=`retry_ttl_expired`；删除前写 audit/thread event。
 
 **Clowder 的两条 retry 路径（为什么 v1 选 route recovery）**
 
@@ -2457,6 +2508,22 @@ interface InvocationAttemptStore {
 - v1 用一个事务保证 child terminal + attempt terminal + parent aggregate + credential
   terminal；R terminal 由 `response_pending` settlement 第二段提交，child 不等待 R。
 
+**终态/重试验收（DP-F018TERM=A×7）**
+
+- 全 canceled → parent `canceled`；mixed canceled+failed → `failed`；canceled 不被 retry。
+- pre-handoff failed target 仍在 `RetryDeferrals`/pending → parent 保持 `queued` 或
+  `running`，不提前 `failed`；retry 耗尽/abandon 后才 terminal。
+- 两个 child 并行 terminal → parent 只收敛一次；`successfulAgentIds` 单调 union；
+  `BEGIN IMMEDIATE` 下没有 lost update/status 回退。
+- failed/partial_failed child terminal 后 tracker slot 已释放；后续 retry/new turn 不被
+  `isBusy` 挡住。
+- 同 status 重复 `settleAgentTurn` → `already_terminal`，不双计数/ack；不同 status →
+  `terminal_conflict`，保留原终态。
+- late `done` after terminal error/cancel 不能把 target 重新计为 successful；旧 failed
+  attempt 不覆盖新 running/success attempt。
+- failed/partial_failed queue entry 可 `abandon` 或 30d TTL 清理；清理后
+  `queue_admissions` 仍可解释历史。
+
 ### 3.10 StartupReconciler / ZombieTerminalRecovery / TrajectoryProjector / LiveInvocations
 
 **9) 和 10) 的关系**：9) 是正常终态路径；10) 是异常/重启/读模型路径；两者共用 `TurnExecution.status` 和 parent aggregate。
@@ -2578,7 +2645,7 @@ CREATE TABLE queue_admissions (
 - `status` 只持久化 `queued | claimed`；`processing | terminal` 只出现在 transition projection，不落库。
 - `queue_admissions` 是 admission receipt：live row 删除后，同一 `(source_record_id, attempt)` 重放仍返回 `replayed`/`conflict`。
 - queue entry 保留到所有 agent target attempt 终态：parent `completed`/`canceled` 后删除；
-  `partial_failed`/`failed` 保留到显式 retry 或 operator abandon。
+  `partial_failed`/`failed` 保留到显式 retry、operator abandon 或 30d TTL。
   `invocation_attempts.queue_entry_id` 仍是 trace 字符串。
 - target-level backoff 是进程内 `RetryDeferrals`（Clowder 同设计）：`listQueued`/`claim`
   跳过仍在 deferral 窗口内的 target；daemon 重启后 startup drain 重新尝试 pending target。
@@ -2944,14 +3011,18 @@ active ──auth revoke/orphan repair──▶ terminal(revoked)
 按每个 agent 的**最新 attempt**：
 
 1. 首次 attempt 还没有 child 开始，或 retry 已受理但 child 未创建 → parent `queued`；
-2. 任一最新 child running，或还有 target 没有 child → parent `running`；
+2. 任一最新 child running，或 target 没有 child 且不是 `retryablePending` → parent `running`；
 3. 所有 target 最新 child completed → parent `completed`；
-4. ≥1 completed + ≥1 failed/interrupted/canceled，且无 running → parent `partial_failed`；
-5. 0 completed，所有 target failed/interrupted/canceled，且无 running → parent `failed`；
-6. operator 取消整个消息 → parent `canceled`。
+4. ≥1 completed + ≥1 failed/interrupted/canceled，且无 running/`retryablePending` → parent `partial_failed`；
+5. 0 completed，全部 target canceled（无 failed/interrupted），且无 running/`retryablePending` → parent `canceled`；
+6. 0 completed，≥1 failed/interrupted，且无 running/`retryablePending` → parent `failed`；
+7. operator 取消整个消息 → parent `canceled`。
 
-`interrupted` 归失败面（可重试）；`canceled` 归取消面。
-parent 只存 `successfulAgentIds`；failed/canceled 由 `invocation_attempts` 最新 attempt 推导。
+`retryablePending` 是仍留在 queue pending targets + 有 `RetryDeferrals` 的 failed/interrupted
+target；它阻止 parent 进入 terminal。`interrupted` 归失败面（可重试）；`canceled` 归取消面，
+不可被 `requestRetry` 复活。
+parent 只存 `successfulAgentIds` + `primaryTerminalError`；failed/canceled 由
+`invocation_attempts` 最新 attempt 推导。
 
 ## 6. 端到端流程
 
@@ -3150,13 +3221,16 @@ parent partial_failed: successful=[A], failed=[B]
 - 全部 child completed → parent completed。
 - 部分成功 → parent partial_failed；`successfulAgentIds` 正确。
 - 全部失败 → parent failed。
-- 取消 → parent canceled。
-- 重试只重跑 `targetAgentIds - successfulAgentIds`；successful 不重跑；`retryCount` 递增，parent 先回 `queued`。
+- 全部 canceled（无 failed/interrupted）→ parent canceled；mixed canceled+failed 归 failed。
+- auto-retry pending target 存在 → parent 保持 queued/running，不提前 terminal。
+- failed/partial_failed 的 `terminalReason` = collector 的 `primaryTerminalError`。
+- 重试只重跑 failed/interrupted target；successful 和 canceled 都不重跑；`retryCount`
+  递增，parent 先回 `queued`。
 - 重试不新建 queue entry、不产生第二条用户消息、不重新 admission；每个被重试 target 追加
   `invocation_attempts` 的 `attempt+1`，旧 attempt 保持原终态。
 - 每个 target 的聚合取 `invocation_attempts` 最新 attempt；不能用旧 failed attempt 覆盖新成功。
 - queue entry 在 parent `completed`/`canceled` 后删除；`partial_failed`/`failed` 保留到显式
-  retry 或 operator abandon。
+  retry、operator abandon 或 30d TTL。
 - `response_pending` 的 child 已经 terminal，参与 parent aggregate；R settlement 不改变
   parent status。
 - `usageByAgent` 按 agent 跨 attempt 累计；`usageRecordedAt` 首次写入后不变。
@@ -3374,3 +3448,9 @@ parent partial_failed: successful=[A], failed=[B]
     hash+salt / worker binding），坐标重写；piExtToolCallId 幂等放 credential 的
     `tool_call_claims_json` map（`a2a_requests` 标 legacy）；active credential 无 TTL，
     startup sweep + verify repair 回收 orphan；pi extension 只注册 F018 四工具。
+46. **DP-F018TERM=A/A/A/A/A/A/A（2026-11-11 拍板）**：全 canceled → parent
+    `canceled`；auto-retry pending 保持 `queued`/`running`；每个 child terminal 释放
+    tracker slot；terminal first-write-wins + `terminal_conflict`；`requestRetry` 只由
+    store 改 parent state/retryCount，QueueProcessor 编排且只 retry failed/interrupted；
+    dispatchRefs 更新 latest attempt；failed entry 显式 abandon/30d TTL；parent 持久化
+    `primaryTerminalError`。

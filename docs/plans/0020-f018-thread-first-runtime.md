@@ -85,6 +85,10 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   process-local bounded backoff（base 10s、上限 1h）自动重试。
 - retry 采用 Clowder route recovery（`retryRoutingTarget`），不是 cloud delivery 的
   fresh source/attempt；不新建 queue entry、不产生第二条用户消息。
+- 终态/重试（DP-F018TERM=A×7）：all-canceled → parent canceled；auto-retry pending 保持
+  queued/running；每个 child terminal 释放 tracker slot；terminal first-write-wins；
+  requestRetry 只 retry failed/interrupted；dispatchRefs 更新 latest attempt；failed entry
+  显式 abandon + 30d TTL；parent 持久化 primaryTerminalError。
 - worker：`WorkerPool.ensure` 按 poolKey 取/建 ephemeral worker；turn 结束默认 retire；
   记录 `worker_spawn_ms` / `worker_busy_ms` / `worker_evicted_count`。
 - live stream（DP-F018X-2=B）：attempt start 创建 attempt + processing R；`WorkerEventSink` 处理
