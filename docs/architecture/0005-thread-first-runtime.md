@@ -390,6 +390,8 @@ thread message / A2A tool
   `piExtToolCallId`；它由 pi extension 从 `toolCallId + toolName` 派生并注入 control
   envelope，**不进入 model-facing tool input**；scope 是 credential（child TurnExecution），
   不是 `(threadId, agentId, key)`。
+- `post_message` / `cross_post_message` targets ≤ 8；`multi_mention` 固定 2-3 个 agent；
+  `bodyMd` ≤ 32 KiB，`question` / `context` 各 ≤ 5 KiB。
 - `multi_mention` 是 fan-out：一条 message + 一个 queue entry + 一个
   `InvocationRecord`(parent) + N 个 `TurnExecution`(child)；响应是独立消息；
   parent 聚合 completed/partial_failed/failed 与成功/失败集合。v1 不做聚合
@@ -404,7 +406,8 @@ thread message / A2A tool
 - 目标 thread 不存在、soft-deleted、跨 user、target agent disabled 都是 typed
   reject，不静默降级。
 - `cross_post_message` 的 target thread 还必须满足 `projectPath` 非空；message 写
-  `extra.crossPost = { sourceThreadId, sourceMessageId }`。
+  `extra.crossPost = { sourceThreadId, sourceTriggerMessageId }`，后者是 caller 的
+  `causal.triggerMessageId`。
 - `multi_mention` 的聚合回调不在 v1；fan-out 本身是 v1 能力。
 
 ## 4. 迁移与 cutover

@@ -473,7 +473,7 @@ interface StoredMessage {
   extra?: {
     targetAgentIds?: string[];       // user admission snapshot
     rich?: RichMessageExtra;         // Hub presentation；不是 MessageContent
-    crossPost?: { sourceThreadId: string; sourceMessageId?: string };
+    crossPost?: { sourceThreadId: string; sourceTriggerMessageId?: string };
   };
 }
 
@@ -1917,6 +1917,9 @@ worker-extension.ts
   已经拿到 `toolCallId`；extension 应从它派生 `piExtToolCallId` 并注入 control envelope，
   不要求模型在 tool input 里生成 UUID。`wreq-N` 是 connection-local 请求序号，重试会变，
   不能当幂等键。
+- **派生算法（v1）**：`piExtToolCallId = "pi:" + sha256(toolName + "\0" + toolCallId)` 的
+  64 hex；1..128 chars，无空白/控制字符。同一个 tool call 的 transport retry 必须复用
+  同一个值；不同 toolName 即使 raw toolCallId 相同也不会碰撞。
 - 服务端不信任 payload 里的 agent/thread/user；身份从 credential + child 派生。
 - token 不入 input/query/body/log/UI。
 
@@ -2006,6 +2009,21 @@ interface InvocationCredential {
 `post_message` / `cross_post_message` / `multi_mention` 都不带 legacy `kind`；
 消息正文只由 `bodyMd`（`multi_mention` 为 `question` + `context?`）承载。
 
+**工具输入 / 输出**
+
+| 工具 | model-facing input | result | queue |
+|---|---|---|---|
+| `post_message` | `targets`, `bodyMd`, `replyTo?` | `{ message, queueEntryId, replayed }` | 1 message + 1 queue entry |
+| `cross_post_message` | `threadId`, `targets`, `bodyMd`, `replyTo?` | `{ message, queueEntryId, sourceThreadId, targetThreadId, replayed }` | 同上 |
+| `multi_mention` | `targets`（2-3 agents）, `question`, `context?` | `{ message, queueEntryId, targetAgentIds, replayed }` | 同上，N agent targets |
+| `thread_context` | `threadId?`, `anchor?`, `before?`, `after?`, `limit?`, `cursor?` | `{ threadId, messages, hasMore, nextCursor? }` | 不入队 |
+
+- `piExtToolCallId` **不在 model-facing input**；pi extension 从 `toolCallId + toolName`
+  派生后注入 control envelope。handler 收不到它 → `invalid_input`（transport 错误）。
+- handler 接口：`handle(toolName, input, { piExtToolCallId, credentialId, turnExecutionId })`；
+  后三者来自 control envelope/credential，不来自 model input。
+- `bodyMd` 非空、上限 32 KiB；`question` / `context` 各上限 5 KiB。
+
 > **命名已定（DP-F018A2A-1）**：字段名 `piExtToolCallId`。它是 pi extension 从
 > `toolCallId` + `toolName` 派生并注入 control envelope 的 tool-call 幂等键；
 > model-facing tool schema 不暴露它。
@@ -2027,19 +2045,36 @@ targets: Array<
   `InvocationRecord` + N child `TurnExecution`**；不是 N 条 message，也不是 N 个 parent。
 - `cross_post_message`：`threadId` 必须存在且不等于 caller thread；target thread 必须
   active、未 soft-deleted、有 `projectPath`，且与 source 同 user；message 写
-  `extra.crossPost = { sourceThreadId, sourceMessageId }`；不同 user → `thread_access_denied`，
+  `extra.crossPost = { sourceThreadId, sourceTriggerMessageId }`，其中
+  `sourceTriggerMessageId = caller.causal.triggerMessageId`；不同 user → `thread_access_denied`，
   soft-deleted → `thread_deleted`，缺 projectPath → `thread_project_path_required`，
   同 thread → `use_post_message`。
+- `targets` 按 `targetKey` 去重；`post_message` / `cross_post_message` 最多 8 个 target，
+  `multi_mention` 固定 2-3 个 agent。target 可以是 caller 自己；这会创建一个新 child
+  并参与 `a2aDepth` / loop guard。
+- 所有 target 在创建 message 前一次校验；任一 target 非法 → 整笔 fail closed，
+  不部分投递（执行期 target 失败仍按 parent 聚合）。
+- `operator` target 的 `id` 是 userId，必须等于**目标 thread**的 owner；`multi_mention`
+  不接受 operator target。
+- `replyTo` 可选；必须存在、与 message 同 thread、未被 deleted/withdrawn，且 caller
+  可见；`cross_post_message` 的 `replyTo` 必须在 target thread。不满足 →
+  `invalid_reply_to`。
+- **message + queue entry + dispatchRefs 同事务**：每个 target 写一条
+  `lifecycle.input.dispatchRefs = { target, queueEntryId, attempt:1, phase:'dispatched', at }`；
+  operator ref 在通知时 settle（`phase:'settled'` + `at`），agent ref 在 child terminal
+  或 R settlement 时 settle。agent targets 不写 `extra.targetAgentIds`（那是 user message
+  的 admission snapshot）。
 
 **`post_message` / `cross_post_message` 流程**
 1. 校验 caller credential + target/thread access + A2A depth/loop guard
    （超过 15 → `a2a_depth_exceeded`；在创建 message 前拒绝）；
-2. 若带 `piExtToolCallId`：`getToolCallClaim(caller.turnExecutionId, piExtToolCallId)`；
+2. 读取 handler-injected `piExtToolCallId`（缺失 → `invalid_input`）：
+   `getToolCallClaim(caller.turnExecutionId, piExtToolCallId)`；
    已有且 intentHash 相同 → 返回原 message/queue（replayed）；不同 →
    `pi_ext_tool_call_conflict`；
 3. 创建 message；
 4. `InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、piExtToolCallId、priority）；
-5. 若带 `piExtToolCallId`：同一事务内 `reserveToolCallClaim(...)`；
+5. 同一事务内 `reserveToolCallClaim(...)`；
    若并发 race 返回已有 claim，整笔回滚并按 replay/conflict 返回；
 6. QueueProcessor claim 后拆分 targets：
    - operator → 通知/可见性，写 `delivery.operatorNotifiedAt`，并在 message
@@ -2064,17 +2099,78 @@ targets: Array<
   `a2a_depth_exceeded`），不静默丢弃 target；执行期 target 失败仍按 parent 聚合。
 - 结果：`{ message, queueEntryId, targetAgentIds, replayed }`。
 
+**`thread_context`**
+
+- `threadId?` 省略 = caller 当前 thread；显式传入必须存在、同 user、未 soft-deleted；
+  archived thread 允许只读。
+- `anchor?` 是 thread 内的 messageId；`before` / `after` 各 0-50；`limit` 1-200，默认 50；
+  `cursor` 是 opaque continuation，不能与 `anchor` 同用。
+- 可见性复用 `HistoryAssembler` 的 target/visibility 过滤；默认排除 deleted/withdrawn；
+  包含 processing R 的 `lifecycle.status`；**不 ack delivery cursor**；不创建 queue entry。
+- 输出 `{ threadId, messages, hasMore, nextCursor? }`；messages 按 `seq` 升序，
+  每项至少含 `messageId/seq/from/content/contentBlocks/createdAt`，有 lifecycle 时带
+  `lifecycle.kind/status`。
+- 错误：`thread_not_found` / `thread_deleted` / `thread_access_denied` /
+  `invalid_anchor` / `invalid_cursor` / `invalid_window`。
+
 **`piExtToolCallId` 幂等（DP-F018AUTH-3=B）**
 
 - scope = `credentialId`（child TurnExecution）+ sender；一个 credential 内
   `piExtToolCallId` 唯一。
+- `intentHash = sha256(stableJson({ tool, threadId: targetThreadId, targets:
+  sorted(targetKey), body: bodyMd 或 question+context, replyTo }))`；不包含
+  `piExtToolCallId`、messageId、queueEntryId。
 - `toolCallClaims` 是 map，不是纯 set：
   `{ piExtToolCallId: { intentHash, messageId, queueEntryId } }`；没有 map 就无法 replay
   原 message/queue。
 - map 上限 1000 条/credential；超限 fail closed，不静默驱逐。
 - claim 与 message/queue 创建同事务；重试返回原结果；不同 intent 返回
   `pi_ext_tool_call_conflict`。
+- claim 命中但原 message 已 deleted/withdrawn，或 queue receipt 已不可重放 →
+  `source_withdrawn`；同 source+target 已有 queued/running → `a2a_duplicate_delivery`
+  （tool retry 正常先命中 claim，不会走到这里）。
 - `a2a_requests` 表标 legacy；v1 不再写入。
+
+**`InvocationQueue.enqueue` 映射**
+
+| `QueueEnqueueInput` | A2A 值 |
+|---|---|
+| `threadId` | caller thread；`cross_post_message` 为 target thread |
+| `kind` | `message_wake` |
+| `owner` | `{ kind:'user', userId: targetThread.created_by }` |
+| `from` | `{ kind:'agent', agentId: caller.agentId }` |
+| `sourceRecordId` | 新 `messageId`（v1） |
+| `messageId` | 新 message id |
+| `originRecordId` | `null`；A2A 因果在 `execution`，不伪装成 run/handoff provenance |
+| `attempt` | `1` |
+| `content` | `bodyMd`；`multi_mention` 为 `question` + `\n\n---\n\n` + `context?` |
+| `targets` / `requestedTargets` | 去重后的 targets；`requestedTargets` 是 admission 全量快照 |
+| `priority` | `normal`（tool 不暴露 priority） |
+| `execution` | `{ a2aParentTurnExecutionId: caller.turnExecutionId, a2aTriggerMessageId: newMessageId, a2aDepth: caller.causal.a2aDepth + 1 }` |
+| `piExtToolCallId` | extension 注入的 key |
+
+`queueEntryId = queue:<hash(sourceRecordId:attempt)>`；message、queue entry、dispatchRefs、
+credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions` fingerprint
+覆盖 source/owner/kind/from/payload/requestedTargets/priority/execution，不覆盖可变的
+`targets/status/claim/delivery`。
+
+**错误 taxonomy（A2A 工具）**
+
+| 层 | code | 触发 |
+|---|---|---|
+| input | `invalid_input` | 未知字段、空 body、超限、缺少 `piExtToolCallId` |
+| target | `invalid_explicit_target` | 空 targets、形状非法、targetKey 重复到冲突、multi_mention 非 2-3 agents |
+| target | `agent_not_found` / `agent_disabled` / `account_missing` | agent 不存在/禁用/账号缺失 |
+| thread | `thread_not_found` / `thread_deleted` / `thread_access_denied` | 目标 thread 不存在/deleted/跨 user |
+| thread | `thread_project_path_required` | target thread 没有 projectPath |
+| cross-post | `use_post_message` | `cross_post_message` 的 threadId 等于 caller thread |
+| reply | `invalid_reply_to` | replyTo 不存在/跨 thread/不可见/deleted/withdrawn |
+| idempotency | `pi_ext_tool_call_conflict` | 同 `piExtToolCallId` 不同 `intentHash` |
+| idempotency | `queue_admission_conflict` | 同 `(sourceRecordId, attempt)` 不同 fingerprint |
+| queue | `a2a_duplicate_delivery` | 同 source+target 已 queued/running |
+| source | `source_withdrawn` | 原 message/queue 已撤回或不可重放 |
+| depth | `a2a_depth_exceeded` / `loop_guard` | 超过 15 / ping-pong guard |
+| auth | `tool_not_allowed` | tool 不在 credential.allowedTools |
 
 **v1 不做**
 - `a2a_send`、`handoff_*`、multi_mention 聚合回调、cross-thread custody。
@@ -3110,7 +3206,7 @@ parent partial_failed: successful=[A], failed=[B]
   token 文件 `ct1.<credentialId>.<secret>`，0600，extension 每次调用重读。
 - piExtToolCallId 幂等：`tool_call_claims_json` map + `reserveToolCallClaim` 同事务；
   同 piExtToolCallId 同 intent → replayed；不同 intent → `pi_ext_tool_call_conflict`。
-- 不在 allowedTools 的 tool → forbidden。
+- 不在 allowedTools 的 tool → `tool_not_allowed`。
 - child terminal → credential terminalize。
 - child 不存在/terminal 但 credential active → canonical repair terminalize/revoke。
 - startup sweep：`listActiveCredentials()` + `repairOrphans()`；child/run missing → revoked；
