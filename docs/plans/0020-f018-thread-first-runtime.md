@@ -161,7 +161,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 | 10 | WorkerPool reaper/capacity | **契约已收口**：capacity backoff、单 reaper 循环、warmTtl=0 crash/cleanup 顺序已定 | R2 实现 |
 | P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **已收口**：`invoke-single-agent` 负责 provider/stream；`settleAgentTurn` 接口负责两段 terminal/settlement | R2 按接口实现 |
 | P2 | `extra.kind` 是否保留 | **已删**：`kind` 是 task-first legacy；不迁入 A2A `extra`，legacy 列只读至 R5 drop | 实现时不得重新引入 |
-| P3 | PR #86 / 0005 review | **设计整合已完成（2026-11-11）**：session/history/worker 与 0005/0010 的一致性终审已收口；operator 暂停外部 review 的前置条件已满足 | 进入最终 Phase A review；非作者 verdict 覆盖 exact HEAD 后再 merge |
+| P3 | Phase A final review（0005/0010） | **设计整合已完成（2026-11-11）**：session/history/worker 与 0005/0010 的一致性终审已收口；operator 暂停外部 review 的前置条件已满足；PR #86 的旧 findings 已应用 | 进入最终 Phase A review；非作者 verdict 覆盖 exact HEAD 后再 merge |
 
 ## 回滚
 
