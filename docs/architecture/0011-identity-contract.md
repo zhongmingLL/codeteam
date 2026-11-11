@@ -204,7 +204,7 @@ credentialId（auth）
 | InvocationRecord | **是** | `invocation_records.user_id` | parent ownership；必须等于 thread owner |
 | InvocationAttempt | 否 | 通过 `invocation_record_id`/`thread_id` | 子台账；从 parent/thread 派生 |
 | TurnExecution | **是** | `turn_executions.user_id` | execution scope snapshot；必须等于 parent/thread owner |
-| InvocationCredential | **是** | `invocation_credentials.user_id` | auth scope；必须等于 child/TurnExecution owner |
+| InvocationCredential | **是** | `invocation_credentials.user_id` | auth scope；必须等于 child/TurnExecution owner；`turnExecutionId` 是 auth anchor，`invocationRecordId` 是 parent reference |
 | AgentReadState | 否 | 主键 `(thread_id, agent_id)` | thread owner 隐含 user；v1 单 user 简化 |
 | response_drafts | 否 | 通过 `attempt_id`/`turn_execution_id` | attempt/TurnExecution 的子记录；user 从 parent/thread 派生；多 user draft 隔离时再加 |
 | workers / worker_bindings | 否 | project/account | execution carrier，不是 user-owned |

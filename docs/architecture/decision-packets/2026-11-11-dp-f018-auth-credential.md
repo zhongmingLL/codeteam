@@ -106,6 +106,11 @@ binding 是正确的 pi extension 安全边界；要换的是坐标，不是机�
 的 `TurnExecution` 是执行锚，retry 新 child 新 credential 最自然。credential
 行数不是瓶颈，token 失效边界才是。
 
+> **命名澄清**：Clowder 的 `invocationId` 就是 child execution id；codeteam 为避免
+> parent/child 混淆，把 child 叫 `turnExecutionId`、parent 叫 `invocationRecordId`。
+> credential 可存 `invocationRecordId` 作为 scope/aggregation reference，但 auth
+> anchor 始终是 `turnExecutionId`，不绑 parent。
+
 **附带自决**：`disposition` 增加 `replaced`，并增加
 `replaced_by_turn_execution_id`（或 `terminal_ref`）；retry/preempt 的旧 credential
 不再误标 `revoked`/`canceled`。

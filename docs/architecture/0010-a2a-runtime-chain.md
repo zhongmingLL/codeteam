@@ -1927,6 +1927,7 @@ type ClientMessageClaim = {
 interface InvocationCredential {
   credentialId: string;
   turnExecutionId: string;       // child TurnExecution
+  invocationRecordId: string;    // parent reference; NOT the auth anchor
   threadId: string;
   agentId: string;
   agentSessionId: string;
@@ -1943,9 +1944,12 @@ interface InvocationCredential {
 ```
 
 **Registry v1**
-- `create(userId, threadId, agentId, sessionId, turnExecutionId, allowedTools)`；校验
-  `userId === TurnExecution.userId === thread.created_by`，不一致 fail closed；
-- `verify(turnExecutionId, token)`：token hash+salt、state active、未过期、child running、parent status ∈ `queued | running`、tool allowed；身份从 credential 派生。
+- `create(userId, threadId, agentId, sessionId, turnExecutionId, allowedTools)`；
+  从 child TurnExecution 读取并写入 `invocationRecordId`（parent reference）；
+  校验 `userId === TurnExecution.userId === thread.created_by`，不一致 fail closed；
+- `verify(turnExecutionId, token)`：token hash+salt、state active、未过期、child running、
+  `turnExecution.invocationRecordId === credential.invocationRecordId`、parent status ∈
+  `queued | running`、tool allowed；身份从 credential 派生。
 - `getClientMessageId(turnExecutionId, requestId)`：只读 lookup，返回已有 claim。
 - `reserveClientMessageId(turnExecutionId, { requestId, intentHash, messageId, queueEntryId })`：
   与 message/queue 创建同事务；同 requestId + 同 intentHash → `replayed`；
@@ -1962,7 +1966,7 @@ interface InvocationCredential {
 | Clowder | codeteam v1 | 关系 / 差异 |
 |---|---|---|
 | `InvocationRegistry` facade over `IAuthInvocationBackend`（memory / Redis） | `InvocationRegistry` service + SQLite `invocation_credentials` | service/record 分层相同；storage adapter 从 Redis 换 SQLite |
-| `InvocationRecord`：child `invocationId`、`callbackToken`、`userId/catId/threadId/parentInvocationId`、`toolExecutionPolicy`、`clientMessageIds`、`expectedCompactionCarrier`、`state`、`expiresAt`、`terminalRef` | `InvocationCredential`：`turnExecutionId`、`credentialId`、`threadId/agentId/agentSessionId/userId`、`allowedTools`、`clientMessageIds`、`state/disposition`、`replacedByTurnExecutionId` | 坐标从 task/role/run 换成 thread/agent/TurnExecution；collective/managed/compaction 字段 v2 |
+| `InvocationRecord`：child `invocationId`、`callbackToken`、`userId/catId/threadId/parentInvocationId`、`toolExecutionPolicy`、`clientMessageIds`、`expectedCompactionCarrier`、`state`、`expiresAt`、`terminalRef` | `InvocationCredential`：`turnExecutionId`（auth anchor）、`invocationRecordId`（parent ref）、`credentialId`、`threadId/agentId/agentSessionId/userId`、`allowedTools`、`clientMessageIds`、`state/disposition`、`replacedByTurnExecutionId` | Clowder 的 `invocationId` 就是 child execution id；codeteam canonical 名是 `turnExecutionId`，parent 是 `invocationRecordId`；0011 禁用裸 `invocationId` |
 | `AUTH_TERMINAL_DISPOSITIONS` 含 `replaced` | disposition 含 `replaced` + `replaced_by_turn_execution_id` | 对齐；retry/preempt 旧 credential 不再误标 revoked/canceled |
 | `create` 返回 invocationId + callbackToken；active principal 无 deadline | `create` 返回 credentialId + token；active credential 无 TTL；terminal tombstone 才 GC | 对齐 active 语义；codeteam token 只存 hash+salt，Clowder 存 raw callbackToken |
 | `verify`：token + state + expiry + canonical `TurnExecution`；`repairFromCanonical` 补 terminal/revoke | `verify`：token hash+salt + state + child running + parent status + tool allowed；`repairFromCanonical` | 语义对齐；codeteam 额外校验 worker/session binding |
@@ -1975,6 +1979,12 @@ interface InvocationCredential {
 
 > 旧 `docs/architecture/reuse-review/callback-auth.md` 是 F174/F178 的 task-first 复用检视，
 > 仍可读 Clowder 的 registry/prehandler/refresh 机制；但 F018 契约以本节 + `DP-F018AUTH` 为准。
+
+> **绑定语义**：`InvocationRegistry` 绑 child execution，不绑 parent `InvocationRecord`。
+> Clowder 的 `InvocationRegistry.invocationId` 就是 child id；codeteam 为避免
+> parent/child 混淆，把 child 叫 `turnExecutionId`、parent 叫 `invocationRecordId`
+> （0011 禁用裸 `invocationId`）。credential 可存 `invocationRecordId` 作为
+> scope/aggregation reference，但 token 的 auth anchor 始终是 `turnExecutionId`。
 
 **v1 不做**
 - `expectedCompactionCarrier`、managed/collective grants、MCP callback token、task/role/profile/run 字段。
@@ -2667,6 +2677,7 @@ CREATE TABLE invocation_credentials (
   token_hash TEXT NOT NULL UNIQUE,
   token_salt TEXT NOT NULL,
   turn_execution_id TEXT NOT NULL UNIQUE,
+  invocation_record_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
   agent_session_id TEXT NOT NULL,
@@ -2690,6 +2701,7 @@ CREATE TABLE invocation_credentials (
   CHECK (replaced_by_turn_execution_id IS NULL OR disposition = 'replaced'),
   CHECK (disposition <> 'replaced' OR replaced_by_turn_execution_id IS NOT NULL),
   FOREIGN KEY (turn_execution_id) REFERENCES turn_executions(turn_execution_id) ON DELETE RESTRICT,
+  FOREIGN KEY (invocation_record_id) REFERENCES invocation_records(invocation_record_id) ON DELETE RESTRICT,
   FOREIGN KEY (replaced_by_turn_execution_id) REFERENCES turn_executions(turn_execution_id) ON DELETE RESTRICT,
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
   FOREIGN KEY (agent_session_id) REFERENCES agent_sessions(id) ON DELETE RESTRICT
@@ -2697,6 +2709,8 @@ CREATE TABLE invocation_credentials (
 ```
 
 - 一个 child TurnExecution 一个 credential。
+- `turn_execution_id` 是 auth anchor；`invocation_record_id` 是 parent reference，
+  必须等于 child TurnExecution 的 parent，不用于 token 身份。
 - `user_id` 是 auth scope；必须等于 child TurnExecution/thread owner（`0011` §11）。
 - 重试创建新 child + 新 credential；旧 credential terminalize。
 - `client_message_ids_json` 存 `{requestId: {intentHash, messageId, queueEntryId}}`；
