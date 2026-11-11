@@ -76,7 +76,7 @@ Message
                   → InvocationRecordStore.applyTerminalAggregate
                   → ResponseSettlementService.settleResponseFromDraft
       → QueueProcessor retire target / release tracker
-  → StartupReconciler / ZombieRecovery / LiveInvocations / DispatchSummary
+  → StartupReconciler / InvocationOwnerReaper / LiveInvocations / DispatchSummary
 ```
 
 A2A hop：
@@ -498,8 +498,7 @@ type MessageLifecycle =
         | "worker_capacity"
         | "worker_start_failed"
         | "credential_mint_failed"
-        | "provider_start_failed"
-        | "response_missing";
+        | "provider_start_failed";
       createdAt: number;
     };
 
@@ -657,8 +656,8 @@ interface MessageStore {
   必须带 reason。v1 durable streaming 的 R terminal 走这里。
 - `commitLifecyclePreAdmissionFailure`：同事务追加 system message（`from.kind='system'`,
   `service='message_delivery'`）+ settle source 的 `dispatchRefs`；reason 必须是
-  `worker_capacity/worker_start_failed/credential_mint_failed/provider_start_failed/
-  response_missing`。只在 dispatch 事务未创建 processing R 时使用；R 已创建后的失败走
+  `worker_capacity/worker_start_failed/credential_mint_failed/provider_start_failed`。
+  只在 dispatch 事务未创建 processing R 时使用；R 已创建后的失败走
   R terminal settlement。
 
 **Ingress reject vs delivery_failure**
@@ -1080,7 +1079,9 @@ class InvocationOwnerReaper {
 1. `TurnExecution.listRunning()` + tracker stale slots。
 2. child 已 terminal / 不存在 → 释放 tracker slot。
 3. child running + 该 `(agentId, agentSessionId)` 有 live worker/heartbeat/未过期 lease → 保留。
-4. child running + 无 live worker → `interrupted/owner_reaped`；credential terminalize；parent aggregate；释放 slot。
+4. child running + 无 live worker → 先 settle child R；stale queue entry restore `queued`
+   （source 已 withdrawn/canceled 才 remove）；child `interrupted/owner_reaped`；parent
+   aggregate（3.9 collector）；credential terminalize；释放 slot。
 5. worker 状态读不到 → defer，不误判。
 
 - 被抢占但旧 worker 还活着的 child：保留，等旧 worker 结束；`TurnExecution` 唯一 running + worker binding generation 防止新旧叠跑。
@@ -1725,9 +1726,10 @@ response settlement（通常紧接着；崩溃后由 reconciler 重放）:
 - `response_message_id` 在 attempt start 就写入 processing R；`response_pending` 时也非 null。
 - attempt `settlement` 四态：`NULL`（queued，尚无 R）、`streaming`（R 还在生成）、
   `response_pending`（child terminal，R 未 terminal）、`settled`（R terminal 且 inputs settled）。
-- `listResponsePending()` 是恢复入口；`TurnExecutionStartupReconciler` 重启后扫描 pending，
-  调用 `settleResponseFromDraft`；R 已 terminal 则只清 pending，R 不存在则按
-  `response_missing` 失败并写 `delivery_failure`。
+- `listResponsePending()` 是恢复入口；`TurnExecutionStartupReconciler` 重启后只扫描
+  `startedAt < processStartedAt + 1` 且非 protected 的 pending；R 已 terminal 则只清
+  pending；R 不存在则走独立 `response_missing` recovery（system message/audit），
+  不写 prestart `delivery_failure`。
 - parent aggregate 和 credential terminalize 在 child terminal 事务完成，不等待 R terminal；
   `response_pending` 的 child 已经是 terminal，参与聚合。
 - `routing_guard` 没有 attempt/R；它只有 core TurnExecution。
@@ -1816,7 +1818,8 @@ type AgentStreamEvent =
   terminal 后 draft 删除，R 变为持久终态消息。
 - crash：`responsePending` + draft 保留；startup reconciler 调
   `settleResponseFromDraft`。R 已 terminal 则只清 pending；R processing 则按 child
-  terminal 状态提交；R 不存在则 `response_missing` + `delivery_failure`。
+  terminal 状态提交；R 不存在则独立 `response_missing` recovery（system message/audit），
+  不伪装成 prestart `delivery_failure`。
 - failed/interrupted/canceled：R 也走 terminal settlement，正文带已 stream 的部分 +
   explanation；不再产生第二条 `delivery_failure`（prestart 未创建 R 除外）。
 
@@ -2524,50 +2527,64 @@ interface InvocationAttemptStore {
 - failed/partial_failed queue entry 可 `abandon` 或 30d TTL 清理；清理后
   `queue_admissions` 仍可解释历史。
 
-### 3.10 StartupReconciler / ZombieTerminalRecovery / TrajectoryProjector / LiveInvocations
+### 3.10 StartupReconciler / InvocationOwnerReaper / TrajectoryProjector / LiveInvocations
 
-> startup/reaper/live 的 operator 取舍见 `decision-packets/2026-11-11-dp-f018-recovery-liveness.md`；
-> 拍板后本节同步。
+> startup/reaper/live 已按 `DP-F018RECOVERY=A/A/A/A/A/A/A` 拍板（2026-11-11），本节已同步。
 
 **9) 和 10) 的关系**：9) 是正常终态路径；10) 是异常/重启/读模型路径；两者共用 `TurnExecution.status` 和 parent aggregate。
 
 1. **TurnExecutionStartupReconciler**
-   - daemon 启动时调用 `TurnExecutionStore.interruptRunningBefore(cutoff, {
-     endedAt, terminalReason: 'process_restart' })`；
+   - `listen` 成功后 recover；recovery 失败 best-effort，不拖垮 API；成功后标
+     `startupRecoveryComplete`。
+   - cutoff = `processStartedAt + 1`（exclusive）；`protectedInvocationIds` 排除本进程新建/
+     测试注入 child；daemon 启动时调用 `TurnExecutionStore.interruptRunningBefore(cutoff, {
+     endedAt, terminalReason: 'process_restart', excludedInvocationIds })`；
    - 进程启动前遗留的 running TurnExecution 收敛为 `interrupted/process_restart`；
-     `protectedInvocationIds`/本进程新建的 child 不收敛；
    - 同步把对应 `invocation_attempts` 从 `running` 收敛为 `interrupted`；不存在对应
      child 的 `running` attempt 也标 `interrupted`；
-   - 更新 parent aggregate；terminalize credential。
+   - 更新 parent aggregate（走 3.9 collector，含 retryablePending）；terminalize credential
+     （first-write-wins；同 disposition no-op）。
    - `queued` attempt 没有 live child：target 仍在 pending 时留给 drain（按 backoff）；
      source 已撤回/取消则标 `canceled`，不留下永久 queued attempt。
-   - 扫描 `TurnExecution.listResponsePending()`（attempt settlement join 投影）：
-     对每个 `response_pending` 调
-     `settleResponseFromDraft`；R 已 terminal 则只清 pending，R processing 则按 child
-     terminal 状态提交（draft 缺失则空正文 + reason），R 不存在则标
-     `response_missing` + `delivery_failure`。
-2. **ZombieTerminalRecovery**
-   - 定时扫描 running 超过 TTL 且无 owner 的 TurnExecution；
-   - 标 `interrupted`，同步 attempt；更新 parent；terminalize credential。
-3. **InvocationOwnerReaper**
-   - 扫描 running TurnExecution + tracker stale slots；
-   - 无 live worker/heartbeat → `interrupted/owner_reaped`，parent aggregate，credential terminalize，释放 slot；
-   - 与 Zombie recovery 共用逻辑；v1 可以合并成一个 reaper。
-4. **getThreadLiveInvocations**
-   - = tracker active slots + durable running TurnExecution；
-   - 返回 `{ agentId, turnExecutionId, parentInvocationId, startedAt, status }`；
-   - 用于 UI live status / cancel。
-5. **InvocationTrajectoryProjector**
+   - 扫描 `listResponsePending()` 时只处理 `startedAt < cutoff` 且非 protected 的 ended turn；
+     对每个 `response_pending` 调 `settleResponseFromDraft`；R 已 terminal 则只清 pending，
+     R processing 则按 child terminal 状态提交（draft 缺失则空正文 + reason）。
+   - settlement 失败保留 pending，下次 startup 再试，不 fail startup。
+   - R 不存在 → 独立 `response_missing` recovery：attempt failed +
+     `terminalReason='response_missing'` + system message/audit；不写 prestart
+     `delivery_failure`。
+2. **InvocationOwnerReaper（合并 Zombie + OwnerReaper）**
+   - 单个 serialized reaper：`runOnce` + interval inFlight guard；startup reconciler 只做启动
+     一次性，运行期只有这一个 janitor。
+   - 候选 = `TurnExecution.listRunning()` + tracker stale slots；TTL/age 只做候选筛选，
+     不能单独作为终止证据。
+   - liveness evidence：worker heartbeat/lease 未过期、`RpcConnection.prompting`、provider
+     进程存在；任一证据读不到 → defer，不误判。
+   - provider 进程退出 → 等 5min finalization grace + exact owner fence，再
+     `interrupted/provider_exited_without_terminal`。
+   - 无 live worker/heartbeat 且 owner absence → `interrupted/owner_reaped`。
+   - 收敛顺序：child R settlement → stale queue entry restore `queued`（保留 retry anchor；
+     source 已 withdrawn/canceled 才 remove）→ parent aggregate（3.9 collector，含
+     retryablePending）→ credential terminalize（first-write-wins）→ slot release。
+   - 被抢占但旧 worker 还活着的 child 保留；`transitionTerminal` first-write-wins，重复
+     reaper 调用 same status no-op，不同 status typed conflict。
+3. **getThreadLiveInvocations**
+   - tracker active slots + durable running TurnExecution；按 `turnExecutionId` 去重。
+   - evidence rank：`record+tracker` > `tracker-only` > `record-only`；过滤 R 已 terminal 的成员。
+   - thread/user scoped；返回按 `startedAt` 升序；每项含
+     `{ agentId, turnExecutionId, parentInvocationId, startedAt, childStatus, responseStatus }`。
+   - 用于 UI live status / cancel；不返回已 terminal 的幽灵执行。
+4. **InvocationTrajectoryProjector**
    - v1 **不做完整 trajectory**；
    - 先由 `TurnExecution` + response `Message` + events 提供简单 timeline；
    - 等需要 trajectory drilldown 再加 projector。
-6. **MessageDispatchSummary**
+5. **MessageDispatchSummary**
    - parent + child 的读模型：targets、running/completed/failed/canceled、responses；
-   - 用于消息级状态展示。
+   - v1 只做简单 read model；完整 schema/分页/排序放 v2。
 
 **v1 不做**
-- Clowder 的 exact owner lease、zombie terminal 复杂判定、trajectory projector。
-- 用“startup reconcile + TTL reaper + child status”覆盖 v1 的快速 E2E。
+- Clowder 的完整 owner lease 协议、trajectory projector；v1 用 heartbeat/lease +
+  provider process + 5min fence 做 owner evidence。
 
 ## 4. 数据模型
 
@@ -3112,17 +3129,20 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 6.5 重启/恢复
 
-- `InvocationStartupReconciler`：
-  - `interruptRunningBefore` 收敛进程启动前的 running TurnExecution → `interrupted`；
-  - parent aggregate；credential terminalize。
-- `ZombieTerminalRecovery`：
-  - TTL 超时 running 无 owner → `interrupted`；
-  - 同上。
-- `InvocationOwnerReaper`：
-  - running TurnExecution 无 live worker/heartbeat → `interrupted/owner_reaped`；
-  - parent aggregate；credential terminalize；释放 tracker slot。
+- `TurnExecutionStartupReconciler`：
+  - `processStartedAt + 1` exclusive cutoff + `protectedInvocationIds`；
+  - `interruptRunningBefore` 收敛上一进程 running TurnExecution → `interrupted/process_restart`；
+  - 只结算 `startedAt < cutoff` 且非 protected 的 `response_pending`；失败保留 pending；
+  - parent aggregate；credential terminalize；`response_missing` 走独立 recovery。
+- `InvocationOwnerReaper`（合并 Zombie + OwnerReaper）：
+  - 单个 serialized interval + inFlight；TTL 只做候选；
+  - stale lease + 独立 owner absence → `interrupted/owner_reaped`；
+  - provider exit 等 5min grace + exact owner fence → `provider_exited_without_terminal`；
+  - 收敛顺序：child R → queue entry restore/remove → parent aggregate →
+    credential terminalize → slot release。
 - `getThreadLiveInvocations`：
-  - tracker active slots + durable running TurnExecution。
+  - tracker active slots + durable running TurnExecution；按 `turnExecutionId` 去重；
+  - evidence rank + 过滤 terminal R；thread/user scoped；按 startedAt 排序。
 - `InvocationTrajectoryProjector`：
   - v1 不做；用 TurnExecution + response Message + events 的简单 timeline。
 
@@ -3150,7 +3170,8 @@ parent partial_failed: successful=[A], failed=[B]
 - `InvocationRegistry`/`InvocationCredential`：pi extension tools 鉴权、allowed tools、terminalize、canonical repair。
 - `a2a/tools`：post/cross/thread_context，typed targets（agent/operator），新 message/queue entry，parent/depth；operator-only 只通知不执行。
 - `PerAgentTerminalDispositionCollector`：parent aggregate。
-- `TurnExecutionStartupReconciler` / `ZombieTerminalRecovery` / `InvocationOwnerReaper` / `getThreadLiveInvocations` / `MessageDispatchSummary`。
+- `TurnExecutionStartupReconciler` / `InvocationOwnerReaper`（合并 Zombie） /
+  `getThreadLiveInvocations` / `MessageDispatchSummary`。
 
 ### 7.2 v1 不做
 
@@ -3305,7 +3326,9 @@ parent partial_failed: successful=[A], failed=[B]
 - 正文 `@`（agent final response / text）不路由、不报错；只有显式 typed target 非法才
   `invalid_explicit_target`。
 - `delivery_failure` 只用于 admitted prestart：`worker_capacity/worker_start_failed/
-  credential_mint_failed/provider_start_failed/response_missing`；R 已创建后的失败走 R terminal。
+  credential_mint_failed/provider_start_failed`；R 已创建后的失败走 R terminal。
+- `response_missing` 是独立 recovery reason：attempt failed + system message/audit；不写
+  prestart `delivery_failure`。
 - `post_message` 创建新 message + queue entry + parent；child `a2aParentTurnExecutionId`/`a2aDepth` 正确。
 - `cross_post_message` 跨 thread 同 user；target thread 必须 active/not deleted/有
   projectPath；message 写 `extra.crossPost`；不同 user/deleted/缺 projectPath 都 typed reject。
@@ -3315,12 +3338,13 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 9.6 恢复 / 读模型
 
-- daemon 重启：`interruptRunningBefore` 收敛进程启动前的 running TurnExecution →
-  interrupted/process_restart；parent aggregate；credential terminal。
-- TTL zombie → interrupted。
-- running TurnExecution 无 live worker/heartbeat → `interrupted/owner_reaped`；释放 tracker slot。
-- `getThreadLiveInvocations` 返回 tracker + durable running child。
-- `response_pending` 在重启后由 startup reconciler 结算；draft 删除、pending 清空。
+- daemon 重启：`processStartedAt + 1` cutoff + protected IDs；上一进程 running
+  TurnExecution → `interrupted/process_restart`；parent aggregate；credential terminal。
+- `response_pending` 只结算上一进程 ended turn；失败保留 pending；R missing →
+  `response_missing` recovery。
+- `InvocationOwnerReaper` 单循环；TTL 只做候选；stale lease + owner absence →
+  `interrupted/owner_reaped`；provider exit 5min grace + fence；释放 tracker slot。
+- `getThreadLiveInvocations` 去重 + evidence rank + 过滤 terminal R；thread/user scoped。
 - 一个 `InvocationOwnerReaper` 循环先 `WorkerPool.reap` 再对账 running TurnExecution；
   不另开 WorkerReaper timer。`warmTtl=0` 顺序：child terminal → R settlement →
   retire worker → release tracker；crash 在 terminal 前/后分别由 reconciler/reaper 收敛。
@@ -3357,7 +3381,7 @@ parent partial_failed: successful=[A], failed=[B]
 | `InvocationRegistry` | `InvocationRegistry` + `InvocationCredential` | 复用 contract；pi extension + control socket |
 | `a2a/tools` + MCP | `a2a/tools` (pi extension) + control socket | 复用语义；换 transport |
 | `PerCatTerminalDispositionCollector` + `transitionTerminal` + `QueueProcessor` | `PerAgentTerminalDispositionCollector` + `transitionTerminal` + `QueueProcessor` | 复用；v1 单事务 |
-| `TurnExecutionStartupReconciler` / `ZombieTerminalRecovery` / `InvocationTrajectoryProjector` / `getThreadLiveInvocations` | `InvocationStartupReconciler` / `InvocationReaper` / 简单 timeline / `ThreadLiveInvocations` | 复用骨架；v1 轻量 |
+| `TurnExecutionStartupReconciler` / `ZombieTerminalRecovery` / `InvocationOwnerReaper` / `InvocationTrajectoryProjector` / `getThreadLiveInvocations` | `InvocationStartupReconciler` / 合并 `InvocationOwnerReaper` / 简单 timeline / `ThreadLiveInvocations` | 复用骨架；v1 合并 zombie/reaper，轻量 |
 
 > 命名：Clowder TurnExecution 的 `succeeded` 在 codeteam 用 `completed`
 > （与现有 `runs`/0005 一致）；其余 `failed/interrupted/canceled` 同名。
@@ -3457,3 +3481,8 @@ parent partial_failed: successful=[A], failed=[B]
     store 改 parent state/retryCount，QueueProcessor 编排且只 retry failed/interrupted；
     dispatchRefs 更新 latest attempt；failed entry 显式 abandon/30d TTL；parent 持久化
     `primaryTerminalError`。
+47. **DP-F018RECOVERY=A/A/A/A/A/A/A（2026-11-11 拍板）**：startup 用
+    `processStartedAt+1` + protected IDs，只结算上一进程 ended turn；单 serialized reaper；
+    zombie 用 stale lease + owner absence，收敛 child R→queue→parent→credential→slot；
+    live projection 去重/evidence rank/过滤 terminal R；`response_missing` 独立 recovery；
+    provider exit 5min grace + exact owner fence。

@@ -89,6 +89,10 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   queued/running；每个 child terminal 释放 tracker slot；terminal first-write-wins；
   requestRetry 只 retry failed/interrupted；dispatchRefs 更新 latest attempt；failed entry
   显式 abandon + 30d TTL；parent 持久化 primaryTerminalError。
+- recovery/liveness（DP-F018RECOVERY=A×7）：startup 用 `processStartedAt+1` + protected
+  只结算上一进程 ended turn；单 serialized reaper；zombie 收敛 child R→queue→parent→
+  credential→slot；live projection 去重/evidence rank/过滤 terminal R；`response_missing`
+  独立 recovery；provider exit 5min grace + owner fence。
 - worker：`WorkerPool.ensure` 按 poolKey 取/建 ephemeral worker；turn 结束默认 retire；
   记录 `worker_spawn_ms` / `worker_busy_ms` / `worker_evicted_count`。
 - live stream（DP-F018X-2=B）：attempt start 创建 attempt + processing R；`WorkerEventSink` 处理

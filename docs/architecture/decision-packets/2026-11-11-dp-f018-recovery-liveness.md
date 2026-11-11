@@ -1,13 +1,13 @@
 ---
 title: "DP-F018RECOVERY: startup reconciler / reaper / live projection 拍板包"
 doc_kind: decision-packet
-status: open
+status: decided
 created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related: ../0010-a2a-runtime-chain.md
 related_features: [codeteam/F018]
-operator_decision: pending
+operator_decision: "DP-F018RECOVERY-1=A, DP-F018RECOVERY-2=A, DP-F018RECOVERY-3=A, DP-F018RECOVERY-4=A, DP-F018RECOVERY-5=A, DP-F018RECOVERY-6=A, DP-F018RECOVERY-7=A (2026-11-11)"
 ---
 
 # DP-F018RECOVERY: startup reconciler / reaper / live projection
@@ -162,5 +162,12 @@ codeteam 读模型应复用同一语义。
 `DP-F018RECOVERY-1=A, DP-F018RECOVERY-2=A, DP-F018RECOVERY-3=A, DP-F018RECOVERY-4=A, DP-F018RECOVERY-5=A, DP-F018RECOVERY-6=A, DP-F018RECOVERY-7=A`
 
 若某项要改选，只写改选项，例如 `DP-F018RECOVERY-2=B`。
+
+## 13. 拍板结果（2026-11-11）
+
+全部按推荐 A：startup 只结算上一进程 ended turn；zombie 用 stale lease + owner absence；
+单 serialized reaper；zombie 收敛 child R → queue → parent → credential → slot；
+live projection 去重/evidence rank/过滤 terminal R；`response_missing` 独立 recovery；
+provider exit 5min grace + owner fence。
 
 [宪宪/deepseek-flash🐾]
