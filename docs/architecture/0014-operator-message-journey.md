@@ -6,6 +6,7 @@ created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F018]
+related: [0005-thread-first-runtime.md, 0010-a2a-runtime-chain.md, 0011-identity-contract.md, 0013-idempotency-key-map.md]
 source: "Clowder local reference checkout; codeteam F018 0005/0010/0011/0013"
 ---
 
