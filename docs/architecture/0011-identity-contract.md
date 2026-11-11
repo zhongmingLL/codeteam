@@ -3,7 +3,7 @@ title: "codeteam identity contract v1"
 doc_kind: architecture
 status: accepted
 created: 2026-11-07
-updated: 2026-11-10
+updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 operator_signoff: "confirmed 2026-11-07"
 related_features: [codeteam/F018, codeteam/F017]
@@ -50,7 +50,7 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 | Pointer | A2A 因果父 | `causal.a2aParentTurnExecutionId` | A2A ingress | 永久 | 上游 child，不是 lifecycle parent |
 | Pointer | parent 的用户消息 | `userMessageId` | QueueProcessor | 永久 | v1 = `messageId`；未来可为 null |
 | Key | 消息创建幂等 | `piExtToolCallId` | pi extension | 短期 | 不是 ID；由 `toolCallId + toolName` 派生 |
-| Key | target 定位 | `targetKey` | 派生 | per target | `agent:<agentId>` / `operator:<userId>` |
+| Key | target 定位 | `targetKey` | 派生 | per target | `agent:<agentId>`；operator 不是 target |
 | Key | 队列准入幂等 | `(sourceRecordId, attempt)` | 派生 | 永久 | 复合 key；不是 ID；`attempt` 是 admission attempt |
 
 > 幂等 key 的完整分层、Clowder 对照与 A2A v1 目标模型见
@@ -112,7 +112,7 @@ userId
    message 创建用 `piExtToolCallId`；队列准入用
    `(sourceRecordId, attempt)`；parent 用 `sourceRecordId UNIQUE`。
 
-**例外**：`QueueTarget` 的 `{ kind, id }` 是 discriminated union 的 target selector，不是通用对象引用；`kind="agent"` 时 `id=agentId`，`kind="operator"` 时 `id=userId`。对外 wire 形状保持 `{kind,id}`，内部用 `targetKey()` 解析。
+**例外**：`QueueTarget` 的 `{ kind:"agent", id }` 是 target selector，不是通用对象引用；`id=agentId`。operator 通知由 message `mentionsUser` 承载，不是 `QueueTarget`。
 
 ## 5. 禁用名与替换
 
@@ -148,13 +148,15 @@ userId
 | `QueueTargetAttempt.sequence` | Clowder | `attempt`（target attempt） | rename；per-target 尝试序号 |
 | `QueueTargetAttempt.invocationId` | Clowder | `turnExecutionId` | rename；它本来就是 child |
 
+> DP-C 调查中：`QueueTargetAttempt` 是投递台账，child 终态由 `TurnExecution` 独占；
+> codeteam `invocation_attempts.state` 不应复制 TurnExecution 五态。确认后更新 §2/§7。
+
 `0001` 的 task-first `QueueEntry` / `Run` 是 legacy 实现；新 runtime 以本文为准。`Task.sourceMessageId`、artifact `provenance_json.sourceMessageId` 是领域指针，可保留旧名，但不得作为队列/parent 身份。
 
 ## 7. 派生规则
 
 ```text
-targetKey(target)   = "agent:" + target.id      // kind=agent
-                    | "operator:" + target.id   // kind=operator
+targetKey(target)   = "agent:" + target.id      // kind=agent only
 
 queueEntryId        = "queue:" + sha256(sourceRecordId + ":" + attempt /* admission */).slice(0, 32)
 attemptId           = "attempt:" + sha256(invocationId + ":" + agentId + ":" + attempt).slice(0, 32)

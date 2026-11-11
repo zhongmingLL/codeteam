@@ -39,8 +39,8 @@ source: "Clowder local reference checkout; codeteam F018 0005/0010/0011/0013"
    resume。两者都不能把已 terminal 的 sibling 重新拉起来。
 6. **agent 找 operator 决策不是“给 operator 发 A2A 队列任务”**。Clowder 用
    agent message + 行首 `@co-creator`/`@user`（`mentionsUser`）通知 operator；operator
-   回复是一条新的 user message，重新走 ingress。codeteam v1 把 operator 作为
-   notification-only `QueueTarget`，这是有意的目标态差异，见 §7。
+   回复是一条新的 user message，重新走 ingress。codeteam v1 采用同一语义：
+   operator 不是 `QueueTarget`，只写 message `mentionsUser`。
 
 ## 1. 组件分层（Clowder 参考）
 
@@ -62,7 +62,7 @@ source: "Clowder local reference checkout; codeteam F018 0005/0010/0011/0013"
 | Redis DraftStore | `response_drafts` 表 | codeteam bounded flush 目标 100ms/4KB；Clowder 当前 2s/2000 chars |
 | MCP callback auth | `InvocationCredential` + local control socket | token 绑 child TurnExecution；无 task/role/run |
 | task-first queue / custody | `invocation_queue` + `invocation_records` | v1 不读不写 tasks/handoffs/custody |
-| `@co-creator` mention | `QueueTarget kind:"operator"` + notification-only | codeteam 把 operator 纳入 typed target；不创建 parent/TurnExecution |
+| `@co-creator` mention | message `mentionsUser=true` | 同一语义；operator 不是 QueueTarget，不创建 queue/parent/TurnExecution |
 
 ## 2. 入口：Hub 发出消息
 
@@ -249,9 +249,10 @@ codeteam v1 对应 `AgentReadState.deliveryCursor`（`0010` §3.5.1）；per-`(t
 - 处理 provider retry/fallback/session replacement；
 - 不直接写最终 message；route 层负责 response commit、draft delete、A2A successor。
 
-codeteam v1 对应 `invoke-single-agent`：只负责 provider/stream；`settleAgentTurn` 负责
-child terminal + attempt terminal + parent aggregate + credential + response settlement
-两段提交（`0010` §3.6/§3.9）。
+codeteam v1 当前设计是 `invoke-single-agent` 只负责 provider/stream；`settleAgentTurn`
+负责 child terminal + attempt terminal + parent aggregate + credential + response
+settlement 两段提交（`0010` §3.6/§3.9）。DP-D 正在调查该 god-service 是否应拆回
+invoke/route/QueueProcessor/callback-auth 四层；确认后更新。
 
 ## 6. 流式回传：draft → R → Hub
 
@@ -396,19 +397,15 @@ operator POST /api/messages: "@agentB 选 B，因为..."
   → agentB 给出最终答复/执行决定；iB2 terminal；p3 completed
 ```
 
-codeteam v1 目标态：
+codeteam v1 目标态与 Clowder 一致：
 
 ```text
-agentB post_message(targets=[{kind:"operator", id:U}])
-  → message + queue entry（operator target）
-  → QueueProcessor 只写 delivery.operatorNotifiedAt；不创建 parent/TurnExecution
-  → message dispatchRefs 同事务 settle
+agentB post_message(targets=[], body 行首 @operator)
+  → message `mentionsUser=true`；没有 queue entry（targets 为空）
+  → operator 通知由 message/read model 投影；没有 operator queue/parent
   → operator 回复是新的 user message，target B
   → B 新 parent/child，读历史后结束
 ```
-
-差异：codeteam 把 operator 作为 typed `QueueTarget`，但仍是 notification-only；
-Clowder 用 `mentionsUser` 表示 operator 通知，不把 user 放进 `targetCats`。
 
 ### 7.3 Journey C：@agentA @agentB 并行回答
 
@@ -429,8 +426,10 @@ operator: "@agentA @agentB 分别给方案"
 abort 该 cat 的 controller，batch gate 不动。
 
 codeteam 对应：operator 的 `@A @B` 是普通 ingress 的 multi-target；`multi_mention`
-是 agent 侧工具，也是 2-3 targets 的 fan-out，但触发面和语义不同。两者都遵循
-“1 source + 1 queue entry + 1 parent + N children”，v1 不做聚合回调。
+是 agent 侧工具，也是 2-3 targets 的 fan-out，但额外有完整 orchestrator：
+status/timeout/callback/aggregate（`multi_mention_requests/responses`）。两者都遵循
+“1 source + 1 queue entry + 1 parent + N children”；普通 ingress 不自动产生
+multi_mention 聚合。
 
 ### 7.4 Journey D：运行中取消某个 agent
 
@@ -578,12 +577,12 @@ operator 发消息
 | 持久化 | Redis + Lua/CAS | SQLite + `BEGIN IMMEDIATE` | 语义复用，事务边界重写 |
 | 消息存储 | `Message` + `StoredMessage` | 只保留 `StoredMessage` | 见 0005 D9 |
 | 客户端幂等键 | `clientMessageId`（MCP client） | `piExtToolCallId`（pi extension） | 见 0013；有意分歧 |
-| operator 寻址 | agent message 行首 `@co-creator` + `mentionsUser` | `QueueTarget kind:"operator"`，notification-only | 目标态差异；operator 回复仍是新 user message |
+| operator 寻址 | agent message 行首 `@co-creator` + `mentionsUser` | 同一语义；operator 不是 QueueTarget | operator 回复仍是新 user message |
 | custody / handoff | ball custody、action lease、wait continuation | v1 不做 custody；operator decision 是普通 message | 见 0005 §7 |
 | A2A depth | 默认 2 | v1 15 | 见 0010 §3.8；需要 loop guard |
 | draft flush | 2s / 2000 chars | 100ms / 4KB | 见 0010 §3.6.1 |
 | queue depth | user source 5 | 工具 targets ≤8；queue cap 待定 | F018 R2 定常量 |
-| multi_mention | `MultiMentionOrchestrator` 有聚合面 | 1 message + 1 queue + 1 parent + N children；无聚合回调 | v1 明确不做聚合 |
+| multi_mention | `MultiMentionOrchestrator`：status/timeout/callback/aggregate | 完整 orchestrator：`multi_mention_requests/responses` + 聚合 system message | v1 对齐，不再做“假 fan-out” |
 | recovery | StartupReconciler + Zombie + OwnerReaper 多件套 | 单 startup + 单 serialized reaper | 见 DP-F018RECOVERY |
 | session | active/sealing/sealed + restore/compact | active + lightweight seal；无 restore/compact | 见 0009 |
 
@@ -591,14 +590,14 @@ operator 发消息
 
 1. **Hub transport 未落地**：F018 的事件名/字段需要 W7a 的 WebSocket/API adapter 才能
    变成真实 Hub 事件；当前文档只能冻结语义，不能声称端到端已实现。
-2. **operator target 的 depth/loop 语义**：operator-only 不创建 parent/child，是否计入
-   A2A depth、如何与 `crossPost`/replyTo 关联，需要 R2 前钉死。
+2. **operator mention 的关联**：`mentionsUser` 不创建 queue/parent；如何把 operator
+   回复关联回原问题（replyTo/causal trigger）需要在 R2 钉死。
 3. **cancel 控制面归属**：单 cancel/cancel all 的 HTTP/CLI 入口属 W7a；F018 需要冻结
    exact execution identity 与 reason taxonomy，避免 cancel 误杀同 slot 的新 child。
 4. **queue cap/priority**：Clowder 5 与 codeteam targets ≤8 不是同一维度；R2 要定
    source queue cap、排序、operator 手动 processNext 的边界。
-5. **multi_mention 聚合**：v1 明确不做 orchestrator 聚合回调；调用方只能用
-   `thread_context` 读每个 child 的 response。
+5. **multi_mention 聚合**：v1 做完整 orchestrator；需要冻结 status/timeout/
+   aggregate/callback 的持久化与恢复边界（见 0010 §3.8 multi_mention）。
 6. **draft settlement 失败**：R terminal 后 draft delete 失败、credential tombstone
    GC、response_pending 重试都要有可观察状态；不能静默泄漏。
 7. **A2A depth 15 与 loop guard**：高上限意味着必须依赖 `a2a_duplicate_delivery` /

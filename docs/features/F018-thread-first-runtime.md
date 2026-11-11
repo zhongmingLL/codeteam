@@ -67,8 +67,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
 | R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 `toolCallClaims`）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down |
 | R2 | same-thread post / thread context；真实 provider E2E | E1/E2/E7/E9/E12/E13 |
-| R3 | cross-thread post；thread access；participants | E3/E4/E5/E6/E8/E10/E11 |
-| R4 | loop guard/idempotency/observation；多 agent thread；不做 multi_mention 聚合回调 | E14/E15/E16/E17 |
+| R3 | cross-thread post；multi_mention orchestrator（status/timeout/callback/aggregate）；thread access；participants | E3/E4/E5/E6/E8/E10/E11 |
+| R4 | loop guard/idempotency/observation；multi_mention timeout/anti-cascade；多 agent thread | E14/E15/E16/E17 |
 | R5 | cutover CLI/daemon；旧 code delivery 归档；F018 close | A2A runtime 单一真相 |
 
 ## 验收方向
@@ -77,11 +77,14 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 - [ ] 无 task thread 可以真实 provider 完成 post/response。
 - [ ] same-thread post E2E；cross-thread post E3。
-- [ ] `multi_mention` 2-3 agent fan-out E4。
+- [ ] `multi_mention` 2-3 agent fan-out + status/timeout/callback/aggregate E4。
 - [ ] `.codeteam/agent-catalog.json` + accounts 加载/校验；AgentRegistry/AgentState；
       disabled agent typed reject；defaultModel 属于 account.models。
 - [ ] A2A targets 用 agentId；消息展示用 displayName。
-- [ ] 空 thread 可创建；post 无 targets typed reject；soft-deleted thread post reject；
+- [ ] operator 不是 QueueTarget；agent 正文行首 `@operator` 只写 message
+      `mentionsUser`，operator 回复是新的 user message。
+- [ ] 空 thread 可创建；post 无 targets 且无 `@operator` → typed reject；有 `@operator`
+      只写 `mentionsUser`、不建 queue；soft-deleted thread post reject；
       projectPath 必填且 legacy preflight 可列出需补路径的 thread。
 - [ ] 任意 enabled agent 加入 participants；thread access 同 user。
 - [ ] token scope 负例 E7；target thread 负例 E8。
@@ -99,7 +102,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 - TaskItem / worktree / code delivery / review / merge / SOP gate；
 - custody / handoff / return / replace；
-- `multi_mention` 聚合回调（fan-out 已在 v1）；
+- `multi_mention` 的 `callbackTo` 新建 child（v1 只投递聚合结果）；
 - agent-created thread propose/approve；
 - Console M0 / W7b；
 - 引入 Clowder runtime/Redis/transport 依赖；只复用结构与语义。

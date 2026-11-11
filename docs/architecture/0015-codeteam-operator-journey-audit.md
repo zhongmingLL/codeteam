@@ -43,18 +43,22 @@ source: "Clowder local reference checkout; codeteam F018 design docs + current t
 4. **存储/transport 差异是必要的**：SQLite vs Redis、pi extension vs MCP、control socket
    vs HTTP callback、无 task/custody。它们不应被当成“偏离 Clowder”；真正该审的是语义
    分叉。
-5. **不要用“复用 Clowder”掩盖 scope cut**：v1 不做 custody、multi_mention 聚合、
-   session restore/compaction、connector/IM；这些是明确决策，必须写成“有意不做”，
-   不能写成“已对齐 Clowder”。
+5. **不要用“复用 Clowder”掩盖 scope cut**：v1 不做 custody、session
+   restore/compaction、connector/IM；这些是明确决策，必须写成“有意不做”。
+   `multi_mention` 已拍板做完整 orchestrator，不属于 scope cut。
 
 **审计 verdict：方向 approve，changes requested。**
 
-- P1（R1 前必须解决）：F-01 Hub ingress/transport 缺件、F-02 operator target 分叉、
-  F-03 multi_mention 语义不一致、F-04 TurnExecution/Attempt 双终态。
+- P1：F-01 Hub ingress/transport 缺件（DP-E 已定依赖）；F-02 operator target
+  （DP-A 已解决）；F-03 multi_mention（DP-B 已解决）；F-04 TurnExecution/Attempt
+  双终态（调查完成，待确认）。
 - P2（R2/R3 前解决）：F-05 settlement ownership、F-06 response_missing/audit、
   F-07 post_message 多 target、F-08 A2A depth 15、F-09 read models、F-10 queue cap、
   F-11 session restore scope。
 - P3（可后置）：F-12 draft flush 调参、F-13 命名、F-14 queue admissions receipt。
+
+> 2026-11-11 更新：DP-A=A、DP-B=B、DP-E=A 已由 operator 拍板；DP-C/DP-D
+> 已完成源码调查，结论见 §3.3/§3.4，等待确认后改 0010 schema/事件顺序。
 
 ## 1. codeteam 目标链路（与 0014 对应）
 
@@ -87,7 +91,8 @@ Hub / CLI / API（W7a，当前缺失）
 这条链路与 0014 的 Clowder 链路一一对应；差异集中在：
 
 - **入口/出口 transport**：Clowder socket.io + HTTP；codeteam W7a + SQLite。
-- **target 语义**：Clowder 只有 agent targets + `mentionsUser`；codeteam 增加 operator target。
+- **target 语义**：Clowder 只有 agent targets + `mentionsUser`；codeteam 曾增加
+  operator target，DP-A 已退回 `mentionsUser`。
 - **fan-out 工具**：Clowder `multi_mention` 有 orchestrator；codeteam v1 明确无聚合。
 - **child 状态**：Clowder `TurnExecution` 单状态；codeteam 增加 attempt 状态。
 
@@ -96,7 +101,7 @@ Hub / CLI / API（W7a，当前缺失）
 | Journey | codeteam 设计 | 当前缺口 | 归属 |
 |---|---|---|---|
 | A 简单问答 | 完整：隐式路由 → queue → parent/child → R | Hub ingress/transport；prompt/session 实现 | W7a + F018 R2 |
-| B `@A → A→B → B→operator → operator 回复 → B` | 设计存在，但 operator target 是新增语义 | `mentionsUser`/operator 未读投影；operator decision 关联 | F018 + W7a |
+| B `@A → A→B → B→operator → operator 回复 → B` | 设计存在；operator 用 `mentionsUser`，不是 QueueTarget | operator 未读投影；operator decision 关联 | F018 + W7a |
 | C `@A @B` 并行 | 设计存在：1 source + 1 queue + 1 parent + N child | `routeAgents` 并行实现；Hub 多 bubble 投影 | F018 R2/R3 + W7a |
 | D 单 agent cancel | tracker exact cancel 设计存在 | cancel API/CLI；exact execution identity 负例 | W7a + F018 R2 |
 | E cancel all | cancelAll + prestart retirement 设计存在 | 控制面 API；queue entry preserve/withdraw 规则 | W7a + F018 R4 |
@@ -127,11 +132,13 @@ Hub / CLI / API（W7a，当前缺失）
 | Terminal collector | `PerCatTerminalDispositionCollector` | `PerAgent...`；DB latest attempt | aligned | P2 |
 | Recovery | startup + zombie + owner reaper | 单 startup + 单 serialized reaper | adapted | P2 |
 | Read models | live invocations + dispatch summary | 设计有 `MessageDispatchSummary`/live，Hub transport 缺 | **partial/missing** | P2 |
-| Operator notification | `mentionsUser` + unread index | `QueueTarget operator` + `operatorNotifiedAt` | **problem** | P1 |
+| Operator notification | `mentionsUser` + unread index | message `mentionsUser`（DP-A 已改） | fixed | P1 |
 
 ### 3.2 详细 findings
 
 #### F-01 Hub ingress / event transport 缺失（P1，缺件）
+
+> 已拍 DP-E=A：W7a 独立验收，F018 只验收 daemon/CLI；本条保留为依赖声明。
 
 - Clowder：`routes/messages.ts:328` 是唯一 operator ingress；`SocketManager.ts:437`
   发 `agent_message`；`useSocket.ts` 消费 `agent_message` / `queue_updated` /
@@ -146,6 +153,9 @@ Hub / CLI / API（W7a，当前缺失）
 - 立场：**缺件，必须显式挂依赖；不建议 F018 内重写 W7a。**
 
 #### F-02 operator 被提升为 QueueTarget（P1，意外分叉）
+
+> 已拍 DP-A=A：operator 不进入 QueueTarget；0010/0005/0014 已改为
+> message `mentionsUser`。以下保留为决策依据。
 
 - Clowder：agent `post_message` 的 `targetCats` 只放 cat；operator 通知由正文行首
   `@co-creator`/配置 handle 触发 `detectUserMention`，写 message `mentionsUser=true`；
@@ -164,6 +174,9 @@ Hub / CLI / API（W7a，当前缺失）
 
 #### F-03 `multi_mention` 语义与 Clowder 不一致（P1，意外分叉）
 
+> 已拍 DP-B=B：实现完整 Clowder orchestrator；0010 §3.8 multi_mention 已补
+> status/timeout/callback/aggregate 设计。以下保留为决策依据。
+
 - Clowder：`multi_mention` 是完整 orchestrator：`MultiMentionOrchestrator` 维护
   `pending/running/partial/done/timeout/failed`、3–20 分钟 timeout、`callbackTo`、
   每 target response、聚合结果消息、status endpoint、anti-cascade；见
@@ -181,6 +194,9 @@ Hub / CLI / API（W7a，当前缺失）
 
 #### F-04 TurnExecution 与 InvocationAttempt 双终态（P1，设计问题）
 
+> 调查结论见 §3.3：Clowder 的 attempt 是 `QueueTargetAttempt`，不是 child 执行状态。
+> 建议按 §3.3 修正；待 operator 确认后改 0010 schema。
+
 - Clowder：`TurnExecutionRecord` 是 child canonical；status
   `running/completed/failed/interrupted/canceled`，terminal first-write-wins。
   `InvocationRecord` 是 parent；没有第二个 child state。
@@ -195,6 +211,9 @@ Hub / CLI / API（W7a，当前缺失）
 - 立场：**P1，改成单状态源；否则 R2 的 terminal/E2E 会分叉。**
 
 #### F-05 settleAgentTurn 与 route/invokeSingleAgent 职责重叠（P2，设计问题）
+
+> 调查结论见 §3.4：Clowder 是 invoke/route/QueueProcessor/callback-auth 四层分工；
+> `settleAgentTurn` 是 codeteam 自造的 god-service。建议按 §3.4 拆回；待确认后改 0010。
 
 - Clowder：routeSerial/routeParallel 负责 response commit、draft delete、A2A successor；
   QueueProcessor 负责 parent/child/admission；`invokeSingleCat` 只产流。
@@ -310,6 +329,96 @@ Hub / CLI / API（W7a，当前缺失）
   terminal 删除后仍能 replay/conflict。
 - 立场：**P3，保留。**
 
+### 3.3 DP-C 调查：Clowder 到底有没有 InvocationAttempt？
+
+**结论：Clowder 没有“child 执行状态”的 InvocationAttempt。**
+
+Clowder 的 attempt 是 **QueueTargetAttempt**，属于 Queue 投递/重试台账：
+
+- `packages/shared/src/types/queue-receipt.ts:250-287`：
+  `QueueTargetAttempt` = “one immutable delivery attempt for one target of an authored
+  Queue message”；retry 永远 append 新 attempt，不重写旧 attempt。
+- 它的 state 是投递状态：`queued | starting | appended | failed | interrupted |
+  cancelled | handled`；字段含 `sequence`、`invocationId`、`seenAt`、
+  `activeAppendAcceptedAt`、`terminalReason`。
+- child 执行状态只有 `TurnExecutionRecord.status`：
+  `running | succeeded | failed | canceled | interrupted`（`TurnExecutionStore.ts`、
+  `RedisTurnExecutionStore.ts`）。
+- parent `InvocationRecord` 只有 `status`（queued/running/succeeded/failed/canceled）
+  和 attempt-scoped `executionStartedAt`；`executionStartedAt` 是“本轮 claim 到达 route”
+  的 receipt，不是第二套终态机。
+- retry 时 parent `failed → running` 重新 claim；新的 attempt append；新的 child
+  `TurnExecution`；旧 child/attempt 不改。
+
+**codeteam 的根因**：`0010` 的 `invocation_attempts` 把两层合并了：
+
+- `state` 复制了 TurnExecution 的五态（running/completed/failed/...）；
+- 同时又有 `turnExecutionId` 指向 child；
+- 于是同一个 child 既有 `TurnExecution.status`，又有 `InvocationAttempt.state`，
+  且两者都接受 terminal 写入。这不是 Clowder 的模型，是 codeteam 自己造的第三层。
+
+**建议修正（待确认）**：
+
+- `InvocationAttempt` 改名为/收敛为 `QueueTargetAttempt` 语义：
+  `state = queued | starting | appended | failed | interrupted | canceled | handled`；
+  它只回答“这次投递/执行尝试走到了哪”，不回答 child 的 provider 终态。
+- `TurnExecution.status` 是 child canonical；`InvocationAttempt` 的
+  `handled/failed/interrupted/canceled` 是从 child terminal + delivery outcome
+  投影/同事务记录，不是第二个 terminal 决策者。
+- `settlement` 仍可保留在 attempt 上，但它是 response settlement 投影，不是 child
+  execution state；`running/completed` 不再出现在 attempt state。
+- 迁移：`invocation_attempts.state` 映射
+  `queued→queued`、`running→appended`、`completed→handled`、
+  `failed→failed`、`interrupted→interrupted`、`canceled→canceled`；
+  `turn_execution_id` 保留为 child 链接。
+
+### 3.4 DP-D 调查：settlement 为什么重叠？
+
+**结论：Clowder 的 settlement 是四层分工；codeteam 的 `settleAgentTurn` 把它们
+压成了一个 god-service，所以看起来和 route/invokeSingleAgent 重叠。**
+
+Clowder 实际 owner：
+
+| 阶段 | owner | 做什么 | 证据 |
+|---|---|---|---|
+| child terminal | `invoke-single-cat.ts`（`finally`） | `TurnExecutionStore.transitionTerminal`；注册失败时 `registry.commitTerminal(failed)` | `invoke-single-cat.ts:2118/2133`、`:6397` |
+| auth projection | `CallbackAuthTurnExecutionLifecycle` | 先 canonical `TurnExecution.transitionTerminal`，再 `registry.commitTerminal`；startup 修复 crash window | `CallbackAuthTurnExecutionLifecycle.ts:66-83` |
+| response R + draft | `route-serial` / `route-parallel` | append/commit response R；`draftStore.delete`；A2A successor admission | `route-serial.ts:3488+`、`route-parallel.ts:2015+` |
+| parent aggregate + queue | `QueueProcessor` | `InvocationRecord` aggregate、queue entry terminal/retry、`onInvocationComplete`；失败后 `settleResponseFromDraft` 是 recovery | `QueueProcessor.ts:2865`、`:2669`、`:2717` |
+
+关键点：
+
+- `invoke-single-cat` 只负责“child 执行 + child terminal + auth terminal”；
+  它不提交 response R，也不删 draft。
+- route 只负责“这次 route 的 response 产物 + draft + A2A 后继”；
+  它不写 parent aggregate，也不写 credential。
+- `QueueProcessor` 只负责“parent/queue/retry”和 recovery；
+  正常 route 的 R 不是它提交的。
+- `settleResponseFromDraft` 是 recovery/second phase，不是正常 path 的唯一 settlement。
+
+**codeteam 的根因**：`0010` §3.9 的 `settleAgentTurn` 同时封装
+child terminal + attempt terminal + parent aggregate + credential + response settlement；
+它把四个 owner 的职责合并，却没有定义“谁在正常路径调用它、谁在异常路径调用它”。
+于是 `invoke-single-agent`、route、QueueProcessor 都可能触发 terminal/settlement，
+既可能双提交，也可能留下 child terminal 但 R 未 settle 的中间态。
+
+**建议修正（待确认）**：
+
+- 删除 `settleAgentTurn` 这个 god-service 名称，改成一张明确 owner 表：
+  1. `invoke-single-agent`：child `TurnExecution` terminal + credential terminalize；
+  2. route（serial/parallel）：response R commit + draft delete + A2A successor；
+  3. `QueueProcessor`：parent aggregate + queue entry terminal/retry；
+  4. `settleResponseFromDraft`：只用于 recovery/response_pending 第二段。
+- 正常路径的顺序：provider 结束 → child terminal（含 credential）→ route 提交 R →
+  QueueProcessor 聚合 parent/queue；任何一步失败，由 `response_pending`/startup 恢复，
+  不允许第二个 writer 重新 terminal child。
+- 如果 codeteam 想要一个事务边界，应该叫 `commitRouteTurn` 或
+  `commitResponseAndAggregate`，并明确只由 QueueProcessor/route 其中一个调用；
+  不要叫 `settleAgentTurn` 并暗示所有层都调用。
+
+> DP-C/DP-D 的修正涉及 0010 §3.9/§4.3.1 和 plan P0-1；当前标记为
+> **investigation complete, pending operator confirmation**，不先改 normative schema。
+
 ## 4. 当前 codeteam 还缺什么
 
 按 owner 分，不要把所有缺件都塞给 F018。F018 是核心 runtime；Hub/CLI 是 W7a；
@@ -322,7 +431,7 @@ Hub / CLI / API（W7a，当前缺失）
 | `OperatorMessageIngress` 契约 | `0014` 只有概念；`0010` 没有 request/response/error/idempotency 定义 | 冻结输入（`threadId`/`content`/`targets`/`idempotencyKey`/`replyTo`）、输出（`message`/`queueEntryId`/`replayed`）、typed reject |
 | Queue cap/priority/order | `invocation_queue` 有字段，没有常量/规则 | 建议 source cap 5、urgent/normal、同优先级 FIFO、operator 手动 processNext 只处理自己的 head |
 | Read model DTO | `MessageDispatchSummary` 只有一句；live evidence rank 未定义 | 冻结 `QueueView` / `LiveInvocationView` / `DispatchSummary` / `UnreadMentionView` 字段、排序、分页、降级 |
-| Operator decision 关联 | `replyTo`/`causal.triggerMessageId` 有，但没有“这是一个待决策问题”的 typed 关联 | 明确用 `replyTo` + `mentionsUser`（或 operator target）关联；定义 decision request/answer 的读模型 |
+| Operator decision 关联 | `replyTo`/`causal.triggerMessageId` 有，但没有“这是一个待决策问题”的 typed 关联 | 明确用 `replyTo` + `mentionsUser` 关联；定义 decision request/answer 的读模型 |
 | Settlement single-writer | `settleAgentTurn`/route/QueueProcessor 边界未钉死 | 写一张 owner 表，只允许一个组件提交 child/attempt/R/credential terminal |
 
 ### 4.2 W7a / F016c 必须补的组件
@@ -340,8 +449,6 @@ Hub / CLI / API（W7a，当前缺失）
 - session restore / compaction / transcript / full seal；
 - unread badge / seenCursor / mentionAck（v1 只有 deliveryCursor）；
 - connector/IM outbound streaming（Clowder StreamingOutboundHook 的对应面）；
-- `multi_mention` orchestrator（如果 F-03 选择保留 Clowder 语义，则升级为 v1/F018；
-  如果选择删除，则不需要）；
 - trajectory projector 完整版；
 - custody / action lease / wait continuation / handoff。
 
@@ -369,7 +476,7 @@ Hub / CLI / API（W7a，当前缺失）
 | pi extension + control socket vs MCP callback | transport/auth | 必要 | 保留；principal/credential 语义对齐 |
 | 无 task/custody/action/wait | v1 scope cut | 有意 | 保留；必须写成“不做”，不能写成“对齐” |
 | 无 connector/IM/多租户 | 产品边界 | 必要/scope | 保留 |
-| operator target vs `mentionsUser` | **语义新增** | **未证明** | P1，默认退回 `mentionsUser` |
+| operator target vs `mentionsUser` | **语义新增（已退回）** | 已拍 DP-A=A | 已解决：`mentionsUser` |
 | `multi_mention` 无 orchestrator | **同名异义** | **未证明** | P1，删除/改名或实现 Clowder 语义 |
 | TurnExecution + Attempt 双状态 | **过度设计** | **未证明** | P1，单 canonical state |
 | post_message targets ≤8 | **能力扩张** | **未证明** | P2，和 F-03 一起定 |
@@ -386,7 +493,8 @@ Hub / CLI / API（W7a，当前缺失）
 - 这三类语义分叉不是“复用 Clowder 必然产生的”，而是 codeteam 在 v1 自己新增的概念。
   如果它们没有比 Clowder 更简单的理由，就应该退回 Clowder 语义。
 - 存储/transport/scope cut 的差异可以被“codeteam 是本地 SQLite + pi runtime +
-  pure A2A v1”解释；operator target / multi_mention / attempt 双状态不能。
+  pure A2A v1”解释；operator target 已退回，multi_mention 已决定做全；只剩 attempt
+  双状态和 settlement owner 待确认。
 
 ## 6. R1 前必须拍的决策
 
@@ -394,11 +502,11 @@ Hub / CLI / API（W7a，当前缺失）
 
 | 决策 | 推荐 | 为什么 | 不拍的后果 |
 |---|---|---|---|
-| DP-A operator 通知 | **A：退回 `mentionsUser`**；B：保留 operator QueueTarget 并补论证 | operator 不是执行 target；Clowder 已有 message flag；少一层 union/queue/depth | queue/dispatchRefs/未读投影会围绕错误概念建表 |
-| DP-B `multi_mention` | **A：删除/改名为 parallel post**；B：实现 Clowder orchestrator | 同名异义会误导调用方；codeteam 已有多 target 并行 | R3 会做出一个“没有聚合的 multi_mention”，以后再加 orchestrator 变双路径 |
-| DP-C child 终态 | **A：TurnExecution 单 canonical，attempt 只做 prestart/binding**；B：attempt 单 canonical | 两个 state 会出现 terminal 分叉；Clowder 是单 child state | collector/reaper/R settlement 读错状态，E2E 难收敛 |
-| DP-D settlement owner | **A：`settleAgentTurn` 单一 writer**；B：route per-child writer | 双 writer 会双提交/漏提交 | terminal/R/draft 中间态无法证明 |
-| DP-E Hub 依赖 | **A：W7a 作为独立依赖，F018 只验收 daemon/CLI**；B：F018 内做 Hub | F016c 仍 discovery；F018 不应重写 transport | 把 W7a 缺件算进 F018，验收口径失真 |
+| DP-A operator 通知 | **已拍 A：退回 `mentionsUser`**；B 不再考虑 | operator 不是执行 target；Clowder 已有 message flag；少一层 union/queue/depth | 已关闭 |
+| DP-B `multi_mention` | **已拍 B：实现 Clowder orchestrator（status/timeout/callback/aggregate）**；A 不再考虑 | 同名异义会误导调用方；做就做全 | 已关闭；设计补进 0010 §3.8 |
+| DP-C child 终态 | **调查结论：A：TurnExecution 单 canonical，attempt 收敛为 QueueTargetAttempt**；等待确认 | Clowder 没有 child InvocationAttempt；codeteam 把投递 attempt 和 child state 混了 | 未确认前不改 0010 schema |
+| DP-D settlement owner | **调查结论：A：拆回四层 owner，删除 settleAgentTurn god-service**；等待确认 | Clowder 是 invoke/route/QueueProcessor/callback-auth 分层 | 未确认前不改 0010 事件顺序 |
+| DP-E Hub 依赖 | **已拍 A：W7a 独立验收，F018 只验收 daemon/CLI**；B 不再考虑 | F016c 仍 discovery；F018 不应重写 transport | 已关闭 |
 
 建议 R1 前只拍 A–E 五项；其余（queue cap、draft flush、A2A depth）可以在 R2
 实现时用 benchmark/真实场景补证，不要现在写成不可变契约。
@@ -412,7 +520,7 @@ Hub / CLI / API（W7a，当前缺失）
 | Clowder child state | `packages/api/src/domains/cats/services/agents/invocation/QueueProcessor.ts:4113`、`PerCatTerminalDispositionCollector.ts` |
 | Clowder route/stream | `route-serial.ts:481`、`route-parallel.ts:181`、`SocketManager.ts:437` |
 | Clowder queue/retry | `InvocationQueue.ts:167`、`queue-retry-deferrals.ts` |
-| codeteam operator target | `docs/architecture/0010-a2a-runtime-chain.md` §3.8；`0005` §3.3 |
+| codeteam operator target（历史） | `docs/architecture/0010-a2a-runtime-chain.md` §3.8；`0005` §3.3 |
 | codeteam multi_mention | `docs/architecture/0010-a2a-runtime-chain.md` §3.8；`docs/plans/0020-f018-thread-first-runtime.md` R3 |
 | codeteam terminal/attempt | `docs/architecture/0010-a2a-runtime-chain.md` §3.9、§4.3、§4.3.1、§5.2.1 |
 | codeteam settlement | `docs/architecture/0010-a2a-runtime-chain.md` §3.6、§3.9；DP-F018TERM |

@@ -120,11 +120,13 @@ agent-authored A2A message 的 targets 由 `lifecycle.dispatchRefs` 承载。
    5. 都没有 → `no_target`。
 4. 同一事务：`messages.append({ targetAgentIds })` + `invocationQueue.enqueue({ sourceRecordId: message.id, messageId: message.id, attempt: 1, targets })`。
 
-**operator target**
+**operator mention（不是 target）**
 
-- operator 作为 target 只由 agent tools 传入 `{kind:"operator", id:userId}`；
-- operator 自己不发 operator target；行首 `@` 只解析为 agent target；
-- operator target 只通知/可见，不创建 parent/TurnExecution。
+- operator 不是执行 target；`QueueTarget` 只允许 `{kind:"agent", id}`。
+- agent 在正文行首 `@operator`（或配置 handle）时，message 写 `mentionsUser=true`；
+  operator 的可见/未读/通知由 message + read model 投影，不进入 Queue。
+- operator 自己不进入 target 列表；行首 `@` 只解析为 agent target。
+- agent tools 的 `targets` 也只接受 agent id；正文 `@operator` 只设置 mention 标记。
 
 **边界**
 
@@ -149,8 +151,7 @@ type QueueOwner =
   | { kind: "system"; service: string };
 
 type QueueTarget =
-  | { kind: "agent"; id: string }     // id = AgentConfig.agentId
-  | { kind: "operator"; id: string }; // id = thread owner userId
+  { kind: "agent"; id: string };      // id = AgentConfig.agentId
 
 type QueueEntryKind = "conversation_input" | "message_wake";
 
@@ -169,7 +170,6 @@ interface QueueEntry {
   targets: QueueTarget[];        // pending targets；派发后收缩
   payload: QueuePayload;
   execution: QueueExecution;
-  delivery: QueueDelivery;
   claim: QueueClaim | null;
   status: QueueDurableStatus;
   priority: "urgent" | "normal";
@@ -192,10 +192,6 @@ interface QueueExecution {
   a2aParentTurnExecutionId: string | null;
   a2aTriggerMessageId: string | null;
   a2aDepth: number;
-}
-
-interface QueueDelivery {
-  operatorNotifiedAt: number | null;
 }
 
 interface QueueClaim {
@@ -225,20 +221,19 @@ interface QueueTerminalProjection {
 
 **`QueueTarget`**
 
-- `targetKey(target)`：`agent:<id>` / `operator:<id>`；用于去重、claim、移除。
+- `targetKey(target)`：`agent:<id>`；用于去重、claim、移除。
 - `agent` target → 创建 `invocation_attempts` + core `TurnExecution` + processing R，
   调用 pi worker。
-- `operator` target → 不创建 TurnExecution；只做消息可见/通知，标记 `delivery.operatorNotifiedAt` 后移除。
-- 允许 **operator-only**：没有 agent target 时只通知，不创建 parent `InvocationRecord` / TurnExecution。
+- operator 通知不在 Queue：message 写 `mentionsUser=true`，由 message/read model 投影。
 
 **`parseTarget`（仅 operator conversation ingress）**
 
 - 只解析**行首 `@handle`**（含列表/引用前缀）；正文中间 `@` 不路由。
-- 多个 `@` → 多个 `QueueTarget`；按 targetKey 去重。
+- 多个 `@` → 多个 agent `QueueTarget`；按 targetKey 去重。
 - 通过 AgentConfig handle/alias 解析；未知/歧义 → typed reject `unknown_target`；disabled → `agent_disabled`。
 - 没有行首 `@` → 隐式路由（上一 human `targetAgentIds` → 最近成功 replier → participant → default agent）；都没有才 `no_target`。
 - **不解析 agent final response 的 `@`，也不解析 A2A tool 正文的 `@`。**
-- A2A tools 的 `targets` 是显式 `{kind,id}` 对象数组；operator target 只能从这里进入。
+- A2A tools 的 `targets` 是显式 `{kind:"agent",id}` 对象数组；正文 `@operator` 只写 message `mentionsUser`。
 
 **`QueueLedgerStore`（SQLite port）**
 
@@ -285,7 +280,6 @@ type QueueClaimResult =
 
 interface QueueRetireInput {
   targetKeys: string[];          // claim.targetKeys 的子集
-  delivery?: { operatorNotifiedAt?: number };
   now?: number;
 }
 
@@ -395,7 +389,7 @@ source_record_id | attempt | queue_entry_id | fingerprint | admitted_at
 2. 无 live row，有 receipt → 比较 fingerprint；一致 `replayed`（`entry:null`），不一致 `conflict`。
 3. 都没有 → 插入 row + receipt → `enqueued`。
 
-fingerprint 只覆盖不可变字段（source、owner、kind、from、payload、requestedTargets、priority、execution），不覆盖 `targets/status/claim/delivery`。
+fingerprint 只覆盖不可变字段（source、owner、kind、from、payload、requestedTargets、priority、execution），不覆盖 `targets/status/claim`。
 
 **StoredMessage（单层，durable history）**
 
@@ -465,6 +459,7 @@ interface StoredMessage {
 
   lifecycle?: MessageLifecycle;      // input / response / delivery_failure
   replyTo?: string;
+  mentionsUser?: boolean;            // operator notification; set by line-start @operator
 
   seq: number;                       // thread-global order
   timestamp: number;                 // message time
@@ -548,8 +543,8 @@ interface DispatchRef {
 - `status` 不存 StoredMessage：持久消息即 complete；展示/流式状态由读模型投影。
 - `deletedAt` / `deletedBy` 保留软删除；`deliveryStatus` 不存（queue/lifecycle 派生）；
   `_tombstone` / `recall` v1 不做。
-- `mentions` / `mentionsUser` 不存：A2A targets 是 typed `dispatchRefs`；
-  文本 `@` 不路由；UI 从 dispatchRefs 渲染目标。
+- `mentions` 不存：A2A targets 是 typed `dispatchRefs`；文本 `@` 不路由。
+  `mentionsUser` 存 agent message 的 operator 通知；不是 target，不进入 dispatchRefs。
 - `lifecycle` 是 server-owned typed sidecar；**不要**塞进 `extra`。
 - `input` 的 `dispatchRefs`：`dispatched` → `settled`；同一
   `(target, queueEntryId, attempt)` 唯一，重放不得二次 dispatch。
@@ -595,12 +590,19 @@ ALTER TABLE messages ADD COLUMN extra_json TEXT
 ALTER TABLE messages ADD COLUMN thinking TEXT;
 ALTER TABLE messages ADD COLUMN deleted_at INTEGER;
 ALTER TABLE messages ADD COLUMN deleted_by TEXT;
+ALTER TABLE messages ADD COLUMN mentions_user INTEGER NOT NULL DEFAULT 0
+  CHECK (mentions_user IN (0, 1));
+CREATE INDEX messages_mentions_user
+  ON messages(thread_id, created_at)
+  WHERE mentions_user = 1;
 ```
 
 - `author_kind` + `author_id` 是 `StoredMessage.from` 的物理映射；不另加 `from` 列。
 - `body_md` 映射 `StoredMessage.content`；`created_at` 映射 `timestamp`。
 - `content_json` = `contentBlocks`；`tool_events_json` = `toolEvents`；
   `lifecycle_json` = `lifecycle`；`extra_json` = `extra`。
+- `mentions_user` 映射 `StoredMessage.mentionsUser`；只由 agent message 的正文行首
+  `@operator` 设置，operator 可见/未读投影读取它，不进入 QueueTarget。
 - legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入；
   R1 只回填 `extra.rich`（以及 dispatchRefs/targetAgentIds）；`messages.kind` 不迁入 A2A
   `extra`，作为 legacy 列只读，R5 drop。
@@ -643,11 +645,12 @@ interface MessageStore {
 **方法语义**
 
 - `append`：分配 `seq = max(seq)+1`；`expectedSeq` 可选 CAS；写入
-  `from/content/contentBlocks/toolEvents/lifecycle/extra`。response lifecycle 必须绑定
+  `from/content/contentBlocks/toolEvents/lifecycle/extra/mentionsUser`。response lifecycle 必须绑定
   `parentInvocationId/turnExecutionId/target/status/startedAt`；processing R 用
   `status='processing'` + 空 content，在 dispatch 事务内创建。
   user message 必须校验 `from.userId === thread.created_by`；agent message 的 owner 是
-  thread owner；message 不另存 userId。
+  thread owner；message 不另存 userId。`mentionsUser` 只允许 agent message 的正文
+  行首 `@operator` 设置；不是 target，不创建 queue。
 - `appendIdempotent`：与 `append` 相同，但按 `id`/幂等键返回 `replayed`；不同 payload → conflict。
   幂等 scope：A2A user message 先由 credential claim `(turnExecutionId,
   piExtToolCallId)` 裁决，同 intent 直接 replay 原 message；其它 ingress 的
@@ -787,7 +790,7 @@ held = Set<string>
 
 for entry of entries:
   startable = entry.targets.filter(target =>
-    target.kind === "operator" || !tracker.isBusy(threadId, target.id)
+    !tracker.isBusy(threadId, target.id)
   )
   if startable.isEmpty:
     held.add(all targetKeys(entry))
@@ -805,20 +808,19 @@ for entry of entries:
 
 **`processEntry` 顺序**
 1. 校验 claim（`claim.targetKeys` ⊆ entry pending targets）；
-2. 拆分 targets：`operatorTargets` / `agentTargets`；
-3. operator targets → 准备通知/可见性；`delivery.operatorNotifiedAt` 在步骤 6 同事务写，socket emit 在 commit 后；
-4. agent targets → 创建/复用 parent `InvocationRecord`（`sourceRecordId` 幂等）；
-5. 每个 agent target：追加 `invocation_attempts` 行（`state='queued'`，
+2. `targets` 全部是 agent targets；operator 通知已在 message 的 `mentionsUser` 上，
+   Queue 不参与；
+3. 创建/复用 parent `InvocationRecord`（`sourceRecordId` 幂等）；
+4. 每个 agent target：追加 `invocation_attempts` 行（`state='queued'`，
    `attempt = 该 target 的最新 attempt + 1`，无历史则为 1，即 target attempt）
    + 创建 processing R + `TurnExecutionStore.createRunning`（core）
    + 回填 attempt 的 `turn_execution_id`/`response_message_id`/`settlement='streaming'`
    + `InvocationRegistry.create`；
-6. **同一事务**：parent + attempts + processing R + TurnExecutions + credentials +
-   `retireTargets(claimId, 已派发/已通知 targetKeys)`；
-7. 事务外：启动 provider（pi worker）；
-8. child terminal → `PerAgentTerminalDispositionCollector` → parent aggregate → credential terminalize；
-9. operator-only：不创建 parent/child；通知后 retire，全部移除则删除 entry；
-10. 异常/超时 `releaseClaim(claimId)`；不要把 operator-only 当失败。
+5. **同一事务**：parent + attempts + processing R + TurnExecutions + credentials +
+   `retireTargets(claimId, 已派发 targetKeys)`；
+6. 事务外：启动 provider（pi worker）；
+7. child terminal → `PerAgentTerminalDispositionCollector` → parent aggregate → credential terminalize；
+8. 异常/超时 `releaseClaim(claimId)`。
 
 **不变量**
 
@@ -836,7 +838,8 @@ for entry of entries:
   （旧 attempt 保留为 failed）；已终态失败则等待显式 `requestRetry` 追加新 attempt，
   不新建 queue entry、不重新 admission 消息。
 - parent `sourceRecordId` unique；child `createRunning` 幂等；重放不会二次执行。
-- operator notification 先写 durable `operatorNotifiedAt`，socket emit 在 commit 后；emit 失败不影响消息可见性。
+- operator notification 由 message `mentionsUser` 承载；message commit 后由 read model/socket
+  投影，不写 queue entry。
 
 **v1 不做**
 - Clowder 的 batching、caller dispatch observations、action successor、wait continuation、cloud bridge、multi-user grouping。
@@ -976,12 +979,12 @@ canceled       → terminal
   读取 `invocation_attempts` 再计算，不能基于旧快照覆盖。
 - `terminalReason`：`completed` 为 null；其余非 null。
 
-**operator target 边界**
-- `InvocationRecord` 只在 queue entry 存在至少一个 `agent` target 时创建。
-- `targetAgentIds` 只含 agent targets；operator targets 不进入 parent。
-- operator-only entry 没有 parent/TurnExecution；只写 queue entry 的
-  `delivery.operatorNotifiedAt`。
-- mixed targets：parent 只聚合 agent targets；operator 通知记录在 queue entry。
+**operator mention 边界**
+- `InvocationRecord` 只在 queue entry 存在至少一个 agent target 时创建。
+- `targetAgentIds` 只含 agent targets；operator 不是 target。
+- agent message 的正文行首 `@operator` 写 `mentionsUser=true`，由 message/read model 投影；
+  不创建 queue entry、parent 或 TurnExecution。
+- operator 回复是一条新的 user message，重新走 ingress 的 agent target 解析。
 
 **v1 不做**
 - `intent (execute/ideate)`、`idempotencyKey`、`actionLeaseCarrier`、`waitContinuationCarrier`。
@@ -2026,7 +2029,7 @@ interface InvocationCredential {
 **v1 工具面**
 - `post_message`
 - `cross_post_message`
-- `multi_mention`（2-3 个 agent；fan-out，不做聚合回调）
+- `multi_mention`（2-3 个 agent；完整 orchestrator：status/timeout/callback/aggregate）
 - `thread_context`（只读，不入队）
 
 `post_message` / `cross_post_message` / `multi_mention` 都不带 legacy `kind`；
@@ -2036,9 +2039,9 @@ interface InvocationCredential {
 
 | 工具 | model-facing input | result | queue |
 |---|---|---|---|
-| `post_message` | `targets`, `bodyMd`, `replyTo?` | `{ message, queueEntryId, replayed }` | 1 message + 1 queue entry |
-| `cross_post_message` | `threadId`, `targets`, `bodyMd`, `replyTo?` | `{ message, queueEntryId, sourceThreadId, targetThreadId, replayed }` | 同上 |
-| `multi_mention` | `targets`（2-3 agents）, `question`, `context?` | `{ message, queueEntryId, targetAgentIds, replayed }` | 同上，N agent targets |
+| `post_message` | `targets`, `bodyMd`, `replyTo?` | `{ message, queueEntryId: string | null, replayed }` | targets 非空：message + queue；targets 空 + `@operator`：仅 message，无 queue |
+| `cross_post_message` | `threadId`, `targets`, `bodyMd`, `replyTo?` | `{ message, queueEntryId, sourceThreadId, targetThreadId, replayed }` | 1 message + 1 queue entry（targets 非空） |
+| `multi_mention` | `targets`（2-3 agents）, `question`, `context?`, `callbackTo`, `timeoutMinutes?` | `{ requestId, status, message, queueEntryId, targetAgentIds, callbackTo, replayed }` | 1 message + 1 queue + 1 parent + N children |
 | `thread_context` | `threadId?`, `anchor?`, `before?`, `after?`, `limit?`, `cursor?` | `{ threadId, messages, hasMore, nextCursor? }` | 不入队 |
 
 - `piExtToolCallId` **不在 model-facing input**；pi extension 从 `toolCallId + toolName`
@@ -2054,16 +2057,18 @@ interface InvocationCredential {
 **targets schema**
 
 ```ts
-targets: Array<
-  | { kind: "agent"; id: string }
-  | { kind: "operator"; id: string }
->
+targets: Array<{ kind: "agent"; id: string }>
 ```
 
 - 不解析正文行首 `@`；tool body 的 `@` 只是内容。
-- 至少一个 target；agent target 必须存在且 enabled；operator target 必须是 thread owner。
-- 允许 operator-only：只通知，不执行 agent。
-- `multi_mention` targets 仅 agent（2-3 个），不做聚合回调。
+- `post_message` 的 targets 可以为空，但仅当正文行首 `@operator`（operator-mention-only
+  message）；否则至少一个 agent target。空 targets 不创建 queue/parent；
+  `cross_post_message` 仍要求至少一个 agent target。
+- 非空 agent target 必须存在且 enabled。
+- agent 正文行首 `@operator`（或配置 handle）只设置 message `mentionsUser=true`；
+  这不是 target，不创建 queue/parent/TurnExecution。
+- `multi_mention` targets 仅 agent（2-3 个），支持完整 orchestrator（见本节
+  `multi_mention` 小节）。
 - agent targets 为 N 个时，统一为 **1 message + 1 queue entry + 1 parent
   `InvocationRecord` + N child `TurnExecution`**；不是 N 条 message，也不是 N 个 parent。
 - `cross_post_message`：`threadId` 必须存在且不等于 caller thread；target thread 必须
@@ -2077,16 +2082,14 @@ targets: Array<
   并参与 `a2aDepth` / loop guard。
 - 所有 target 在创建 message 前一次校验；任一 target 非法 → 整笔 fail closed，
   不部分投递（执行期 target 失败仍按 parent 聚合）。
-- `operator` target 的 `id` 是 userId，必须等于**目标 thread**的 owner；`multi_mention`
-  不接受 operator target。
 - `replyTo` 可选；必须存在、与 message 同 thread、未被 deleted/withdrawn，且 caller
   可见；`cross_post_message` 的 `replyTo` 必须在 target thread。不满足 →
   `invalid_reply_to`。
-- **message + queue entry + dispatchRefs 同事务**：每个 target 写一条
+- **message + queue entry + dispatchRefs 同事务**：每个 agent target 写一条
   `lifecycle.input.dispatchRefs = { target, queueEntryId, attempt:1, phase:'dispatched', at }`；
-  operator ref 在通知时 settle（`phase:'settled'` + `at`），agent ref 在 child terminal
-  或 R settlement 时 settle。agent targets 不写 `extra.targetAgentIds`（那是 user message
-  的 admission snapshot）。
+  agent ref 在 child terminal 或 R settlement 时 settle。operator mention 只写
+  message `mentionsUser`，不写 dispatchRef。agent targets 不写 `extra.targetAgentIds`
+  （那是 user message 的 admission snapshot）。
 
 **`post_message` / `cross_post_message` 流程**
 1. 校验 caller credential + target/thread access + A2A depth/loop guard
@@ -2095,32 +2098,193 @@ targets: Array<
    `getToolCallClaim(caller.turnExecutionId, piExtToolCallId)`；
    已有且 intentHash 相同 → 返回原 message/queue（replayed）；不同 →
    `pi_ext_tool_call_conflict`；
-3. 创建 message；
-4. `InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、piExtToolCallId、priority）；
-5. 同一事务内 `reserveToolCallClaim(...)`；
+3. 创建 message；正文行首 `@operator` 时写 `mentionsUser=true`（仅通知，不进入 Queue）；
+4. 若 targets 非空：`InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、piExtToolCallId、priority）；targets 为空且 `mentionsUser=true` 时跳过 enqueue；
+5. 同一事务内 `reserveToolCallClaim(...)` +（有 targets 时）queue admission；
    若并发 race 返回已有 claim，整笔回滚并按 replay/conflict 返回；
-6. QueueProcessor claim 后拆分 targets：
-   - operator → 通知/可见性，写 `delivery.operatorNotifiedAt`，并在 message
-     `dispatchRefs` 同事务 settle；不建 parent/TurnExecution；
-   - agent → 创建一个 parent `InvocationRecord`（`targetAgentIds` = 全部 agent targets）
-     + 每个 agent target 一个 child `TurnExecution`；
+6. targets 非空时，QueueProcessor claim 后创建一个 parent `InvocationRecord`
+   （`targetAgentIds` = 全部 agent targets）+ 每个 agent target 一个 child
+   `TurnExecution`；targets 为空时没有 parent/queue；
 7. 每个 child `causal = { triggerMessageId: 新 message,
    a2aParentTurnExecutionId: caller.turnExecutionId, a2aTriggerMessageId: 新 message,
    a2aDepth: caller.causal.a2aDepth + 1 }`；
-8. operator-only：不创建 parent/TurnExecution；只通知、settle message `dispatchRefs`、
-   删除 queue entry；tool result 的 `queueEntryId` 是历史 receipt，不保证 live row；
-9. mixed targets：operator 只通知一次；agent retry 不重复通知 operator。
+8. operator mention 只影响 message 的 `mentionsUser`；不创建 queue entry，也不参与
+   parent aggregate/retry。
 
-**`multi_mention`**
+#### `multi_mention` + MultiMentionOrchestrator（DP-F018MM=B）
 
-- 输入：`targets`（2-3 个 agent）、`question`（必填）、`context?`；`piExtToolCallId` 由
-  pi extension 注入，不在 model-facing tool schema 中。
-- 语义是 fan-out 的 typed convenience：与 `post_message` 到多个 agent targets 共用
-  `1 message + 1 queue entry + 1 parent + N child`；不建 `MultiMentionOrchestrator`，
-  不做 group status/timeout/聚合回调。
-- 部分 target admission 失败：v1 整体 fail closed（`agent_disabled` / `agent_not_found` /
-  `a2a_depth_exceeded`），不静默丢弃 target；执行期 target 失败仍按 parent 聚合。
-- 结果：`{ message, queueEntryId, targetAgentIds, replayed }`。
+> Clowder 的 `multi_mention` 不是普通 fan-out；它有一个 group lifecycle：
+> `pending → running → partial → done | timeout | failed`，以及
+> `callbackTo`、每 target response、聚合结果消息、status read。codeteam v1 做全，
+> 不保留“假 multi_mention”。
+
+**model-facing input**
+
+```ts
+{
+  targets: Array<{ kind: "agent"; id: string }>, // 2-3, 去重
+  question: string,                               // <= 5 KiB
+  context?: string,                               // <= 5 KiB
+  callbackTo: string,                             // enabled agentId；通常 = caller
+  timeoutMinutes?: number,                        // 3-20，默认 8
+  triggerType?: "high-impact" | "cross-domain" | "uncertain" | "info-gap" | "recon",
+  searchEvidenceRefs?: string[],
+  overrideReason?: string
+}
+```
+
+- `piExtToolCallId` 由 pi extension 注入，不在 model-facing input。
+- `callbackTo` 必须是 enabled agent；不能是 target。
+- `searchEvidenceRefs` / `overrideReason`：Clowder MCP 要求二选一（先搜后问）。
+  codeteam v1 的 A2A 工具面没有 memory search；v1 把二者作为可选 metadata，
+  由 SOP/skill 约束；这是有意的 v1 差异。
+
+**result**
+
+```ts
+{
+  requestId: string,
+  status: "pending" | "running" | "partial" | "done" | "timeout" | "failed",
+  messageId: string,
+  queueEntryId: string,
+  targetAgentIds: string[],
+  callbackTo: string,
+  replayed: boolean
+}
+```
+
+**durable state**
+
+```sql
+CREATE TABLE multi_mention_requests (
+  request_id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  initiator_agent_id TEXT NOT NULL,
+  callback_to_agent_id TEXT NOT NULL,
+  question TEXT NOT NULL,
+  context TEXT,
+  target_agent_ids_json TEXT NOT NULL
+    CHECK (json_valid(target_agent_ids_json) AND json_type(target_agent_ids_json) = 'array'
+           AND json_array_length(target_agent_ids_json) BETWEEN 2 AND 3),
+  status TEXT NOT NULL CHECK (
+    status IN ('pending', 'running', 'partial', 'done', 'timeout', 'failed')
+  ),
+  timeout_minutes INTEGER NOT NULL CHECK (timeout_minutes BETWEEN 3 AND 20),
+  expires_at INTEGER NOT NULL,
+  idempotency_key TEXT,
+  parent_invocation_id TEXT,
+  source_message_id TEXT,
+  aggregate_message_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  UNIQUE (thread_id, initiator_agent_id, idempotency_key),
+  CHECK (status IN ('pending', 'running', 'partial') OR ended_at IS NOT NULL)
+) STRICT;
+
+CREATE TABLE multi_mention_responses (
+  request_id TEXT NOT NULL,
+  target_agent_id TEXT NOT NULL,
+  turn_execution_id TEXT,
+  response_message_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('received', 'timeout', 'failed')),
+  reason TEXT,
+  received_at INTEGER,
+  PRIMARY KEY (request_id, target_agent_id),
+  FOREIGN KEY (request_id) REFERENCES multi_mention_requests(request_id) ON DELETE CASCADE
+) STRICT;
+```
+
+- `parent_invocation_id` 指向 fan-out parent；`source_message_id` 指向 multi-mention source；
+  `aggregate_message_id` 指向最终聚合消息。
+- `multi_mention_responses` 只存 per-target outcome 指针，不复制正文；正文在
+  `response_message_id` 的 message 里。
+- 终止态：`done`（全部 target 都有 outcome，received 或 failed 都算 accounted）、
+  `timeout`（到期仍有 missing）、`failed`（group admission/orchestrator 失败，
+  不是普通的 target 失败）；`partial` 是 running 中的中间态。
+
+**创建 / fan-out**
+
+1. `MultiMentionOrchestrator.create` 校验 targets 2-3、callbackTo enabled 且不在 targets、
+   timeout 3-20、anti-cascade（caller 不是任何 active multi_mention 的 target）；
+2. 用 `piExtToolCallId` 查 claim：同 key 返回已有 request/status；不同 intent →
+   `pi_ext_tool_call_conflict`；
+3. 创建 `multi_mention_requests`（status=pending）+ source message（正文带
+   `[Multi-Mention from <caller>]` + question + context）+ 1 queue entry + 1 parent
+   `InvocationRecord` + N child `TurnExecution`；
+4. `source message + queue entry + request` 同一事务；request 写
+   `parent_invocation_id/source_message_id`；
+5. QueueProcessor 开始执行时把 request 置 `running`；任一 target 有 response 后置
+   `partial`。
+
+**record response**
+
+- child terminal 时，QueueProcessor/collector 调
+  `MultiMentionOrchestrator.recordTargetOutcome(requestId, targetAgentId, {
+  turnExecutionId, responseMessageId, status })`：
+  - child completed + R 提交 → `received`；
+  - child failed/interrupted/canceled → `failed`（reason 取 terminalReason）；
+  - 同一个 target 重复回调 → 幂等，不覆盖第一次 outcome。
+- 所有 target 都有 outcome → `done`；received 与 failed 都算 accounted，聚合里保留
+  received 内容与 failed reason。
+- 到期仍有 missing → `timeout`（missing 写 `timeout`）。
+- group admission/orchestrator 自身失败 → `failed`；普通 target 失败不把 group
+  改成 failed，避免丢失已收到的 sibling 内容。
+
+**timeout / recovery**
+
+- `expires_at = created_at + timeout_minutes * 60_000`；
+- 不新建独立 timer：由现有单 serialized `InvocationOwnerReaper` 维护循环调用
+  `multiMentionOrchestrator.settleExpired(now)`；避免第二个 janitor；
+- startup `MultiMentionRecovery` 扫描非终止 request：已过期 → settle；未过期 →
+  留给 reaper；
+- 超时聚合包含已 received 的 response + missing target 的 `timeout` 状态；
+  已 received 的 response 不丢。
+
+**aggregate / callback**
+
+- 终止时写一条 system message：`from.kind='system'`,
+  `service='multi_mention'`，`extra.multiMention = { requestId, status, callbackTo,
+  targetAgentIds, responses }`；正文是 `## Multi-Mention 结果汇总` + question +
+  每 target 的 response/status。
+- `callbackTo` 只作为聚合结果的地址/metadata；v1 不为它创建新的 parent/child
+  （避免 cascade）。聚合消息在 thread 历史中可见，callbackTo agent 下一轮可读；
+  若需要主动唤醒，由调用方显式 `post_message` 决定。
+- `aggregate_message_id` 与 request terminal 同事务写；重复 settle 幂等返回同一
+  aggregate message。
+
+**status read**
+
+- `MultiMentionStatusReader.get(requestId)` 返回 request status + per-target
+  received/timeout/failed + aggregateMessageId；由 W7a/CLI 暴露，不新增 model-facing
+  tool（保持四工具面）。
+- `thread_context` 可以在聚合消息的 `extra.multiMention` 上看到 requestId/status；
+  不要求 agent 轮询。
+
+**anti-cascade / target cancellation**
+
+- caller 是任何 active multi_mention 的 target 时，拒绝新 request；
+- 单 target cancellation → 该 response `failed`；all-target cancellation →
+  request `failed`；聚合保留 canceled reason；
+- thread-wide reset 不改写已完成 response；只把未完成 target 标记 failed/timeout。
+
+**错误 taxonomy（multi_mention 增量）**
+
+| code | 触发 |
+|---|---|
+| `multi_mention_invalid_targets` | targets 非 2-3、含 caller/callbackTo、重复 |
+| `multi_mention_invalid_callback` | callbackTo 不存在/disabled/在 targets 内 |
+| `multi_mention_invalid_timeout` | timeout 不在 3-20 |
+| `multi_mention_cascade` | caller 是 active multi_mention target |
+| `multi_mention_not_found` | status 读取的 requestId 不存在/不可见 |
+
+**验收映射**
+
+- E4：2-3 targets、1 source/1 queue/1 parent/N children、status 从 running→partial→done、
+  聚合消息、callbackTo metadata、重复 `piExtToolCallId` replay。
+- E17：timeout request 聚合 partial responses；anti-cascade；逐 target cancellation；
+  恢复后未过期 request 继续、已过期 request settle。
 
 **`thread_context`**
 
@@ -2143,6 +2307,9 @@ targets: Array<
 - `intentHash = sha256(stableJson({ tool, threadId: targetThreadId, targets:
   sorted(targetKey), body: bodyMd 或 question+context, replyTo }))`；不包含
   `piExtToolCallId`、messageId、queueEntryId。
+- `multi_mention` 的 intentHash 还要包含 `callbackTo`、`timeoutMinutes`、
+  `triggerType`、`searchEvidenceRefs`、`overrideReason`；同 key 改这些字段是不同
+  intent，返回 `pi_ext_tool_call_conflict`。
 - `toolCallClaims` 是 map，不是纯 set：
   `{ piExtToolCallId: { intentHash, messageId, queueEntryId } }`；没有 map 就无法 replay
   原 message/queue。
@@ -2175,14 +2342,14 @@ targets: Array<
 `queueEntryId = queue:<hash(sourceRecordId:attempt)>`；message、queue entry、dispatchRefs、
 credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions` fingerprint
 覆盖 source/owner/kind/from/payload/requestedTargets/priority/execution，不覆盖可变的
-`targets/status/claim/delivery`。
+`targets/status/claim`。
 
 **错误 taxonomy（A2A 工具）**
 
 | 层 | code | 触发 |
 |---|---|---|
 | input | `invalid_input` | 未知字段、空 body、超限、缺少 `piExtToolCallId` |
-| target | `invalid_explicit_target` | 空 targets、形状非法、targetKey 重复到冲突、multi_mention 非 2-3 agents |
+| target | `invalid_explicit_target` | 空 targets 且无 `@operator`、形状非法、targetKey 重复到冲突、multi_mention 非 2-3 agents |
 | target | `agent_not_found` / `agent_disabled` / `account_missing` | agent 不存在/禁用/账号缺失 |
 | thread | `thread_not_found` / `thread_deleted` / `thread_access_denied` | 目标 thread 不存在/deleted/跨 user |
 | thread | `thread_project_path_required` | target thread 没有 projectPath |
@@ -2196,12 +2363,15 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
 | auth | `tool_not_allowed` | tool 不在 credential.allowedTools |
 
 **v1 不做**
-- `a2a_send`、`handoff_*`、multi_mention 聚合回调、cross-thread custody。
-- `multi_mention` 是 v1 工具，但只做 fan-out，不做聚合回调。
+- `a2a_send`、`handoff_*`、cross-thread custody。
+- `multi_mention` 的 callback 不创建新 parent/child；聚合结果只写 system message，
+  由 callbackTo 在 thread 历史中读取。
 
 ### 3.9 PerAgentTerminalDispositionCollector + transitionTerminal + QueueProcessor
 
 > 终态/重试取舍已按 `DP-F018TERM=A/A/A/A/A/A/A` 拍板（2026-11-11），本节已同步。
+> DP-D 调查中：Clowder settlement 是 invoke/route/QueueProcessor/callback-auth
+> 四层分工；`settleAgentTurn` 可能拆回四层 owner。确认后更新本节。
 
 **正常终态路径**
 
@@ -2619,7 +2789,6 @@ CREATE TABLE invocation_queue (
     CHECK (json_valid(targets_json) AND json_type(targets_json) = 'array'),
   payload_json TEXT NOT NULL CHECK (json_valid(payload_json) AND json_type(payload_json) = 'object'),
   execution_json TEXT NOT NULL CHECK (json_valid(execution_json) AND json_type(execution_json) = 'object'),
-  delivery_json TEXT NOT NULL CHECK (json_valid(delivery_json) AND json_type(delivery_json) = 'object'),
   priority TEXT NOT NULL CHECK (priority IN ('urgent', 'normal')),
   position INTEGER NOT NULL CHECK (position >= 0),
   status TEXT NOT NULL CHECK (status IN ('queued', 'claimed')),
@@ -2668,7 +2837,7 @@ CREATE TABLE queue_admissions (
 - `payload_json` 含 `sourceRecordId/messageId/originRecordId/attempt/content/requestedTargets/piExtToolCallId`；`content` 是 admission 正文快照。
 - `source_record_id` 是队列身份；`message_id` 是消息指针（v1 恒非空，未来 connector 可为 null）；`attempt` 是 1-based 尝试序号。
 - `execution_json` 含 `a2aParentTurnExecutionId/a2aTriggerMessageId/a2aDepth`。
-- `delivery_json` 含 `operatorNotifiedAt`；operator-only entry 没有 parent/TurnExecution。
+- queue 不存 operator 通知字段；operator mention 在 message `mentionsUser` 上。
 - `claim` 在 TS 模型里是子对象；SQL 用 `claim_*` 标量 + `claimed_target_keys_json` 做 CAS，语义是 target-level claim。
 - `status` 只持久化 `queued | claimed`；`processing | terminal` 只出现在 transition projection，不落库。
 - `queue_admissions` 是 admission receipt：live row 删除后，同一 `(source_record_id, attempt)` 重放仍返回 `replayed`/`conflict`。
@@ -2773,6 +2942,9 @@ CREATE INDEX turn_executions_running
 
 ### 4.3.1 `invocation_attempts`
 
+> DP-C 调查中：Clowder 的 attempt 是 `QueueTargetAttempt`（投递台账），child 终态
+> 只在 `TurnExecution`；本节的 attempt state 需要收敛为投递状态。确认后更新 schema。
+
 ```sql
 CREATE TABLE invocation_attempts (
   attempt_id TEXT PRIMARY KEY,
@@ -2858,7 +3030,7 @@ CREATE UNIQUE INDEX invocation_attempts_one_running_per_session
   `queued → canceled`（source 撤回）；terminal state 不再变化。
 - settlement 只允许 `NULL → streaming → response_pending → settled`；
   `response_pending` 要求 attempt 已 terminal。
-- operator targets 不进入本表：operator 通知由 queue entry 的 `delivery.operatorNotifiedAt` 承担。
+- 本表只记录 agent target；operator mention 不进入 attempt。
 - parent 的 `retryCount` 是显式重试波次计数；每个 target 的实际 attempt 以本表为准。
 
 ### 4.3.2 `response_drafts`
@@ -3077,22 +3249,15 @@ m1（targets=[agent:A, agent:B]）
   → parent 更新；credential terminalize；tracker release
 ```
 
-### 6.1b operator-only / mixed targets
+### 6.1b operator mention
 
 ```text
-operator-only:
-  post_message targets=[operator:U]
-  → message m1 + queue entry q1（targets=[operator:U]）
-  → QueueProcessor claim q1
-  → 通知/可见性 → delivery.operatorNotifiedAt
-  → 无 parent / 无 TurnExecution
-  → commit + 删除 q1
-
-mixed:
-  post_message targets=[agent:A, operator:U]
-  → queue entry targets=[agent:A, operator:U]
-  → operator → 通知；agent:A → InvocationRecord + attempt + core TurnExecution + processing R
-  → parent 只看 agent:A；operator 通知记录在 queue entry
+post_message targets=[agent:A]，正文行首 @operator
+  → message m1(mentionsUser=true) + queue q1(targets=[A])
+  → parent/child 只服务 A
+  → operator 通知由 message + read model 投影
+  → 没有 operator queue entry / parent / TurnExecution
+  → operator 回复是一条新的 user message，重新解析 agent target
 ```
 
 ### 6.2 A2A hop
@@ -3178,7 +3343,7 @@ parent partial_failed: successful=[A], failed=[B]
 - `WorkerPool` + `worker_bindings`：ephemeral worker（一 worker 一 session）、spawn/retire、
   heartbeat/stale、binding generation；`warmTtl=0` 默认，空闲不占进程。
 - `InvocationRegistry`/`InvocationCredential`：pi extension tools 鉴权、allowed tools、terminalize、canonical repair。
-- `a2a/tools`：post/cross/thread_context，typed targets（agent/operator），新 message/queue entry，parent/depth；operator-only 只通知不执行。
+- `a2a/tools`：post/cross/multi_mention/thread_context，typed agent targets，新 message/queue entry，parent/depth；operator mention 只写 message `mentionsUser`。
 - `PerAgentTerminalDispositionCollector`：parent aggregate。
 - `TurnExecutionStartupReconciler` / `InvocationOwnerReaper`（合并 Zombie） /
   `getThreadLiveInvocations` / `MessageDispatchSummary`。
@@ -3188,6 +3353,7 @@ parent partial_failed: successful=[A], failed=[B]
 | 能力 | 原因 |
 |---|---|
 | MCP callback / MCP tools | v1 用 pi extension + local control socket |
+| Hub ingress / WebSocket / SSE / event replay | W7a/F016c 独立验收；F018 只到 daemon/CLI 与内部 event channel |
 | `routeSerial` 单体实现 / intent-derived serial | v1 显式 targets；A2A hop 是新 message；serial 由 `routeAgents(mode)` 的薄循环表达 |
 | guide/concierge/memory/SOP/entity nudge 的 route 分支 | v1 不挂；后续作为 `runAgentTurn` feature hooks |
 | task/role/run/profile 坐标 | thread-first；credential 绑 child TurnExecution |
@@ -3235,7 +3401,7 @@ parent partial_failed: successful=[A], failed=[B]
 - 无显式 @ → 隐式路由：上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
 - `StoredMessage.targetAgentIds` 与 message + queue entry 同事务写入（仅 user message；agent A2A targets 在 lifecycle.dispatchRefs）。
 - A2A tools 只接受显式 `{kind,id}` targets；正文 `@` 不路由。
-- operator-only entry：只通知，不创建 parent/TurnExecution；`delivery.operatorNotifiedAt` 写入。
+- operator mention：只写 message `mentionsUser`，不创建 queue/parent/TurnExecution。
 - target-level claim：`InvocationQueue.claim`；`claim.targetKeys` 是 pending 子集；过期/失败走 `releaseClaim` / `restoreExpiredClaims`。
 - 重放保护：live row 删除后，同一 `(source_record_id, attempt)` 仍由 `queue_admissions` 返回 `replayed`/`conflict`。
 - `processEntry` 只对 agent targets 创建 parent + N attempt + N processing R + N child；
@@ -3330,18 +3496,21 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 9.5 A2A
 
-- operator 行首 @ → agent targets；agent tools → operator target 只通知；两个方向共用 `QueueTarget`。
+- operator 行首 @ → agent targets；agent tools 的 targets 只有 agent；operator 通知由
+  message `mentionsUser` 承载，不是 `QueueTarget`。
 - 无 @ 的 operator message 按隐式链解析；`targetAgentIds` 持久化在 user message。
 - ingress reject 必须使用 typed code：`no_target/unknown_agent/agent_disabled/account_missing/
   thread_deleted/thread_access_denied/invalid_explicit_target/a2a_depth_exceeded/loop_guard/
   pi_ext_tool_call_conflict/source_withdrawn`；同 piExtToolCallId + 同 payload 是成功 `replayed`，不是 reject。
-- 正文 `@`（agent final response / text）不路由、不报错；只有显式 typed target 非法才
-  `invalid_explicit_target`。
+- 正文 `@`（agent final response / text）不路由、不报错；行首 `@operator` 只写
+  `mentionsUser`。只有显式 typed target 非法才 `invalid_explicit_target`。
 - `delivery_failure` 只用于 admitted prestart：`worker_capacity/worker_start_failed/
   credential_mint_failed/provider_start_failed`；R 已创建后的失败走 R terminal。
-- `response_missing` 是独立 recovery reason：attempt failed + system message/audit；不写
-  prestart `delivery_failure`。
-- `post_message` 创建新 message + queue entry + parent；child `a2aParentTurnExecutionId`/`a2aDepth` 正确。
+- `response_missing` 是独立 recovery reason：attempt/turn failed + typed system message +
+  `terminalReason='response_missing'`；不写 prestart `delivery_failure`，也不依赖 legacy audit。
+- `post_message` 在 targets 非空时创建新 message + queue entry + parent；targets 为空
+  且 `mentionsUser=true` 时只创建 message，不创建 queue/parent。child
+  `a2aParentTurnExecutionId`/`a2aDepth` 正确。
 - `cross_post_message` 跨 thread 同 user；target thread 必须 active/not deleted/有
   projectPath；message 写 `extra.crossPost`；不同 user/deleted/缺 projectPath 都 typed reject。
 - `thread_context` 只读，不入队。
@@ -3411,11 +3580,11 @@ parent partial_failed: successful=[A], failed=[B]
 8. **Session active + lightweight seal**（0009）：v1 做 `active → sealed + seq+1`，
    不做 transcript/digest/restore/compression/handoff。
 9. **v1 不做 custody/action/wait/compaction/managed/collective**；全部 v2。
-10. **QueueEntry 多層次设计**：`owner/from/targets/payload/execution/delivery/claim` 分组；targets 是 `QueueTarget[]`（agent/operator）。
+10. **QueueEntry 多層次设计**：`owner/from/targets/payload/execution/claim` 分组；targets 是 agent `QueueTarget[]`。
 11. **operator 对话只解析行首 `@`**；多个 @ 去重；未知/disabled typed reject；无 @ → 隐式路由链，只有无候选才 `no_target`。
-12. **operator-only 允许只通知不执行**：不创建 parent/TurnExecution，只写 `delivery.operatorNotifiedAt` 并删除 queue entry。
+12. **operator mention（DP-A=A，2026-11-11）**：operator 不是 QueueTarget；agent 正文行首 `@operator` 只写 message `mentionsUser`，不创建 queue/parent/TurnExecution；operator 回复是新的 user message。
 13. **claim 复用 Clowder 的 target-level 语义**：`claim` / `retireTargets` / `releaseClaim` / `withdrawTargets`；`claim.targetKeys` 是 pending targets 子集。
-14. **QueueEntry 保留 admission 正文快照** `payload.content`；A2A tools 的 targets 用 `{kind:"agent"|"operator", id}` 对象数组，不解析正文 @。
+14. **QueueEntry 保留 admission 正文快照** `payload.content`；A2A tools 的 targets 用 `{kind:"agent", id}` 对象数组，不解析正文 @；正文 `@operator` 只写 `mentionsUser`。
 15. **v1 路由/解析错误不走 audit**：pre-admission typed reject；admitted 后失败写
     `delivery_failure` system message；QueueEntry 不存 `routingWarnings`/`lastError`。
 16. **Queue durable/projection 状态分层（DP-F018Q-2=B）**：`QueueLedgerStatus` 保留四值 union；`QueueEntry.status` 只取 `queued|claimed`；`processing|terminal` 只出现在 transition projection。
@@ -3498,3 +3667,13 @@ parent partial_failed: successful=[A], failed=[B]
     zombie 用 stale lease + owner absence，收敛 child R→queue→parent→credential→slot；
     live projection 去重/evidence rank/过滤 terminal R；`response_missing` 独立 recovery；
     provider exit 5min grace + exact owner fence。
+48. **DP-F018JOURNEY-A/B/E（2026-11-11 拍板）**：operator 不进入 `QueueTarget`，
+    只用 message `mentionsUser`；`multi_mention` 做完整 Clowder orchestrator
+    （status/timeout/callback/aggregate，`multi_mention_requests/responses`）；
+    Hub ingress/WS/SSE/replay 归 W7a，F018 只验收 daemon/CLI。
+49. **DP-F018JOURNEY-C/D（调查完成，待确认）**：Clowder 的 attempt 是
+    `QueueTargetAttempt`（投递台账），child 终态只在 `TurnExecution`；codeteam
+    `InvocationAttempt` 需收敛为投递 attempt，不得复制 child 五态。Clowder settlement
+    是 invoke（child terminal）/route（R+draft）/QueueProcessor（parent+queue）/
+    callback-auth（auth projection）四层；`settleAgentTurn` god-service 建议拆回。
+    确认后改 §3.9/§4.3.1。

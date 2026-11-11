@@ -102,14 +102,17 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   credential 同一事务并把 attempt `settlement` 标 `response_pending`；随后
   `settleResponseFromDraft` 提交 R terminal + settle inputs + delete draft +
   attempt `settled` + clear pending；崩溃后 startup reconciler 重放。
+  > DP-D 调查中：Clowder settlement 是 invoke/route/QueueProcessor/callback-auth
+  > 四层分工；`settleAgentTurn` 可能拆回四层 owner。确认后更新本段。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A
 
 - `codeteam_cross_post_message`：target threadId、targets、thread access、
   depth/loop guard、typed rejects。
-- `codeteam_multi_mention`：2-3 targets fan-out；one message + one queue entry +
-  N invocations；不做聚合回调。
+- `codeteam_multi_mention`：完整 Clowder orchestrator；2-3 targets、one message +
+  one queue entry + one parent + N children；`multi_mention_requests/responses` 记录
+  status/timeout/callback/aggregate；`callbackTo` 不新建 child。
 - 任意 enabled agent 可被 target；首次成功后加入 participants。
 - `thread post --to` 不再要求 `--task`；CLI/read model 同步。
 - 出口：E3/E4/E5/E6/E8/E10/E11。
@@ -118,7 +121,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 
 - depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`。
 - observation 识别 4 个新工具；text-@ 负例不误报。
-- 多 agent thread；不做 `multi_mention` 聚合回调。
+- 多 agent thread；`multi_mention` timeout/status/aggregate、anti-cascade、
+  target cancellation 收敛。
 - 出口：E14/E15/E16/E17。
 
 ## R5 — Cutover 与清理
@@ -128,6 +132,9 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - 出口：A2A runtime 单一真相；F018 close 需 vision guard + operator。
 
 ## 验证与 review
+
+- operator journey 的 Hub ingress/WS/SSE/replay 属 W7a/F016c，独立验收；F018
+  只验收 daemon/CLI 与内部 service E2E。
 
 - 每阶段按 TDD：先 RED，再 GREEN；真实 provider E2E 不拿 handler 测试冒充。
 - 契约/数据/auth 面按 SOP 选一个非作者 reviewer；架构 0005 需 review 覆盖最终

@@ -1,0 +1,73 @@
+---
+title: "DP-F018JOURNEY: operator journey / operator mention / multi_mention / settlement"
+doc_kind: decision-packet
+status: decided (A/B/E); investigation complete (C/D)
+created: 2026-11-11
+updated: 2026-11-11
+owner: "宪宪 (Ragdoll/DeepSeek Flash)"
+operator_decisions: "2026-11-11: DP-A=A, DP-B=B, DP-E=A; DP-C/DP-D 要求全面调查"
+related: [0010-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-codeteam-operator-journey-audit.md]
+---
+
+# DP-F018JOURNEY
+
+## 决策
+
+| 决策 | 结论 | 状态 | 落点 |
+|---|---|---|---|
+| DP-A operator 通知 | operator 不是 `QueueTarget`；agent 正文行首 `@operator` 只写 message `mentionsUser`；`post_message` targets 可为空但仅限该情形 | decided A | `0010` §3.0/§3.8；`0005` §2.4/§3.3；`0014` Journey B |
+| DP-B `multi_mention` | 真正实现 Clowder orchestrator：2-3 targets、status、3-20min timeout、callbackTo、aggregate；不保留假 fan-out | decided B | `0010` §3.8；`0005` §3.3；plan R3/R4 |
+| DP-C child 终态 | Clowder 没有 child `InvocationAttempt`；attempt 是 `QueueTargetAttempt`（投递台账），child canonical 是 `TurnExecution`；codeteam 需收敛 attempt state | investigation complete; pending confirmation | `0015` §3.3 |
+| DP-D settlement owner | Clowder 是 invoke（child terminal）/route（R+draft）/QueueProcessor（parent+queue）/callback-auth（auth projection）四层；`settleAgentTurn` god-service 建议拆回 | investigation complete; pending confirmation | `0015` §3.4 |
+| DP-E Hub 依赖 | Hub ingress/WS/SSE/replay 归 W7a/F016c 独立验收；F018 只验收 daemon/CLI | decided A | `0010` §7.2；plan 验证段；`0015` §4.2 |
+
+## DP-A 关键边界
+
+- `QueueTarget` 只允许 agent。
+- `post_message` targets 为空时，正文必须行首 `@operator`；只写 message
+  `mentionsUser=true`，不创建 queue/parent/TurnExecution。
+- `post_message` targets 非空时，operator mention 只作为同一 message 的额外标记，
+  不进入 parent aggregate/retry。
+- operator 回复是一条新的 user message，重新走 ingress；不是“恢复 agentB 的等待”。
+
+## DP-B 关键边界
+
+- `multi_mention_requests`：request/targets/callbackTo/status/timeout/expires/parent/
+  source/aggregate。
+- `multi_mention_responses`：per-target received/timeout/failed + turn/response 指针。
+- 生命周期：`pending → running → partial → done | timeout | failed`。
+- timeout：3-20 分钟，默认 8；不新建独立 janitor，复用单 serialized reaper；
+  recovery 扫描未终止 request。
+- aggregate：一条 system message，`extra.multiMention` 带 request/status/callbackTo/
+  targets/responses；不新建 child。
+- status read 由 W7a/CLI 暴露；不新增第五个 model-facing tool。
+
+## DP-C 调查结论
+
+- Clowder 的 `QueueTargetAttempt` 在 `packages/shared/src/types/queue-receipt.ts:250-287`：
+  `queued|starting|appended|failed|interrupted|cancelled|handled`，retry append 新行。
+- child 终态只在 `TurnExecutionRecord.status`；parent `InvocationRecord` 只有
+  `executionStartedAt` attempt receipt，没有第二套 child state。
+- codeteam `invocation_attempts.state` 复制了 TurnExecution 五态；这是双终态根因。
+- 建议：attempt state 收敛为投递状态；child 终态由 TurnExecution 独占；
+  `turnExecutionId` 仍是 child 链接。
+
+## DP-D 调查结论
+
+| 阶段 | Clowder owner | 证据 |
+|---|---|---|
+| child terminal | `invoke-single-cat.ts` finally | `invoke-single-cat.ts:6397` |
+| auth projection | `CallbackAuthTurnExecutionLifecycle` | `CallbackAuthTurnExecutionLifecycle.ts:66-83` |
+| response R + draft | `route-serial` / `route-parallel` | `route-serial.ts:3488+`、`route-parallel.ts:2015+` |
+| parent + queue + recovery | `QueueProcessor` | `QueueProcessor.ts:2865`、`:2669`、`:2717` |
+
+codeteam `settleAgentTurn` 把四层合并成一个 god-service，导致与
+route/invokeSingleAgent 重叠。建议拆回四层 owner；`settleResponseFromDraft` 只做
+recovery/response_pending 第二段。
+
+## 未决
+
+- DP-C/DP-D 的 schema/事件顺序修改需要 operator 确认；确认后改
+  `0010` §3.9/§4.3.1 与 plan P0-1。
+
+[宪宪/deepseek-flash🐾]
