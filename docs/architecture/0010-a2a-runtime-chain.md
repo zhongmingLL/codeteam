@@ -2986,6 +2986,7 @@ queued ──first child running──▶ running
 running ──all success──▶ completed
 running ──some success + some failed/canceled──▶ partial_failed
 running ──no success + all failed/canceled──▶ failed
+running ──all targets canceled──▶ canceled
 queued/running ──operator cancel──▶ canceled
 partial_failed/failed ──retry admitted──▶ queued
 queued ──retry child starts──▶ running
@@ -3028,6 +3029,7 @@ R terminal + inputs settled ──▶ settled
 ```text
 active ──child terminal──▶ terminal(completed/failed/interrupted/canceled)
 active ──auth revoke/orphan repair──▶ terminal(revoked)
+active ──retry/preempt replacement──▶ terminal(replaced, replacedByTurnExecutionId)
 ```
 
 ### 5.4 聚合规则
@@ -3045,8 +3047,8 @@ active ──auth revoke/orphan repair──▶ terminal(revoked)
 `retryablePending` 是仍留在 queue pending targets + 有 `RetryDeferrals` 的 failed/interrupted
 target；它阻止 parent 进入 terminal。`interrupted` 归失败面（可重试）；`canceled` 归取消面，
 不可被 `requestRetry` 复活。
-parent 只存 `successfulAgentIds` + `primaryTerminalError`；failed/canceled 由
-`invocation_attempts` 最新 attempt 推导。
+parent 只存 `successfulAgentIds` + `terminalReason`（collector 的
+`primaryTerminalError`）；failed/canceled 由 `invocation_attempts` 最新 attempt 推导。
 
 ## 6. 端到端流程
 
