@@ -74,6 +74,7 @@ updated: 2026-10-31
 | [`architecture/0011-identity-contract.md`](architecture/0011-identity-contract.md) | 全局身份契约：scope/message/admission/queue/lifecycle/execution/auth 分层、规范 ID、禁用名与 0001/Clowder 映射 |
 | [`architecture/0012-clowder-session-architecture.md`](architecture/0012-clowder-session-architecture.md) | Clowder session 全局架构梳理：五层、SessionRecord/RuntimeSession/DeliveryCursor/ACP pool 生命周期、codeteam 映射问题与复用建议 |
 | [`architecture/0013-idempotency-key-map.md`](architecture/0013-idempotency-key-map.md) | 幂等 key 全量地图：客户端 key / claim map / queue receipt / 实体 ID / fingerprint 分层，codeteam ↔ Clowder 对照与 A2A v1 目标模型 |
+| [`architecture/0014-operator-message-journey.md`](architecture/0014-operator-message-journey.md) | operator 消息全流程：Hub ingress → Queue → route serial/parallel → prompt/history → draft/R → Hub 流式回传；覆盖简单问答、A2A→operator 决策、并行、单/全取消、失败重试、排队 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
 | [`plans/0007-architecture-plan-coverage.md`](plans/0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵与缺口修复记录；三猫 accept，冻结为 DP→plans 唯一对账索引 |
 | [`architecture/decision-packets/README.md`](architecture/decision-packets/README.md) | 10 个 Decision Packet 索引与签字结论 |
