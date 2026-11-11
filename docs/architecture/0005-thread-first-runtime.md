@@ -372,8 +372,8 @@ thread message / A2A tool
 
 | 工具 | 作用 | 必填 | 不变量 |
 |---|---|---|---|
-| `codeteam_post_message` | 同 thread 发言并唤醒 targets | `targets`, `kind`, `bodyMd` | targets 是 `{kind:"agent"|"operator", id}`；正文 @ 不路由；operator-only 只通知 |
-| `codeteam_cross_post_message` | 跨 thread 发言并唤醒 targets | `threadId`, `targets`, `kind`, `bodyMd` | source/target thread 必须同 user 可见；depth/loop guard；targets 同上 |
+| `codeteam_post_message` | 同 thread 发言并唤醒 targets | `targets`, `bodyMd` | targets 是 `{kind:"agent"|"operator", id}`；正文 @ 不路由；operator-only 只通知 |
+| `codeteam_cross_post_message` | 跨 thread 发言并唤醒 targets | `threadId`, `targets`, `bodyMd` | source/target thread 必须同 user 可见；depth/loop guard；targets 同上 |
 | `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent | `targets` (2-3 agents), `question`, `context?`, `requestId?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；响应是独立消息；无聚合回调 |
 | `codeteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
 
@@ -384,14 +384,19 @@ thread message / A2A tool
 - operator conversation 只解析**行首 `@`**（含列表/引用前缀）为 agent targets；
   A2A tools / final response 的正文 `@` 不路由，只由 typed `targets` 决定。
 - `post_message` / `cross_post_message` 允许 agent + operator targets；
-  operator-only 只通知，不创建 parent/TurnExecution。
+  operator-only 只通知，不创建 parent/TurnExecution；message `dispatchRefs` 与通知同事务
+  settle；mixed targets 下 agent retry 不重复通知 operator。
 - `post_message` / `cross_post_message` 带 optional `replyTo` 与 `requestId`；
   `multi_mention` 带 optional `requestId`。`requestId` 幂等键 scope 为
   `(threadId, agentId, requestId)`。
+
+> **命名待定**：`DP-F018A2A-1` 推荐统一为 `clientMessageId`（credential-scoped），
+> 本节的 `requestId` 是暂时旧名；拍板后整体替换。
 - `multi_mention` 是 fan-out：一条 message + 一个 queue entry + 一个
   `InvocationRecord`(parent) + N 个 `TurnExecution`(child)；响应是独立消息；
   parent 聚合 completed/partial_failed/failed 与成功/失败集合。v1 不做聚合
-  回调，调用方用 `thread_context` 读响应；单 target 失败不影响其他 target。
+  回调，调用方用 `thread_context` 读响应；单 target 执行期失败不影响其他 target；
+  admission 期任一 target 非法则整体 fail closed。
 - 消息送达不等于责任转移；v1 没有 handoff/claim/complete/return。
 - targets 可以是任意 enabled agent；首次成功 invocation 后加入 thread
   participants。participants 是路由/上下文，不是 ACL。

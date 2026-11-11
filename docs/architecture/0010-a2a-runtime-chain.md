@@ -1999,6 +1999,12 @@ interface InvocationCredential {
 - `multi_mention`（2-3 个 agent；fan-out，不做聚合回调）
 - `thread_context`（只读，不入队）
 
+`post_message` / `cross_post_message` / `multi_mention` 都不带 legacy `kind`；
+消息正文只由 `bodyMd`（`multi_mention` 为 `question` + `context?`）承载。
+
+> **命名待定**：本文暂用 `requestId`；`DP-F018A2A-1` 推荐 A+，即 tool/queue/
+> credential 统一为 `clientMessageId`，`requestId` 只作为旧名出现。拍板后本节整体改名。
+
 **targets schema**
 
 ```ts
@@ -2012,9 +2018,12 @@ targets: Array<
 - 至少一个 target；agent target 必须存在且 enabled；operator target 必须是 thread owner。
 - 允许 operator-only：只通知，不执行 agent。
 - `multi_mention` targets 仅 agent（2-3 个），不做聚合回调。
+- agent targets 为 N 个时，统一为 **1 message + 1 queue entry + 1 parent
+  `InvocationRecord` + N child `TurnExecution`**；不是 N 条 message，也不是 N 个 parent。
 
 **`post_message` / `cross_post_message` 流程**
-1. 校验 caller credential + target/thread access；
+1. 校验 caller credential + target/thread access + A2A depth/loop guard
+   （超过 15 → `a2a_depth_exceeded`；在创建 message 前拒绝）；
 2. 若带 `requestId`：`getClientMessageId(caller.turnExecutionId, requestId)`；
    已有且 intentHash 相同 → 返回原 message/queue（replayed）；不同 →
    `a2a_request_conflict`；
@@ -2023,13 +2032,27 @@ targets: Array<
 5. 若带 `requestId`：同一事务内 `reserveClientMessageId(...)`；
    若并发 race 返回已有 claim，整笔回滚并按 replay/conflict 返回；
 6. QueueProcessor claim 后拆分 targets：
-   - operator → 通知/可见性，写 `delivery.operatorNotifiedAt`；
-   - agent → 创建 parent `InvocationRecord` + child `TurnExecution`；
-7. 若有 agent targets：child `causal = { triggerMessageId: 新 message,
+   - operator → 通知/可见性，写 `delivery.operatorNotifiedAt`，并在 message
+     `dispatchRefs` 同事务 settle；不建 parent/TurnExecution；
+   - agent → 创建一个 parent `InvocationRecord`（`targetAgentIds` = 全部 agent targets）
+     + 每个 agent target 一个 child `TurnExecution`；
+7. 每个 child `causal = { triggerMessageId: 新 message,
    a2aParentTurnExecutionId: caller.turnExecutionId, a2aTriggerMessageId: 新 message,
    a2aDepth: caller.causal.a2aDepth + 1 }`；
-8. operator-only：不创建 parent/TurnExecution；只通知并删除 queue entry；
-9. 超过 15 拒绝。
+8. operator-only：不创建 parent/TurnExecution；只通知、settle message `dispatchRefs`、
+   删除 queue entry；tool result 的 `queueEntryId` 是历史 receipt，不保证 live row；
+9. mixed targets：operator 只通知一次；agent retry 不重复通知 operator。
+
+**`multi_mention`**
+
+- 输入：`targets`（2-3 个 agent）、`question`（必填）、`context?`、`requestId?`
+  （命名待 DP-F018A2A-1；当前文内仍用 requestId 时同义）。
+- 语义是 fan-out 的 typed convenience：与 `post_message` 到多个 agent targets 共用
+  `1 message + 1 queue entry + 1 parent + N child`；不建 `MultiMentionOrchestrator`，
+  不做 group status/timeout/聚合回调。
+- 部分 target admission 失败：v1 整体 fail closed（`agent_disabled` / `agent_not_found` /
+  `a2a_depth_exceeded`），不静默丢弃 target；执行期 target 失败仍按 parent 聚合。
+- 结果：`{ message, queueEntryId, targetAgentIds, replayed }`。
 
 **requestId 幂等（DP-F018AUTH-3=B）**
 
