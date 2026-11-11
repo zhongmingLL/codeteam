@@ -2178,6 +2178,9 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
 
 ### 3.9 PerAgentTerminalDispositionCollector + transitionTerminal + QueueProcessor
 
+> 终态/重试的 operator 取舍见 `decision-packets/2026-11-11-dp-f018-terminal-aggregate.md`；
+> 拍板后本节同步。
+
 **正常终态路径**
 
 1. child 执行结束：
