@@ -1957,6 +1957,25 @@ interface InvocationCredential {
   child/run terminal → 按 canonical disposition terminalize；running unowned → 先 interrupt 再 terminalize。
 - active credential 不设 TTL；只有 terminal tombstone 设 GC deadline。
 
+**与 Clowder 对照**
+
+| Clowder | codeteam v1 | 关系 / 差异 |
+|---|---|---|
+| `InvocationRegistry` facade over `IAuthInvocationBackend`（memory / Redis） | `InvocationRegistry` service + SQLite `invocation_credentials` | service/record 分层相同；storage adapter 从 Redis 换 SQLite |
+| `InvocationRecord`：child `invocationId`、`callbackToken`、`userId/catId/threadId/parentInvocationId`、`toolExecutionPolicy`、`clientMessageIds`、`expectedCompactionCarrier`、`state`、`expiresAt`、`terminalRef` | `InvocationCredential`：`turnExecutionId`、`credentialId`、`threadId/agentId/agentSessionId/userId`、`allowedTools`、`clientMessageIds`、`state/disposition`、`replacedByTurnExecutionId` | 坐标从 task/role/run 换成 thread/agent/TurnExecution；collective/managed/compaction 字段 v2 |
+| `AUTH_TERMINAL_DISPOSITIONS` 含 `replaced` | disposition 含 `replaced` + `replaced_by_turn_execution_id` | 对齐；retry/preempt 旧 credential 不再误标 revoked/canceled |
+| `create` 返回 invocationId + callbackToken；active principal 无 deadline | `create` 返回 credentialId + token；active credential 无 TTL；terminal tombstone 才 GC | 对齐 active 语义；codeteam token 只存 hash+salt，Clowder 存 raw callbackToken |
+| `verify`：token + state + expiry + canonical `TurnExecution`；`repairFromCanonical` 补 terminal/revoke | `verify`：token hash+salt + state + child running + parent status + tool allowed；`repairFromCanonical` | 语义对齐；codeteam 额外校验 worker/session binding |
+| `CallbackAuthTurnExecutionLifecycle`：canonical terminal first，再投影 auth terminal | child terminal 事务内 `credential terminalize`；startup/reaper 同一 helper | 对齐 canonical-first；codeteam 用单 SQLite 事务 + 单一 terminalize helper |
+| `listActiveRecords()` + `reconcileStartup`：canonical terminal → 补 terminal；orphan → revoked | `listActiveCredentials()` + `repairOrphans()`：同上 | 对齐；codeteam 还覆盖 missing child/run |
+| `InvocationRecord.clientMessageIds`（per invocation） | `InvocationCredential.clientMessageIds` map（B） | 形状对齐；codeteam 用 map 保留 message/queue replay 结果 |
+| `verifyLatest` / `isLatest` / refresh-token `peek` / `tryClaimRefreshCooldown` | v1 不做 refresh；用“同 session 唯一 running + worker/session binding + retry `replaced`” | 差异：codeteam 没有 latest-slot/refresh 面；旧 token 在 retry 后必须 terminalize |
+| MCP server 发 `X-Invocation-Id` / `X-Callback-Token` headers；preHandler 派生 principal | pi extension `a2a_call` over local control socket；daemon 从 token/credential 派生 principal | contract 相同，transport 不同：codeteam 没有 MCP callback / HTTP header |
+| `ownerAuthProvenance`、managed/collective grants、`expectedCompactionCarrier` | v2 / 不做 | F018 纯 A2A 不需要；保留为 v2 扩展点 |
+
+> 旧 `docs/architecture/reuse-review/callback-auth.md` 是 F174/F178 的 task-first 复用检视，
+> 仍可读 Clowder 的 registry/prehandler/refresh 机制；但 F018 契约以本节 + `DP-F018AUTH` 为准。
+
 **v1 不做**
 - `expectedCompactionCarrier`、managed/collective grants、MCP callback token、task/role/profile/run 字段。
 - `a2a_requests` 新写入：该表标 legacy；v1 request claim 在 credential 上（DP-F018AUTH-3=B）。
