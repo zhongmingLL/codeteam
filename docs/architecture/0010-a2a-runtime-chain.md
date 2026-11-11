@@ -1903,7 +1903,7 @@ A2A tools 由 pi worker 的 extension 注册，经 Unix control socket 回调 da
 worker-extension.ts
   → ControlClient.a2aCall()
   → control socket:
-      { type: "a2a_call", workerId, token, toolName, input }
+      { type: "a2a_call", workerId, token, clientMessageId, toolName, input }
   → daemon resolveWorkerBinding()
   → resolveInvocationToken() 验 token hash/state/expiry
   → 校验 turnExecution.status、worker binding、agentSession binding
@@ -1913,6 +1913,10 @@ worker-extension.ts
 
 - token = `ct1.<credentialId>.<secret>`；只存 hash+salt；token 本体只经
   `CODETEAM_TOKEN_FILE` 交给 pi extension；文件 0600，extension 每次 tool call 重读。
+- **codeteam 的“client”是 pi extension，不是 MCP client**：`registerTool.execute(toolCallId, params, signal)`
+  已经拿到 `toolCallId`；extension 应从它派生 `clientMessageId` 并注入 control envelope，
+  不要求模型在 tool input 里生成 UUID。`wreq-N` 是 connection-local 请求序号，重试会变，
+  不能当幂等键。
 - 服务端不信任 payload 里的 agent/thread/user；身份从 credential + child 派生。
 - token 不入 input/query/body/log/UI。
 
@@ -2002,8 +2006,9 @@ interface InvocationCredential {
 `post_message` / `cross_post_message` / `multi_mention` 都不带 legacy `kind`；
 消息正文只由 `bodyMd`（`multi_mention` 为 `question` + `context?`）承载。
 
-> **命名待定**：本文暂用 `requestId`；`DP-F018A2A-1` 推荐 A+，即 tool/queue/
-> credential 统一为 `clientMessageId`，`requestId` 只作为旧名出现。拍板后本节整体改名。
+> **命名待定**：本文暂用 `requestId`；`DP-F018A2A-1` 推荐 A+，即 control envelope/
+> queue/credential 统一为 `clientMessageId`，model-facing tool schema 不暴露它，
+> 由 pi extension 从 `toolCallId` 派生并注入。拍板后本节整体改名。
 
 **targets schema**
 
