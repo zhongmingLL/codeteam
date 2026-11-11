@@ -45,7 +45,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `response_drafts`：processing R 的 in-flight body；`attempt_id`/`turn_execution_id`
   1:1；stream 按 100ms/4KB bounded flush；R terminal 后删除。
 - `invocation_credentials`：child TurnExecution capability；allowedTools/
-  clientMessageIds（request claim map）/state/disposition（含 replaced）；无 taskId/role/run。
+  toolCallClaims（piExtToolCallId claim map）/state/disposition（含 replaced）；无 taskId/role/run。
 - `invocation_attempts.settlement`：`NULL | streaming | response_pending | settled`；
   ordinary attempt 从 start 绑定 processing R；child terminal → `response_pending`；
   settlement → `settled`。
@@ -59,8 +59,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
   `lifecycle_json`、`thinking`、`deleted_at`/`deleted_by`、`extra_json`
   （targetAgentIds/rich `{v:1,blocks}`/crossPost）；`body_md` 是 plain text body；
   legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json` 停止写入，R5 drop。
-- `a2a_requests`：legacy 只读；v1 不再写入；requestId 幂等迁到
-  `invocation_credentials.client_message_ids_json`（DP-F018AUTH-3=B）。
+- `a2a_requests`：legacy 只读；v1 不再写入；piExtToolCallId 幂等迁到
+  `invocation_credentials.tool_call_claims_json`（DP-F018AUTH-3=B）。
 - 旧 `tasks`/`handoffs`/`custody_events`/`budgets`/`reviews`/`merges` 冻结 legacy，
   不读不写。
 - 迁移前 drain/terminal 有 running invocation 的 session；跳过 running，等 terminal。
@@ -108,7 +108,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 
 ## R4 — Loop guard / observation / 多 agent
 
-- depth 15、`a2a_duplicate_delivery`、`a2a_request_conflict`。
+- depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`。
 - observation 识别 4 个新工具；text-@ 负例不误报。
 - 多 agent thread；不做 `multi_mention` 聚合回调。
 - 出口：E14/E15/E16/E17。

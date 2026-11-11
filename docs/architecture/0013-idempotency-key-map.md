@@ -1,12 +1,12 @@
 ---
 title: "codeteam Idempotency Key Map — A2A v1 and adjacent domains"
 doc_kind: architecture
-status: proposed
+status: accepted
 created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
-operator_signoff: pending
+operator_signoff: "confirmed 2026-11-11: DP-F018A2A-1=A+ (piExtToolCallId)"
 related_features: [codeteam/F018, codeteam/F017]
 related: [0010-a2a-runtime-chain.md, 0011-identity-contract.md, decision-packets/2026-11-11-dp-f018-a2a-tools.md]
 ---
@@ -19,21 +19,20 @@ related: [0010-a2a-runtime-chain.md, 0011-identity-contract.md, decision-packets
 
 ## 0. 结论先行
 
-1. **A2A 消息工具只需要一个客户端幂等 key。** 字段名首选 **`toolCallKey`**：
-   它由 pi extension 从 `toolCallId` + `toolName` 派生并注入，名字直接说明
-   “这是某次 tool call 的 key”。通用概念仍是 `idempotencyKey`；
+1. **A2A 消息工具只需要一个客户端幂等 key。** 字段名定为 **`piExtToolCallId`**：
+   它是 pi extension 从 `toolCallId` + `toolName` 派生并注入的 tool-call 幂等键。
    `requestId`（像传输请求号）和 `clientMessageId`（像消息身份）都不准确。
    `requestId` 删除；`credential.clientMessageIds` 不是第二个 ID，而是保存 claim 的 map，
-   建议随名字改为 `toolCallClaims`。
+   统一改名为 `toolCallClaims`。
 2. **codeteam 的“ID 很多”大部分不是幂等 key**：`messageId` / `queueEntryId` /
    `turnExecutionId` / `invocationId` / `credentialId` 是实体 ID；
    `intentHash` 是 payload fingerprint；`(sourceRecordId, attempt)` 是 queue admission receipt。
 3. **codeteam 的 client 是 pi extension，不是 MCP client。** extension 已拿到
-   `toolCallId`，应从它派生 `toolCallKey` 并注入 control envelope；不要求模型生成 UUID。
+   `toolCallId`，应从它派生 `piExtToolCallId` 并注入 control envelope；不要求模型生成 UUID。
 4. **`message.idempotency_key` 在 v1 不需要。** message + queue + credential claim 同事务；
-   claim 是 `toolCallKey → messageId` 的桥，`queue_admissions` 是 queue row 删除后的
+   claim 是 `piExtToolCallId → messageId` 的桥，`queue_admissions` 是 queue row 删除后的
    receipt。只有跨 credential 生命周期重试才需要 message store 幂等索引（v2）。
-5. **`toolCallKey` 只用于 tool-call 维度的 A2A 消息工具**；handoff/approval 继续用
+5. **`piExtToolCallId` 只用于 tool-call 维度的 A2A 消息工具**；handoff/approval 继续用
    各自的领域 `idempotencyKey`。不要把一个具体字段名强推到所有域。
 
 ## 1. 定义
@@ -55,17 +54,17 @@ related: [0010-a2a-runtime-chain.md, 0011-identity-contract.md, decision-packets
 
 | 名字 | 类别 | 位置 | 作用 | 处置 |
 |---|---|---|---|---|
-| `requestId` | 客户端幂等 key（当前） | `a2a/tools.ts:254-302`、`a2a/requests.ts`、`QueueEnqueueInput.requestId` | `a2a_send` retry 去重 | **删除，统一为 `idempotencyKey`** |
-| `toolCallKey`（首选） | tool-call 幂等 key（目标字段名） | control envelope、A2A tool handler | 四工具 retry 去重 | **新增；extension 从 `toolCallId` + `toolName` 派生** |
+| `requestId` | 客户端幂等 key（当前） | `a2a/tools.ts:254-302`、`a2a/requests.ts`、`QueueEnqueueInput.requestId` | `a2a_send` retry 去重 | **删除，统一为 `piExtToolCallId`** |
+| `piExtToolCallId` | tool-call 幂等 key（目标字段名） | control envelope、A2A tool handler | 四工具 retry 去重 | **新增；extension 从 `toolCallId` + `toolName` 派生** |
 | `idempotencyKey` | 通用概念名 | 文档/类型注释 | 说明 key 的用途 | 不作为 A2A 字段名；handoff/approval 仍用 |
-| `clientMessageIds` | claim map（不是 key） | `invocation_credentials.client_message_ids_json` | 客户端 key → `{intentHash, messageId, queueEntryId}` | 保留语义；建议改名 `idempotencyClaims` |
+| `clientMessageIds`（旧） | claim map（不是 key） | 旧列 `client_message_ids_json` → 新列 `tool_call_claims_json` | 客户端 key → `{intentHash, messageId, queueEntryId}` | 改名 `toolCallClaims` |
 | `intentHash` | payload fingerprint | `a2a/tools.ts:208-219` | 同 key 不同 intent → conflict | 保留；扩到四工具 |
 | `a2a_requests.request_id` | 旧 ledger key | migration 016 | task-first 时代的 replay ledger | legacy 只读；v1 不写 |
 | `sourceRecordId` | queue admission 输入 | `InvocationQueue.enqueue` | v1 = `messageId`；queue entry 身份 | 保留；内部 |
 | `attempt`（admission） | queue admission 序号 | `queue_admissions` | `queueEntryId = hash(sourceRecordId, attempt)` | 保留；不是 execution attempt |
 | `queueEntryId` | 实体 ID | `invocation_queue` | queue row 身份 | 保留；内部/结果可返回 |
 | `messageId` | 实体 ID | `messages` | 持久消息身份 | 保留；内部/结果可返回 |
-| `toolCallId` | pi tool call 身份 | `worker-extension.ts:32-40` | extension 内稳定；派生 `idempotencyKey` 的来源 | 保留；不是 daemon 幂等 key |
+| `toolCallId` | pi tool call 身份 | `worker-extension.ts:32-40` | extension 内稳定；派生 `piExtToolCallId` 的来源 | 保留；不是 daemon 幂等 key |
 | `wreq-N` | connection-local 请求序号 | `worker-extension.ts:126` | control request/response correlation | **不能当幂等 key**；每次重试会变 |
 
 ### 2.2 Queue / execution
@@ -112,7 +111,7 @@ DP-F018AUTH-3=B 的选择。
 
 | 能力 | codeteam v1 | Clowder | 关系 / 处置 |
 |---|---|---|---|
-| 客户端消息幂等 | `toolCallKey`（extension 从 `toolCallId` 派生并注入） | `clientMessageId`（MCP client 传入） | 概念相同，名字有意不同；codeteam 选来源可追溯 |
+| 客户端消息幂等 | `piExtToolCallId`（extension 从 `toolCallId` 派生并注入） | `clientMessageId`（MCP client 传入） | 概念相同，名字有意不同；codeteam 选来源可追溯 |
 | 客户端 key → 结果 | credential `toolCallClaims` map | message store 派生索引 | 语义等价；存储位置不同 |
 | queue admission 重放 | `(sourceRecordId, attempt)` + `queue_admissions` | `sourceId` / queue ledger + message key | 语义等价 |
 | payload 冲突检测 | `intentHash` | message payload match / action fence | codeteam 更严格；保留 |
@@ -126,30 +125,30 @@ DP-F018AUTH-3=B 的选择。
 pi agent loop
   → tool call (toolCallId)
   → worker-extension.execute(toolCallId, params, signal)
-  → toolCallKey = derive(toolCallId, toolName)           // extension 生成，不交给模型
-  → ControlClient.a2aCall({ workerId, token, toolCallKey, toolName, input })
+  → piExtToolCallId = derive(toolCallId, toolName)       // extension 生成，不交给模型
+  → ControlClient.a2aCall({ workerId, token, piExtToolCallId, toolName, input })
   → daemon resolveWorkerBinding()                        // credential 是 scope
   → A2AToolHandlers
 
 transaction:
   insert message
   insert invocation_queue entry
-  credential.toolCallClaims[toolCallKey] = { intentHash, messageId, queueEntryId }
+  credential.toolCallClaims[piExtToolCallId] = { intentHash, messageId, queueEntryId }
 
-retry with same toolCallKey:
+retry with same piExtToolCallId:
   claim exists + same intentHash  → replayed (same message/queue)
-  claim exists + different intentHash → tool_call_conflict
+  claim exists + different intentHash → pi_ext_tool_call_conflict
   no claim → new message/queue/claim
 ```
 
 **规则**
 
-1. model-facing tool schema 不暴露 `toolCallKey` / `requestId` / `sourceRecordId` / `attempt`。
+1. model-facing tool schema 不暴露 `piExtToolCallId` / `requestId` / `sourceRecordId` / `attempt`。
 2. pi extension 从 `toolCallId` + `toolName` 派生 key；`wreq-N` 只做请求关联，不是幂等 key。
-3. `ControlClient.a2aCall` 需要 bounded retry；重试沿用同一个 `toolCallKey`。
+3. `ControlClient.a2aCall` 需要 bounded retry；重试沿用同一个 `piExtToolCallId`。
 4. claim map 建议从 `clientMessageIds` 改为 `toolCallClaims`
-   （DDL `tool_call_claims_json`），key 是 `toolCallKey`，避免被读成第二个 ID。
-5. 错误 taxonomy：`tool_call_conflict`（同 key 不同 intent）、
+   （DDL `tool_call_claims_json`），key 是 `piExtToolCallId`，避免被读成第二个 ID。
+5. 错误 taxonomy：`pi_ext_tool_call_conflict`（同 key 不同 intent）、
    `queue_admission_conflict`（同 source+attempt 不同 fingerprint）、
    `a2a_duplicate_delivery`（同 source+target 已 queued/running）。
 6. `a2a_requests` 标 legacy；不迁移旧 `request_id`。
@@ -165,13 +164,13 @@ retry with same toolCallKey:
 
 ## 7. 开放问题
 
-1. **DP-F018A2A-1**：A+ 待 operator 确认；确认后统一改名并落实现约束。
-2. **字段名**：`clientMessageIds` → `idempotencyClaims` 是否接受（纯命名修正）。
+1. **DP-F018A2A-1**：已定 `piExtToolCallId`；待落实现约束。
+2. **字段名**：`clientMessageIds` → `toolCallClaims`（已随 DP-F018A2A-1 决定，纯命名修正）。
 3. **retention**：credential tombstone 的 GC deadline 具体值（建议 30 天）。
 4. **Hub API 幂等**：`POST /api/messages` / `POST /api/threads` 的 `idempotencyKey` 是 W7a
    独立缺口；不与 F018 A2A 工具混用。
 5. **模型层重试**：extension bounded retry 失败后返回 typed outcome unknown；是否需要在
-   extension 内维护 `intentHash → idempotencyKey` 短期表，避免模型重试生成新 key。
+   extension 内维护 `intentHash → piExtToolCallId` 短期表，避免模型重试生成新 key。
 
 ## 8. 代码 / 文档引用
 

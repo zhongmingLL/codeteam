@@ -49,7 +49,7 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 | Pointer | 响应消息 | `responseMessageId` | terminal | 永久 | child 产出的消息 |
 | Pointer | A2A 因果父 | `causal.a2aParentTurnExecutionId` | A2A ingress | 永久 | 上游 child，不是 lifecycle parent |
 | Pointer | parent 的用户消息 | `userMessageId` | QueueProcessor | 永久 | v1 = `messageId`；未来可为 null |
-| Key | 消息创建幂等 | `requestId`（待改名 `clientMessageId`） | client | 短期 | 不是 ID；命名见 DP-F018A2A-1 |
+| Key | 消息创建幂等 | `piExtToolCallId` | pi extension | 短期 | 不是 ID；由 `toolCallId + toolName` 派生 |
 | Key | target 定位 | `targetKey` | 派生 | per target | `agent:<agentId>` / `operator:<userId>` |
 | Key | 队列准入幂等 | `(sourceRecordId, attempt)` | 派生 | 永久 | 复合 key；不是 ID；`attempt` 是 admission attempt |
 
@@ -109,7 +109,7 @@ userId
    `(parentInvocationId, agentId, attempt)` 唯一键；`turnExecutionId` 由 attempt 绑定，
    非空时唯一；对外引用用 `attemptId`。
 7. **parent 上没有 `idempotencyKey`**\
-   message 创建用 `requestId`（DP-F018A2A-1 推荐统一为 `clientMessageId`）；队列准入用
+   message 创建用 `piExtToolCallId`；队列准入用
    `(sourceRecordId, attempt)`；parent 用 `sourceRecordId UNIQUE`。
 
 **例外**：`QueueTarget` 的 `{ kind, id }` 是 discriminated union 的 target selector，不是通用对象引用；`kind="agent"` 时 `id=agentId`，`kind="operator"` 时 `id=userId`。对外 wire 形状保持 `{kind,id}`，内部用 `targetKey()` 解析。
@@ -124,7 +124,7 @@ userId
 | `invocationId` 指 child | `turnExecutionId` | child 执行必须用 `turnExecutionId` |
 | `parentInvocationId` 指 A2A 因果父 | `a2aParentTurnExecutionId` | 因果父不是 lifecycle parent |
 | `entryId` | `queueEntryId` | 明确对象 |
-| `idempotencyKey`（parent） | `requestId`（待改名 `clientMessageId`）或 `(sourceRecordId, attempt)` | v1 不需要 parent 级 key |
+| `idempotencyKey`（parent） | `piExtToolCallId` 或 `(sourceRecordId, attempt)` | v1 不需要 parent 级 key |
 | `sourceRecordId`（旧义：run/backlog） | `originRecordId` | 给队列身份让路 |
 
 ## 6. 与 Clowder / 0001 的映射
@@ -216,7 +216,7 @@ credentialId（auth）
 | AgentReadState | 否 | 主键 `(thread_id, agent_id)` | thread owner 隐含 user；v1 单 user 简化 |
 | response_drafts | 否 | 通过 `attempt_id`/`turn_execution_id` | attempt/TurnExecution 的子记录；user 从 parent/thread 派生；多 user draft 隔离时再加 |
 | workers / worker_bindings | 否 | project/account | execution carrier，不是 user-owned |
-| a2a_requests | 否 | legacy 只读 | v1 不再写入；requestId 幂等迁到 `InvocationCredential.clientMessageIds`（thread/agent 由 credential 派生） |
+| a2a_requests | 否 | legacy 只读 | v1 不再写入；piExtToolCallId 幂等迁到 `InvocationCredential.toolCallClaims`（thread/agent 由 credential 派生） |
 | InvocationTracker / QueueProcessor（内存） | 否（不持久化） | `start(...userId...)` / `processNext(...userId...)` | ownership/auth fence；不是存储 |
 
 ### 11.1 不变量
@@ -248,7 +248,7 @@ credentialId（auth）
 - **保留**：Thread owner、AgentSession、InvocationRecord、TurnExecution、InvocationCredential、
   QueueEntry.owner 的 userId。
 - **不加**：StoredMessage、InvocationAttempt、AgentReadState、response_drafts、workers；
-  `a2a_requests` 标 legacy，`InvocationCredential.clientMessageIds` 不存 userId。
+  `a2a_requests` 标 legacy，`InvocationCredential.toolCallClaims` 不存 userId。
 - **不变量测试**：上述 userId 链不一致 fail closed；跨 user thread access 拒绝；
   `response_drafts`/`InvocationAttempt`/`AgentReadState` 从 parent/thread 派生，不接受冲突
   的调用方 userId。

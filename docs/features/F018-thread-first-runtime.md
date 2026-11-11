@@ -89,7 +89,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - [ ] `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 E13。
 - [ ] v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges E14。
 - [ ] session 迁移跳过 running invocation E15。
-- [ ] requestId replay/conflict、replyTo、loop guard E10/E11/E17。
+- [ ] piExtToolCallId replay/conflict、replyTo、loop guard E10/E11/E17。
 
 ## 非目标
 

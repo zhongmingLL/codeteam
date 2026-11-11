@@ -181,7 +181,7 @@ interface QueuePayload {
   attempt: number;               // 1-based
   content: string;               // admission 时正文快照
   requestedTargets: QueueTarget[]; // admission 全量快照
-  requestId?: string;            // A2A requestId 幂等
+  piExtToolCallId?: string;      // A2A tool-call 幂等
 }
 
 interface QueueExecution {
@@ -337,7 +337,7 @@ interface QueueEnqueueInput {
   targets: QueueTarget[];
   priority?: "urgent" | "normal";
   execution?: Partial<QueueExecution>;
-  requestId?: string;
+  piExtToolCallId?: string;
 }
 
 class InvocationQueue {
@@ -664,8 +664,8 @@ interface MessageStore {
 | 跨 user / 跨 thread access | pre-admission typed reject | `thread_access_denied` |
 | 显式 target 形状/归属非法 | pre-admission typed reject | `invalid_explicit_target` |
 | A2A depth > 15 / loop guard | pre-admission typed reject | `a2a_depth_exceeded` / `loop_guard` |
-| requestId 同 payload 重放 | **成功 replay**，不 reject | `replayed` |
-| requestId 不同 payload | pre-admission typed reject | `a2a_request_conflict` |
+| piExtToolCallId 同 payload 重放 | **成功 replay**，不 reject | `replayed` |
+| piExtToolCallId 不同 payload | pre-admission typed reject | `pi_ext_tool_call_conflict` |
 | source 已撤回 | pre-admission typed reject | `source_withdrawn` |
 | admitted 后 worker/credential/provider 启动前失败 | `delivery_failure` system message | 上面 `worker_*` / `credential_mint_failed` / `provider_start_failed` |
 | R 已创建后的 provider 失败/中断/取消 | R terminal settlement | 不写 `delivery_failure` |
@@ -681,7 +681,7 @@ type IngressRejectReason =
   | "invalid_explicit_target"
   | "a2a_depth_exceeded"
   | "loop_guard"
-  | "a2a_request_conflict"
+  | "pi_ext_tool_call_conflict"
   | "source_withdrawn";
 ```
 
@@ -1903,7 +1903,7 @@ A2A tools 由 pi worker 的 extension 注册，经 Unix control socket 回调 da
 worker-extension.ts
   → ControlClient.a2aCall()
   → control socket:
-      { type: "a2a_call", workerId, token, clientMessageId, toolName, input }
+      { type: "a2a_call", workerId, token, piExtToolCallId, toolName, input }
   → daemon resolveWorkerBinding()
   → resolveInvocationToken() 验 token hash/state/expiry
   → 校验 turnExecution.status、worker binding、agentSession binding
@@ -1914,7 +1914,7 @@ worker-extension.ts
 - token = `ct1.<credentialId>.<secret>`；只存 hash+salt；token 本体只经
   `CODETEAM_TOKEN_FILE` 交给 pi extension；文件 0600，extension 每次 tool call 重读。
 - **codeteam 的“client”是 pi extension，不是 MCP client**：`registerTool.execute(toolCallId, params, signal)`
-  已经拿到 `toolCallId`；extension 应从它派生 `clientMessageId` 并注入 control envelope，
+  已经拿到 `toolCallId`；extension 应从它派生 `piExtToolCallId` 并注入 control envelope，
   不要求模型在 tool input 里生成 UUID。`wreq-N` 是 connection-local 请求序号，重试会变，
   不能当幂等键。
 - 服务端不信任 payload 里的 agent/thread/user；身份从 credential + child 派生。
@@ -1923,7 +1923,7 @@ worker-extension.ts
 **v1 `InvocationCredential`**
 
 ```ts
-type ClientMessageClaim = {
+type ToolCallClaim = {
   intentHash: string;
   messageId: string;
   queueEntryId: string | null;
@@ -1938,7 +1938,7 @@ interface InvocationCredential {
   agentSessionId: string;
   userId: string;
   allowedTools: string[];        // post_message / cross_post_message / multi_mention / thread_context
-  clientMessageIds: Record<string, ClientMessageClaim>; // requestId -> original result
+  toolCallClaims: Record<string, ToolCallClaim>; // piExtToolCallId -> original result
   state: "active" | "terminal";
   disposition: "completed" | "failed" | "interrupted" | "canceled" | "revoked" | "replaced" | null;
   replacedByTurnExecutionId: string | null;
@@ -1955,10 +1955,10 @@ interface InvocationCredential {
 - `verify(turnExecutionId, token)`：token hash+salt、state active、未过期、child running、
   `turnExecution.parentInvocationId === credential.parentInvocationId`、parent status ∈
   `queued | running`、tool allowed；身份从 credential 派生。
-- `getClientMessageId(turnExecutionId, requestId)`：只读 lookup，返回已有 claim。
-- `reserveClientMessageId(turnExecutionId, { requestId, intentHash, messageId, queueEntryId })`：
-  与 message/queue 创建同事务；同 requestId + 同 intentHash → `replayed`；
-  不同 intentHash → `a2a_request_conflict`；map 上限 1000 条/credential，超限 fail closed。
+- `getToolCallClaim(turnExecutionId, piExtToolCallId)`：只读 lookup，返回已有 claim。
+- `reserveToolCallClaim(turnExecutionId, { piExtToolCallId, intentHash, messageId, queueEntryId })`：
+  与 message/queue 创建同事务；同 piExtToolCallId + 同 intentHash → `replayed`；
+  不同 intentHash → `pi_ext_tool_call_conflict`；map 上限 1000 条/credential，超限 fail closed。
 - `commitTerminal(turnExecutionId, disposition, { replacedByTurnExecutionId? })`；
   `replaced` 必须带 `replacedByTurnExecutionId`。
 - `repairFromCanonical(turnExecutionId)`：child 已 terminal/不存在但 credential active → terminalize/revoke。
@@ -1971,13 +1971,13 @@ interface InvocationCredential {
 | Clowder | codeteam v1 | 关系 / 差异 |
 |---|---|---|
 | `InvocationRegistry` facade over `IAuthInvocationBackend`（memory / Redis） | `InvocationRegistry` service + SQLite `invocation_credentials` | service/record 分层相同；storage adapter 从 Redis 换 SQLite |
-| `InvocationRecord`：child `invocationId`、`callbackToken`、`userId/catId/threadId/parentInvocationId`、`toolExecutionPolicy`、`clientMessageIds`、`expectedCompactionCarrier`、`state`、`expiresAt`、`terminalRef` | `InvocationCredential`：`turnExecutionId`（auth anchor）、`parentInvocationId`（parent ref）、`credentialId`、`threadId/agentId/agentSessionId/userId`、`allowedTools`、`clientMessageIds`、`state/disposition`、`replacedByTurnExecutionId` | Clowder 的 `invocationId` 是 child execution id；codeteam canonical child 是 `turnExecutionId`，parent record id 是 `invocationId`，child FK 是 `parentInvocationId` |
+| `InvocationRecord`：child `invocationId`、`callbackToken`、`userId/catId/threadId/parentInvocationId`、`toolExecutionPolicy`、`clientMessageIds`、`expectedCompactionCarrier`、`state`、`expiresAt`、`terminalRef` | `InvocationCredential`：`turnExecutionId`（auth anchor）、`parentInvocationId`（parent ref）、`credentialId`、`threadId/agentId/agentSessionId/userId`、`allowedTools`、`toolCallClaims`、`state/disposition`、`replacedByTurnExecutionId` | Clowder 的 `invocationId` 是 child execution id；codeteam canonical child 是 `turnExecutionId`，parent record id 是 `invocationId`，child FK 是 `parentInvocationId` |
 | `AUTH_TERMINAL_DISPOSITIONS` 含 `replaced` | disposition 含 `replaced` + `replaced_by_turn_execution_id` | 对齐；retry/preempt 旧 credential 不再误标 revoked/canceled |
 | `create` 返回 invocationId + callbackToken；active principal 无 deadline | `create` 返回 credentialId + token；active credential 无 TTL；terminal tombstone 才 GC | 对齐 active 语义；codeteam token 只存 hash+salt，Clowder 存 raw callbackToken |
 | `verify`：token + state + expiry + canonical `TurnExecution`；`repairFromCanonical` 补 terminal/revoke | `verify`：token hash+salt + state + child running + parent status + tool allowed；`repairFromCanonical` | 语义对齐；codeteam 额外校验 worker/session binding |
 | `CallbackAuthTurnExecutionLifecycle`：canonical terminal first，再投影 auth terminal | child terminal 事务内 `credential terminalize`；startup/reaper 同一 helper | 对齐 canonical-first；codeteam 用单 SQLite 事务 + 单一 terminalize helper |
 | `listActiveRecords()` + `reconcileStartup`：canonical terminal → 补 terminal；orphan → revoked | `listActiveCredentials()` + `repairOrphans()`：同上 | 对齐；codeteam 还覆盖 missing child/run |
-| `InvocationRecord.clientMessageIds`（per invocation） | `InvocationCredential.clientMessageIds` map（B） | 形状对齐；codeteam 用 map 保留 message/queue replay 结果 |
+| `InvocationRecord.clientMessageIds`（per invocation） | `InvocationCredential.toolCallClaims` map（B） | 形状对齐；codeteam 用 map 保留 message/queue replay 结果 |
 | `verifyLatest` / `isLatest` / refresh-token `peek` / `tryClaimRefreshCooldown` | v1 不做 refresh；用“同 session 唯一 running + worker/session binding + retry `replaced`” | 差异：codeteam 没有 latest-slot/refresh 面；旧 token 在 retry 后必须 terminalize |
 | MCP server 发 `X-Invocation-Id` / `X-Callback-Token` headers；preHandler 派生 principal | pi extension `a2a_call` over local control socket；daemon 从 token/credential 派生 principal | contract 相同，transport 不同：codeteam 没有 MCP callback / HTTP header |
 | `ownerAuthProvenance`、managed/collective grants、`expectedCompactionCarrier` | v2 / 不做 | F018 纯 A2A 不需要；保留为 v2 扩展点 |
@@ -2006,9 +2006,9 @@ interface InvocationCredential {
 `post_message` / `cross_post_message` / `multi_mention` 都不带 legacy `kind`；
 消息正文只由 `bodyMd`（`multi_mention` 为 `question` + `context?`）承载。
 
-> **命名待定**：本文暂用 `requestId`；`DP-F018A2A-1` 推荐 A+，即 control envelope/
-> queue/credential 统一为 `clientMessageId`，model-facing tool schema 不暴露它，
-> 由 pi extension 从 `toolCallId` 派生并注入。拍板后本节整体改名。
+> **命名已定（DP-F018A2A-1）**：字段名 `piExtToolCallId`。它是 pi extension 从
+> `toolCallId` + `toolName` 派生并注入 control envelope 的 tool-call 幂等键；
+> model-facing tool schema 不暴露它。
 
 **targets schema**
 
@@ -2034,12 +2034,12 @@ targets: Array<
 **`post_message` / `cross_post_message` 流程**
 1. 校验 caller credential + target/thread access + A2A depth/loop guard
    （超过 15 → `a2a_depth_exceeded`；在创建 message 前拒绝）；
-2. 若带 `requestId`：`getClientMessageId(caller.turnExecutionId, requestId)`；
+2. 若带 `piExtToolCallId`：`getToolCallClaim(caller.turnExecutionId, piExtToolCallId)`；
    已有且 intentHash 相同 → 返回原 message/queue（replayed）；不同 →
-   `a2a_request_conflict`；
+   `pi_ext_tool_call_conflict`；
 3. 创建 message；
-4. `InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、requestId、priority）；
-5. 若带 `requestId`：同一事务内 `reserveClientMessageId(...)`；
+4. `InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、piExtToolCallId、priority）；
+5. 若带 `piExtToolCallId`：同一事务内 `reserveToolCallClaim(...)`；
    若并发 race 返回已有 claim，整笔回滚并按 replay/conflict 返回；
 6. QueueProcessor claim 后拆分 targets：
    - operator → 通知/可见性，写 `delivery.operatorNotifiedAt`，并在 message
@@ -2055,8 +2055,8 @@ targets: Array<
 
 **`multi_mention`**
 
-- 输入：`targets`（2-3 个 agent）、`question`（必填）、`context?`、`requestId?`
-  （命名待 DP-F018A2A-1；当前文内仍用 requestId 时同义）。
+- 输入：`targets`（2-3 个 agent）、`question`（必填）、`context?`；`piExtToolCallId` 由
+  pi extension 注入，不在 model-facing tool schema 中。
 - 语义是 fan-out 的 typed convenience：与 `post_message` 到多个 agent targets 共用
   `1 message + 1 queue entry + 1 parent + N child`；不建 `MultiMentionOrchestrator`，
   不做 group status/timeout/聚合回调。
@@ -2064,16 +2064,16 @@ targets: Array<
   `a2a_depth_exceeded`），不静默丢弃 target；执行期 target 失败仍按 parent 聚合。
 - 结果：`{ message, queueEntryId, targetAgentIds, replayed }`。
 
-**requestId 幂等（DP-F018AUTH-3=B）**
+**`piExtToolCallId` 幂等（DP-F018AUTH-3=B）**
 
 - scope = `credentialId`（child TurnExecution）+ sender；一个 credential 内
-  `requestId` 唯一。
-- `clientMessageIds` 是 map，不是纯 set：
-  `{ requestId: { intentHash, messageId, queueEntryId } }`；没有 map 就无法 replay
+  `piExtToolCallId` 唯一。
+- `toolCallClaims` 是 map，不是纯 set：
+  `{ piExtToolCallId: { intentHash, messageId, queueEntryId } }`；没有 map 就无法 replay
   原 message/queue。
 - map 上限 1000 条/credential；超限 fail closed，不静默驱逐。
 - claim 与 message/queue 创建同事务；重试返回原结果；不同 intent 返回
-  `a2a_request_conflict`。
+  `pi_ext_tool_call_conflict`。
 - `a2a_requests` 表标 legacy；v1 不再写入。
 
 **v1 不做**
@@ -2471,7 +2471,7 @@ CREATE TABLE queue_admissions (
   全量快照。允许空数组：全部 target 已 dispatch、但 attempt 尚未全部终态时，row 作为
   retry/terminal anchor 保留，`listQueued` 按 `json_array_length(targets_json) > 0` 过滤，
   不会把空 pending row 当候选。
-- `payload_json` 含 `sourceRecordId/messageId/originRecordId/attempt/content/requestedTargets/requestId`；`content` 是 admission 正文快照。
+- `payload_json` 含 `sourceRecordId/messageId/originRecordId/attempt/content/requestedTargets/piExtToolCallId`；`content` 是 admission 正文快照。
 - `source_record_id` 是队列身份；`message_id` 是消息指针（v1 恒非空，未来 connector 可为 null）；`attempt` 是 1-based 尝试序号。
 - `execution_json` 含 `a2aParentTurnExecutionId/a2aTriggerMessageId/a2aDepth`。
 - `delivery_json` 含 `operatorNotifiedAt`；operator-only entry 没有 parent/TurnExecution。
@@ -2720,8 +2720,8 @@ CREATE TABLE invocation_credentials (
   user_id TEXT NOT NULL,
   allowed_tools_json TEXT NOT NULL
     CHECK (json_valid(allowed_tools_json) AND json_type(allowed_tools_json) = 'array'),
-  client_message_ids_json TEXT NOT NULL DEFAULT '{}'
-    CHECK (json_valid(client_message_ids_json) AND json_type(client_message_ids_json) = 'object'),
+  tool_call_claims_json TEXT NOT NULL DEFAULT '{}'
+    CHECK (json_valid(tool_call_claims_json) AND json_type(tool_call_claims_json) = 'object'),
   state TEXT NOT NULL CHECK (state IN ('active', 'terminal')),
   disposition TEXT CHECK (
     disposition IS NULL OR disposition IN ('completed', 'failed', 'interrupted', 'canceled', 'revoked', 'replaced')
@@ -2749,11 +2749,11 @@ CREATE TABLE invocation_credentials (
   必须等于 child TurnExecution 的 parent，不用于 token 身份。
 - `user_id` 是 auth scope；必须等于 child TurnExecution/thread owner（`0011` §11）。
 - 重试创建新 child + 新 credential；旧 credential terminalize。
-- `client_message_ids_json` 存 `{requestId: {intentHash, messageId, queueEntryId}}`；
+- `tool_call_claims_json` 存 `{piExtToolCallId: {intentHash, messageId, queueEntryId}}`；
   `post_message` 与 message/queue 创建同事务 reserve；上限 1000 条/credential。
 - `disposition='replaced'` 时 `replaced_by_turn_execution_id` 必填；用于 retry/preempt。
 - active credential `expires_at = NULL`；terminal tombstone 才设 GC deadline。
-- `a2a_requests` 标 legacy，v1 不写；requestId claim 在 credential 上。
+- `a2a_requests` 标 legacy，v1 不写；piExtToolCallId claim 在 credential 上。
 - token 只存 hash+salt；token 本体只经 `CODETEAM_TOKEN_FILE` 交给 pi extension。
 
 ### 4.5 `agent_read_state`
@@ -3026,7 +3026,7 @@ parent partial_failed: successful=[A], failed=[B]
 
 ### 9.1 Queue / Processor
 
-- 一条消息 enqueue 一个 queue entry；同 source 重放收敛到同一 `id`；重复 `requestId` 返回同一 entry。
+- 一条消息 enqueue 一个 queue entry；同 source 重放收敛到同一 `id`；重复 `piExtToolCallId` 返回同一 entry。
 - operator conversation 只解析行首 `@`；多个 @ 去重；未知/disabled typed reject。
 - 无显式 @ → 隐式路由：上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
 - `StoredMessage.targetAgentIds` 与 message + queue entry 同事务写入（仅 user message；agent A2A targets 在 lifecycle.dispatchRefs）。
@@ -3106,10 +3106,10 @@ parent partial_failed: successful=[A], failed=[B]
 - credential 只能绑 child TurnExecution；一个 child 一个 active credential。
 - `verify` 校验 token hash/salt、state、expiry、child running、parent 未 canceled、tool allowed。
 - 身份从 credential + child/thread/session 派生；payload 不得覆盖 agent/thread/user。
-- pi extension → daemon 走 control socket：`{ type:"a2a_call", workerId, token, toolName, input }`；
+- pi extension → daemon 走 control socket：`{ type:"a2a_call", workerId, token, piExtToolCallId, toolName, input }`；
   token 文件 `ct1.<credentialId>.<secret>`，0600，extension 每次调用重读。
-- requestId 幂等：`client_message_ids_json` map + `reserveClientMessageId` 同事务；
-  同 requestId 同 intent → replayed；不同 intent → `a2a_request_conflict`。
+- piExtToolCallId 幂等：`tool_call_claims_json` map + `reserveToolCallClaim` 同事务；
+  同 piExtToolCallId 同 intent → replayed；不同 intent → `pi_ext_tool_call_conflict`。
 - 不在 allowedTools 的 tool → forbidden。
 - child terminal → credential terminalize。
 - child 不存在/terminal 但 credential active → canonical repair terminalize/revoke。
@@ -3125,7 +3125,7 @@ parent partial_failed: successful=[A], failed=[B]
 - 无 @ 的 operator message 按隐式链解析；`targetAgentIds` 持久化在 user message。
 - ingress reject 必须使用 typed code：`no_target/unknown_agent/agent_disabled/account_missing/
   thread_deleted/thread_access_denied/invalid_explicit_target/a2a_depth_exceeded/loop_guard/
-  a2a_request_conflict/source_withdrawn`；同 requestId + 同 payload 是成功 `replayed`，不是 reject。
+  pi_ext_tool_call_conflict/source_withdrawn`；同 piExtToolCallId + 同 payload 是成功 `replayed`，不是 reject。
 - 正文 `@`（agent final response / text）不路由、不报错；只有显式 typed target 非法才
   `invalid_explicit_target`。
 - `delivery_failure` 只用于 admitted prestart：`worker_capacity/worker_start_failed/
@@ -3272,6 +3272,6 @@ parent partial_failed: successful=[A], failed=[B]
     credential + response settlement 两段提交。
 45. **DP-F018AUTH=A/A/B/A/A（2026-11-11 拍板）**：credential 绑 child
     `TurnExecution`；旧 task-first auth 代码只复用机制（control socket / token file /
-    hash+salt / worker binding），坐标重写；requestId 幂等放 credential 的
-    `client_message_ids_json` map（`a2a_requests` 标 legacy）；active credential 无 TTL，
+    hash+salt / worker binding），坐标重写；piExtToolCallId 幂等放 credential 的
+    `tool_call_claims_json` map（`a2a_requests` 标 legacy）；active credential 无 TTL，
     startup sweep + verify repair 回收 orphan；pi extension 只注册 F018 四工具。

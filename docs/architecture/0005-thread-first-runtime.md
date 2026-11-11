@@ -374,7 +374,7 @@ thread message / A2A tool
 |---|---|---|---|
 | `codeteam_post_message` | 同 thread 发言并唤醒 targets | `targets`, `bodyMd` | targets 是 `{kind:"agent"|"operator", id}`；正文 @ 不路由；operator-only 只通知 |
 | `codeteam_cross_post_message` | 跨 thread 发言并唤醒 targets | `threadId`, `targets`, `bodyMd` | source/target thread 同 user；target thread active/not deleted/有 projectPath；写 `extra.crossPost`；depth/loop guard；targets 同上 |
-| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent | `targets` (2-3 agents), `question`, `context?`, `requestId?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；响应是独立消息；无聚合回调 |
+| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent | `targets` (2-3 agents), `question`, `context?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；响应是独立消息；无聚合回调 |
 | `codeteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
 
 约束：
@@ -386,12 +386,10 @@ thread message / A2A tool
 - `post_message` / `cross_post_message` 允许 agent + operator targets；
   operator-only 只通知，不创建 parent/TurnExecution；message `dispatchRefs` 与通知同事务
   settle；mixed targets 下 agent retry 不重复通知 operator。
-- `post_message` / `cross_post_message` 带 optional `replyTo` 与 `requestId`；
-  `multi_mention` 带 optional `requestId`。`requestId` 幂等键 scope 为
-  `(threadId, agentId, requestId)`。
-
-> **命名待定**：`DP-F018A2A-1` 推荐统一为 `clientMessageId`（credential-scoped），
-> 本节的 `requestId` 是暂时旧名；拍板后整体替换。
+- `post_message` / `cross_post_message` / `multi_mention` 的幂等键统一为
+  `piExtToolCallId`；它由 pi extension 从 `toolCallId + toolName` 派生并注入 control
+  envelope，**不进入 model-facing tool input**；scope 是 credential（child TurnExecution），
+  不是 `(threadId, agentId, key)`。
 - `multi_mention` 是 fan-out：一条 message + 一个 queue entry + 一个
   `InvocationRecord`(parent) + N 个 `TurnExecution`(child)；响应是独立消息；
   parent 聚合 completed/partial_failed/failed 与成功/失败集合。v1 不做聚合
@@ -401,8 +399,8 @@ thread message / A2A tool
 - targets 可以是任意 enabled agent；首次成功 invocation 后加入 thread
   participants。participants 是路由/上下文，不是 ACL。
 - 跨 thread depth 上限 15；同一 source + target 已有 queued/running 返回
-  `a2a_duplicate_delivery`；同一 requestId 不同 intent 返回
-  `a2a_request_conflict`。
+  `a2a_duplicate_delivery`；同一 piExtToolCallId 不同 intent 返回
+  `pi_ext_tool_call_conflict`。
 - 目标 thread 不存在、soft-deleted、跨 user、target agent disabled 都是 typed
   reject，不静默降级。
 - `cross_post_message` 的 target thread 还必须满足 `projectPath` 非空；message 写
@@ -434,8 +432,8 @@ thread message / A2A tool
 | 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、contentBlocks、toolEvents、thinking、seq | dispatch 事务创建 R；stream bounded flush；R terminal 后删除 |
 | `messages` | 新增 `target_agent_ids_json`（user message 的 admission targets） | 旧消息回填 `[]`；新 user message 由 ingress 写入 |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
-| `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、clientMessageIds、state/disposition（含 replaced）、token hash/salt | 旧 task/role/run credential legacy |
-| `a2a_requests` | **legacy 只读**；v1 不再写入；requestId 幂等迁到 `invocation_credentials.client_message_ids_json`（DP-F018AUTH-3=B） | 旧行保留历史；新 runtime 不读不写；不删除历史 |
+| `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、toolCallClaims、state/disposition（含 replaced）、token hash/salt | 旧 task/role/run credential legacy |
+| `a2a_requests` | **legacy 只读**；v1 不再写入；piExtToolCallId 幂等迁到 `invocation_credentials.tool_call_claims_json`（DP-F018AUTH-3=B） | 旧行保留历史；新 runtime 不读不写；不删除历史 |
 | `messages` | 不改表；task 字段 legacy 可空 | 新消息不写 taskId |
 | `tasks` / `handoffs` / `custody_events` / `budgets` / `reviews` / `merges` | 冻结 legacy，不读不写 | 保留历史只读；后续能力另立 feature |
 
@@ -464,14 +462,14 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | E7 | token scope 负例 | 跨 thread / 错 user / 错 agent 的 token 被拒 | auth 单测 + E2E |
 | E8 | 目标 thread soft-deleted / 跨 user / target disabled | typed reject，不静默降级 | 负例 E2E |
 | E9 | 并发首条消息 | 同一 thread×agent session 不双开；queue 不重复消费 | 并发测试 |
-| E10 | `requestId` replay/conflict | 同 intent replay；不同 intent `a2a_request_conflict` | 负例 E2E |
+| E10 | `piExtToolCallId` replay/conflict | 同 intent replay；不同 intent `pi_ext_tool_call_conflict` | 负例 E2E |
 | E11 | `replyTo` 跨 thread / 不存在 | typed reject，不静默丢弃 | 负例 E2E |
 | E12 | observation 工具名 | 识别 4 个新工具；text-@ 负例不误报 `missing_a2a_tool_call` | observation 单测 |
 | E13 | 旧 A2A 工具 | `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 | registry 断言 |
 | E14 | 旧 code delivery 表 | v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges | DB 访问断言 |
 | E15 | session 迁移 | 有 running invocation 的 session 不迁移；等 terminal 后处理；sealing/sealed 留 legacy | migration 测试 |
 | E16 | thread access | 同 user 可见；participants 只做路由；跨 user 拒绝 | auth/ACL 测试 |
-| E17 | loop guard | depth 15、`a2a_duplicate_delivery`、`a2a_request_conflict` | 负例 E2E |
+| E17 | loop guard | depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict` | 负例 E2E |
 | E18 | legacy thread 的 `projectPath` 为空 | `post_message`/`cross_post_message` 触发 `thread_project_path_required`；补 `projectPath` 后正常 | 负例 E2E |
 
 ## 6. 影响面与风险
