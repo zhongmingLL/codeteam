@@ -53,6 +53,9 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 | Key | target 定位 | `targetKey` | 派生 | per target | `agent:<agentId>` / `operator:<userId>` |
 | Key | 队列准入幂等 | `(sourceRecordId, attempt)` | 派生 | 永久 | 复合 key；不是 ID；`attempt` 是 admission attempt |
 
+> 幂等 key 的完整分层、Clowder 对照与 A2A v1 目标模型见
+> `0013-idempotency-key-map.md`；本节只保留身份契约相关名字。
+
 ## 3. 关系图
 
 ```text
