@@ -645,7 +645,10 @@ interface MessageStore {
   user message 必须校验 `from.userId === thread.created_by`；agent message 的 owner 是
   thread owner；message 不另存 userId。
 - `appendIdempotent`：与 `append` 相同，但按 `id`/幂等键返回 `replayed`；不同 payload → conflict。
-  幂等 scope：user message `(threadId, requestId)`；response R `(threadId,
+  幂等 scope：A2A user message 先由 credential claim `(turnExecutionId,
+  piExtToolCallId)` 裁决，同 intent 直接 replay 原 message；其它 ingress 的
+  user message 用调用方稳定 key，scope 为 `(threadId, idempotencyKey)`（Hub API
+  幂等是 W7a 独立缺口，不在 v1 A2A 路径）；response R `(threadId,
   turnExecutionId, kind='response')`；delivery_failure `(threadId, inputMessageId,
   targetKey)`。v1 不引入 userId 到消息幂等键。
 - `advanceLifecycleInputDispatch`：按 `(targetKey, queueEntryId, attempt)` 精确匹配；
@@ -2011,7 +2014,8 @@ interface InvocationCredential {
 
 **v1 不做**
 - `expectedCompactionCarrier`、managed/collective grants、MCP callback token、task/role/profile/run 字段。
-- `a2a_requests` 新写入：该表标 legacy；v1 request claim 在 credential 上（DP-F018AUTH-3=B）。
+- `a2a_requests` 新写入：该表标 legacy；v1 tool-call claim 在 credential 的
+  `toolCallClaims` 上（DP-F018AUTH-3=B）。
 
 ### 3.8 a2a/tools（pi extension tools）+ InvocationQueue.enqueue
 

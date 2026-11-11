@@ -3,7 +3,7 @@ title: "codeteam A2A runtime v1 — thread-first architecture"
 doc_kind: architecture
 status: draft-for-review
 created: 2026-11-03
-updated: 2026-11-10
+updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_direction: "2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery setup frozen/deprecated"
@@ -287,13 +287,20 @@ interface AgentSession {
 interface InvocationCredential {
   credentialId: string;
   turnExecutionId: string;
+  parentInvocationId: string;
   threadId: string;
   userId: string;
   agentId: string;
   agentSessionId: string;
   allowedTools: string[];
+  toolCallClaims: Record<string, {
+    intentHash: string;
+    messageId: string;
+    queueEntryId: string | null;
+  }>;
   state: "active" | "terminal";
-  disposition: "completed" | "failed" | "interrupted" | "canceled" | "revoked" | null;
+  disposition: "completed" | "failed" | "interrupted" | "canceled" | "revoked" | "replaced" | null;
+  replacedByTurnExecutionId: string | null;
 }
 ```
 
@@ -348,8 +355,10 @@ thread message / A2A tool
   controller，旧 child 标 `interrupted/preempted`；cancel 即释放 slot。
 - 真正执行互斥在 `TurnExecution` 唯一 running per session + `RpcConnection.prompting`
   + `worker_bindings.generation`；旧 worker 未退出时新 start 返回 `worker_busy`。
-- `InvocationOwnerReaper`：running TurnExecution 无 live worker/heartbeat →
-  `interrupted/owner_reaped`；有 live worker 的长任务保留。
+- `InvocationOwnerReaper`：running TurnExecution 的 lease 过期且 owner absence
+  （TTL 只做候选，不单独作终止证据）→ `interrupted/owner_reaped`；有 live
+  worker/heartbeat 的长任务保留。provider 退出先等 5min finalization grace +
+  exact owner fence，再落 `interrupted/provider_exited_without_terminal`。
 
 ### 3.2 Worker contract
 
@@ -417,7 +426,7 @@ thread message / A2A tool
 | 阶段 | 内容 | 出口 |
 |---|---|---|
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
-| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 request claims）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
+| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 `toolCallClaims`）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
 | R2 | same-thread post / thread context；observation；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18 |
 | R3 | cross-thread post；multi_mention fan-out；thread access；participants | E3/E4/E5/E6/E8/E10/E11/E16 |
 | R4 | loop guard/idempotency；多 agent thread；不做 multi_mention 聚合回调 | E17 |
@@ -433,11 +442,10 @@ thread message / A2A tool
 | 新 `invocation_records` | 消息级 parent：`invocationId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
 | 新 `invocation_attempts` | append-only target attempt + execution binding：attemptId、parentInvocationId、queueEntryId、targetAgentId、attempt、state、turnExecutionId、agentSessionId、workerId、provider/model、usage、settlement、responseMessageId | 与 createRunning/child terminal 同事务写入；retry 追加新行；旧行不改 |
 | 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、contentBlocks、toolEvents、thinking、seq | dispatch 事务创建 R；stream bounded flush；R terminal 后删除 |
-| `messages` | 新增 `target_agent_ids_json`（user message 的 admission targets） | 旧消息回填 `[]`；新 user message 由 ingress 写入 |
+| `messages` | 加 `content_json` / `tool_events_json` / `lifecycle_json` / `extra_json` / `thinking` / `deleted_at` / `deleted_by`；`body_md` 保持 plain text；legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入 | R1 回填 `extra.rich`、`extra.targetAgentIds`、`lifecycle.input.dispatchRefs`；无法映射的消息进 preflight 清单；legacy 列 R5 drop |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
 | `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、toolCallClaims、state/disposition（含 replaced）、token hash/salt | 旧 task/role/run credential legacy |
 | `a2a_requests` | **legacy 只读**；v1 不再写入；piExtToolCallId 幂等迁到 `invocation_credentials.tool_call_claims_json`（DP-F018AUTH-3=B） | 旧行保留历史；新 runtime 不读不写；不删除历史 |
-| `messages` | 不改表；task 字段 legacy 可空 | 新消息不写 taskId |
 | `tasks` / `handoffs` / `custody_events` / `budgets` / `reviews` / `merges` | 冻结 legacy，不读不写 | 保留历史只读；后续能力另立 feature |
 
 **关键 cutover 约束**：v1 不跑旧 code delivery path。R1 前先停止新 task dispatch，
@@ -481,7 +489,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 
 - `control/migrations`：threads、thread_participants、agent_sessions、
   invocation_queue、invocation_records、turn_executions、invocation_credentials
-  （含 request claims）；`a2a_requests` 标 legacy；
+  （含 `toolCallClaims`）；`a2a_requests` 标 legacy；
 - `auth`：InvocationRegistry + InvocationCredential；token 从 task scope 改为
   child TurnExecution / thread / agent / session；鉴权面为 pi extension tools；
 - `dispatch`：QueueProcessor（claim/drain）、AgentRouter/routeAgents/runAgentTurn、
