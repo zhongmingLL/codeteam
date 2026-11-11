@@ -7,7 +7,7 @@ updated: 2026-11-10
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06"
-operator_direction: "直接复用 Clowder A2A runtime 骨架；v1 轻量化；MCP callback → pi extension tools；不做 task-first/custody/action/wait/compaction；session active-only"
+operator_direction: "直接复用 Clowder A2A runtime 骨架；v1 轻量化；MCP callback → pi extension tools + local control socket；不做 task-first/custody/action/wait/compaction；session active-only"
 related_features: [codeteam/F018, codeteam/F017]
 ---
 
@@ -1890,13 +1890,40 @@ type AgentStreamEvent =
   `clearResponsePending`；`listResponsePending` 投影 attempt settlement。
 - `coveredMessageIds` / `outputFence` / `listBySource` / `settleOutputFence` 留 v2。
 
-### 3.7 InvocationRegistry + InvocationCredential（MCP → pi extension）
+### 3.7 InvocationRegistry + InvocationCredential（pi extension tool → control socket）
 
-**定位**：`InvocationRegistry` 是 service；`InvocationCredential` 是存储记录。鉴权对象从 MCP callback 改为 pi extension tools。
+**定位**：`InvocationRegistry` 是 service；`InvocationCredential` 是存储记录。
+A2A tools 由 pi worker 的 extension 注册，经 Unix control socket 回调 daemon；
+不是 MCP tools callback，也没有 `X-Invocation-Id` / `X-Callback-Token` HTTP headers。
+
+**transport（pi extension → daemon）**
+
+```text
+worker-extension.ts
+  → ControlClient.a2aCall()
+  → control socket:
+      { type: "a2a_call", workerId, token, toolName, input }
+  → daemon resolveWorkerBinding()
+  → resolveInvocationToken() 验 token hash/state/expiry
+  → 校验 turnExecution.status、worker binding、agentSession binding
+  → 从 credential + child/thread/session 派生 principal
+  → A2AToolHandlers
+```
+
+- token = `ct1.<credentialId>.<secret>`；只存 hash+salt；token 本体只经
+  `CODETEAM_TOKEN_FILE` 交给 pi extension；文件 0600，extension 每次 tool call 重读。
+- 服务端不信任 payload 里的 agent/thread/user；身份从 credential + child 派生。
+- token 不入 input/query/body/log/UI。
 
 **v1 `InvocationCredential`**
 
 ```ts
+type ClientMessageClaim = {
+  intentHash: string;
+  messageId: string;
+  queueEntryId: string | null;
+};
+
 interface InvocationCredential {
   credentialId: string;
   turnExecutionId: string;       // child TurnExecution
@@ -1904,11 +1931,12 @@ interface InvocationCredential {
   agentId: string;
   agentSessionId: string;
   userId: string;
-  allowedTools: string[];        // post_message / cross_post_message / thread_context
+  allowedTools: string[];        // post_message / cross_post_message / multi_mention / thread_context
+  clientMessageIds: Record<string, ClientMessageClaim>; // requestId -> original result
   state: "active" | "terminal";
-  disposition: "completed" | "failed" | "interrupted" | "canceled" | "revoked" | null;
-  lastRefreshAt: number;
-  expiresAt: number | null;
+  disposition: "completed" | "failed" | "interrupted" | "canceled" | "revoked" | "replaced" | null;
+  replacedByTurnExecutionId: string | null;
+  expiresAt: number | null;      // active: null; terminal: tombstone GC deadline
   createdAt: number;
   updatedAt: number;
 }
@@ -1917,18 +1945,28 @@ interface InvocationCredential {
 **Registry v1**
 - `create(userId, threadId, agentId, sessionId, turnExecutionId, allowedTools)`；校验
   `userId === TurnExecution.userId === thread.created_by`，不一致 fail closed；
-- `verify(turnExecutionId, token)`：token hash+salt、state active、未过期、child running、parent status ∈ `queued | running`、tool allowed。
-- `commitTerminal(turnExecutionId, disposition)`；
+- `verify(turnExecutionId, token)`：token hash+salt、state active、未过期、child running、parent status ∈ `queued | running`、tool allowed；身份从 credential 派生。
+- `getClientMessageId(turnExecutionId, requestId)`：只读 lookup，返回已有 claim。
+- `reserveClientMessageId(turnExecutionId, { requestId, intentHash, messageId, queueEntryId })`：
+  与 message/queue 创建同事务；同 requestId + 同 intentHash → `replayed`；
+  不同 intentHash → `a2a_request_conflict`；map 上限 1000 条/credential，超限 fail closed。
+- `commitTerminal(turnExecutionId, disposition, { replacedByTurnExecutionId? })`；
+  `replaced` 必须带 `replacedByTurnExecutionId`。
 - `repairFromCanonical(turnExecutionId)`：child 已 terminal/不存在但 credential active → terminalize/revoke。
+- `listActiveCredentials()` + `repairOrphans()`：startup sweep；child/run missing → revoked；
+  child/run terminal → 按 canonical disposition terminalize；running unowned → 先 interrupt 再 terminalize。
+- active credential 不设 TTL；只有 terminal tombstone 设 GC deadline。
 
 **v1 不做**
-- `clientMessageIds`、`expectedCompactionCarrier`、managed/collective grants、MCP callback token、task/role/profile/run 字段。
+- `expectedCompactionCarrier`、managed/collective grants、MCP callback token、task/role/profile/run 字段。
+- `a2a_requests` 新写入：该表标 legacy；v1 request claim 在 credential 上（DP-F018AUTH-3=B）。
 
 ### 3.8 a2a/tools（pi extension tools）+ InvocationQueue.enqueue
 
 **v1 工具面**
 - `post_message`
 - `cross_post_message`
+- `multi_mention`（2-3 个 agent；fan-out，不做聚合回调）
 - `thread_context`（只读，不入队）
 
 **targets schema**
@@ -1947,20 +1985,37 @@ targets: Array<
 
 **`post_message` / `cross_post_message` 流程**
 1. 校验 caller credential + target/thread access；
-2. 创建 message；
-3. `InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、requestId、priority）；
-4. QueueProcessor claim 后拆分 targets：
+2. 若带 `requestId`：`getClientMessageId(caller.turnExecutionId, requestId)`；
+   已有且 intentHash 相同 → 返回原 message/queue（replayed）；不同 →
+   `a2a_request_conflict`；
+3. 创建 message；
+4. `InvocationQueue.enqueue`（sourceRecordId、messageId、originRecordId、attempt、content、targets、requestedTargets、requestId、priority）；
+5. 若带 `requestId`：同一事务内 `reserveClientMessageId(...)`；
+   若并发 race 返回已有 claim，整笔回滚并按 replay/conflict 返回；
+6. QueueProcessor claim 后拆分 targets：
    - operator → 通知/可见性，写 `delivery.operatorNotifiedAt`；
    - agent → 创建 parent `InvocationRecord` + child `TurnExecution`；
-5. 若有 agent targets：child `causal = { triggerMessageId: 新 message,
+7. 若有 agent targets：child `causal = { triggerMessageId: 新 message,
    a2aParentTurnExecutionId: caller.turnExecutionId, a2aTriggerMessageId: 新 message,
    a2aDepth: caller.causal.a2aDepth + 1 }`；
-6. operator-only：不创建 parent/TurnExecution；只通知并删除 queue entry；
-7. 超过 15 拒绝。
+8. operator-only：不创建 parent/TurnExecution；只通知并删除 queue entry；
+9. 超过 15 拒绝。
+
+**requestId 幂等（DP-F018AUTH-3=B）**
+
+- scope = `credentialId`（child TurnExecution）+ sender；一个 credential 内
+  `requestId` 唯一。
+- `clientMessageIds` 是 map，不是纯 set：
+  `{ requestId: { intentHash, messageId, queueEntryId } }`；没有 map 就无法 replay
+  原 message/queue。
+- map 上限 1000 条/credential；超限 fail closed，不静默驱逐。
+- claim 与 message/queue 创建同事务；重试返回原结果；不同 intent 返回
+  `a2a_request_conflict`。
+- `a2a_requests` 表标 legacy；v1 不再写入。
 
 **v1 不做**
 - `a2a_send`、`handoff_*`、multi_mention 聚合回调、cross-thread custody。
-- `multi_mention` 如果保留，按普通多 target post 处理，不做聚合回调。
+- `multi_mention` 是 v1 工具，但只做 fan-out，不做聚合回调。
 
 ### 3.9 PerAgentTerminalDispositionCollector + transitionTerminal + QueueProcessor
 
@@ -2599,18 +2654,24 @@ CREATE TABLE invocation_credentials (
   user_id TEXT NOT NULL,
   allowed_tools_json TEXT NOT NULL
     CHECK (json_valid(allowed_tools_json) AND json_type(allowed_tools_json) = 'array'),
+  client_message_ids_json TEXT NOT NULL DEFAULT '{}'
+    CHECK (json_valid(client_message_ids_json) AND json_type(client_message_ids_json) = 'object'),
   state TEXT NOT NULL CHECK (state IN ('active', 'terminal')),
   disposition TEXT CHECK (
-    disposition IS NULL OR disposition IN ('completed', 'failed', 'interrupted', 'canceled', 'revoked')
+    disposition IS NULL OR disposition IN ('completed', 'failed', 'interrupted', 'canceled', 'revoked', 'replaced')
   ),
-  last_refresh_at INTEGER NOT NULL,
+  replaced_by_turn_execution_id TEXT,
   expires_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
 
   CHECK (state <> 'terminal' OR disposition IS NOT NULL),
   CHECK (state <> 'active' OR disposition IS NULL),
+  CHECK (state <> 'active' OR expires_at IS NULL),
+  CHECK (replaced_by_turn_execution_id IS NULL OR disposition = 'replaced'),
+  CHECK (disposition <> 'replaced' OR replaced_by_turn_execution_id IS NOT NULL),
   FOREIGN KEY (turn_execution_id) REFERENCES turn_executions(turn_execution_id) ON DELETE RESTRICT,
+  FOREIGN KEY (replaced_by_turn_execution_id) REFERENCES turn_executions(turn_execution_id) ON DELETE RESTRICT,
   FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
   FOREIGN KEY (agent_session_id) REFERENCES agent_sessions(id) ON DELETE RESTRICT
 ) STRICT;
@@ -2619,6 +2680,11 @@ CREATE TABLE invocation_credentials (
 - 一个 child TurnExecution 一个 credential。
 - `user_id` 是 auth scope；必须等于 child TurnExecution/thread owner（`0011` §11）。
 - 重试创建新 child + 新 credential；旧 credential terminalize。
+- `client_message_ids_json` 存 `{requestId: {intentHash, messageId, queueEntryId}}`；
+  `post_message` 与 message/queue 创建同事务 reserve；上限 1000 条/credential。
+- `disposition='replaced'` 时 `replaced_by_turn_execution_id` 必填；用于 retry/preempt。
+- active credential `expires_at = NULL`；terminal tombstone 才设 GC deadline。
+- `a2a_requests` 标 legacy，v1 不写；requestId claim 在 credential 上。
 - token 只存 hash+salt；token 本体只经 `CODETEAM_TOKEN_FILE` 交给 pi extension。
 
 ### 4.5 `agent_read_state`
@@ -2970,9 +3036,18 @@ parent partial_failed: successful=[A], failed=[B]
 
 - credential 只能绑 child TurnExecution；一个 child 一个 active credential。
 - `verify` 校验 token hash/salt、state、expiry、child running、parent 未 canceled、tool allowed。
+- 身份从 credential + child/thread/session 派生；payload 不得覆盖 agent/thread/user。
+- pi extension → daemon 走 control socket：`{ type:"a2a_call", workerId, token, toolName, input }`；
+  token 文件 `ct1.<credentialId>.<secret>`，0600，extension 每次调用重读。
+- requestId 幂等：`client_message_ids_json` map + `reserveClientMessageId` 同事务；
+  同 requestId 同 intent → replayed；不同 intent → `a2a_request_conflict`。
 - 不在 allowedTools 的 tool → forbidden。
 - child terminal → credential terminalize。
 - child 不存在/terminal 但 credential active → canonical repair terminalize/revoke。
+- startup sweep：`listActiveCredentials()` + `repairOrphans()`；child/run missing → revoked；
+  child/run terminal → terminalize；running unowned → interrupt 后 terminalize。
+- active credential 无 TTL；terminal tombstone 才 GC。
+- retry/preempt 旧 credential → `replaced` + `replaced_by_turn_execution_id`。
 - token 不出现在 TurnExecution/InvocationRecord/UI 读取面。
 
 ### 9.5 A2A
@@ -3033,7 +3108,7 @@ parent partial_failed: successful=[A], failed=[B]
 | `InvocationTracker` + `InvocationOwnerReaper` | `InvocationTracker` + `InvocationOwnerReaper` | 复用；start 抢占 + worker heartbeat |
 | `AgentRouter` + `routeSerial/routeParallel` | `AgentRouter` + `runAgentTurn` + `routeAgents(mode)` | per-agent pipeline 抽出；serial 薄循环 |
 | `invoke-single-cat` + `TurnExecutionStore` + `TurnExecutionRecord` | `invoke-single-agent` + `TurnExecutionStore` + `TurnExecution` | 复用；pi runtime |
-| `InvocationRegistry` | `InvocationRegistry` + `InvocationCredential` | 复用；MCP → pi extension |
+| `InvocationRegistry` | `InvocationRegistry` + `InvocationCredential` | 复用 contract；pi extension + control socket |
 | `a2a/tools` + MCP | `a2a/tools` (pi extension) + control socket | 复用语义；换 transport |
 | `PerCatTerminalDispositionCollector` + `transitionTerminal` + `QueueProcessor` | `PerAgentTerminalDispositionCollector` + `transitionTerminal` + `QueueProcessor` | 复用；v1 单事务 |
 | `TurnExecutionStartupReconciler` / `ZombieTerminalRecovery` / `InvocationTrajectoryProjector` / `getThreadLiveInvocations` | `InvocationStartupReconciler` / `InvocationReaper` / 简单 timeline / `ThreadLiveInvocations` | 复用骨架；v1 轻量 |
@@ -3048,7 +3123,7 @@ parent partial_failed: successful=[A], failed=[B]
 3. **Parent 在 QueueProcessor claim 后创建**：queue entry 是 admission/待处理账本；parent 是处理生命周期。
 4. **`TurnExecutionStore.createRunning` 是 provider 前幂等入口**：created/replayed/conflict；replayed 不授予第二次 provider lease。
 5. **`TurnExecution` 使用 `invocationRecordId`（fan-out parent）+ `causal.a2aParentTurnExecutionId`（A2A 因果父）两个坐标**，不共用一个 parent。
-6. **Auth 从 MCP callback 改为 pi extension tool capability**：credential 绑 child TurnExecution，allowedTools 限 A2A tools；MCP/task/role/run 字段删除。
+6. **Auth 从 MCP callback 改为 pi extension tool capability**：credential 绑 child TurnExecution，allowedTools 限 A2A tools；transport 是 local control socket；MCP/task/role/run 字段删除。
 7. **终态同事务**：child terminal + attempt terminal + parent aggregate + credential
    terminalize；另用 responsePending ledger 把 R settlement 作为可恢复的第二段提交。
 8. **Session active-only**（0009）：v1 不做 sealed/compression/handoff。
@@ -3124,3 +3199,8 @@ parent partial_failed: successful=[A], failed=[B]
 44. **P0-1=A（2026-11-10 落盘）**：`invoke-single-agent` 只负责 provider/stream；
     `settleAgentTurn` 封装 child terminal + attempt terminal + parent aggregate +
     credential + response settlement 两段提交。
+45. **DP-F018AUTH=A/A/B/A/A（2026-11-11 拍板）**：credential 绑 child
+    `TurnExecution`；旧 task-first auth 代码只复用机制（control socket / token file /
+    hash+salt / worker binding），坐标重写；requestId 幂等放 credential 的
+    `client_message_ids_json` map（`a2a_requests` 标 legacy）；active credential 无 TTL，
+    startup sweep + verify repair 回收 orphan；pi extension 只注册 F018 四工具。

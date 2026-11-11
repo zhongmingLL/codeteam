@@ -303,7 +303,7 @@ token 由 daemon mint，绑定 child `TurnExecution`/thread/agent/session/user�
 
 - `InvocationRegistry` 是 service：`create/verify/commitTerminal`；
 - 存储仍是 `invocation_credentials`；
-- 鉴权面从 MCP callback 改为 pi extension tools；
+- 鉴权面从 MCP callback 改为 pi extension tools + local control socket；
 - 详细字段/schema/校验见 `0010-a2a-runtime-chain.md`。
 
 ### 2.6 Usage / budget（v1 不做）
@@ -409,7 +409,7 @@ thread message / A2A tool
 | 阶段 | 内容 | 出口 |
 |---|---|---|
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
-| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential、a2a_requests；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
+| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 request claims）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
 | R2 | same-thread post / thread context；observation；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18 |
 | R3 | cross-thread post；multi_mention fan-out；thread access；participants | E3/E4/E5/E6/E8/E10/E11/E16 |
 | R4 | loop guard/idempotency；多 agent thread；不做 multi_mention 聚合回调 | E17 |
@@ -427,8 +427,8 @@ thread message / A2A tool
 | 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、contentBlocks、toolEvents、thinking、seq | dispatch 事务创建 R；stream bounded flush；R terminal 后删除 |
 | `messages` | 新增 `target_agent_ids_json`（user message 的 admission targets） | 旧消息回填 `[]`；新 user message 由 ingress 写入 |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
-| `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、state/disposition、token hash/salt | 旧 task/role/run credential legacy |
-| `a2a_requests` | `thread_id` + `task_id` nullable；unique `(thread_id, agent_id, request_id)`；drop 旧 task-level unique | 旧行按 task.thread 回填；同一 `(thread, agent, requestId)` 多行时按 `created_at` 保留最新为 canonical，其余标 legacy；无 task 的旧行标 legacy；不删除历史 |
+| `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、clientMessageIds、state/disposition（含 replaced）、token hash/salt | 旧 task/role/run credential legacy |
+| `a2a_requests` | **legacy 只读**；v1 不再写入；requestId 幂等迁到 `invocation_credentials.client_message_ids_json`（DP-F018AUTH-3=B） | 旧行保留历史；新 runtime 不读不写；不删除历史 |
 | `messages` | 不改表；task 字段 legacy 可空 | 新消息不写 taskId |
 | `tasks` / `handoffs` / `custody_events` / `budgets` / `reviews` / `merges` | 冻结 legacy，不读不写 | 保留历史只读；后续能力另立 feature |
 
@@ -472,8 +472,8 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 ### 6.1 必须改的核心模块
 
 - `control/migrations`：threads、thread_participants、agent_sessions、
-  invocation_queue、invocation_records、turn_executions、invocation_credentials、
-  a2a_requests；
+  invocation_queue、invocation_records、turn_executions、invocation_credentials
+  （含 request claims）；`a2a_requests` 标 legacy；
 - `auth`：InvocationRegistry + InvocationCredential；token 从 task scope 改为
   child TurnExecution / thread / agent / session；鉴权面为 pi extension tools；
 - `dispatch`：QueueProcessor（claim/drain）、AgentRouter/routeAgents/runAgentTurn、

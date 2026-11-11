@@ -1,19 +1,22 @@
 ---
 title: "DP-F018AUTH: InvocationRegistry + InvocationCredential v1 拍板包"
 doc_kind: decision-packet
-status: open
+status: decided
 created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related: ../0010-a2a-runtime-chain.md
 related_features: [codeteam/F018]
-operator_decision: pending
+operator_decision: "DP-F018AUTH-1=A, DP-F018AUTH-2=A, DP-F018AUTH-3=B, DP-F018AUTH-4=A, DP-F018AUTH-5=A (2026-11-11)"
 ---
 
 # DP-F018AUTH: InvocationRegistry + InvocationCredential v1 拍板包
 
 > 只给价值取舍、推荐、证据和“不拍的后果”。不需要 operator 选技术实现。
 > 已有 task-first `a2a/`、`worker-extension.ts`、`auth/*` 是参考实现，不是 F018 契约。
+
+> **Operator 决定（2026-11-11）**：`DP-F018AUTH-1=A`、`DP-F018AUTH-2=A`、
+> `DP-F018AUTH-3=B`、`DP-F018AUTH-4=A`、`DP-F018AUTH-5=A`。本 packet 已冻结。
 
 ## 0. 一句话
 
@@ -24,13 +27,13 @@ token file、worker/session binding、requestId receipt），但把坐标从
 
 ## 1. 先看结论
 
-| 决策 | 选项 | 推荐 | 影响面 | 不拍的后果 |
+| 决策 | 选项 | 结果 | 影响面 | 不拍的后果 |
 |---|---|---|---|---|
-| DP-F018AUTH-1 旧 task-first auth 代码怎么用 | A=机制复用、坐标重写；B=原地适配 task-first schema；C=从零重写 | **A** | 实现速度、F018 纯净度、迁移债 | B 会把 task-first 带进 F018；C 会丢掉已验证的 control socket/token 机制 |
-| DP-F018AUTH-2 credential 绑谁 | A=child `TurnExecution`；B=parent `InvocationRecord`；C=`AgentSession` | **A** | 最小权限、retry 语义、credential 行数 | token scope 和 retry/terminalize 语义无法定稿 |
-| DP-F018AUTH-3 requestId 幂等放哪 | A=把 `a2a_requests` 迁到 thread-first；B=credential 上的 `clientMessageIds`；C=不做 claim | **A** | 重复投递风险、表结构、replay 语义 | `post_message` 重试仍可能二次派发；烁烁 P1 继续 open |
-| DP-F018AUTH-4 active credential 怎么回收 | A=startup sweep + verify repair，active 无 TTL；B=只 verify repair；C=active TTL 自动过期 | **A** | 启动成本、孤儿 token、长 turn 有效性 | B 会永久留下 active token；C 会让长 turn 中途失效 |
-| DP-F018AUTH-5 pi extension 工具面 | A=只注册 F018 四工具；B=保留旧 `a2a_send`/`handoff_*` 兼容窗；C=只注册新工具、旧 spec 隐藏 | **A** | 工具面清晰度、迁移窗口、credential allowlist | 旧工具继续暴露，F018 “a2a_send/handoff 彻底弃用”不成立 |
+| DP-F018AUTH-1 旧 task-first auth 代码怎么用 | A=机制复用、坐标重写；B=原地适配 task-first schema；C=从零重写 | **A（decided）** | 实现速度、F018 纯净度、迁移债 | B 会把 task-first 带进 F018；C 会丢掉已验证的 control socket/token 机制 |
+| DP-F018AUTH-2 credential 绑谁 | A=child `TurnExecution`；B=parent `InvocationRecord`；C=`AgentSession` | **A（decided）** | 最小权限、retry 语义、credential 行数 | token scope 和 retry/terminalize 语义无法定稿 |
+| DP-F018AUTH-3 requestId 幂等放哪 | A=把 `a2a_requests` 迁到 thread-first；B=credential 上的 `clientMessageIds`；C=不做 claim | **B（decided）** | 重复投递风险、表结构、replay 语义 | `post_message` 重试仍可能二次派发；烁烁 P1 继续 open |
+| DP-F018AUTH-4 active credential 怎么回收 | A=startup sweep + verify repair，active 无 TTL；B=只 verify repair；C=active TTL 自动过期 | **A（decided）** | 启动成本、孤儿 token、长 turn 有效性 | B 会永久留下 active token；C 会让长 turn 中途失效 |
+| DP-F018AUTH-5 pi extension 工具面 | A=只注册 F018 四工具；B=保留旧 `a2a_send`/`handoff_*` 兼容窗；C=只注册新工具、旧 spec 隐藏 | **A（decided）** | 工具面清晰度、迁移窗口、credential allowlist | 旧工具继续暴露，F018 “a2a_send/handoff 彻底弃用”不成立 |
 
 ## 2. 背景与 current truth
 
@@ -65,7 +68,7 @@ pi worker
 | token file | `ct1.<credentialId>.<secret>`，0600，per-run | 保留；改成 per-turn/per-worker |
 | token hash | SHA-256(salt:secret) + `timingSafeEqual` | 保留 |
 | worker/session binding | 校验 `run.workerId`、`session.workerId` | 保留；改成 `turnExecutionId`/`worker_binding`/`agentSessionId` |
-| requestId receipt | `a2a_requests(task_id, profile_id, request_id)` + intent hash + message/queue ref | 保留表，迁到 thread-first 坐标 |
+| requestId receipt | `a2a_requests(task_id, profile_id, request_id)` + intent hash + message/queue ref | 作为 legacy 参考；F018 用 credential-scoped `clientMessageIds` map（AUTH-3=B） |
 | interrupted-run recovery | `recoverControlPlane` 扫描 running run，terminalize credential | 保留思路，补 orphan sweep |
 
 ### 2.3 已有代码里哪些是 task-first，不能直接搬
@@ -80,7 +83,7 @@ pi worker
 
 | 选项 | 行为 | 价值 | 代价 |
 |---|---|---|---|
-| **A（推荐）** | 机制复用、坐标重写：保留 control socket / token file / hash+salt / timingSafeEqual / worker binding / a2a_requests；把 run/task/role/profile 换成 TurnExecution/thread/agent/session | 保留已验证安全机制；F018 不背 task-first schema；迁移边界清楚 | 需要一次性重写 control/auth 的坐标层 |
+| **A（推荐）** | 机制复用、坐标重写：保留 control socket / token file / hash+salt / timingSafeEqual / worker binding / request claim map；把 run/task/role/profile 换成 TurnExecution/thread/agent/session | 保留已验证安全机制；F018 不背 task-first schema；迁移边界清楚 | 需要一次性重写 control/auth 的坐标层 |
 | B | 原地适配：保留 `runs/tasks/roles`，在旧表上补 thread-first 字段 | 短期改动少 | task-first 继续是真相源；F018 纯 A2A 目标被破坏；后续还要再迁一次 |
 | C | 从零重写 control/auth | 最干净 | 丢掉已验证的 token/worker/requestId 机制；重踩安全坑 |
 
@@ -109,21 +112,26 @@ binding 是正确的 pi extension 安全边界；要换的是坐标，不是机�
 
 **不拍的后果**：retry 时“旧 token 还能不能用、旧 credential 怎么终止”无法定稿。
 
-## 5. DP-F018AUTH-3：requestId 幂等放哪
+## 5. DP-F018AUTH-3：requestId 幂等放哪（operator 选 B）
 
 | 选项 | 行为 | 价值 | 代价 |
 |---|---|---|---|
-| **A（推荐）** | 把现有 `a2a_requests` 迁到 `(thread_id, agent_id, request_id)`（或 `(credential_id, request_id)`），保留 `intent_hash/message_id/queue_entry_id`；`post_message` 创建 message/queue 的同一事务里 claim；重试 replay，不同 intent conflict | 复用已有表；durable、可查询、可关联 message/queue；关闭二次派发 | 需要一次 key 迁移 |
-| B | 在 `InvocationCredential` 上加 `client_message_ids` JSON/set（Clowder `InvocationRecord` 形状） | 字段少；和 credential 同生命周期 | 不可查询/join；JSON 更新和容量控制麻烦；与已有 `a2a_requests` 重复 |
+| A | 把现有 `a2a_requests` 迁到 `(thread_id, agent_id, request_id)`（或 `(credential_id, request_id)`），保留 `intent_hash/message_id/queue_entry_id`；`post_message` 创建 message/queue 的同一事务里 claim；重试 replay，不同 intent conflict | 复用已有表；durable、可查询、可关联 message/queue；关闭二次派发 | 需要一次 key 迁移 |
+| **B（operator 决定）** | 在 `InvocationCredential` 上加 `client_message_ids_json`，存 `{requestId: {intentHash, messageId, queueEntryId}}` map；`post_message` 创建 message/queue 的同一事务里 reserve；重试 replay，不同 intent conflict | 字段少；和 credential 同生命周期；更贴近 Clowder `InvocationRecord.clientMessageIds` | 不可 join；JSON 更新和容量控制需要边界；`a2a_requests` 变 legacy |
 | C | 不做 claim，靠 message 唯一键 + queue admission 兜底 | 表最少 | 队列行删除后同一 requestId 重试仍可能二次派发；烁烁 P1 继续 open |
 
-**推荐理由**：当前 `A2ARequestStore` 已经有 `intent_hash/message_id/queue_entry_id`
-和同事务 reserve/replay/conflict 语义；F018 只需要换 key，不需要发明新机制。
+**B 的落地要求**：不是纯 set，必须是 map，否则无法 replay 原 message/queue；
+map 上限建议 1000 条/credential，超限 fail closed（不静默驱逐，避免 late retry 重复）；
+`a2a_requests` 保留为 legacy 只读，F018 不再写入。
 
-**不拍的后果**：`post_message` 的 `replayed/conflict` 语义无法定稿；实现可能继续
-沿用 task-first `a2a_requests` 或退回“不 claim”，都会留下重复投递窗口。
+**拍板理由**：operator 选择 B，接受“不可 join、JSON 容量控制”的代价，换取
+credential 与 request claims 同生命周期、字段集中。A 的推荐保留在本文作为历史对比。
 
-## 6. DP-F018AUTH-4：active credential 怎么回收
+**落点**：`0010 §3.7` credential 增加 `clientMessageIds`；`§3.8 post_message` 在
+message/queue 同事务 reserve；`§4.4` 增加 `client_message_ids_json`；`a2a_requests`
+标 legacy。
+
+## 6. DP-F018AUTH-4：active credential 怎么回收（operator 选 A）
 
 | 选项 | 行为 | 价值 | 代价 |
 |---|---|---|---|
@@ -131,7 +139,7 @@ binding 是正确的 pi extension 安全边界；要换的是坐标，不是机�
 | B | 只 verify repair；不启动 sweep | 启动快 | child/run 已 terminal/missing 且没人再调用时，active token 永久残留 |
 | C | active credential 设 TTL 自动过期 | 自动清理 | 长 turn/工具调用可能中途失效；token 生命周期变成 wall clock，不是执行生命周期 |
 
-**推荐理由**：Clowder 的 active principal 没有 deadline，只有 terminal tombstone
+**拍板理由**：Clowder 的 active principal 没有 deadline，只有 terminal tombstone
 有 GC；orphan 由 `listActiveRecords` + startup reconcile 处理。codeteam 应照这个
 语义：`listActiveCredentials()` + startup sweep（child/run missing → revoked；
 child/run terminal → terminalize；running unowned → interrupt 后 terminalize）。
@@ -167,21 +175,23 @@ child/run terminal → terminalize；running unowned → interrupt 后 terminali
 | `task_id/role/agent_profile_id/parent_run_id` | 迁移为 `turn_execution_id/agent_id/invocation_record_id`；不保留 task/role 坐标 | F018 thread-first |
 | `lastRefreshAt` | v1 无 refresh 流程则删除；active credential 不设 TTL | Clowder active 无 deadline |
 
-## 9. 拍板方式
+## 9. 拍板结果（2026-11-11）
 
-回复一行即可，例如：
-
-`DP-F018AUTH-1=A, DP-F018AUTH-2=A, DP-F018AUTH-3=A, DP-F018AUTH-4=A, DP-F018AUTH-5=A`
-
-若某项要改选，只写改选项，例如 `DP-F018AUTH-3=B`。
+| 决策 | 结果 | 关键后果 |
+|---|---|---|
+| DP-F018AUTH-1 | **A** | 保留 control socket / token file / hash+salt / worker binding 机制；坐标改为 turnExecution/thread/agent/session |
+| DP-F018AUTH-2 | **A** | credential 绑 child `TurnExecution`；retry 新 child + 新 credential；旧 credential `replaced` + terminal ref |
+| DP-F018AUTH-3 | **B** | `invocation_credentials.client_message_ids_json` 存 `{requestId: {intentHash, messageId, queueEntryId}}`；`a2a_requests` 标 legacy |
+| DP-F018AUTH-4 | **A** | startup sweep + verify repair；active 无 TTL；terminal tombstone GC |
+| DP-F018AUTH-5 | **A** | pi extension 只注册 F018 四工具；`a2a_send` / `handoff_*` 删除 |
 
 ## 10. 落点
 
 拍板后更新：
 
-- `0010 §3.7`：InvocationRegistry / InvocationCredential 接口与状态；
-- `0010 §3.8`：pi extension tool surface + `post_message`/`cross_post_message`/`multi_mention`；
-- `0010 §4.4`：`invocation_credentials` 字段（turnExecution/thread/agent/session/allowedTools）；
+- `0010 §3.7`：InvocationRegistry / InvocationCredential 接口与状态；control socket envelope；startup sweep；
+- `0010 §3.8`：pi extension tool surface + `post_message`/`cross_post_message`/`multi_mention`；credential-scoped request claim；
+- `0010 §4.4`：`invocation_credentials` 字段（turnExecution/thread/agent/session/allowedTools/clientMessageIds）；
 - `0010 §9.4`：auth 验收与负例；
 - `0010 §11`：决策记录；
 - 实现侧：`packages/codeteam-daemon/src/auth/*`、`workers/control.ts`、`workers/worker-extension.ts`、`a2a/tool-surface.ts`、`a2a/requests.ts`、`control/recovery.ts`。

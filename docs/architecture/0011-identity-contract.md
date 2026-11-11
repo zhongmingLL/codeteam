@@ -208,7 +208,7 @@ credentialId（auth）
 | AgentReadState | 否 | 主键 `(thread_id, agent_id)` | thread owner 隐含 user；v1 单 user 简化 |
 | response_drafts | 否 | 通过 `attempt_id`/`turn_execution_id` | attempt/TurnExecution 的子记录；user 从 parent/thread 派生；多 user draft 隔离时再加 |
 | workers / worker_bindings | 否 | project/account | execution carrier，不是 user-owned |
-| a2a_requests | 否 | `(thread_id, agent_id, request_id)` | thread/agent scoped；user 由 thread owner 派生 |
+| a2a_requests | 否 | legacy 只读 | v1 不再写入；requestId 幂等迁到 `InvocationCredential.clientMessageIds`（thread/agent 由 credential 派生） |
 | InvocationTracker / QueueProcessor（内存） | 否（不持久化） | `start(...userId...)` / `processNext(...userId...)` | ownership/auth fence；不是存储 |
 
 ### 11.1 不变量
@@ -239,8 +239,8 @@ credentialId（auth）
 
 - **保留**：Thread owner、AgentSession、InvocationRecord、TurnExecution、InvocationCredential、
   QueueEntry.owner 的 userId。
-- **不加**：StoredMessage、InvocationAttempt、AgentReadState、response_drafts、workers、
-  a2a_requests。
+- **不加**：StoredMessage、InvocationAttempt、AgentReadState、response_drafts、workers；
+  `a2a_requests` 标 legacy，`InvocationCredential.clientMessageIds` 不存 userId。
 - **不变量测试**：上述 userId 链不一致 fail closed；跨 user thread access 拒绝；
   `response_drafts`/`InvocationAttempt`/`AgentReadState` 从 parent/thread 派生，不接受冲突
   的调用方 userId。
