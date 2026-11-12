@@ -202,6 +202,26 @@ codeteam 的偏差来自两次局部收敛用了新抽象（attempt 五态、god
 - child 终态由 `TurnExecution.status` 独占；
 - retry append 新行，旧行不可变。
 
+Clowder `QueueTargetAttempt` 与 codeteam `invocation_attempts` 的映射：
+
+| Clowder `QueueTargetAttempt` | codeteam `invocation_attempts` | 说明 |
+|---|---|---|
+| `id` | `attempt_id` | 一次投递一行 |
+| `targetCatId` | `target_agent_id` | 同义 |
+| `sequence` | `attempt` | 同一 parent/target 内递增 |
+| `state` | `delivery_state` | 投递状态，不是 child 状态 |
+| `invocationId` | `turn_execution_id` | 指向 child canonical |
+| `seenAt` | `prompt_delivered_at` | prompt 正文真正被 provider 接收的时间 |
+| `activeAppendAcceptedAt` | v1 不实现 | codeteam 没有 active append；不建列 |
+| `terminalReason` | `terminal_reason` | 投递失败原因 |
+| — | `parent_invocation_id` / `queue_entry_id` / `thread_id` | codeteam 的聚合/路由锚点 |
+| — | `settlement` / `response_message_id` | codeteam 的 response 投影，不是 execution state |
+
+结论：**采用 Clowder 的投递台账语义和 append-only retry**；表名可以保留以减少迁移，
+但类型和文档必须按 `QueueTargetAttempt` 解释。若 R1 还没有数据，建议直接改名
+`queue_target_attempts`，避免 `InvocationAttempt` 继续暗示 child 执行状态。
+Clowder 拼写 `cancelled`，codeteam schema 统一用现有 `canceled`，不混用。
+
 ### 4.2 状态机
 
 ```text
@@ -472,6 +492,78 @@ child status 来判断 successful/failed。
 - read model 的 execution status 读 TurnExecution；delivery status 读 attempt；
   两者不能互相替代。
 
+### 5.6 与 `runAgentTurn` / `routeAgents` 的边界（a654788e5 回推范围）
+
+`a654788e5` 的方向——把 routeSerial 的 per-agent 逻辑抽成 `runAgentTurn`，route 只保留
+parallel/serial 调度——是对的，应该保留。问题在它的 ownership 表和 `runAgentTurn`
+步骤 8–12：
+
+- `0010 §3.5` 把 `response/terminal` 写成 `runAgentTurn` 的职责；
+- `runAgentTurn` 步骤 9 同时做 `transitionTerminal + collector + parent aggregate +
+  credential terminalize`，步骤 12 做 `settleResponseFromDraft`；
+- 同一节的 ownership 表又说 `QueueProcessor` 拥有 collector 调用、`runAgentTurn`
+  不拥有 parent 创建。**这是 a654788e5 内部的真实矛盾**，也是 `settleAgentTurn`
+  后来能长成 god-service 的土壤。
+
+所以：**删除 `settleAgentTurn` 会回推 a654788e5 的 ownership 段，但不会推翻
+`runAgentTurn` + `routeAgents` 的拆分。** 需要改的是“谁写 T1/T2/T3”，不是“要不要
+抽 per-agent pipeline”。
+
+保留：
+
+- `routeAgents(mode)` 的 parallel/serial 调度；
+- `runAgentTurn` 作为 per-agent pipeline 的 composition root；
+- serial 薄循环、parallel 默认、显式 targets、QueueProcessor 不解析 `@`。
+
+必须改：
+
+| 阶段 | 旧归属（a654788e5/09bdb678d） | 新归属（0016） |
+|---|---|---|
+| T1 child terminal | `runAgentTurn` 步骤 9 的一部分 | `invoke-single-agent` + `TurnExecutionLifecycle` |
+| T2 response R/draft/A2A successor | `runAgentTurn` 步骤 12 | `routeSerial/Parallel` 或共享 `RouteResponseCommitter` |
+| T3 parent aggregate/queue/retry/slot | `runAgentTurn` 步骤 9 + `QueueProcessor`（文档自相矛盾） | `QueueProcessor` + collector |
+| T4 recovery | `runAgentTurn` 步骤 12 的 `settleResponseFromDraft` | `ResponseRecoveryService` |
+
+推荐的调用形态：
+
+```text
+routeParallel:
+  per target: result = yield* runAgentTurn(...)
+              await responseCommitter.commit(result)   // T2，child 完成即提交
+
+routeSerial:
+  per target: result = yield* runAgentTurn(...)
+              await responseCommitter.commit(result)   // T2
+              priorResponses.push(result.responseText)
+
+runAgentTurn:
+  invokeSingleAgent(...)  // T1
+  return AgentTurnResult { turnExecutionId, responseMessageId, responseText, status, usage }
+
+QueueProcessor:
+  collector + applyTerminalAggregate(result)           // T3；不等待 T2
+```
+
+`runAgentTurn` 可以“编排” T1/T2，但文档不能写它“拥有” T2；否则只是把
+`settleAgentTurn` 改名成 `runAgentTurn`。如果为了 route 真薄而让 `runAgentTurn`
+调用 `RouteResponseCommitter`，必须在 ownership 表里明确 T2 的 owner 是 committer，
+不是 `runAgentTurn`。
+
+回推清单：
+
+- `0010 §3.5` ownership 表 + `runAgentTurn` 步骤 8–12；
+- `0010 §3.6` 步骤 11/12；
+- `0010 §3.9` 的 `settleAgentTurn` 接口；
+- `0005` 的 `AgentRouter.routeAgents(mode)` 段落；
+- plan 0020 P0-1；
+- `a654788e5` / `09bdb678d` 的 DP-F018R-3 说明（split 保留，ownership 段作废）。
+
+不回推：
+
+- DP-F018R-1/R-2 的 operator 行首 `@` / 隐式路由；
+- DP-F018R-3 的 `runAgentTurn + routeAgents` 拆分；
+- explicit targets、parallel 默认、serial 薄循环、QueueProcessor 不解析 `@`。
+
 ## 6. Schema / migration 变更
 
 ### 6.1 字段变更
@@ -553,6 +645,10 @@ child status 来判断 successful/failed。
 
 | 0010 位置 | 修改 |
 |---|---|
+| §3.5 `runAgentTurn` ownership 表 + 步骤 8–12 | 改为 composition root；T1 归 invoke，T2 归 route/committer，T3 归 QueueProcessor |
+| §3.6 步骤 11/12 | 拆成 T1/T2，不再由 `settleAgentTurn` 包办 |
+| 0005 `AgentRouter.routeAgents(mode)` 段 | 同步 ownership 表 |
+| a654788e5 / 09bdb678d DP-F018R-3 | 标注 split 保留、ownership 段被 0016 取代 |
 | §3.9 `settleAgentTurn` 接口 | 删除；替换为 §5 的四层 owner + `TurnExecutionLifecycle` / `RouteResponseCommitter` / `InvocationAggregateService` / `ResponseRecoveryService` |
 | §3.9 正常终态路径 | 改为 T1 child → T2 R → T3 parent；不再“一个事务包全部” |
 | §4.3.1 `invocation_attempts` | `state`→`delivery_state`；状态机改为 queued/starting/appended/handled/failed/interrupted/canceled |

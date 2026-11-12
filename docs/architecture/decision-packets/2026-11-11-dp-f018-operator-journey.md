@@ -71,6 +71,10 @@ codeteam `settleAgentTurn` 把四层合并成一个 god-service，导致与
 route/invokeSingleAgent 重叠。建议拆回四层 owner；`settleResponseFromDraft` 只做
 recovery/response_pending 第二段。
 
+回推范围：`a654788e5`/`09bdb678d` 的 `runAgentTurn` ownership 表和步骤 8–12
+（`runAgentTurn + routeAgents` 拆分保留）；`0010 §3.5/§3.6`、`0005` 对应段、
+plan P0-1。不是整条 operator routing 设计回退。
+
 ## 未决
 
 - DP-C/DP-D 的 schema/事件顺序修改需要 operator 确认；确认后改

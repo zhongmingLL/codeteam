@@ -1104,6 +1104,10 @@ class InvocationOwnerReaper {
 
 ### 3.5 AgentRouter + runAgentTurn + routeAgents
 
+> DP-D 回推提示：0016 §5.6 已指出本节的 `runAgentTurn` ownership 表与步骤 9/12
+> 把 T1/T2/T3 合并；`runAgentTurn + routeAgents` 拆分保留，但 ownership 段在
+> DP-C/DP-D 确认后改写。确认前本节 ownership 不得作为实现基线。
+
 **全链路**
 
 ```text
