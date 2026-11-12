@@ -98,12 +98,14 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - live stream（DP-F018X-2=B）：attempt start 创建 attempt + processing R；`WorkerEventSink` 处理
   `message_update.text_delta` + tool start/end，写 `response_drafts`，同时发 ephemeral
   `AgentStreamEvent` 给 UI；不按 delta 写 messages。
-- response settlement：TurnExecution terminal + attempt terminal + parent aggregate +
-  credential 同一事务并把 attempt `settlement` 标 `response_pending`；随后
-  `settleResponseFromDraft` 提交 R terminal + settle inputs + delete draft +
-  attempt `settled` + clear pending；崩溃后 startup reconciler 重放。
-  > DP-D 调查中：Clowder settlement 是 invoke/route/QueueProcessor/callback-auth
-  > 四层分工；`settleAgentTurn` 可能拆回四层 owner。确认后更新本段。
+- response settlement（provisional，待 DP-D 确认）：TurnExecution terminal +
+  attempt terminal + parent aggregate + credential 同一事务并把 attempt
+  `settlement` 标 `response_pending`；随后 `settleResponseFromDraft` 提交 R
+  terminal + settle inputs + delete draft + attempt `settled` + clear pending；
+  崩溃后 startup reconciler 重放。
+  > DP-D 调查完成，待确认：Clowder settlement 是
+  > invoke/route/QueueProcessor/callback-auth 四层分工；0016 建议拆回四层 owner。
+  > 确认前本段是待替换的旧方案，不作为实现基线。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A
@@ -166,7 +168,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 | 8 | MessageStore migration unknowns | **契约已收口**：legacy→new mapping/preflight 表已写 | R1 执行 preflight，unknown 进清单 |
 | 9 | queue trace 完整 payload audit | **v1 决策**：不建 dispatch_events/queue_retirement_audit；attempt.queueEntryId + queue_admissions + dispatchRefs 足够 | 若未来要 forensic replay/queue 压缩，v2 再加 |
 | 10 | WorkerPool reaper/capacity | **契约已收口**：capacity backoff、单 reaper 循环、warmTtl=0 crash/cleanup 顺序已定 | R2 实现 |
-| P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **已收口**：`invoke-single-agent` 负责 provider/stream；`settleAgentTurn` 接口负责两段 terminal/settlement | R2 按接口实现 |
+| P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **待确认（DP-C/DP-D）**：0016 调查结论是 TurnExecution 单 canonical、attempt 只做投递状态；settlement 拆回 invoke/route/QueueProcessor/callback-auth 四层 owner，删除 `settleAgentTurn` god-service | operator 确认 A/A 后改 0010 §3.9/§4.3.1/§5.2.1/§9 与本计划，再进 R2 |
 | P2 | `extra.kind` 是否保留 | **已删**：`kind` 是 task-first legacy；不迁入 A2A `extra`，legacy 列只读至 R5 drop | 实现时不得重新引入 |
 | P3 | Phase A final review（0005/0010） | **设计整合已完成（2026-11-11）**：session/history/worker 与 0005/0010 的一致性终审已收口；operator 暂停外部 review 的前置条件已满足；PR #86 的旧 findings 已应用 | 进入最终 Phase A review；非作者 verdict 覆盖 exact HEAD 后再 merge |
 

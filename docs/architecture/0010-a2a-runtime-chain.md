@@ -2374,8 +2374,10 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
 ### 3.9 PerAgentTerminalDispositionCollector + transitionTerminal + QueueProcessor
 
 > 终态/重试取舍已按 `DP-F018TERM=A/A/A/A/A/A/A` 拍板（2026-11-11），本节已同步。
-> DP-D 调查中：Clowder settlement 是 invoke/route/QueueProcessor/callback-auth
-> 四层分工；`settleAgentTurn` 可能拆回四层 owner。确认后更新本节。
+> DP-D 调查完成，待 operator 确认：Clowder settlement 是
+> invoke/route/QueueProcessor/callback-auth 四层分工；完整目标设计见
+> `0016-turn-terminal-and-settlement-design.md` §5。确认前本节是待替换的旧契约，
+> **不得作为实现基线**；实现阻塞在 DP-D。
 
 **正常终态路径**
 
@@ -2946,8 +2948,10 @@ CREATE INDEX turn_executions_running
 
 ### 4.3.1 `invocation_attempts`
 
-> DP-C 调查中：Clowder 的 attempt 是 `QueueTargetAttempt`（投递台账），child 终态
-> 只在 `TurnExecution`；本节的 attempt state 需要收敛为投递状态。确认后更新 schema。
+> DP-C 调查完成，待 operator 确认：Clowder 的 attempt 是 `QueueTargetAttempt`
+> （投递台账），child 终态只在 `TurnExecution`；本节的 attempt state 需要收敛为
+> 投递状态，完整目标设计见 `0016-turn-terminal-and-settlement-design.md` §4。
+> 确认前本节是待替换的旧 schema，**不得作为实现基线**；实现阻塞在 DP-C。
 
 ```sql
 CREATE TABLE invocation_attempts (
