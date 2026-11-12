@@ -6,7 +6,7 @@ created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 operator_decisions: "2026-11-11: DP-A=A, DP-B=B, DP-E=A; DP-C/DP-D 要求全面调查"
-related: [0010-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-codeteam-operator-journey-audit.md]
+related: [0010-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-codeteam-operator-journey-audit.md, 0016-turn-terminal-and-settlement-design.md]
 ---
 
 # DP-F018JOURNEY
@@ -45,6 +45,8 @@ related: [0010-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-code
 
 ## DP-C 调查结论
 
+> 完整目标设计见 `0016-turn-terminal-and-settlement-design.md`。
+
 - Clowder 的 `QueueTargetAttempt` 在 `packages/shared/src/types/queue-receipt.ts:250-287`：
   `queued|starting|appended|failed|interrupted|cancelled|handled`，retry append 新行。
 - child 终态只在 `TurnExecutionRecord.status`；parent `InvocationRecord` 只有
@@ -54,6 +56,9 @@ related: [0010-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-code
   `turnExecutionId` 仍是 child 链接。
 
 ## DP-D 调查结论
+
+> 完整目标设计（四层 owner、事务边界、错误/取消/恢复）见
+> `0016-turn-terminal-and-settlement-design.md`。
 
 | 阶段 | Clowder owner | 证据 |
 |---|---|---|

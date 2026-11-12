@@ -333,6 +333,9 @@ Hub / CLI / API（W7a，当前缺失）
 
 **结论：Clowder 没有“child 执行状态”的 InvocationAttempt。**
 
+> 完整目标设计（attempt schema、状态机、migration、测试）见
+> `0016-turn-terminal-and-settlement-design.md`。
+
 Clowder 的 attempt 是 **QueueTargetAttempt**，属于 Queue 投递/重试台账：
 
 - `packages/shared/src/types/queue-receipt.ts:250-287`：
@@ -376,6 +379,9 @@ Clowder 的 attempt 是 **QueueTargetAttempt**，属于 Queue 投递/重试台�
 
 **结论：Clowder 的 settlement 是四层分工；codeteam 的 `settleAgentTurn` 把它们
 压成了一个 god-service，所以看起来和 route/invokeSingleAgent 重叠。**
+
+> 完整目标设计（四层 owner、事务边界、错误/取消/恢复）见
+> `0016-turn-terminal-and-settlement-design.md`。
 
 Clowder 实际 owner：
 
