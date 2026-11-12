@@ -3,12 +3,12 @@ title: "F018 — A2A runtime v1 实施计划（R0-R5）"
 doc_kind: plan
 status: draft
 created: 2026-11-04
-updated: 2026-11-11
+updated: 2026-11-12
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
 source_architecture: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/0010-a2a-runtime-chain.md"
-source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
+source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=A, DP-D=A"
 ---
 
 # F018 — A2A runtime v1 实施计划
@@ -38,10 +38,11 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `runs` → `turn_executions` + `invocation_records`：parent 消息生命周期 +
   child 执行 core（Clowder `TurnExecutionRecord`：identity/causal/status/时间）；无 taskId。
 - `queue_entries` → `invocation_queue`：只做调度；`InvocationRecord` 在 claim 后创建。
-- `invocation_attempts`：append-only target attempt 台账；unique
-  `(parent_invocation_id, target_agent_id, attempt)`；retry 追加新 attempt，旧行不改；
-  queue entry 保留到所有 target attempt 终态（`targets_json` 可为空）；承载
-  session/worker/provider/model/usage + `settlement`/`response_message_id`。
+- `invocation_attempts`：Clowder `QueueTargetAttempt` 语义的 append-only 投递/重试台账；
+  unique `(parent_invocation_id, target_agent_id, attempt)`；retry 追加新 attempt，
+  旧行不改；queue entry 保留到所有 target attempt 终态（`targets_json` 可为空）；
+  承载 `delivery_state` + session/worker/provider/model/usage +
+  `settlement`/`response_message_id`。
 - `response_drafts`：processing R 的 in-flight body；`attempt_id`/`turn_execution_id`
   1:1；stream 按 100ms/4KB bounded flush；R terminal 后删除。
 - `invocation_credentials`：child TurnExecution capability；allowedTools/
@@ -49,7 +50,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - `invocation_attempts.settlement`：`NULL | streaming | response_pending | settled`；
   ordinary attempt 从 start 绑定 processing R；child terminal → `response_pending`；
   settlement → `settled`。
-- `invocation_attempts.agent_session_id`：nullable runtime binding；同 session 唯一 running。
+- `invocation_attempts.agent_session_id`：nullable runtime binding；同 session 唯一
+  active delivery（`starting|appended`）。
 - `workers` + `worker_bindings`：ephemeral worker；pi v1 capacity=1、一 worker 一 session；
   `warmTtl=0`、`maxLiveWorkers=8`；session 不再持有 worker。
 - `agent_read_state`：`(thread_id, agent_id) → delivery_cursor`（thread-global seq）；
@@ -98,14 +100,16 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - live stream（DP-F018X-2=B）：attempt start 创建 attempt + processing R；`WorkerEventSink` 处理
   `message_update.text_delta` + tool start/end，写 `response_drafts`，同时发 ephemeral
   `AgentStreamEvent` 给 UI；不按 delta 写 messages。
-- response settlement（provisional，待 DP-D 确认）：TurnExecution terminal +
-  attempt terminal + parent aggregate + credential 同一事务并把 attempt
-  `settlement` 标 `response_pending`；随后 `settleResponseFromDraft` 提交 R
-  terminal + settle inputs + delete draft + attempt `settled` + clear pending；
-  崩溃后 startup reconciler 重放。
-  > DP-D 调查完成，待确认：Clowder settlement 是
-  > invoke/route/QueueProcessor/callback-auth 四层分工；0016 建议拆回四层 owner。
-  > 确认前本段是待替换的旧方案，不作为实现基线。
+- response settlement（DP-C/DP-D=A/A，2026-11-12）：
+  - T1 `invoke-single-agent` + `TurnExecutionLifecycle`：TurnExecution terminal +
+    `projectChildTerminal` + attempt `settlement='response_pending'` + credential
+    terminalize + `recordTurnTerminal`/ack（同一事务）；不写 parent/R。
+  - T2 `RouteResponseCommitter`：R terminal + settle inputs + delete draft + attempt
+    `settled` + clear pending + A2A successor。
+  - T3 `QueueProcessor` + collector：parent aggregate + queue/retry + tracker slot。
+  - T4 `ResponseRecoveryService`：`response_pending` / `response_missing` recovery；
+    `settleResponseFromDraft` 只属于 T4。
+  - 生产代码不引入 `settleAgentTurn`。
 - 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A
@@ -144,9 +148,13 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 - 合并前 `check:doc-index`、受影响测试、`git diff --check`。
 - R1/R2 必须有 attempt 台账测试：同身份不同 `startedAt` replay、retry 追加 attempt 不改旧行、
   successful target 不重跑、queue entry 在 terminal 前后保留/删除。
-- R1/R2 必须有 durable stream 测试：processing R 原子创建、delta 只写 draft、child terminal
-  把 attempt settlement 标 pending、settlement 提交 R terminal 并清 pending、crash 后
-  reconciler 恢复。
+- R1/R2 必须有单写者测试：生产代码不存在 `settleAgentTurn`；attempt 只有
+  `delivery_state`；T1 只写 child/credential/projection，T2 只写 R/draft，T3 只写
+  parent/queue，T4 只修 R；handled-vs-child-running、child-completed-vs-attempt-failed
+  双状态负例；T1/T2、T2/T3 崩溃窗口可恢复。
+- R1/R2 必须有 durable stream 测试：processing R 原子创建、delta 只写 draft、T1 把
+  attempt `delivery_state` 投影 + settlement 标 pending、T2 提交 R terminal 并清 pending、
+  crash 后 reconciler 恢复。
 - R1/R2 必须有 recovery 测试：`interruptRunningBefore` 收敛 running TurnExecution，
   attempt/settlement 同步收敛；`clearResponsePending` 是 attempt settlement 投影。
 - R1/R2 必须有 userId invariant 测试：Thread/Session/InvocationRecord/TurnExecution/
@@ -168,7 +176,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime"
 | 8 | MessageStore migration unknowns | **契约已收口**：legacy→new mapping/preflight 表已写 | R1 执行 preflight，unknown 进清单 |
 | 9 | queue trace 完整 payload audit | **v1 决策**：不建 dispatch_events/queue_retirement_audit；attempt.queueEntryId + queue_admissions + dispatchRefs 足够 | 若未来要 forensic replay/queue 压缩，v2 再加 |
 | 10 | WorkerPool reaper/capacity | **契约已收口**：capacity backoff、单 reaper 循环、warmTtl=0 crash/cleanup 顺序已定 | R2 实现 |
-| P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **待确认（DP-C/DP-D）**：0016 调查结论是 TurnExecution 单 canonical、attempt 只做投递状态；settlement 拆回 invoke/route/QueueProcessor/callback-auth 四层 owner，删除 `settleAgentTurn` god-service | operator 确认 A/A 后改 0010 §3.9/§4.3.1/§5.2.1/§9 与本计划，再进 R2 |
+| P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **已拍 A/A（2026-11-12）**：TurnExecution 单 canonical、attempt 只做投递状态；settlement 拆回 invoke/route/QueueProcessor/recovery 四层 owner，删除 `settleAgentTurn` god-service | R2 按四层 owner 实现；0010 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9 已同步 |
 | P2 | `extra.kind` 是否保留 | **已删**：`kind` 是 task-first legacy；不迁入 A2A `extra`，legacy 列只读至 R5 drop | 实现时不得重新引入 |
 | P3 | Phase A final review（0005/0010） | **设计整合已完成（2026-11-11）**：session/history/worker 与 0005/0010 的一致性终审已收口；operator 暂停外部 review 的前置条件已满足；PR #86 的旧 findings 已应用 | 进入最终 Phase A review；非作者 verdict 覆盖 exact HEAD 后再 merge |
 

@@ -36,9 +36,9 @@ related_features: [codeteam/F018, codeteam/F017]
 4. **Parent 在 QueueProcessor claim 后创建**（对齐 Clowder）：queue entry 是待处理账本，parent 是处理生命周期。
 5. **`TurnExecutionStore.createRunning` 是执行幂等入口**：`created/replayed/conflict`；
    provider 启动前必须有 attempt + core TurnExecution + credential。
-6. **终态路径只有一条**：`transitionTerminal` → `PerAgentTerminalDispositionCollector` →
-   parent aggregate → credential terminalize，同一事务；R terminal 由
-   `response_pending` settlement 作为可恢复的第二段提交。
+6. **终态路径四层 owner**：T1 `transitionTerminal` + `projectChildTerminal` +
+   credential terminalize；T2 R/draft commit；T3 collector + parent aggregate；
+   T4 `response_pending` / `response_missing` recovery。
 7. **v1 不做**：MCP、task/role/run 字段、custody/action/wait、compaction、full session seal/transcript/digest/restore、outputFence/coveredMessageIds、trajectory projector、Clowder action successor 的 `idempotencyKey`/`intent`。
 
 ## 1. 设计原则
@@ -51,8 +51,9 @@ related_features: [codeteam/F018, codeteam/F017]
   - `InvocationCredential`：工具回调能力真相；
   - `InvocationTracker`：进程内活跃槽，不是 durable 真相。
 - **一个 child 一次 terminal**；一个 parent 一个 aggregate。
-- **terminal 原子性**：child terminal + parent aggregate + credential terminal 必须同事务；
-  R terminal 通过 `response_pending` 账本单独提交，崩溃后可重放。
+- **terminal 分层原子性**：T1 child terminal + credential + attempt projection 同事务；
+  T3 parent aggregate 单独事务；T2 R terminal 通过 `response_pending` 账本单独提交，
+  崩溃后由 T4 重放。
 - **A2A hop 是消息级递归**：新 message + 新 queue entry + 新 parent，不在同一 route 内递归 push target。
 
 ## 2. 全链路
@@ -64,21 +65,29 @@ Message
       → InvocationRecordStore.create（parent，claim 后）
       → InvocationTracker.start(thread, agent)
       → AgentRouter.routeAgents
-          → runAgentTurn（parallel merge）
-              → invoke-single-agent
+          → runAgentTurn（composition root；parallel merge）
+              → invoke-single-agent（T1）
                   → InvocationAttemptStore.appendQueued
+                  → InvocationAttemptStore.markStarting
                   → MessageStore.append（processing R）
                   → TurnExecutionStore.createRunning
-                  → InvocationAttemptStore.bindExecution
+                  → InvocationAttemptStore.bindAppended
                   → InvocationRegistry.create（credential）
                   → pi worker / provider
                   → WorkerEventSink → response_drafts
                   → TurnExecution.transitionTerminal
-                  → attempt terminal + settlement='response_pending'
+                  → attempt projectChildTerminal + settlement='response_pending'
                   → InvocationRegistry.commitTerminal
-                  → PerAgentTerminalDispositionCollector
-                  → InvocationRecordStore.applyTerminalAggregate
-                  → ResponseSettlementService.settleResponseFromDraft
+                  → recordTurnTerminal / ack
+              → RouteResponseCommitter（T2；route 调用）
+                  → R terminal + delete draft + attempt settled
+                  → A2A successor
+          → QueueProcessor（T3）
+              → PerAgentTerminalDispositionCollector
+              → InvocationRecordStore.applyTerminalAggregate
+              → queue/retry + tracker slot release
+          → ResponseRecoveryService（T4）
+              → settleResponseFromDraft / response_missing
       → QueueProcessor retire target / release tracker
   → StartupReconciler / InvocationOwnerReaper / LiveInvocations / DispatchSummary
 ```
@@ -712,9 +721,10 @@ conflict 才 reject；E11 走 `a2a_depth_exceeded` / `loop_guard`。
 | 场景 | 同一事务 |
 |---|---|
 | admission | `append` + `InvocationQueue.enqueue` + `queue_admissions` |
-| dispatch | `advanceLifecycleInputDispatch(dispatched)` + parent/attempt + TurnExecution + processing R + credential + `retireTargets` |
-| child terminal | TurnExecution `transitionTerminal` + attempt terminal + attempt `settlement='response_pending'` + parent aggregate + credential terminalize |
-| response settlement | `commitLifecycleResponseTerminal` + `advanceLifecycleInputDispatch(settled)` + attempt `settled` + `clearResponsePending` |
+| T1 dispatch | `advanceLifecycleInputDispatch(dispatched)` + parent/attempt + TurnExecution + processing R + credential + `retireTargets` |
+| T1 child terminal | TurnExecution `transitionTerminal` + `projectChildTerminal` + attempt `settlement='response_pending'` + credential terminalize + `recordTurnTerminal`/ack |
+| T2 response commit | `commitLifecycleResponseTerminal` + `advanceLifecycleInputDispatch(settled)` + attempt `settled` + `clearResponsePending` + delete draft + A2A successor |
+| T3 parent aggregate | collector + `applyTerminalAggregate` + queue/retry + tracker slot release |
 | delivery failure | `commitLifecyclePreAdmissionFailure` + source dispatchRefs settle |
 | soft delete | `softDelete`（可选 thread event） |
 
@@ -811,15 +821,17 @@ for entry of entries:
 2. `targets` 全部是 agent targets；operator 通知已在 message 的 `mentionsUser` 上，
    Queue 不参与；
 3. 创建/复用 parent `InvocationRecord`（`sourceRecordId` 幂等）；
-4. 每个 agent target：追加 `invocation_attempts` 行（`state='queued'`，
+4. 每个 agent target：调 `runAgentTurn`；其 dispatch 子事务追加
+   `invocation_attempts` 行（`delivery_state='queued'`，
    `attempt = 该 target 的最新 attempt + 1`，无历史则为 1，即 target attempt）
    + 创建 processing R + `TurnExecutionStore.createRunning`（core）
-   + 回填 attempt 的 `turn_execution_id`/`response_message_id`/`settlement='streaming'`
+   + `bindAppended` 回填 `turn_execution_id`/`response_message_id`/`settlement='streaming'`
    + `InvocationRegistry.create`；
-5. **同一事务**：parent + attempts + processing R + TurnExecutions + credentials +
-   `retireTargets(claimId, 已派发 targetKeys)`；
+5. **QueueProcessor 外层事务**：parent + 上述 dispatch 子事务 +
+   `retireTargets(claimId, 已派发 targetKeys)`；`ControlTransaction` 可重入；
 6. 事务外：启动 provider（pi worker）；
-7. child terminal → `PerAgentTerminalDispositionCollector` → parent aggregate → credential terminalize；
+7. T1 child terminal + `projectChildTerminal` + credential terminalize；T2 R/draft；
+   T3 `PerAgentTerminalDispositionCollector` → parent aggregate；
 8. 异常/超时 `releaseClaim(claimId)`。
 
 **不变量**
@@ -832,9 +844,8 @@ for entry of entries:
 - `partial_failed`/`failed` 保留时释放 claim、durable status 回到 `queued`、
   `targets_json=[]`；`listQueued` 过滤空 pending，不会自动 dispatch；`requestRetry`
   用 exact-entry claim 重新加入失败 target。`completed`/`canceled` 直接删除 row。
-- provider 启动前失败：attempt `failed` + TurnExecution `transitionTerminal(failed)` +
-  R settlement + parent aggregate + credential terminalize；target 仍在 pending 时按
-  bounded backoff 追加新 attempt
+- provider 启动前失败：attempt `starting → failed` + `delivery_failure` system message；
+  没有 child/R，不调用 T1/T2；target 仍在 pending 时按 bounded backoff 追加新 attempt
   （旧 attempt 保留为 failed）；已终态失败则等待显式 `requestRetry` 追加新 attempt，
   不新建 queue entry、不重新 admission 消息。
 - parent `sourceRecordId` unique；child `createRunning` 幂等；重放不会二次执行。
@@ -956,7 +967,8 @@ canceled       → terminal
 
 - `createQueued` 校验 `userId === thread.created_by`；不一致 fail closed（`0011` §11）。
 - `successfulAgentIds` 是唯一成功见证；`failedAgentIds`/`canceledAgentIds` 由
-  `invocation_attempts` 每个 target 的最新 attempt 推导，不在 parent 存储。
+  `invocation_attempts` 每个 target 的最新 attempt + canonical `TurnExecution`
+  推导，不在 parent 存储。
 - `usageByAgent` 按 `agentId` 跨 attempt 累计；`applyTerminalAggregate` 接收的是**累计值**，不是 delta。
 - `usageRecordedAt` 只在第一次写入 usage 时设置；之后不覆盖（backfill 显式传入除外）。
 - `requestRetry` **只做 parent 状态**：保留 `usageByAgent`/`usageRecordedAt`；
@@ -1033,7 +1045,8 @@ class InvocationTracker {
 - `start` 是抢占语义：同 slot 旧 controller 先发中断信号；旧 `TurnExecution` 标 `interrupted/preempted`；新 slot 立刻登记。
 - 取消即释放：`cancel` 发中断信号后直接删除 slot；不保留 canceled 墓碑。
 - **真正的执行互斥在 attempt binding + worker**：`invocation_attempts` 对同一
-  `agent_session_id` 只允许一条 `running`；`RpcConnection.prompting` 保证进程单飞；
+  `agent_session_id` 只允许一条 active delivery（`starting|appended`）；
+  `RpcConnection.prompting` 保证进程单飞；
   旧 worker 未退出时新 start 返回 `worker_busy`，QueueProcessor 释放 claim 稍后重试。
 - `startAll` all-or-nothing：任一 target 的 slot 或 worker 不可用则全部不启动。
 - `complete` / `completeAll` 只释放匹配 `turnExecutionId` 的 slot（ownership fence），防止 late terminal 清掉 replacement。
@@ -1104,9 +1117,10 @@ class InvocationOwnerReaper {
 
 ### 3.5 AgentRouter + runAgentTurn + routeAgents
 
-> DP-D 回推提示：0016 §5.6 已指出本节的 `runAgentTurn` ownership 表与步骤 9/12
-> 把 T1/T2/T3 合并；`runAgentTurn + routeAgents` 拆分保留，但 ownership 段在
-> DP-C/DP-D 确认后改写。确认前本节 ownership 不得作为实现基线。
+> DP-C/DP-D 已按 `A/A` 拍板（2026-11-12）：TurnExecution 单 canonical，
+> attempt 只做投递状态；settlement 拆回 invoke/route/QueueProcessor/recovery
+> 四层。`runAgentTurn + routeAgents` 拆分保留，本节 ownership 已同步；完整设计见
+> `0016-turn-terminal-and-settlement-design.md` §5。
 
 **全链路**
 
@@ -1131,16 +1145,18 @@ AgentRouter
 runAgentTurn
   1. resolve AgentConfig
   2. ensure AgentSession（active；circuit breaker/fresh 时 lightweight seal + seq+1）
-  3. attempt(queued) + TurnExecution.createRunning（同 session 唯一 running）
-  4. bind attempt（session/provider/model/R/settlement=streaming；worker=null）
+  3. dispatch：attempt(queued→starting) + processing R + TurnExecution.createRunning
+  4. bindAppended（session/provider/model/R/settlement=streaming；worker=null）
   5. loadHistory（§3.5.1）→ deliveryBoundarySeq
-  6. workerPool.ensure（ephemeral；spawn ~0.5s）+ attempt.bindWorker
-  7. InvocationCredential.create
+  6. InvocationCredential.create
+  7. workerPool.ensure（ephemeral；spawn ~0.5s）+ attempt.bindWorker
   8. build prompt + invoke pi worker；prompt RPC 接收后 markPromptDelivered；
      stream → response_drafts；首次可见输出 → recordUserVisibleOutput；usage → attempt
-  9. transitionTerminal + attempt terminal/settlement=response_pending + collector +
-     parent aggregate + credential terminalize + recordTurnTerminal（messageCount + ack）
- 10. settle R + attempt settled + retire worker（warmTtl=0）/ release tracker slot
+  9. T1：transitionTerminal + projectChildTerminal + settlement=response_pending +
+     credential terminalize + recordTurnTerminal（messageCount + ack）；return result
+ 10. T2：route/RouteResponseCommitter 提交 R terminal + delete draft + attempt settled
+ 11. T3：QueueProcessor 做 collector/parent aggregate + queue/retry + tracker slot
+ 12. retire worker（warmTtl=0）
 ```
 
 **定位与边界**
@@ -1148,11 +1164,13 @@ runAgentTurn
 | 组件 | 拥有 | 不拥有 |
 |---|---|---|
 | OperatorMessageIngress | 行首 @ 解析、隐式路由、`StoredMessage.targetAgentIds`、message+queue 事务 | child/execution |
-| AgentRouter | target 校验、parallel/serial 调度、per-target signal | prompt/session/response/terminal |
-| routeParallel | 并行 merge、单 target 错误隔离 | 写 response、parent aggregate |
-| routeSerial | 顺序循环、priorResponses | 单体 per-agent 逻辑 |
-| runAgentTurn | session/prompt/invoke/response/terminal/usage | 队列 claim、parent 创建、tracker 占用 |
-| QueueProcessor | claim、parent、tracker、collector 调用 | @ 解析、per-agent prompt |
+| AgentRouter | target 校验、parallel/serial 调度、per-target signal | prompt/session/child terminal/response R/parent aggregate |
+| routeParallel | 并行 merge、单 target 错误隔离、T2 response commit（`RouteResponseCommitter`） | child terminal、parent aggregate |
+| routeSerial | 顺序循环、priorResponses、T2 response commit | child terminal、parent aggregate |
+| runAgentTurn | per-agent composition root：session/prompt/invoke/stream/usage；调用 T1 并返回 `AgentTurnResult` | child terminal 写入、response R commit、parent aggregate、tracker 占用 |
+| invoke-single-agent | T1 child terminal + credential + attempt projection + `response_pending` | response R commit、parent aggregate、draft delete |
+| QueueProcessor | claim、parent、tracker、T3 collector/aggregate/queue/retry/slot | @ 解析、per-agent prompt、child terminal |
+| ResponseRecoveryService | T4 `response_pending` / `response_missing` recovery | child terminal rewrite、parent aggregate rewrite |
 
 **接口**
 
@@ -1171,6 +1189,7 @@ interface RouteInput {
   content: string;
   targetAgentIds: string[];
   signalForAgent: (agentId: string) => AbortSignal | undefined;
+  responseCommitter: RouteResponseCommitter;
 }
 
 interface AgentTurnInput extends RouteInput {
@@ -1196,6 +1215,10 @@ interface AgentTurnResult {
   usage: TokenUsage | null;
 }
 
+interface RouteResponseCommitter {
+  commit(result: AgentTurnResult): Promise<"committed" | "already_terminal" | "conflict">;
+}
+
 class AgentRouter {
   resolveTargets(input: {
     threadId: string;
@@ -1215,12 +1238,17 @@ async function* runAgentTurn(
 
 ```ts
 async function* routeParallel(input: RouteInput): AsyncIterable<AgentStreamEvent> {
-  const streams = input.targetAgentIds.map((agentId) =>
-    runAgentTurn({
+  async function* runAndCommit(agentId: string): AsyncGenerator<AgentStreamEvent, AgentTurnResult> {
+    const result = yield* runAgentTurn({
       ...input,
       agentId,
       signal: input.signalForAgent(agentId),
-    }),
+    });
+    await input.responseCommitter.commit(result); // T2
+    return result;
+  }
+  const streams = input.targetAgentIds.map((agentId) =>
+    runAndCommit(agentId),
   );
   yield* mergeStreams(streams, {
     signalForIndex: (i) => input.signalForAgent(input.targetAgentIds[i]),
@@ -1232,7 +1260,7 @@ async function* routeParallel(input: RouteInput): AsyncIterable<AgentStreamEvent
 - 每个 target 一个独立 `runAgentTurn`；
 - 单 target 失败/中断不波及兄弟；
 - 流错误合成 `error + done`；
-- 不写 response、不做 parent aggregate。
+- T2 R/draft 由 `RouteResponseCommitter` 写；不做 child terminal、parent aggregate。
 
 **route-serial 形态**
 
@@ -1246,6 +1274,7 @@ async function* routeSerial(input: RouteInput): AsyncIterable<AgentStreamEvent> 
       priorResponses,
       signal: input.signalForAgent(agentId),
     });
+    await input.responseCommitter.commit(result); // T2
     priorResponses.push({ agentId, content: result.responseText });
   }
 }
@@ -1253,38 +1282,57 @@ async function* routeSerial(input: RouteInput): AsyncIterable<AgentStreamEvent> 
 
 - 顺序执行同一个 `runAgentTurn`；
 - 后一个 agent 能看到前一个 agent 的 response；
+- 每个 child 完成后先提交 T2，再把 `responseText` 传给下一个 agent；
+- T2 失败不回滚 T1；serial 仍可用 `result.responseText` 继续，R 由 T4 恢复；
 - v1 保留薄循环，不默认启用；
 - 不是 Clowder 的 4334 行单体。
 
-**`runAgentTurn` 顺序**
+**一次 turn 的顺序（T1/T2/T3/T4）**
 
 1. resolve AgentConfig（存在/enabled/provider/model）；
 2. ensure AgentSession（active；circuit breaker/fresh 时 lightweight seal + seq+1）；
 3. 读取/派生可重放的 `turnExecutionId`；
-4. 同一 dispatch 事务创建 attempt(queued) + processing R（`parentInvocationId` + `turnExecutionId`）；
-5. `TurnExecutionStore.createRunning`（core；幂等；同 session 唯一 running）；
-6. 回填 attempt `turn_execution_id`/`response_message_id`/`settlement='streaming'`；
-7. `workerPool.ensure`（ephemeral；spawn ~0.5s；pi v1 一 worker 一 session）；
-8. `InvocationRegistry.create`（credential）；
-9. build context（thread/participants/recent messages/priorResponses；delivery cursor 见 §3.5.1）+ build prompt（system + history + context）；
-10. invoke pi worker（stream events）；deltas/tool events 写 `response_drafts`；
-11. `transitionTerminal` + attempt terminal + attempt `settlement='response_pending'`
-    + collector + parent aggregate + credential terminalize（same transaction）；
-12. `settleResponseFromDraft`：R terminal + attempt `settled` + settle input
-    dispatchRefs + delete draft + clear pending；
-13. retire worker（warmTtl=0）+ release tracker slot。
+4. dispatch 事务：`appendQueued` → `markStarting`；创建 processing R
+   （`parentInvocationId` + `turnExecutionId`）；`TurnExecutionStore.createRunning`
+   （core；幂等；同 session 唯一 running）；`bindAppended`
+   （`turn_execution_id`/`response_message_id`/`settlement='streaming'`）；
+   `InvocationRegistry.create`（credential，绑 child id）；
+5. `loadHistory`（§3.5.1）→ `deliveryBoundarySeq`；
+6. `workerPool.ensure`（ephemeral；spawn ~0.5s；pi v1 一 worker 一 session）+
+   `bindWorker`；
+7. build context（thread/participants/recent messages/priorResponses；delivery cursor
+   见 §3.5.1）+ build prompt（system + history + context）；
+8. invoke pi worker（stream events）；deltas/tool events 写 `response_drafts`；
+   prompt RPC 接收后 `markPromptDelivered`；
+9. T1 child terminal：`TurnExecution.transitionTerminal` +
+    `projectChildTerminal` + attempt `settlement='response_pending'` +
+    credential terminalize + `recordTurnTerminal`/ack（same transaction）；
+    返回 `AgentTurnResult`；
+10. T2 response commit：route/`RouteResponseCommitter` 提交 R terminal + settle inputs
+    + delete draft + attempt `settled` + clear pending + A2A successor；
+11. T3 parent aggregate：`QueueProcessor` + collector 读最新 attempt + canonical
+    TurnExecution，写 parent/queue/retry，释放 tracker slot；
+12. T4 recovery：`ResponseRecoveryService` 处理 `response_pending` / `response_missing`；
+13. retire worker（warmTtl=0）。
+
+`runAgentTurn` 只编排 T1/T2；不直接写 parent aggregate，也不直接 `transitionTerminal`。
+T1 owner 是 `invoke-single-agent`，T2 owner 是 route/`RouteResponseCommitter`，
+T3 owner 是 `QueueProcessor`，T4 owner 是 `ResponseRecoveryService`。
 
 **`routeAgents` 模式选择**
 
 - v1 默认 `parallel`；
 - `serial` 是同一个 `runAgentTurn` 的薄循环，保留接口但不默认启用；
-- route 不做 prompt/context/session/response；这些全部在 `runAgentTurn`。
+- route 不做 prompt/context/session/child terminal；T2 R/draft 由 route/
+  `RouteResponseCommitter` 做，T3 parent 由 `QueueProcessor` 做。
 
 **routeSerial 责任拆解**
 
 | routeSerial 内容 | 去处 |
 |---|---|
-| session/prompt/context/invoke/response/terminal | `runAgentTurn` |
+| session/prompt/context/invoke/stream/usage + T1 orchestration | `runAgentTurn`（composition root） |
+| T2 response R/draft/A2A successor | `routeSerial/Parallel` + `RouteResponseCommitter` |
+| T3 parent aggregate/queue/retry/slot | `QueueProcessor` |
 | serial order / priorResponses | `routeAgents(mode="serial")` |
 | guide/concierge/memory/SOP/entity nudge | `runAgentTurn` feature hooks；v1 不挂 |
 | 静态 worklist 不 push 新 target | 保留：A2A hop 是新 queue entry |
@@ -1360,14 +1408,14 @@ normal:
 **ack 时序（关键）**
 
 `loadHistory` 只返回 `boundarySeq`，**不在构建 prompt 时 ack**。ack 发生在
-`settleAgentTurn` 的 child terminal 事务 A 内：
+T1 child terminal 事务内（`invoke-single-agent` + `TurnExecutionLifecycle`）：
 
 ```text
-tx A:
+tx T1:
   TurnExecution terminal
-  + attempt terminal
+  + projectChildTerminal（delivery_state）
   + attempt.settlement = 'response_pending'
-  + parent aggregate / credential terminalize
+  + credential terminalize / auth projection
   + AgentSessionStore.recordCompletedTurn({ userVisibleOutput })  // outcome=completed 时
   + AgentReadStateStore.ack(threadId, agentId, deliveryBoundarySeq)
       仅当 attempt.promptDeliveredAt != null
@@ -1378,11 +1426,11 @@ tx A:
   只把 boundary 留在本轮内存里，prompt 未送达就不持久化。
 - prompt 未送达（worker_capacity、spawn/credential/prompt 构建失败）→ 不 ack；
   下一轮重放同一批消息。
-- prompt 已送达后 provider 失败/取消 → tx A 照常 ack；否则下一轮会无限重放同一批
+- prompt 已送达后 provider 失败/取消 → tx T1 照常 ack；否则下一轮会无限重放同一批
   消息（Clowder 在 “messages were assembled into the prompt” 后也 ack，语义一致）。
-- 崩溃在 tx A 前 → 不 ack；startup reconciler 收敛 attempt 后，按
+- 崩溃在 tx T1 前 → 不 ack；startup reconciler 收敛 attempt 后，按
   `promptDeliveredAt` 决定是否补 ack。
-- 崩溃在 tx A 后、R settlement 前 → ack 已随 terminal 持久化；response reconciler
+- 崩溃在 tx T1 后、T2 前 → ack 已随 terminal 持久化；`ResponseRecoveryService`
   只收敛 R，不重放输入。
 - ack 是单调 CAS；reconciler / 重试重复调用安全。
 
@@ -1534,8 +1582,8 @@ reapExpired:
 
 **执行互斥**
 
-- `invocation_attempts` 唯一 running per session：
-  `CREATE UNIQUE INDEX invocation_attempts_one_running_per_session ON invocation_attempts(agent_session_id) WHERE state = 'running' AND agent_session_id IS NOT NULL;`
+- `invocation_attempts` 唯一 active delivery per session：
+  `CREATE UNIQUE INDEX invocation_attempts_one_active_per_session ON invocation_attempts(agent_session_id) WHERE delivery_state IN ('starting', 'appended') AND agent_session_id IS NOT NULL;`
 - `RpcConnection.prompting` 进程级单飞。
 - `worker_bindings.generation`：旧 release 在 generation 变化后 no-op。
 - 不建 per-turn `worker_leases` 表。
@@ -1682,7 +1730,7 @@ interface TurnExecutionStore {
 - `get` / `listByInvocation` / `listRunning` 只读；`listByInvocation` 对应
   Clowder `listByParent`；`listRunning` 是 v1 单 user 的 `listRunningByUser` 等价。
 - `listResponsePending` / `clearResponsePending` 是 `invocation_attempts.settlement` 的
-  投影；不直接改 attempt 的 execution state。
+  投影；不直接改 child execution state。
 - ordinary `createRunning` input：`turnExecutionId + parentInvocationId + threadId +
   userId + agentId + executionKind + causal`；`routing_guard` 同，但没有 attempt/R。
 - **`createRunning` identity（DP-F018X-1=A）** = `turnExecutionId + parentInvocationId +
@@ -1698,8 +1746,8 @@ interface TurnExecutionStore {
 - `replayed` 时 `invoke-single-agent` 不启动 provider；必须复用 attempt 行的
   `responseMessageId`/draft，不得为同一 attempt 再建 R。
 - `transitionTerminal` 只允许一次；status 为 `failed/interrupted/canceled` 时必须有
-  `terminalReason`。attempt terminal 与 TurnExecution terminal 同事务；R settlement
-  由 attempt 的 `settlement` 字段单独推进。
+  `terminalReason`。`projectChildTerminal` 与 TurnExecution terminal 同事务；R
+  settlement 由 attempt 的 `settlement` 字段单独推进。
 - v1 不做 `causal.coveredMessageIds`、`outputFence`、`queueCompletionPolicy`；
   `listBySource`/`settleOutputFence` 也留 v2。
 
@@ -1710,31 +1758,34 @@ v1 采用 durable streaming：processing response R 在 attempt 启动时创建�
 保证崩溃后可恢复。
 
 ```text
-attempt start（dispatch transaction）:
-  create attempt(queued)                         // per-target attempt ledger
+attempt start（T1 dispatch transaction）:
+  appendQueued → markStarting                     // per-target delivery ledger
   append R: lifecycle.kind='response', status='processing',
             parentInvocationId=<parent>, turnExecutionId
   create TurnExecution(core)
-  bind attempt.turn_execution_id = turnExecutionId
-       attempt.response_message_id = R.id
-       attempt.settlement = 'streaming'
+  bindAppended: turn_execution_id = turnExecutionId
+                response_message_id = R.id
+                settlement = 'streaming'
   → credential + retireTargets                   // same transaction
 stream:
   message_update.text_delta / tool events → response_drafts(turnExecutionId)
   （bounded flush，如 100ms/4KB；同时发 ephemeral AgentStreamEvent 给 UI）
-child terminal（same transaction）:
+T1 child terminal（same transaction）:
   TurnExecution.transitionTerminal(status, endedAt, terminalReason)
-  attempt.state = terminal
+  attempt.projectChildTerminal(status)
+       // appended → handled | failed | interrupted | canceled
   attempt.settlement = 'response_pending'
-  → parent aggregate + credential terminalize
-response settlement（通常紧接着；崩溃后由 reconciler 重放）:
-  settleResponseFromDraft(turnExecutionId):
-    load attempt by turn_execution_id；load R by attempt.response_message_id
-    if R.status='processing' → commitLifecycleResponseTerminal(R, draft body, child terminal state)
-    settleLifecycleResponseInputs(R) / advanceLifecycleInputDispatch(settled)
-    delete draft
-    attempt.settlement = 'settled'
-    clearResponsePending(turnExecutionId)        // projection over attempts
+  → credential terminalize + recordTurnTerminal / ack
+T2 response commit（route/RouteResponseCommitter；separate transaction）:
+  load attempt by turn_execution_id；load R by attempt.response_message_id
+  if R.status='processing' → commitLifecycleResponseTerminal(R, draft body, child status)
+  settleLifecycleResponseInputs(R) / advanceLifecycleInputDispatch(settled)
+  delete draft
+  attempt.settlement = 'settled'
+  clearResponsePending(turnExecutionId)
+  → A2A successor
+T4 recovery（ResponseRecoveryService）:
+  response_pending / abandoned / response_missing → 重跑 T2；不改写 child/credential/parent
 ```
 
 - `response_message_id` 在 attempt start 就写入 processing R；`response_pending` 时也非 null。
@@ -1744,8 +1795,8 @@ response settlement（通常紧接着；崩溃后由 reconciler 重放）:
   `startedAt < processStartedAt + 1` 且非 protected 的 pending；R 已 terminal 则只清
   pending；R 不存在则走独立 `response_missing` recovery（system message/audit），
   不写 prestart `delivery_failure`。
-- parent aggregate 和 credential terminalize 在 child terminal 事务完成，不等待 R terminal；
-  `response_pending` 的 child 已经是 terminal，参与聚合。
+- credential terminalize 在 T1 完成；parent aggregate 在 T3 完成，不等待 R terminal；
+  `response_pending` 的 child 已经是 terminal，参与 T3 聚合。
 - `routing_guard` 没有 attempt/R；它只有 core TurnExecution。
 - 与 Clowder 的差异只在存储：Clowder 用 message idempotency key + Redis responsePending set
   跨 store 定位 R；codeteam 单 SQLite 用 `invocation_attempts.response_message_id` 定位 R，
@@ -1755,27 +1806,28 @@ response settlement（通常紧接着；崩溃后由 reconciler 重放）:
 1. 从 AgentConfig/AccountConfig 解析 provider/model/modelFamily；
 2. ensure `AgentSession`（active；circuit breaker/fresh 时 lightweight seal + seq+1）；worker 在 history 之后；
 3. 读取/派生可重放的 `turnExecutionId`（`invocation_attempts` 已有则复用）；
-4. 同一 dispatch 事务创建 attempt(queued) + processing R（`parentInvocationId` + `turnExecutionId`）；
-5. `TurnExecutionStore.createRunning`（core）；
-6. 回填 attempt `turn_execution_id`/`response_message_id`/`settlement='streaming'`
-   （`worker_id=null`）；
-7. `loadHistory`（§3.5.1）→ `deliveryBoundarySeq`；
-8. `WorkerPool.ensure` + `attempt.bindWorker(workerId)`；
-9. `InvocationRegistry.create`（credential，绑 child id）——codeteam 因 FK 先 child 后 auth；Clowder 是 auth-first，但“两者都在 provider 之前”不变；
-10. build prompt + provider/prompt/stream；prompt RPC 接收后
+4. dispatch 事务：`appendQueued` → `markStarting`；创建 processing R
+   （`parentInvocationId` + `turnExecutionId`）；`TurnExecutionStore.createRunning`；
+   `bindAppended`（`turn_execution_id`/`response_message_id`/`settlement='streaming'`；
+   `worker_id=null`）；`InvocationRegistry.create`（credential，绑 child id）；
+5. `loadHistory`（§3.5.1）→ `deliveryBoundarySeq`；
+6. `WorkerPool.ensure` + `attempt.bindWorker(workerId)`；
+7. build prompt + provider/prompt/stream；prompt RPC 接收后
     `markPromptDelivered(deliveryBoundarySeq, promptDeliveredAt)`；deltas/tool events
     写 `response_drafts`；
-11. child terminal：TurnExecution terminal + attempt terminal + attempt
-   `settlement='response_pending'` + parent aggregate + credential terminalize +
-   `recordTurnTerminal`（messageCount + cursor ack）；
-12. `settleResponseFromDraft`：commit R terminal + settle input dispatchRefs +
-    delete draft + attempt `settled` + clear pending。
+8. T1 child terminal：TurnExecution terminal + `projectChildTerminal` + attempt
+   `settlement='response_pending'` + credential terminalize +
+   `recordTurnTerminal`（messageCount + cursor ack）；不写 parent。
+9. T2/T3：route/`RouteResponseCommitter` 提交 R terminal + delete draft + attempt
+   `settled` + clear pending；`QueueProcessor` 做 parent aggregate；T4 恢复未完成 R。
 
-11/12 由 `settleAgentTurn` 封装（§3.9）；`invoke-single-agent` 只负责 provider/stream。
+T1 由 `invoke-single-agent` + `TurnExecutionLifecycle` 拥有；T2 由
+route/`RouteResponseCommitter` 拥有；T3 由 `QueueProcessor` 拥有；T4 由
+`ResponseRecoveryService` 拥有。`invoke-single-agent` 不写 parent aggregate。
 
 若 dispatch 事务内任一步失败：整个事务回滚，不启动 provider；写 `delivery_failure`
 system message（prestart 失败）。若 provider 启动后失败：child/attempt failed；
-R 由 settlement 提交为 failed/interrupted，不另写 `delivery_failure`。
+R 由 T2/T4 提交为 failed/interrupted，不另写 `delivery_failure`。
 
 ### 3.6.1 Durable response stream（v1，DP-F018X-2=B）
 
@@ -1808,8 +1860,9 @@ type AgentStreamEvent =
   `text_delta` 才追加，`tool_call_*` 按 `toolId` 合并；`complete` 用
   `responseMessageId` 替换为持久 R；刷新/重连先加载 processing R + draft（含 `seq`），
   再接后续事件；`seq <= draft.seq` 的事件丢弃。
-- **error**：事件层 `error` 只标记 draft 错误；R 的 failed/interrupted/canceled 终态仍由
-  `settleResponseFromDraft` 提交，UI 不因事件丢失而提前改消息状态。
+- **error**：事件层 `error` 只标记 draft 错误；R 的 failed/interrupted/canceled 终态由
+  T2 `RouteResponseCommitter` 提交；T2 失败时由 T4 `settleResponseFromDraft` 恢复，
+  UI 不因事件丢失而提前改消息状态。
 - attempt start：同 dispatch 事务创建 attempt + processing R（`lifecycle.kind='response'`,
   `status='processing'`，`parentInvocationId` + `turnExecutionId`），并把
   `attempt.response_message_id=R.id`、`attempt.settlement='streaming'`。
@@ -1822,8 +1875,9 @@ type AgentStreamEvent =
   - bounded flush（如 100ms / 4KB）；同时发 ephemeral `AgentStreamEvent` 给 UI 做即时反馈；
   - **每个 delta 不写 messages/run_events**；draft 是唯一 in-flight body。
 - `message_end`：用最终 text/tool events 覆盖 draft，避免 delta 重复。
-- `agent_settled`：触发 terminal；child terminal 事务把 TurnExecution 标 terminal、
-  attempt.state 标 terminal、attempt.settlement 标 `response_pending`。
+- `agent_settled`：触发 T1；child terminal 事务把 TurnExecution 标 terminal、
+  attempt.delivery_state 投影为 handled/failed/interrupted/canceled、
+  attempt.settlement 标 `response_pending`。
 - settlement：`commitLifecycleResponseTerminal(R, draft body, child terminal state)` →
   settle input dispatchRefs → delete draft → `attempt.settlement='settled'` →
   clear pending。`extra.rich` 在 settlement 由最终 text/contentBlocks 生成
@@ -1915,7 +1969,8 @@ type AgentStreamEvent =
 **DP-F018TE-1=A 已拍板（2026-11-10）**
 
 - `TurnExecution` = Clowder core + `causal`。
-- `invocation_attempts` = per-target execution binding + response settlement。
+- `invocation_attempts` = per-target delivery/retry ledger（`delivery_state`）+
+  execution binding snapshot + response settlement。
 - `TurnExecutionStore` 补 `interruptRunningBefore`；`completeResponseSettlement` 改名
   `clearResponsePending`；`listResponsePending` 投影 attempt settlement。
 - `coveredMessageIds` / `outputFence` / `listBySource` / `settleOutputFence` 留 v2。
@@ -2378,89 +2433,81 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
 ### 3.9 PerAgentTerminalDispositionCollector + transitionTerminal + QueueProcessor
 
 > 终态/重试取舍已按 `DP-F018TERM=A/A/A/A/A/A/A` 拍板（2026-11-11），本节已同步。
-> DP-D 调查完成，待 operator 确认：Clowder settlement 是
-> invoke/route/QueueProcessor/callback-auth 四层分工；完整目标设计见
-> `0016-turn-terminal-and-settlement-design.md` §5。确认前本节是待替换的旧契约，
-> **不得作为实现基线**；实现阻塞在 DP-D。
+> DP-C/DP-D 已按 `A/A` 拍板（2026-11-12）：TurnExecution 单 canonical，
+> attempt 只做投递状态；settlement 拆回 T1/T2/T3/T4 四层 owner。
+> 完整设计见 `0016-turn-terminal-and-settlement-design.md` §5。
 
-**正常终态路径**
+**四层 owner（正常终态路径）**
 
-1. child 执行结束：
-   - `TurnExecutionStore.transitionTerminal(turnId, { status, endedAt, terminalReason })`；
-   - attempt `state` 同事务写 terminal，`settlement='response_pending'`；
-   - 只允许一次；返回 child 终态。
-2. `PerAgentTerminalDispositionCollector`：
-   - 输入 parent `targetAgentIds` + `invocation_attempts` 中每个 target 的**最新 attempt**
-     （join 对应 child；不是从 queue 行或随机 child 猜）+ queue entry 当前 pending
-     targetKeys + `RetryDeferrals` 的 targetKeys；
-   - 产出 `successfulAgentIds`、`primaryTerminalError`、`retryablePendingAgentIds`、
-     `allTargetsCanceled` + parent status；`failedAgentIds`/`canceledAgentIds` 只是派生视图，不写 parent。
-   - 同 target 的旧 attempt 不能覆盖新 attempt；terminal error/canceled 的 target 不能被后续
-     `done` 重新计为 successful（依赖 `transitionTerminal` first-write-wins）。
-3. `QueueProcessor`：
-   - 在 child terminal 的同一事务里写 TurnExecution terminal + attempt 终态 +
-     attempt settlement、调用 collector；
-   - 写 parent aggregate；
-   - terminalize credential；
-   - **每个 child terminal 都释放对应 `(threadId, agentId)` tracker slot**（按
-     `turnExecutionId` ownership fence），与 parent 是否 terminal 无关；
-   - queue entry：parent `completed`/`canceled` 删除；`partial_failed`/`failed` 保留为
-     retry anchor，直到显式 abandon 或 TTL。
+| 阶段 | owner | 唯一职责 | 不做什么 |
+|---|---|---|---|
+| T1 child terminal | `invoke-single-agent` + `TurnExecutionLifecycle` | `TurnExecution.transitionTerminal`；credential terminalize；`projectChildTerminal`；`settlement='response_pending'`；`recordTurnTerminal`/ack | 不提交 R、不删 draft、不写 parent aggregate |
+| T2 response commit | `routeSerial/Parallel` + `RouteResponseCommitter` | R terminal；settle inputs；delete draft；attempt `settled`；clear pending；A2A successor | 不写 child terminal、不写 credential、不写 parent aggregate |
+| T3 parent aggregate | `QueueProcessor` + `PerAgentTerminalDispositionCollector` | parent status/successfulAgentIds/terminalReason；queue entry terminal/retry；tracker slot release | 不写 child、不写 credential、不提交正常 R |
+| T4 recovery | `ResponseRecoveryService` | `response_pending` / abandoned / `response_missing` 的 R 重放；draft settlement | 不改写已完成 child/credential；不重新聚合 parent |
 
-**`settleAgentTurn` 接口（P0-1=A）**
+**T1 child terminal**
 
-```ts
-type ResponseDraftSettlement =
-  | { kind: "committed"; responseMessageId: string }
-  | { kind: "already_terminal"; responseMessageId: string };
+- `TurnExecutionStore.transitionTerminal(turnId, { status, endedAt, terminalReason })`；
+  first-write-wins。
+- 同一 `ControlTransaction`：`projectChildTerminal`（只投影 canonical child status 到
+  `delivery_state`）、`settlement='response_pending'`、credential terminalize/auth
+  projection、`recordTurnTerminal`/ack。
+- `completed` 不允许 `terminalReason`；其他 terminal status 必须有。
+- 幂等：同 status → `already_terminal`；不同 status → `terminal_conflict`，保留原终态。
+- 不写 parent aggregate；collector 在 T3 读 canonical child。
+- 不删 draft；R 仍 processing，由 T2/T4 处理。
 
-interface SettleAgentTurnInput {
-  turnExecutionId: string;
-  attemptId: string;
-  status: "completed" | "failed" | "interrupted" | "canceled";
-  endedAt: number;
-  terminalReason?: string;
-  responseMessageId: string;
-  userVisibleOutput: boolean;
-  usage?: TokenUsage;
-}
+**T2 response commit**
 
-interface SettleAgentTurnResult {
-  outcome: "settled" | "already_terminal" | "terminal_conflict";
-  existingTerminalStatus?: "completed" | "failed" | "interrupted" | "canceled";
-  turnExecution: TurnExecution;
-  attempt: InvocationAttempt;
-  parent: InvocationRecord;
-  credential: InvocationCredential;
-  responseSettlement: ResponseDraftSettlement;
-}
+- route/`RouteResponseCommitter` 读取 `attempt.response_message_id` 与 draft，提交
+  R terminal + settle inputs；delete draft；attempt `settlement='settled'`；
+  `clearResponsePending`；A2A successor。
+- 正常路径 T2 不调用 `settleResponseFromDraft`；`settleResponseFromDraft` 只属于 T4。
+- 幂等：R 已 terminal 同 status → no-op；不同 status → `terminal_conflict`；
+  R 缺失 → `response_missing` recovery。
+- T2 失败不回滚 T1；R 保持 processing、attempt 保持 `response_pending`，由 T4 重试。
 
-function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnResult>;
-```
+**T3 parent aggregate**
 
-- 校验 `attempt.turnExecutionId/turnExecutionId` 与 `attempt.responseMessageId/
-  responseMessageId` 一致；`completed` 不允许 `terminalReason`，其他 status 必须有。
-- **终态幂等**：child/attempt 已 terminal 且 status 相同 → `already_terminal`，返回
-  已有结果，不重复 `recordTurnTerminal`/ack/credential；status 不同 →
-  `terminal_conflict`，保留原终态，不回滚、不覆盖。credential 已 terminal 且
-  disposition 相同 → no-op；不同 → lifecycle conflict signal，child terminal 事务不回滚。
-- 第一段事务（child terminal）：`TurnExecutionStore.transitionTerminal` +
-  `InvocationAttemptStore.transitionTerminal` + `setSettlement('response_pending')` +
-  collector/parent aggregate + `InvocationRegistry.commitTerminal` +
-  `AgentSessionManager.recordTurnTerminal`。后者读取 attempt 的
-  `deliveryBoundarySeq` / `promptDeliveredAt`，在同一事务内完成
-  `recordCompletedTurn` 与 cursor ack；首次可见输出已由 stream 提前
-  `recordUserVisibleOutput` 0→1，done 用 `lastCountedTurnExecutionId` 去重；
-  详见 `0009 §6.1`。
-- 第一段事务必须在 `ControlTransaction`（`BEGIN IMMEDIATE`）内完成；collector 在拿到
-  写锁后**重新读取** `invocation_attempts` 并计算 parent，避免两个 child 并行 terminal
-  的 lost update。`successfulAgentIds` 用单调 union，不覆盖。
-- 第二段（response settlement）：调用 `settleResponseFromDraft`，提交 R terminal +
-  input dispatchRefs + attempt `settled` + clear pending；两段之间崩溃可恢复。
-- `settleAgentTurn` 不启动 provider、不写 response 正文；provider/stream 仍在
-  `invoke-single-agent`。
-- R 在 attempt start 创建，因此 `responseMessageId` 始终存在；v1 删除 `no_response`
-  分支。prestart 无 R 的失败走 `delivery_failure`，不调用 `settleAgentTurn`。
+- `PerAgentTerminalDispositionCollector` 输入 parent `targetAgentIds` + 每个 target 的
+  **最新 attempt** + canonical `TurnExecution` + queue pending targetKeys +
+  `RetryDeferrals`；产出 `successfulAgentIds`、`primaryTerminalError`、
+  `retryablePendingAgentIds`、`allTargetsCanceled` + parent status。
+- 每个 target 的 child 状态读 `TurnExecution.status`；没有 child 的 prestart 失败读
+  `delivery_state`；`delivery_state='handled'` 不等于 parent completed。
+- 同一 `ControlTransaction`：写 parent aggregate；queue entry terminal/retry；
+  每个 child terminal 都释放对应 `(threadId, agentId)` tracker slot（按
+  `turnExecutionId` ownership fence），与 parent 是否 terminal 无关。
+- collector 在拿到写锁后重新读取 attempts + children，避免两个 child 并行 terminal
+  的 lost update；`successfulAgentIds` 单调 union。
+- T3 失败：parent 保留原状态；startup/reaper 对仍有 terminal child 的非 terminal
+  parent 重跑 collector（幂等），不重复 terminal child/credential。
+- 不写 child/credential/R。
+
+**T4 recovery**
+
+- `ResponseRecoveryService` 处理 startup `response_pending`、route 异常后的 abandoned
+  response、reaper 收敛 zombie child 后 R 仍未 terminal、以及 R 缺失的
+  `response_missing`。
+- 只提交/修复 R、settle inputs、delete draft、set `settlement='settled'`、
+  clear pending；不改写 child terminal/credential，不重新聚合 parent。
+- settlement 失败保留 pending，下次再试。
+
+**终态幂等**
+
+- T1：同 status 重复 → `already_terminal`，不双计数/ack/credential；不同 status →
+  `terminal_conflict`，保留原终态。
+- T2：R 已 terminal 同 status → no-op；不同 status → conflict；R 缺失 →
+  `response_missing`。
+- credential 已 terminal 且 disposition 相同 → no-op；不同 → lifecycle conflict
+  signal，child terminal 事务不回滚。
+
+**prestart 失败**
+
+- dispatch 事务内失败：不创建 child/R，attempt `queued → canceled` 或
+  `starting → failed|canceled`，写 `delivery_failure` system message；不调用 T1/T2。
+- prestart 失败没有 `responseMessageId`；不要伪造 R。
 
 **聚合规则**
 
@@ -2481,7 +2528,7 @@ function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnRe
 - `interrupted` 归入失败面（可重试）；`canceled` 归入取消面，**不可被 `requestRetry`
   复活**；`requestRetry` 只接受 failed/interrupted。
 - `successfulAgentIds` 单调递增，按 `targetAgentIds` 顺序返回；failed/canceled 由每个
-  agent 最新 attempt 推导。
+  agent 最新 attempt + canonical `TurnExecution` 推导。
 - collector 额外返回 `primaryTerminalError`；parent `terminalReason` 持久化首个
   terminal error（`failed`/`partial_failed` 非空）。
 - `requestRetry` 受理后 parent 进入 `queued`；retry child 创建并启动后由 `markRunning` 进入 `running`。
@@ -2516,8 +2563,8 @@ function settleAgentTurn(input: SettleAgentTurnInput): Promise<SettleAgentTurnRe
   attempt 的 R/response 保留在 `invocation_attempts`/message 历史，不覆盖。
 - `partial_failed`/`failed` 的 queue entry 保留到显式 `abandon` 或
   `FAILED_ENTRY_TTL_MS`（建议 30 天，audited）；未 abandon 的失败 entry 不应永久占 queue。
-- `requestRetry` 只接受旧 attempt `settled`；若仍是 `response_pending`，先
-  `settleResponseFromDraft` 或返回 typed `response_pending`，不并发写同一 R。
+- `requestRetry` 只接受旧 attempt `settled`；若仍是 `response_pending`，先由 T4
+  `settleResponseFromDraft` 收敛，或返回 typed `response_pending`，不并发写同一 R。
 
 **Abandon（v1）**
 
@@ -2571,7 +2618,7 @@ source message m1
   不重新 admission、不产生第二条用户消息。
 - **target-level exact claim**：`retryRoutingTarget` 只 claim 失败 target；成功 target
   的 TurnExecution/credential/R 不动。
-- **attempt append-only**：每次 retry 追加 `attempt+1`；旧 attempt 的 state/terminalReason/
+- **attempt append-only**：每次 retry 追加 `attempt+1`；旧 attempt 的 delivery_state/terminalReason/
   R/draft 保留；parent 的 `successfulAgentIds` 只增不减。
 - **两条触发**：operator 显式 `retry_target`；pre-handoff pending failure 由
   `RetryDeferrals` 自动重试。已终态失败不自动重跑。
@@ -2597,7 +2644,7 @@ interface InvocationAttempt {
   attempt: number;          // target attempt, 1-based
 
   turnExecutionId: string | null;
-  state: "queued" | "running" | "completed" | "failed" | "interrupted" | "canceled";
+  deliveryState: "queued" | "starting" | "appended" | "handled" | "failed" | "interrupted" | "canceled";
   terminalReason: string | null;
 
   // execution binding/snapshot
@@ -2632,7 +2679,12 @@ interface InvocationAttemptStore {
     now: number;
   }): { outcome: "created" | "replayed" | "conflict"; record: InvocationAttempt };
 
-  bindExecution(attemptId: string, input: {
+  markStarting(attemptId: string, input: {
+    claimId: string;
+    now: number;
+  }): InvocationAttempt | null;
+
+  bindAppended(attemptId: string, input: {
     turnExecutionId: string;
     agentSessionId: string;
     workerId: string | null;       // 可在 bindWorker 时再填
@@ -2661,43 +2713,56 @@ interface InvocationAttemptStore {
     now: number;
   }): InvocationAttempt | null;
 
-  transitionTerminal(attemptId: string, input: {
-    state: "completed" | "failed" | "interrupted" | "canceled";
+  projectChildTerminal(attemptId: string, input: {
+    turnExecutionId: string;
+    childStatus: "completed" | "failed" | "interrupted" | "canceled";
     terminalReason: string | null;
-    now: number;
+    endedAt: number;
   }): {
-    outcome: "transitioned" | "already_terminal" | "not_found";
+    outcome: "transitioned" | "already_terminal" | "terminal_conflict" | "not_found";
     record: InvocationAttempt | null;
   };
+
+  markPrestartTerminal(attemptId: string, input: {
+    status: "failed" | "canceled";
+    terminalReason: string;
+    endedAt: number;
+  }): InvocationAttempt | null;
 
   getLatest(invocationId: string, targetAgentId: string): InvocationAttempt | null;
   getByTurnExecutionId(turnExecutionId: string): InvocationAttempt | null;
   listByInvocation(invocationId: string): InvocationAttempt[];
-  listRunning(): InvocationAttempt[];
+  listActive(): InvocationAttempt[];
   listResponsePending(): InvocationAttempt[];
 }
 ```
 
 - `appendQueued` 以 `(parentInvocationId, targetAgentId, attempt)` 幂等；同 key 不同
   `queueEntryId` 即 conflict。
-- `bindExecution` 只接受 `queued → running`，写 `turnExecutionId`/session/
+- `markStarting` 只接受 `queued → starting`；claim 后调用，写 `started_at`；
+  重复同 claim no-op。
+- `bindAppended` 只接受 `starting → appended`，写 `turnExecutionId`/session/
   provider/model、`responseMessageId` 和 `settlement='streaming'`；`workerId`
-  允许为 null，后续由 `bindWorker` 填入；已 running 幂等。
-- `bindWorker` 只接受 `running`；`worker_id` 为空时写入，相同 no-op，不同 fail
-  closed（running attempt 不换 worker；先 cancel/terminal 再换）。
-- `markPromptDelivered` 只接受 `running`；同时写 `prompt_delivered_at` 与
+  允许为 null，后续由 `bindWorker` 填入；已 appended 幂等。
+- `bindWorker` 只接受 `appended`；`worker_id` 为空时写入，相同 no-op，不同 fail
+  closed（active attempt 不换 worker；先 cancel/terminal 再换）。
+- `markPromptDelivered` 只接受 `appended`；同时写 `prompt_delivered_at` 与
   `delivery_boundary_seq`。相同值幂等，不同值 fail closed。只有 provider RPC
   真正接收 prompt 后调用；worker spawn/credential/prompt 构建失败不调用。
 - `recordUsage` 只写本 attempt 的 usage；parent `usageByAgent` 由 collector 汇总。
 - `setSettlement` 只允许 `streaming → response_pending → settled`；R terminal 后清 pending。
-- `transitionTerminal` 只接受一次；`completed` 允许 `terminalReason=null`，其他终态必须
-  有 reason；terminal 后不再变化。
+- `projectChildTerminal` 只接受 `appended → handled|failed|interrupted|canceled`；
+  先读 `TurnExecution` 校验 childStatus；只投影 canonical，不反向写 child；
+  同 child 重复同 status 幂等，不同 status `terminal_conflict`。
+- `markPrestartTerminal` 只接受 `queued → canceled` 或
+  `starting → failed|canceled`；没有 child/R，不伪造 `handled`。
 - `turnExecutionId` 非空时唯一；`responseMessageId` 非空时唯一。
+- `deliveryState` terminal 后不可改写；retry 只 append 新 attempt。
 
 **v1 不做**
 - `usage` 由 collector 汇总到 parent `usageByAgent`；不做 action fence 聚合。
-- v1 用一个事务保证 child terminal + attempt terminal + parent aggregate + credential
-  terminal；R terminal 由 `response_pending` settlement 第二段提交，child 不等待 R。
+- T1 用一个事务保证 child terminal + attempt projection + credential；T3 单独事务做
+  parent aggregate；T2/T4 提交 R；child 不等待 R terminal。
 
 **终态/重试验收（DP-F018TERM=A×7）**
 
@@ -2708,8 +2773,15 @@ interface InvocationAttemptStore {
   `BEGIN IMMEDIATE` 下没有 lost update/status 回退。
 - failed/partial_failed child terminal 后 tracker slot 已释放；后续 retry/new turn 不被
   `isBusy` 挡住。
-- 同 status 重复 `settleAgentTurn` → `already_terminal`，不双计数/ack；不同 status →
-  `terminal_conflict`，保留原终态。
+- 同 status 重复 T1 `TurnExecutionLifecycle.transition` → `already_terminal`，不双计数/
+  ack/credential；不同 status → `terminal_conflict`，保留原终态。
+- T2 `RouteResponseCommitter` 重复提交同 R → no-op；不同 status → `terminal_conflict`；
+  R 缺失 → `response_missing` recovery。
+- T4 recovery 只修 R/draft/settlement，不改写 child/credential/parent。
+- 单写者 grep：生产代码不存在 `settleAgentTurn`。
+- 双状态负例：attempt `handled` 但 child 仍 running → reject；child completed 但
+  attempt failed → `terminal_conflict`，保留 child。
+- 崩溃窗口：T1/T2 之间、T2/T3 之间都能由 T4/T3 重跑恢复。
 - late `done` after terminal error/cancel 不能把 target 重新计为 successful；旧 failed
   attempt 不覆盖新 running/success attempt。
 - failed/partial_failed queue entry 可 `abandon` 或 30d TTL 清理；清理后
@@ -2728,8 +2800,9 @@ interface InvocationAttemptStore {
      测试注入 child；daemon 启动时调用 `TurnExecutionStore.interruptRunningBefore(cutoff, {
      endedAt, terminalReason: 'process_restart', excludedInvocationIds })`；
    - 进程启动前遗留的 running TurnExecution 收敛为 `interrupted/process_restart`；
-   - 同步把对应 `invocation_attempts` 从 `running` 收敛为 `interrupted`；不存在对应
-     child 的 `running` attempt 也标 `interrupted`；
+   - 同步把对应 `invocation_attempts` 从 `appended` 经 `projectChildTerminal` 收敛为
+     `interrupted`；不存在 child 的 `starting` attempt 用 `markPrestartTerminal` 标
+     `failed` 或 `canceled`；
    - 更新 parent aggregate（走 3.9 collector，含 retryablePending）；terminalize credential
      （first-write-wins；同 disposition no-op）。
    - `queued` attempt 没有 live child：target 仍在 pending 时留给 drain（按 backoff）；
@@ -2952,10 +3025,10 @@ CREATE INDEX turn_executions_running
 
 ### 4.3.1 `invocation_attempts`
 
-> DP-C 调查完成，待 operator 确认：Clowder 的 attempt 是 `QueueTargetAttempt`
-> （投递台账），child 终态只在 `TurnExecution`；本节的 attempt state 需要收敛为
-> 投递状态，完整目标设计见 `0016-turn-terminal-and-settlement-design.md` §4。
-> 确认前本节是待替换的旧 schema，**不得作为实现基线**；实现阻塞在 DP-C。
+> DP-C 已按 `A` 拍板（2026-11-12）：`invocation_attempts` 是
+> `QueueTargetAttempt` 语义的投递/重试台账；child 终态只在 `TurnExecution`。
+> `delivery_state` 不承载 child 执行状态。完整设计见
+> `0016-turn-terminal-and-settlement-design.md` §4。
 
 ```sql
 CREATE TABLE invocation_attempts (
@@ -2967,8 +3040,9 @@ CREATE TABLE invocation_attempts (
   attempt INTEGER NOT NULL CHECK (attempt >= 1),
 
   turn_execution_id TEXT UNIQUE,
-  state TEXT NOT NULL CHECK (state IN (
-    'queued', 'running', 'completed', 'failed', 'interrupted', 'canceled'
+  delivery_state TEXT NOT NULL CHECK (delivery_state IN (
+    'queued', 'starting', 'appended', 'handled',
+    'failed', 'interrupted', 'canceled'
   )),
   terminal_reason TEXT,
 
@@ -2991,23 +3065,23 @@ CREATE TABLE invocation_attempts (
   started_at INTEGER,
   ended_at INTEGER,
 
-  CHECK (state NOT IN ('completed', 'failed', 'interrupted', 'canceled')
-         OR ended_at IS NOT NULL),
-  CHECK (state <> 'running' OR started_at IS NOT NULL),
-  CHECK (state NOT IN ('running', 'completed') OR turn_execution_id IS NOT NULL),
-  CHECK (state NOT IN ('failed', 'interrupted', 'canceled') OR terminal_reason IS NOT NULL),
-  CHECK (turn_execution_id IS NOT NULL OR state IN ('queued', 'failed', 'interrupted', 'canceled')),
+  CHECK (delivery_state IN ('queued', 'starting', 'appended') OR ended_at IS NOT NULL),
+  CHECK (delivery_state IN ('queued', 'starting') OR started_at IS NOT NULL
+         OR delivery_state = 'canceled'),
+  CHECK (delivery_state NOT IN ('appended', 'handled') OR turn_execution_id IS NOT NULL),
+  CHECK (delivery_state NOT IN ('failed', 'interrupted', 'canceled') OR terminal_reason IS NOT NULL),
+  CHECK (turn_execution_id IS NOT NULL OR delivery_state IN ('queued', 'starting', 'failed', 'canceled')),
   CHECK (settlement IS NULL OR response_message_id IS NOT NULL),
-  CHECK (settlement IS NULL OR state <> 'queued'),
-  CHECK (settlement <> 'streaming' OR state = 'running'),
-  CHECK (settlement <> 'response_pending' OR state NOT IN ('queued', 'running')),
-  CHECK (settlement <> 'settled' OR state NOT IN ('queued', 'running')),
-  CHECK (response_message_id IS NULL OR state <> 'queued'),
-  CHECK (delivery_boundary_seq IS NULL OR state <> 'queued'),
+  CHECK (settlement IS NULL OR delivery_state NOT IN ('queued', 'starting')),
+  CHECK (settlement <> 'streaming' OR delivery_state = 'appended'),
+  CHECK (settlement <> 'response_pending' OR delivery_state NOT IN ('queued', 'starting', 'appended')),
+  CHECK (settlement <> 'settled' OR delivery_state NOT IN ('queued', 'starting', 'appended')),
+  CHECK (response_message_id IS NULL OR delivery_state NOT IN ('queued', 'starting')),
+  CHECK (delivery_boundary_seq IS NULL OR delivery_state NOT IN ('queued', 'starting')),
   CHECK (prompt_delivered_at IS NULL OR delivery_boundary_seq IS NOT NULL),
   CHECK (prompt_delivered_at IS NULL OR worker_id IS NOT NULL),
   CHECK (prompt_delivered_at IS NULL OR prompt_delivered_at >= started_at),
-  CHECK (state <> 'completed' OR prompt_delivered_at IS NOT NULL),
+  CHECK (delivery_state <> 'handled' OR prompt_delivered_at IS NOT NULL),
   UNIQUE (parent_invocation_id, target_agent_id, attempt),
   FOREIGN KEY (parent_invocation_id)
     REFERENCES invocation_records(invocation_id) ON DELETE RESTRICT,
@@ -3021,25 +3095,30 @@ CREATE TABLE invocation_attempts (
 
 CREATE INDEX invocation_attempts_latest
   ON invocation_attempts(parent_invocation_id, target_agent_id, attempt DESC);
-CREATE INDEX invocation_attempts_state
-  ON invocation_attempts(state, started_at);
+CREATE INDEX invocation_attempts_delivery_state
+  ON invocation_attempts(delivery_state, started_at);
 CREATE INDEX invocation_attempts_settlement
   ON invocation_attempts(settlement) WHERE settlement = 'response_pending';
-CREATE UNIQUE INDEX invocation_attempts_one_running_per_session
+CREATE UNIQUE INDEX invocation_attempts_one_active_per_session
   ON invocation_attempts(agent_session_id)
-  WHERE state = 'running' AND agent_session_id IS NOT NULL;
+  WHERE delivery_state IN ('starting', 'appended') AND agent_session_id IS NOT NULL;
 ```
 
-- **append-only**：每个 agent target 每次执行/重试一行；retry 追加 `attempt+1`，旧行永不改写。
+- **append-only**：每个 agent target 每次投递/重试一行；retry 追加 `attempt+1`，旧行永不改写。
 - `queue_entry_id` 不加 FK：queue row 在 parent terminal 后可删除，attempt 仍保留 route 证据。
-- `turn_execution_id` 在 `createRunning` 成功后回填，非空时唯一；`queued` attempt 允许为空。
+- `turn_execution_id` 在 `bindAppended` 成功后回填，非空时唯一；`queued`/`starting`
+  attempt 允许为空。
 - attempt 不存 `userId`；从 `parentInvocationId`/`threadId` 派生（`0011` §11）。
 - `agent_session_id` / `worker_id` / `provider` / `model` / `model_family` / `usage_json`
-  是本 attempt 的 execution binding/snapshot；`bindExecution` 写入。
+  是本 attempt 的 execution binding/snapshot；`bindAppended` 写入。
 - `settlement` 是 response 状态，不是 execution state：`NULL`（queued，无 R）、
   `streaming`、`response_pending`、`settled`；`response_message_id` 在 R 创建时写入。
-- state 只允许 `queued → running → completed|failed|interrupted|canceled`，或
-  `queued → canceled`（source 撤回）；terminal state 不再变化。
+- `delivery_state` 只允许
+  `queued → starting → appended → handled|failed|interrupted|canceled`，或
+  `queued → canceled` / `starting → failed|canceled`（prestart/source 撤回）；
+  terminal 后不再变化。
+- child 状态不写进 `delivery_state`：`handled` 只表示这次投递成功，child completed；
+  R 仍可能是 `response_pending`；parent 是否 completed 由 T3 判断。
 - settlement 只允许 `NULL → streaming → response_pending → settled`；
   `response_pending` 要求 attempt 已 terminal。
 - 本表只记录 agent target；operator mention 不进入 attempt。
@@ -3195,22 +3274,26 @@ running ──operator cancel──▶ canceled
 ### 5.2.1 InvocationAttempt
 
 ```text
-state:
-queued ──bindExecution──▶ running
-running ──provider success──▶ completed
-running ──provider error──▶ failed
-running ──daemon/worker interruption──▶ interrupted
-queued/running ──operator cancel──▶ canceled
+delivery_state:
+queued ──markStarting──▶ starting ──bindAppended──▶ appended
+starting ──prestart failure──▶ failed
+queued/starting ──cancel──▶ canceled
+appended ──child completed──▶ handled
+appended ──child failed──▶ failed
+appended ──child interrupted──▶ interrupted
+appended ──child canceled──▶ canceled
 terminal ──retry appends new attempt──▶ (old row unchanged)
 
 settlement:
 NULL ──R created──▶ streaming
-state terminal ──▶ response_pending
+delivery_state terminal ──▶ response_pending
 R terminal + inputs settled ──▶ settled
 ```
 
-- attempt `state` 是执行状态；`settlement` 是 response 状态；两者独立推进。
+- `delivery_state` 是投递状态；child 执行状态只在 `TurnExecution.status`。
+- `settlement` 是 response 状态；两者独立推进；`handled` 不等于 parent completed。
 - `response_pending` 要求 attempt 已 terminal；`settled` 后不可回退。
+- prestart failed/canceled 没有 R 时 settlement 保持 `NULL`；不要伪造 processing R。
 
 ### 5.3 InvocationCredential
 
@@ -3236,7 +3319,9 @@ active ──retry/preempt replacement──▶ terminal(replaced, replacedByTur
 target；它阻止 parent 进入 terminal。`interrupted` 归失败面（可重试）；`canceled` 归取消面，
 不可被 `requestRetry` 复活。
 parent 只存 `successfulAgentIds` + `terminalReason`（collector 的
-`primaryTerminalError`）；failed/canceled 由 `invocation_attempts` 最新 attempt 推导。
+`primaryTerminalError`）；failed/canceled 由每个 target 的最新 attempt + canonical
+`TurnExecution` 推导（有 child 读 child status；无 child 的 prestart 读
+`delivery_state`）。
 
 ## 6. 端到端流程
 
@@ -3248,17 +3333,19 @@ m1（targets=[agent:A, agent:B]）
   → QueueProcessor claim q1
   → InvocationRecord invP 创建（status=queued）
   → InvocationTracker.start(A), start(B)
-  → routeAgents("parallel") → runAgentTurn 创建 attempt A/B=1 + core TurnExecution iA/iB
+  → routeAgents("parallel") → runAgentTurn dispatch attempt A/B=1
+       （queued→starting→appended）+ core TurnExecution iA/iB
   → invoke-single-agent:
        ensure AgentSession(sA/sB) + worker
        createRunning(iA/iB)
        bind attempt（session/worker/provider/model/R/settlement=streaming）
        InvocationRegistry.create(iA/iB)
        prompt/stream
-  → iA completed, iB failed；attempt A/B settlement='response_pending'
-  → R settlement → attempt A/B settled
-  → collector: successful=[A], failed=[B], status=partial_failed
-  → parent 更新；credential terminalize；tracker release
+  → T1 iA completed, iB failed；attempt A=handled / B=failed，
+       settlement=response_pending；credential terminalize
+  → T2 R settlement → attempt A/B settled
+  → T3 collector: successful=[A], failed=[B], status=partial_failed
+  → parent 更新 + tracker release
 ```
 
 ### 6.1b operator mention
@@ -3300,8 +3387,9 @@ parent partial_failed: successful=[A], failed=[B]
   → B 重新进入 queue entry 的 pending targets；parent status=queued, retryCount+1
   → attempt B=2 bind TurnExecution iB2
   → iB2 running → parent status=running
-  → iB2 completed + attempt B settlement=response_pending → attempt latest=completed
-  → R settlement → attempt B settled → successful=[A,B], status=completed
+  → T1 iB2 completed → attempt B delivery_state=handled，settlement=response_pending
+  → T2 R settlement → attempt B settled
+  → T3 successful=[A,B], status=completed
   → A 的 attempt=1 / TurnExecution / credential 不重跑；A 不会因 retry 再产生 attempt
 ```
 
@@ -3339,18 +3427,22 @@ parent partial_failed: successful=[A], failed=[B]
 
 - `InvocationQueue`/`QueueEntry`：admission、target-level claim、lease、target 移除、operator
   通知、正文快照；row 保留到 target attempt 终态，作为 retry/terminal anchor。
-- `InvocationAttemptStore` + `invocation_attempts`：append-only target attempt 台账 +
-  execution binding/snapshot（session/worker/provider/model/usage）+ response settlement；
+- `InvocationAttemptStore` + `invocation_attempts`：append-only target delivery/retry
+  台账（`QueueTargetAttempt` 语义）+ execution binding/snapshot
+  （session/worker/provider/model/usage）+ response settlement；
   latest-attempt 聚合；显式 retry 追加 attempt+1；不做跨重启持久化 backoff。
 - `ResponseDraftStore` + `response_drafts`：processing R 的 in-flight body；100ms/4KB
   bounded flush；不是 message history。
-- `ResponseSettlementService` + `settleResponseFromDraft`：child terminal 后提交 R
-  terminal、settle input dispatchRefs、删除 draft、清 `response_pending`。
-- `QueueProcessor`：claim、parent 创建、tracker、route、terminal 聚合、retry、startup recovery。
+- T2 `RouteResponseCommitter`：正常路径提交 R terminal、settle input dispatchRefs、
+  删除 draft、清 `response_pending`、A2A successor。
+- T4 `ResponseRecoveryService` + `settleResponseFromDraft`：只修未完成 R /
+  `response_missing`；不重新 terminal child，不改写 parent。
+- `QueueProcessor`：claim、parent 创建、tracker、route、T3 terminal 聚合、retry、startup recovery。
 - `InvocationRecord`：消息生命周期、target snapshot、successfulAgentIds、usageByAgent、retryCount、partial_failed。
 - `InvocationTracker`：thread×agent 活跃槽、start 抢占、cancel 即释放、executionId fence、live。
-- `AgentRouter` + `runAgentTurn` + `routeAgents`：显式 targets、per-child AbortSignal；parallel 默认，serial 保留薄循环。
-- `invoke-single-agent`：pi worker/session、child TurnExecution、credential、prompt/stream/terminal。
+- `AgentRouter` + `runAgentTurn` + `routeAgents`：显式 targets、per-child AbortSignal；
+  parallel 默认，serial 保留薄循环；route 调度 + T2 response commit，不写 child/parent。
+- `invoke-single-agent`：pi worker/session、T1 child terminal、credential、prompt/stream。
 - `TurnExecutionStore.createRunning/transitionTerminal`：执行幂等 + 单终态。
 - `WorkerPool` + `worker_bindings`：ephemeral worker（一 worker 一 session）、spawn/retire、
   heartbeat/stale、binding generation；`warmTtl=0` 默认，空闲不占进程。
@@ -3440,7 +3532,8 @@ parent partial_failed: successful=[A], failed=[B]
   递增，parent 先回 `queued`。
 - 重试不新建 queue entry、不产生第二条用户消息、不重新 admission；每个被重试 target 追加
   `invocation_attempts` 的 `attempt+1`，旧 attempt 保持原终态。
-- 每个 target 的聚合取 `invocation_attempts` 最新 attempt；不能用旧 failed attempt 覆盖新成功。
+- 每个 target 的聚合取 `invocation_attempts` 最新 attempt + canonical
+  `TurnExecution`；不能用旧 failed attempt 覆盖新成功。
 - queue entry 在 parent `completed`/`canceled` 后删除；`partial_failed`/`failed` 保留到显式
   retry、operator abandon 或 30d TTL。
 - `response_pending` 的 child 已经 terminal，参与 parent aggregate；R settlement 不改变
@@ -3458,30 +3551,32 @@ parent partial_failed: successful=[A], failed=[B]
 - `TurnExecution.userId` 必须等于 `InvocationRecord.userId` 和 `Thread.created_by`；
   不一致 fail closed。
 - 一个 TurnExecution 只能 transitionTerminal 一次；重复 → `already_terminal`。
-- ordinary attempt 一旦创建 processing R，running/terminal 必须有
-  `responseMessageId`/`settlement`；prestart 未创建 R 的 failed attempt 例外，走
-  `delivery_failure`；`routing_guard` 没有 attempt/R。
+- ordinary attempt 一旦创建 processing R，`appended/handled/failed/interrupted/canceled`
+  必须有 `responseMessageId`/`settlement`；prestart 未创建 R 的 failed/canceled
+  attempt 例外，走 `delivery_failure`；`routing_guard` 没有 attempt/R。
 - failed/interrupted/canceled 必须有 terminalReason。
 - 一个 agent 可有多 attempt；唯一 `(parent, agent, attempt)`。
-- 每个 attempt 必须有 `invocation_attempts` 行；child terminal 与 attempt terminal 同事务；
-  attempt 只能走 `queued → running → terminal`，或 `queued → canceled`（source 撤回）；
-  旧 attempt 不可改写。
+- 每个 attempt 必须有 `invocation_attempts` 行；T1 child terminal 同事务只做
+  `projectChildTerminal`，不允许 attempt 反向写 child；
+  attempt 只能走 `queued → starting → appended → handled|failed|interrupted|canceled`，
+  或 `queued/starting → failed|canceled`（prestart/source 撤回）；旧 attempt 不可改写。
 - attempt `turn_execution_id` 非空时唯一；`response_message_id` 非空时唯一。
 - `interruptRunningBefore(cutoff)` 只收敛 `startedAt < cutoff` 的 running TurnExecution；
   attempt/credential 由恢复流程在同一轮收敛。
 
 ### 9.3.1 Durable response stream
 
-- dispatch 事务内：attempt + processing R + TurnExecution core + credential 原子创建；
-  attempt `response_message_id` 从 attempt start 就非空，`settlement='streaming'`。
+- dispatch 事务内：attempt（`queued→starting→appended`）+ processing R +
+  TurnExecution core + credential 原子创建；attempt `response_message_id` 从 attempt
+  start 就非空，`settlement='streaming'`。
 - stream delta/tool event 只写 `response_drafts`，不产生 per-delta message，不消耗 `messages.seq`。
 - processing R 不推进 `deliveryCursor` 越过它；R terminal 后才允许 ack。
 - bounded flush（100ms/4KB）后 draft 可被刷新/重连读取；`message_end` 用最终值覆盖，不重复。
-- child terminal 同事务：TurnExecution terminal + attempt terminal +
-  attempt `settlement='response_pending'` + parent aggregate + credential terminalize。
-- settlement：R `processing → terminal`（content/contentBlocks/toolEvents/thinking 来自 draft）
-  + input `dispatchRefs` settle + delete draft + attempt `settlement='settled'` +
-  `clearResponsePending`。
+- T1 child terminal 同事务：TurnExecution terminal + `projectChildTerminal` +
+  attempt `settlement='response_pending'` + credential terminalize + ack。
+- T2 settlement：R `processing → terminal`（content/contentBlocks/toolEvents/thinking 来自
+  draft）+ input `dispatchRefs` settle + delete draft + attempt `settlement='settled'` +
+  `clearResponsePending` + A2A successor；T3 单独聚合 parent。
 - crash 在 child terminal 与 R settlement 之间：重启后 `listResponsePending` 必须把 R 提交为
   child 的终态；R 已 terminal 则只清 pending；不留下 orphan processing R。
 - provider 失败/中断/取消：R 以 failed/interrupted/canceled + reason + 已 stream 的正文结束；
@@ -3587,8 +3682,8 @@ parent partial_failed: successful=[A], failed=[B]
 4. **`TurnExecutionStore.createRunning` 是 provider 前幂等入口**：created/replayed/conflict；replayed 不授予第二次 provider lease。
 5. **`TurnExecution` 使用 `parentInvocationId`（fan-out parent）+ `causal.a2aParentTurnExecutionId`（A2A 因果父）两个坐标**，不共用一个 parent。
 6. **Auth 从 MCP callback 改为 pi extension tool capability**：credential 绑 child TurnExecution，allowedTools 限 A2A tools；transport 是 local control socket；MCP/task/role/run 字段删除。
-7. **终态同事务**：child terminal + attempt terminal + parent aggregate + credential
-   terminalize；另用 responsePending ledger 把 R settlement 作为可恢复的第二段提交。
+7. **终态四层 owner（DP-C/DP-D=A/A）**：T1 child terminal + attempt projection +
+   credential terminalize；T2 R/draft；T3 parent aggregate/queue/retry；T4 recovery。
 8. **Session active + lightweight seal**（0009）：v1 做 `active → sealed + seq+1`，
    不做 transcript/digest/restore/compression/handoff。
 9. **v1 不做 custody/action/wait/compaction/managed/collective**；全部 v2。
@@ -3604,18 +3699,27 @@ parent partial_failed: successful=[A], failed=[B]
 18. **重放保护（DP-F018Q-3=A）**：新增 `queue_admissions` receipt；live row 删除后按 fingerprint 返回 `replayed`/`conflict`。
 19. **删除 `invocation_queue.invocation_id`**：parent 通过 `invocation_records.source_record_id` + `invocation_attempts.queue_entry_id` 关联。
 20. **QueueProcessor v1 方法面**：`requestDrain` / `processNext` / `drain` / `processEntry` / `recoverStartup` / `onInvocationComplete`；候选选择用 `InvocationQueue.listQueued` + `claim`，`claimNext` 只是内部 helper。
-21. **`processEntry` 同事务边界**：parent + attempt + TurnExecution + processing R + credential + `retireTargets` 同事务；provider 启动在事务外。
+21. **`processEntry` 同事务边界**：QueueProcessor 的 parent/claim + `retireTargets`
+    一个事务；每个 target 的 attempt/R/TurnExecution/credential 由 `runAgentTurn`
+    dispatch 事务创建；provider 启动在事务外。
 22. **v1 自动重试边界（2026-11-10 由 #41 细化）**：不对已终态失败的 target 自动重跑；pre-handoff 仍 pending 的失败按 bounded backoff 自动重试。显式 retry 由 `requestRetry` 追加 attempt+1，不新建 queue entry。
 23. **QueueProcessor 删除 Clowder 扩展面**：append lifecycle、Steer、continuation、live companion、freshness、auto-resume suppression、prestart processing groups、batching、caller dispatch observations。
 24. **全局身份契约（0011）**：`sourceRecordId + admission attempt → queueEntryId`；`invocationId`（parent record id）；`parentInvocationId`（child 指向 parent 的 FK）；`turnExecutionId`（child execution）；`attemptId`（target attempt）；`credentialId`（auth）；`causal.a2aParentTurnExecutionId`（因果父）；A2A runtime 禁用 `sourceMessageId` / `sourceId` / 用 `invocationId` 指 child / `entryId` / parent `idempotencyKey`。
-25. **InvocationRecord 状态/字段**：保留 `partial_failed`；只存 `successfulAgentIds`，failed/canceled 由 `invocation_attempts` 每个 target 的最新 attempt 推导；`requestRetry` 把 parent 置 `queued`，retry child 启动后再 `markRunning`。
+25. **InvocationRecord 状态/字段**：保留 `partial_failed`；只存 `successfulAgentIds`，
+    failed/canceled 由每个 target 的最新 attempt + canonical `TurnExecution` 推导；
+    `requestRetry` 把 parent 置 `queued`，retry child 启动后再 `markRunning`。
 26. **InvocationRecord usage**：parent 存 `usageByAgent`（跨 attempt 累计）+ `usageRecordedAt`（首次写入）；`invocation_attempts.usage` 存 per-attempt 用量；collector 汇总后由 `applyTerminalAggregate` 写入。
 27. **Tracker start 抢占（DP-F018T-1=B）**：同 slot 旧 controller 先发中断信号，旧 TurnExecution 标 `interrupted/preempted`；新 slot 立刻登记。普通消息默认不抢占，只有显式 Steer/停止动作走抢占。
-28. **取消即释放 slot（DP-F018T-2=B）**：tracker 不保留 canceled 墓碑；真正的执行互斥由 `TurnExecution` 唯一 running + `RpcConnection.prompting` + worker binding generation 承担；旧 worker 未退出时新 start 返回 `worker_busy`。
+28. **取消即释放 slot（DP-F018T-2=B）**：tracker 不保留 canceled 墓碑；真正的执行互斥由
+    `TurnExecution` 唯一 running + `invocation_attempts` 唯一 active delivery
+    （`starting|appended`）+ `RpcConnection.prompting` + worker binding generation 承担；
+    旧 worker 未退出时新 start 返回 `worker_busy`。
 29. **僵尸判定用 worker heartbeat（DP-F018T-3=A；2026-11-11 由 DP-F018RECOVERY-2 收紧）**：TTL 只做候选；running TurnExecution 必须 stale lease + 独立 owner absence 才标 `interrupted/owner_reaped`；被抢占但旧 worker 还活着的 child 保留到旧 worker 结束。
 30. **Operator ingress 路由（DP-F018R-1=A）**：行首 @ 是 operator 侧 A2A admission；无 @ → 上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
 31. **StoredMessage.targetAgentIds（DP-F018R-2=A）**：仅 user message 持久化本次 admission 的 agent targets；与 message + queue entry 同事务写入；agent-authored A2A targets 走 `lifecycle.dispatchRefs`。
-32. **runAgentTurn + routeAgents（DP-F018R-3=A）**：per-agent pipeline 抽成 `runAgentTurn`；v1 默认 parallel，serial 是同一 pipeline 的薄循环；route 只负责顺序/并发。
+32. **runAgentTurn + routeAgents（DP-F018R-3=A；DP-D 回推）**：per-agent pipeline 抽成
+    `runAgentTurn`（composition root）；v1 默认 parallel，serial 是同一 pipeline 的
+    薄循环；route 负责顺序/并发 + T2 response commit，不写 child/parent。
 33. **Session 服务分层（2026-11-09 Q&A；2026-11-10 Worker 定稿）**：
     `AgentSessionStore`（durable identity）+ `WorkerPool`（ephemeral worker）+
     薄 `AgentSessionManager`；`invocation_attempts.agentSessionId` 只是指针。
@@ -3627,9 +3731,10 @@ parent partial_failed: successful=[A], failed=[B]
 35. **Delivery cursor（2026-11-09 Q&A）**：v1 新增 `agent_read_state.delivery_cursor`，
     按 `(threadId, agentId)` 存 thread-global seq 的已消费位置；fetch-after + filter +
     monotonic ack；不做 per-target cursor / seenCursor。
-36. **Response settlement（2026-11-09 Q&A；2026-11-10 由 #42 改为 B）**：v1 采用
-    processing R + `response_drafts` + attempt `settlement`；child terminal 与 R terminal
-    分开提交；`settleResponseFromDraft` 补提交；startup reconciler 恢复。
+36. **Response settlement（2026-11-09 Q&A；2026-11-10 #42=B；2026-11-12 DP-D=A）**：
+    processing R + `response_drafts` + attempt `settlement`；T1 child terminal、T2 R
+    commit、T3 parent aggregate、T4 recovery 分开提交；正常 T2 用
+    `RouteResponseCommitter`，`settleResponseFromDraft` 只做 T4 recovery。
 37. **Worker v1（2026-11-10 拍板）**：worker 是 ephemeral execution carrier；pi v1
     `capacity=1`、一个 worker 一 session；`warmTtl=0`、`maxLiveWorkers=8`；不建
     per-turn `worker_leases`；session 不持有 worker；spawn 实测约 0.5s，不作为常驻理由。
@@ -3650,19 +3755,20 @@ parent partial_failed: successful=[A], failed=[B]
     同 queue entry，不重新 admission；已终态失败只接受显式 `requestRetry` 追加
     attempt+1；pre-handoff pending target 用 process-local bounded backoff（base 10s、
     上限 1h）自动重试；queue entry 保留到 attempt 终态。
-42. **DP-F018X-2=B（2026-11-10 拍板）**：v1 采用 durable streaming；attempt start 创建
-    processing R，`response_drafts` 承接 stream，child terminal 把 attempt
-    `settlement` 标 `response_pending`，settlement 提交 R terminal + settle inputs +
-    attempt `settled`；startup reconciler 恢复。
+42. **DP-F018X-2=B（2026-11-10 拍板；2026-11-12 DP-D 同步）**：v1 采用 durable
+    streaming；attempt start 创建 processing R，`response_drafts` 承接 stream，T1 把
+    attempt `delivery_state` 投影 + `settlement` 标 `response_pending`，T2/T4 提交 R
+    terminal + settle inputs + attempt `settled`。
     Clowder 的 `outputFence`/`appendAcceptance` 仍留 v2。
 43. **DP-F018TE-1=A（2026-11-10 拍板）**：`TurnExecution` 收敛为 Clowder core +
     `causal`；execution binding/snapshot/retry trace/response settlement 全部移到
     `invocation_attempts`；`TurnExecutionStore` 补 `interruptRunningBefore`，
     `completeResponseSettlement` 改名 `clearResponsePending`。v2 再做
     `coveredMessageIds`/`outputFence`/`listBySource`/`settleOutputFence`。
-44. **P0-1=A（2026-11-10 落盘）**：`invoke-single-agent` 只负责 provider/stream；
-    `settleAgentTurn` 封装 child terminal + attempt terminal + parent aggregate +
-    credential + response settlement 两段提交。
+44. **P0-1 已由 DP-C/DP-D=A/A 取代（2026-11-12）**：删除 `settleAgentTurn`；
+    `invoke-single-agent` 拥有 T1 child terminal + credential + attempt projection；
+    route/`RouteResponseCommitter` 拥有 T2 R/draft；`QueueProcessor` 拥有 T3 parent；
+    `ResponseRecoveryService` 拥有 T4 recovery。生产代码不得再引入 `settleAgentTurn`。
 45. **DP-F018AUTH=A/A/B/A/A（2026-11-11 拍板）**：credential 绑 child
     `TurnExecution`；旧 task-first auth 代码只复用机制（control socket / token file /
     hash+salt / worker binding），坐标重写；piExtToolCallId 幂等放 credential 的
@@ -3683,9 +3789,9 @@ parent partial_failed: successful=[A], failed=[B]
     只用 message `mentionsUser`；`multi_mention` 做完整 Clowder orchestrator
     （status/timeout/callback/aggregate，`multi_mention_requests/responses`）；
     Hub ingress/WS/SSE/replay 归 W7a，F018 只验收 daemon/CLI。
-49. **DP-F018JOURNEY-C/D（调查完成，待确认）**：Clowder 的 attempt 是
+49. **DP-F018JOURNEY-C/D（2026-11-12 拍板 A/A）**：Clowder 的 attempt 是
     `QueueTargetAttempt`（投递台账），child 终态只在 `TurnExecution`；codeteam
-    `InvocationAttempt` 需收敛为投递 attempt，不得复制 child 五态。Clowder settlement
-    是 invoke（child terminal）/route（R+draft）/QueueProcessor（parent+queue）/
-    callback-auth（auth projection）四层；`settleAgentTurn` god-service 建议拆回。
-    确认后改 §3.9/§4.3.1。
+    `invocation_attempts.delivery_state` 只做投递状态，不得复制 child 五态。Clowder
+    settlement 是 invoke（child terminal）/route（R+draft）/QueueProcessor
+    （parent+queue）/recovery 四层；`settleAgentTurn` god-service 已删除。已落
+    §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9。

@@ -14,6 +14,10 @@ operator_decision: "DP-F018Q-1=A, DP-F018Q-2=B, DP-F018Q-3=A (2026-11-07)"
 
 > **Operator 决定（2026-11-07）**：`DP-F018Q-1=A`、`DP-F018Q-2=B`、`DP-F018Q-3=A`。本 packet 已冻结。
 
+> **2026-11-12 后续决策**：DP-C=A、DP-D=A 已把 child terminal / R / parent
+> aggregate 拆成 T1/T2/T3/T4；本 packet 中“response 与 parent/credential 同事务”
+> 的旧表述由 `0010` §3.9 与 `0016` 取代。历史决策本身不变。
+
 > 只给价值取舍、推荐、证据和“不拍的后果”。不需要 operator 选技术实现。
 
 ## 0. 一句话

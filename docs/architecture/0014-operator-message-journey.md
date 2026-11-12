@@ -249,10 +249,11 @@ codeteam v1 对应 `AgentReadState.deliveryCursor`（`0010` §3.5.1）；per-`(t
 - 处理 provider retry/fallback/session replacement；
 - 不直接写最终 message；route 层负责 response commit、draft delete、A2A successor。
 
-codeteam v1 当前设计是 `invoke-single-agent` 只负责 provider/stream；`settleAgentTurn`
-负责 child terminal + attempt terminal + parent aggregate + credential + response
-settlement 两段提交（`0010` §3.6/§3.9）。DP-D 正在调查该 god-service 是否应拆回
-invoke/route/QueueProcessor/callback-auth 四层；确认后更新。
+codeteam v1 已按 DP-D=A（2026-11-12）拆回四层：T1 `invoke-single-agent` +
+`TurnExecutionLifecycle` 写 child terminal/credential/attempt projection；T2
+`route`/`RouteResponseCommitter` 写 R/draft/A2A successor；T3 `QueueProcessor` +
+collector 写 parent/queue/retry/slot；T4 `ResponseRecoveryService` 只修未完成 R。
+生产代码不引入 `settleAgentTurn`；细节见 `0010` §3.6/§3.9。
 
 ## 6. 流式回传：draft → R → Hub
 
@@ -527,13 +528,13 @@ requestRetry(B)
   → parent status=queued, retryCount+1
   → B attempt=2 bind 新 TurnExecution iB2
   → iB2 running → parent running
-  → iB2 completed → R settlement → parent completed
+  → iB2 completed（T1）→ R settlement（T2）→ parent completed（T3）
 ```
 
 边界：
 
 - 只 retry failed/interrupted；successful 不重跑；canceled 不复活。
-- 每个 target 的最新 attempt 决定聚合；旧 failed 不能覆盖新成功。
+- 每个 target 的最新 attempt + canonical TurnExecution 决定聚合；旧 failed 不能覆盖新成功。
 - `dispatchRefs` 每个 target 一条，retry 更新为最新 attempt；旧 R 留在 attempt 台账。
 
 **F4. all targets routing rejected**

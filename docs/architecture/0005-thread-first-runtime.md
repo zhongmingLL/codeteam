@@ -182,8 +182,9 @@ A2A runtime 的调用链拆成两层，详细字段/状态机/链路见
   `successfulAgentIds`、`usageByAgent`/`usageRecordedAt`、`retryCount`、`partial_failed`。
 - `TurnExecution`（child）：Clowder core 单 agent 执行；`parentInvocationId`
   （fan-out parent）、`causal`（trigger/a2a）、`status`/`terminalReason`/时间。
-- `invocation_attempts`：per-target execution binding + retry trace + response
-  settlement；`agentSessionId`/`workerId`/provider/model/usage/R/settlement 都在这里。
+- `invocation_attempts`：per-target delivery/retry ledger（`QueueTargetAttempt` 语义）
+  + execution binding snapshot + response settlement；
+  `agentSessionId`/`workerId`/provider/model/usage/R/settlement 都在这里。
 - 一个 parent 下 N 个 child；一个 child 一次 terminal。
 - `provider/model/modelFamily` 在 `invocation_attempts`；不是 AgentConfig 字段。
 - `executionKind` 只有 `ordinary | routing_guard`；routing_guard 是内部路由
@@ -255,7 +256,10 @@ interface AgentSession {
   exact target），不是 cloud delivery 的 fresh source/attempt。
 - `queue_admissions` receipt 保住 admission 幂等：live row 删除后同一
   `(sourceRecordId, attempt)` 重放返回 `replayed`/`conflict`，不会二次派发。
-- `AgentRouter.routeAgents(mode)` 调 `runAgentTurn`：per-agent pipeline 拥有 session/prompt/invoke/response/terminal；route 只负责 parallel/serial 调度。
+- `AgentRouter.routeAgents(mode)` 调 `runAgentTurn`：`runAgentTurn` 是 per-agent
+  composition root；T1 child terminal 归 `invoke-single-agent`，T2 R/draft 归
+  route/`RouteResponseCommitter`，T3 parent 归 `QueueProcessor`；route 负责
+  parallel/serial 调度。
 - v1 **不定义 domain `Message`**：当前没有独立消费者；`StoredMessage` 是唯一消息记录，
   `MessageStore` 持久化/返回 `StoredMessage`，API/CLI 直接使用。一条 StoredMessage
   只代表一条消息，不代表整个 thread；thread 历史是同 threadId 下的多条记录，按 `seq` 排序。
@@ -444,7 +448,7 @@ thread message / A2A tool
 | `agent_sessions` | 只保留 thread×agent 单 active；`task_id`/`profile_id` legacy | 先 drain/terminal 有 running invocation 的 session；sealing/sealed 行不迁移，留 legacy；旧 task session 不合并进新 runtime；目标列 `agent_id` |
 | `runs` → `turn_executions` | 新 child core 表：`turnExecutionId`、`parentInvocationId`、`causal`、status/terminalReason/时间；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
 | 新 `invocation_records` | 消息级 parent：`invocationId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
-| 新 `invocation_attempts` | append-only target attempt + execution binding：attemptId、parentInvocationId、queueEntryId、targetAgentId、attempt、state、turnExecutionId、agentSessionId、workerId、provider/model、usage、settlement、responseMessageId | 与 createRunning/child terminal 同事务写入；retry 追加新行；旧行不改 |
+| 新 `invocation_attempts` | append-only target delivery/retry ledger + execution binding：attemptId、parentInvocationId、queueEntryId、targetAgentId、attempt、delivery_state、turnExecutionId、agentSessionId、workerId、provider/model、usage、settlement、responseMessageId | dispatch 写入 `delivery_state`；T1 只投影 child terminal；retry 追加新行；旧行不改 |
 | 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、contentBlocks、toolEvents、thinking、seq | dispatch 事务创建 R；stream bounded flush；R terminal 后删除 |
 | `messages` | 加 `content_json` / `tool_events_json` / `lifecycle_json` / `extra_json` / `thinking` / `deleted_at` / `deleted_by` / `mentions_user`；`body_md` 保持 plain text；legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入 | R1 回填 `extra.rich`、`extra.targetAgentIds`、`lifecycle.input.dispatchRefs`、`mentions_user=0`；无法映射的消息进 preflight 清单；legacy 列 R5 drop |
 | 新 `multi_mention_requests` | group lifecycle：request/targets/callbackTo/status/timeout/expires/parent/source/aggregate | 与 source + queue entry 同事务；R3/R4 |

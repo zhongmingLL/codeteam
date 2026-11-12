@@ -430,7 +430,7 @@ interface AgentSessionManager {
 
   releaseWorker(handle: WorkerHandle, reason: string): Promise<void>;
 
-  /** 必须在 settleAgentTurn 的 child terminal 事务内调用。 */
+  /** 必须在 T1 child terminal 事务（invoke-single-agent + TurnExecutionLifecycle）内调用。 */
   recordTurnTerminal(input: {
     session: AgentSession;
     turnExecutionId: string;
@@ -471,7 +471,7 @@ interface AgentSessionManager {
   2. `outcome !== 'completed'` → 不碰 messageCount / 失败计数；
   3. `promptDelivered && deliveryBoundarySeq != null` →
      `AgentReadStateStore.ack(threadId, agentId, deliveryBoundarySeq)`。
-  这三步与 TurnExecution/attempt terminal 同事务；要么全成，要么全回滚。
+  这三步与 TurnExecution terminal + `projectChildTerminal` 同事务；要么全成，要么全回滚。
 - `reset`：见 §6.1.2。
 - `TurnExecution.agentSessionId` 只是指针；session 解析只在
   `ensureActive(threadId, agentId)`，不在 child 里重复查映射。
@@ -489,7 +489,7 @@ runAgentTurn
        → active session 行；可能先做 resume 前置检查 / lightweight seal + seq+1 reset
   2. attempt(queued) + TurnExecution.createRunning
        → 唯一 running per session，先拿执行互斥
-  3. bindExecution(running; workerId = null)
+  3. markStarting + bindAppended（turnExecutionId/R/settlement=streaming；workerId = null）
   4. loadHistory(threadId, agentId)
        → rows + boundarySeq；只读 cursor，不 ack
   5. acquireWorker(session)
@@ -499,25 +499,27 @@ runAgentTurn
        → RPC send 成功后 attempt.markPromptDelivered({ deliveryBoundarySeq, now })
   8. stream → response_drafts；首次可见输出 → sessionManager.recordUserVisibleOutput；
      usage → attempt
-  9. settleAgentTurn tx A（child terminal）：
-       TurnExecution terminal + attempt terminal
+  9. T1 child terminal（invoke-single-agent + TurnExecutionLifecycle）：
+       TurnExecution terminal + attempt projectChildTerminal
        + settlement='response_pending'
-       + parent aggregate + credential terminalize
+       + credential terminalize
        + sessionManager.recordTurnTerminal(...)
          (messageCount + cursor ack，条件见 §6.1)
- 10. R settlement tx B + worker.release(handle)
+ 10. T2 R settlement（route/RouteResponseCommitter）+ T3 parent aggregate；
+     worker.release(handle)
 ```
 
 顺序理由：
 
-- **互斥先于 history/worker**：`bindExecution` 在 spawn 前拿唯一 running，
+- **互斥先于 history/worker**：`markStarting` + `bindAppended` 在 spawn 前拿唯一
+  active delivery（`starting|appended`），
   避免两个并发 turn 都构建 history、都 spawn worker。
 - **history 先于 worker**：prompt 构建失败/上下文不可读时，不浪费一次
   ~0.5s 的 worker spawn；history 只读 cursor，不改变投递状态。
-- **ack 在 child terminal 事务内**：cursor 只在本轮有 durable terminal 时前进；
-  崩溃在 tx A 之前 → 不 ack，下一轮重放；tx A 提交后 → ack 已持久化，
+- **ack 在 T1 child terminal 事务内**：cursor 只在本轮有 durable terminal 时前进；
+  崩溃在 T1 之前 → 不 ack，下一轮重放；T1 提交后 → ack 已持久化，
   R settlement 独立可恢复。不会出现“prompt 已构建但响应未落库，消息却被吞掉”。
-- **worker release 在 tx B 之后**：R settlement 还要用 worker 的连接/会话上下文；
+- **worker release 在 T2 之后**：R settlement 还要用 worker 的连接/会话上下文；
   release 失败由 reaper 兜底，按 generation 幂等。
 
 #### 6.1.2 Reset 语义

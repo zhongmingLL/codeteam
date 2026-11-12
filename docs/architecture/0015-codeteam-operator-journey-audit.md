@@ -51,14 +51,15 @@ source: "Clowder local reference checkout; codeteam F018 design docs + current t
 
 - P1：F-01 Hub ingress/transport 缺件（DP-E 已定依赖）；F-02 operator target
   （DP-A 已解决）；F-03 multi_mention（DP-B 已解决）；F-04 TurnExecution/Attempt
-  双终态（调查完成，待确认）。
+  双终态（DP-C 已拍 A）。
 - P2（R2/R3 前解决）：F-05 settlement ownership、F-06 response_missing/audit、
   F-07 post_message 多 target、F-08 A2A depth 15、F-09 read models、F-10 queue cap、
   F-11 session restore scope。
 - P3（可后置）：F-12 draft flush 调参、F-13 命名、F-14 queue admissions receipt。
 
-> 2026-11-11 更新：DP-A=A、DP-B=B、DP-E=A 已由 operator 拍板；DP-C/DP-D
-> 已完成源码调查，结论见 §3.3/§3.4，等待确认后改 0010 schema/事件顺序。
+> 2026-11-12 更新：DP-A=A、DP-B=B、DP-E=A 已拍板；DP-C=A、DP-D=A 也已拍板，
+> 0010 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9、0005 与 plan 0020 已同步；`settleAgentTurn`
+> 已删除，生产代码不得重新引入。
 
 ## 1. codeteam 目标链路（与 0014 对应）
 
@@ -81,9 +82,12 @@ Hub / CLI / API（W7a，当前缺失）
       pi RPC → AgentStreamEvent
   → ResponseDraftStore（in-flight body）
       + ephemeral Hub stream event
-  → settleAgentTurn
-      child terminal + attempt terminal + parent aggregate
-      + credential terminalize + response settlement
+  → T1 invoke-single-agent / TurnExecutionLifecycle
+      child terminal + attempt projection + credential terminalize
+  → T2 route / RouteResponseCommitter
+      response R + draft delete + A2A successor
+  → T3 QueueProcessor + collector
+      parent aggregate + queue/retry + tracker slot
   → Hub projection（W7a）
       agent_message / message_lifecycle_updated / messages_delivered / queue_updated
 ```
@@ -194,8 +198,7 @@ Hub / CLI / API（W7a，当前缺失）
 
 #### F-04 TurnExecution 与 InvocationAttempt 双终态（P1，设计问题）
 
-> 调查结论见 §3.3：Clowder 的 attempt 是 `QueueTargetAttempt`，不是 child 执行状态。
-> 建议按 §3.3 修正；待 operator 确认后改 0010 schema。
+> 2026-11-12 已拍 A：采用 §3.3 修正；0010 schema 已改为 `delivery_state`。
 
 - Clowder：`TurnExecutionRecord` 是 child canonical；status
   `running/completed/failed/interrupted/canceled`，terminal first-write-wins。
@@ -205,15 +208,15 @@ Hub / CLI / API（W7a，当前缺失）
 - 问题：同一个 child 有两个 canonical state。只要任一路径漏写/重试/恢复顺序不同，
   collector、reaper、response settlement 就会读到矛盾状态；`state` 还会与
   `TurnExecution.status` 的 first-write-wins 语义重复。
-- 建议：定义唯一 canonical——`TurnExecution.status` 对已启动 child 是 canonical；
-  `invocation_attempts.state` 只保留 prestart 状态（无 TurnExecution 的 failed/canceled）
-  或改为从 TurnExecution 派生的 projection；禁止两个字段各自接受 terminal write。
+- 决定：`TurnExecution.status` 对已启动 child 是唯一 canonical；
+  `invocation_attempts.delivery_state` 只做投递状态
+  （`queued/starting/appended/handled/failed/interrupted/canceled`），由
+  `projectChildTerminal` 投影；禁止两个字段各自接受 terminal write。
 - 立场：**P1，改成单状态源；否则 R2 的 terminal/E2E 会分叉。**
 
 #### F-05 settleAgentTurn 与 route/invokeSingleAgent 职责重叠（P2，设计问题）
 
-> 调查结论见 §3.4：Clowder 是 invoke/route/QueueProcessor/callback-auth 四层分工；
-> `settleAgentTurn` 是 codeteam 自造的 god-service。建议按 §3.4 拆回；待确认后改 0010。
+> 2026-11-12 已拍 A：按 §3.4 拆回四层；`settleAgentTurn` 已删除。
 
 - Clowder：routeSerial/routeParallel 负责 response commit、draft delete、A2A successor；
   QueueProcessor 负责 parent/child/admission；`invokeSingleCat` 只产流。
@@ -223,10 +226,11 @@ Hub / CLI / API（W7a，当前缺失）
   没有写清谁调用 `settleAgentTurn`、谁提交 R、谁删 draft。
 - 问题：如果 route 和 QueueProcessor 都能触发 terminal/settlement，会出现双提交或
   “child terminal 了但 R 未 settle”的中间态。
-- 建议：写一张“单一 writer”表：QueueProcessor 只做 admission/parent 生命周期；
-  route 只返回 `AgentTurnResult`；`settleAgentTurn` 是唯一 child/attempt/credential/R
-  settlement 入口；`invoke-single-agent` 不写 terminal。或者反过来，明确 route 是
-  per-child settlement owner，QueueProcessor 只聚合 parent。二选一。
+- 决定：T1 `invoke-single-agent` + `TurnExecutionLifecycle` 写 child terminal/
+  credential/attempt projection；T2 `route`/`RouteResponseCommitter` 写 R/draft/A2A
+  successor；T3 `QueueProcessor` + collector 写 parent/queue/retry/slot；T4
+  `ResponseRecoveryService` 只修未完成 R。route 不写 child/parent，生产代码不引入
+  `settleAgentTurn`。
 - 立场：**P2，先钉 owner 再实现。**
 
 #### F-06 `response_missing` 使用 legacy audit（P2，不一致）
@@ -360,17 +364,17 @@ Clowder 的 attempt 是 **QueueTargetAttempt**，属于 Queue 投递/重试台�
 - 于是同一个 child 既有 `TurnExecution.status`，又有 `InvocationAttempt.state`，
   且两者都接受 terminal 写入。这不是 Clowder 的模型，是 codeteam 自己造的第三层。
 
-**建议修正（待确认）**：
+**修正（已拍 A）**：
 
 - `InvocationAttempt` 改名为/收敛为 `QueueTargetAttempt` 语义：
-  `state = queued | starting | appended | failed | interrupted | canceled | handled`；
+  `delivery_state = queued | starting | appended | handled | failed | interrupted | canceled`；
   它只回答“这次投递/执行尝试走到了哪”，不回答 child 的 provider 终态。
 - `TurnExecution.status` 是 child canonical；`InvocationAttempt` 的
   `handled/failed/interrupted/canceled` 是从 child terminal + delivery outcome
   投影/同事务记录，不是第二个 terminal 决策者。
 - `settlement` 仍可保留在 attempt 上，但它是 response settlement 投影，不是 child
   execution state；`running/completed` 不再出现在 attempt state。
-- 迁移：`invocation_attempts.state` 映射
+- 迁移：`invocation_attempts.state` → `delivery_state` 映射
   `queued→queued`、`running→appended`、`completed→handled`、
   `failed→failed`、`interrupted→interrupted`、`canceled→canceled`；
   `turn_execution_id` 保留为 child 链接。
@@ -408,7 +412,7 @@ child terminal + attempt terminal + parent aggregate + credential + response set
 于是 `invoke-single-agent`、route、QueueProcessor 都可能触发 terminal/settlement，
 既可能双提交，也可能留下 child terminal 但 R 未 settle 的中间态。
 
-**建议修正（待确认）**：
+**修正（已拍 A）**：
 
 - 删除 `settleAgentTurn` 这个 god-service 名称，改成一张明确 owner 表：
   1. `invoke-single-agent`：child `TurnExecution` terminal + credential terminalize；
@@ -422,8 +426,8 @@ child terminal + attempt terminal + parent aggregate + credential + response set
   `commitResponseAndAggregate`，并明确只由 QueueProcessor/route 其中一个调用；
   不要叫 `settleAgentTurn` 并暗示所有层都调用。
 
-> DP-C/DP-D 的修正涉及 0010 §3.9/§4.3.1 和 plan P0-1；当前标记为
-> **investigation complete, pending operator confirmation**，不先改 normative schema。
+> DP-C/DP-D 已于 2026-11-12 拍板 A/A；0010 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9、
+> 0005 和 plan P0-1 已同步。
 
 ### 3.5 设计史：为什么 codeteam 会留下这两个重叠
 
@@ -461,7 +465,7 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 | Queue cap/priority/order | `invocation_queue` 有字段，没有常量/规则 | 建议 source cap 5、urgent/normal、同优先级 FIFO、operator 手动 processNext 只处理自己的 head |
 | Read model DTO | `MessageDispatchSummary` 只有一句；live evidence rank 未定义 | 冻结 `QueueView` / `LiveInvocationView` / `DispatchSummary` / `UnreadMentionView` 字段、排序、分页、降级 |
 | Operator decision 关联 | `replyTo`/`causal.triggerMessageId` 有，但没有“这是一个待决策问题”的 typed 关联 | 明确用 `replyTo` + `mentionsUser` 关联；定义 decision request/answer 的读模型 |
-| Settlement single-writer | `settleAgentTurn`/route/QueueProcessor 边界未钉死 | 写一张 owner 表，只允许一个组件提交 child/attempt/R/credential terminal |
+| Settlement single-writer | 已钉死 T1/T2/T3/T4 四层 owner | 只允许 T1 写 child/credential，T2 写 R/draft，T3 写 parent/queue，T4 修 R |
 
 ### 4.2 W7a / F016c 必须补的组件
 
@@ -523,7 +527,7 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
   如果它们没有比 Clowder 更简单的理由，就应该退回 Clowder 语义。
 - 存储/transport/scope cut 的差异可以被“codeteam 是本地 SQLite + pi runtime +
   pure A2A v1”解释；operator target 已退回，multi_mention 已决定做全；只剩 attempt
-  双状态和 settlement owner 待确认。
+  双状态和 settlement owner 已拍 A/A。
 
 ## 6. R1 前必须拍的决策
 
@@ -533,8 +537,8 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 |---|---|---|---|
 | DP-A operator 通知 | **已拍 A：退回 `mentionsUser`**；B 不再考虑 | operator 不是执行 target；Clowder 已有 message flag；少一层 union/queue/depth | 已关闭 |
 | DP-B `multi_mention` | **已拍 B：实现 Clowder orchestrator（status/timeout/callback/aggregate）**；A 不再考虑 | 同名异义会误导调用方；做就做全 | 已关闭；设计补进 0010 §3.8 |
-| DP-C child 终态 | **调查结论：A：TurnExecution 单 canonical，attempt 收敛为 QueueTargetAttempt**；等待确认 | Clowder 没有 child InvocationAttempt；codeteam 把投递 attempt 和 child state 混了 | 未确认前不改 0010 schema |
-| DP-D settlement owner | **调查结论：A：拆回四层 owner，删除 settleAgentTurn god-service**；等待确认 | Clowder 是 invoke/route/QueueProcessor/callback-auth 分层 | 未确认前不改 0010 事件顺序 |
+| DP-C child 终态 | **已拍 A：TurnExecution 单 canonical，attempt 收敛为 QueueTargetAttempt** | Clowder 没有 child InvocationAttempt；codeteam 把投递 attempt 和 child state 混了 | 0010 §3.5/§4.3.1/§5.2.1 已同步 |
+| DP-D settlement owner | **已拍 A：拆回四层 owner，删除 settleAgentTurn god-service** | Clowder 是 invoke/route/QueueProcessor/recovery 分层 | 0010 §3.6/§3.9/§9 已同步 |
 | DP-E Hub 依赖 | **已拍 A：W7a 独立验收，F018 只验收 daemon/CLI**；B 不再考虑 | F016c 仍 discovery；F018 不应重写 transport | 已关闭 |
 
 建议 R1 前只拍 A–E 五项；其余（queue cap、draft flush、A2A depth）可以在 R2

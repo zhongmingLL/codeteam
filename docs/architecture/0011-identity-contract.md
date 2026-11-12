@@ -148,8 +148,9 @@ userId
 | `QueueTargetAttempt.sequence` | Clowder | `attempt`（target attempt） | rename；per-target 尝试序号 |
 | `QueueTargetAttempt.invocationId` | Clowder | `turnExecutionId` | rename；它本来就是 child |
 
-> DP-C 调查中：`QueueTargetAttempt` 是投递台账，child 终态由 `TurnExecution` 独占；
-> codeteam `invocation_attempts.state` 不应复制 TurnExecution 五态。确认后更新 §2/§7。
+> DP-C=A（2026-11-12）：`QueueTargetAttempt` 是投递台账，child 终态由
+> `TurnExecution` 独占；codeteam `invocation_attempts.delivery_state` 不复制
+> TurnExecution 五态。§2/§7 已按此同步。
 
 `0001` 的 task-first `QueueEntry` / `Run` 是 legacy 实现；新 runtime 以本文为准。`Task.sourceMessageId`、artifact `provenance_json.sourceMessageId` 是领域指针，可保留旧名，但不得作为队列/parent 身份。
 

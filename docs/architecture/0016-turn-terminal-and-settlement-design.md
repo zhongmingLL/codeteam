@@ -1,10 +1,11 @@
 ---
 title: "Turn terminal and settlement design — removing dual state and the god-service"
 doc_kind: architecture
-status: draft-for-review
+status: accepted
 created: 2026-11-12
 updated: 2026-11-12
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
+operator_decisions: "2026-11-12: DP-C=A, DP-D=A"
 related_features: [codeteam/F018]
 related: [0010-a2a-runtime-chain.md, 0015-codeteam-operator-journey-audit.md, 0020-f018-thread-first-runtime.md, decision-packets/2026-11-11-dp-f018-operator-journey.md]
 source: "Clowder local reference checkout; codeteam commits 28cfee444/086b4b1f2/a654788e5/09bdb678d"
@@ -19,8 +20,8 @@ source: "Clowder local reference checkout; codeteam commits 28cfee444/086b4b1f2/
 > 然后给出修改后的具体设计：attempt 只做投递台账、TurnExecution 独占 child
 > 终态、settlement 拆回 Clowder 的四层 owner。
 >
-> 状态：**draft-for-review**。DP-C/DP-D 的调查结论在此，尚未改 0010 的
-> normative schema/事件顺序；operator 确认后按本文件落 0010/plan。
+> 状态：**accepted**（2026-11-12 operator 确认 DP-C=A、DP-D=A）。本文件是
+> 0010/0005/plan 的 normative 设计依据；实现按 T1/T2/T3/T4 四层 owner 落 R2。
 
 ## 0. 结论先行
 
@@ -457,6 +458,9 @@ QueueProcessor 单独事务：
 T3 不等待 T2 成功；T2 失败由 T4 补。T3 也不能用 attempt 的 delivery_state 代替
 child status 来判断 successful/failed。
 
+T3 失败时 parent 保留原状态；startup/reaper 对仍有 terminal child 的非 terminal
+parent 重跑 collector（幂等），不重复 terminal child/credential。
+
 **T4（recovery）**
 
 `ResponseRecoveryService` 只在以下场景运行：
@@ -641,9 +645,9 @@ QueueProcessor:
 - retry：同一 parent/source/queue；新 attempt+1/新 child/新 R；旧 attempt 不可变。
 - multi_mention：per-target attempt 投影 + aggregate message 不重复。
 
-## 8. 与 0010 的具体修改点（待确认后执行）
+## 8. 与 0010 的具体修改点（已确认，执行中）
 
-| 0010 位置 | 修改 |
+| 位置 | 修改 |
 |---|---|
 | §3.5 `runAgentTurn` ownership 表 + 步骤 8–12 | 改为 composition root；T1 归 invoke，T2 归 route/committer，T3 归 QueueProcessor |
 | §3.6 步骤 11/12 | 拆成 T1/T2，不再由 `settleAgentTurn` 包办 |
@@ -656,19 +660,19 @@ QueueProcessor:
 | §9.3/§9.3.1 验收 | 增加单写者/双状态负例/崩溃窗口 |
 | plan 0020 P0-1 | 从“settleAgentTurn 接口”改为“四层 settlement owner” |
 
-## 9. 决策请求
+## 9. 决策结果
 
-| 决策 | 推荐 | 备选 | 理由 |
+| 决策 | 结论 | 备选 | 理由 |
 |---|---|---|---|
-| DP-C child 终态 | **A：TurnExecution 单 canonical；attempt 只做投递状态** | B：attempt 单 canonical | Clowder 的 child canonical 是 TurnExecution；attempt 是投递台账 |
-| DP-D settlement owner | **A：拆回四层 owner，删除 `settleAgentTurn`** | B：保留 god-service 并补单一 writer | Clowder 已经分层；合并会继续制造重叠 |
+| DP-C child 终态 | **A（2026-11-12 拍板）：TurnExecution 单 canonical；attempt 只做投递状态** | B：attempt 单 canonical | Clowder 的 child canonical 是 TurnExecution；attempt 是投递台账 |
+| DP-D settlement owner | **A（2026-11-12 拍板）：拆回四层 owner，删除 `settleAgentTurn`** | B：保留 god-service 并补单一 writer | Clowder 已经分层；合并会继续制造重叠 |
 
-如果确认 A/A，下一步：
+已确认 A/A，落盘状态：
 
-1. 改 0010 §3.9/§4.3.1/§5.2.1/§9；
-2. 改 plan 0020 P0-1 和 R2/R4 验收；
-3. 加 migration + single-writer/crash-window tests；
-4. 在 0015 标记 DP-C/DP-D decided。
+1. 0010 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9 已同步；
+2. 0005、plan 0020 P0-1/R2、0015、决策包已同步；
+3. R2 待实现 migration + single-writer/crash-window tests；
+4. 生产代码加入 `settleAgentTurn` grep/guard，禁止重新引入。
 
 ## 10. 参考
 

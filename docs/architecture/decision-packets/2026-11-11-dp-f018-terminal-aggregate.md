@@ -15,6 +15,10 @@ operator_decision: "DP-F018TERM-1=A, DP-F018TERM-2=A, DP-F018TERM-3=A, DP-F018TE
 > 只给 operator 需要拍的价值取舍；并发 CAS、collector 测试、`no_response` 清理等
 > 技术修复已在 §8 自决，不需要 operator 选。
 
+> **2026-11-12 后续决策**：DP-C=A、DP-D=A 已把 child terminal / R / parent
+> aggregate 拆成 T1/T2/T3/T4；本 packet 中“child terminal → parent aggregate →
+> credential 同事务”的旧表述由 `0010` §3.9 与 `0016` 取代。历史决策本身不变。
+
 ## 0. 一句话
 
 3.9 的终态/重试骨架是对的，但有 7 个选择会直接影响 parent 显示状态、tracker 占用、
