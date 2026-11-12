@@ -79,7 +79,7 @@ updated: 2026-10-31
 | [`architecture/0016-turn-terminal-and-settlement-design.md`](architecture/0016-turn-terminal-and-settlement-design.md) | Q2 专项设计（accepted）：TurnExecution/InvocationAttempt 双终态根因、codeteam 设计史、attempt 投递态、四层 settlement owner、迁移/测试/DP-C/DP-D 决策结果 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
 | [`plans/0007-architecture-plan-coverage.md`](plans/0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵与缺口修复记录；三猫 accept，冻结为 DP→plans 唯一对账索引 |
-| [`architecture/decision-packets/README.md`](architecture/decision-packets/README.md) | 10 个 Decision Packet 索引与签字结论 |
+| [`architecture/decision-packets/README.md`](architecture/decision-packets/README.md) | Decision Packet 索引与签字结论 |
 | [`architecture/skill-migration.md`](architecture/skill-migration.md) | 61 个 skill 的迁移矩阵、must-survive 与 W0/W4 门禁 |
 | [`architecture/memory-schema.md`](architecture/memory-schema.md) | A3-2 memory 的 index/evidence schema |
 | [`architecture/merge-authority-drift-audit.md`](architecture/merge-authority-drift-audit.md) | merge authority D 的漂移审计与六契约 |

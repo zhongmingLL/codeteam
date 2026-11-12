@@ -131,7 +131,7 @@ Hub / CLI / API（W7a，当前缺失）
 | invoke-single-agent | invokeSingleCat；provider/stream/retry | 同构；只负责 provider/stream | aligned | P2 |
 | TurnExecution | child canonical execution | 同构；`completed` 命名 | aligned | P1（与 attempt 双状态） |
 | InvocationAttempt | 无独立 child attempt 状态 | 新增 append-only attempt 台账 + state | **problem** | P1 |
-| ResponseDraft/R | DraftStore + processing R | `response_drafts` + attempt settlement | adapted | P2 |
+| ResponseDraft/R | DraftStore + processing R | `response_drafts` 表 + 行为草图；无 Store 契约 | **partial** | P2 |
 | Credential/A2A tools | MCP callback + `clientMessageId` | pi extension + `piExtToolCallId` | adapted（合理） | P2 |
 | Terminal collector | `PerCatTerminalDispositionCollector` | `PerAgent...`；DB latest attempt | aligned | P2 |
 | Recovery | startup + zombie + owner reaper | 单 startup + 单 serialized reaper | adapted | P2 |
@@ -332,6 +332,18 @@ Hub / CLI / API（W7a，当前缺失）
 - 注意：receipt 的 fingerprint 必须覆盖 immutable admission fields；queue entry
   terminal 删除后仍能 replay/conflict。
 - 立场：**P3，保留。**
+
+#### F-15 ResponseDraftStore 只有表/行为草图，没有 Store 契约（P2，缺件）
+
+- 已有：`response_drafts` 表、100ms/4KB bounded flush、`message_end` 覆盖、T2 删除、
+  T4 用 draft 恢复 R。
+- 缺：`ResponseDraftStore` interface；append/upsert/merge 语义；`seq` 单调、重复/乱序
+  事件处理；tool event 按 `toolId` 合并；thinking 追加；并发写/乐观锁；初始行由谁创建；
+  orphan/删除失败/保留策略；Hub 重连读取 API；draft 大小上限；对应测试。
+- 判断：这不是“已经有设计”，而是 durable stream 的存储层契约未冻结。
+- 建议：R2 前补 `ResponseDraftStore` 契约（0010 §3.6.1/§4.3.2 或独立 0017）；详细缺口见
+  `decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md` §5。
+- 立场：**P2，补契约；不阻塞 F-07/F-08/F-09 三选一。**
 
 ### 3.3 DP-C 调查：Clowder 到底有没有 InvocationAttempt？
 
@@ -541,8 +553,9 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 | DP-D settlement owner | **已拍 A：拆回四层 owner，删除 settleAgentTurn god-service** | Clowder 是 invoke/route/QueueProcessor/recovery 分层 | 0010 §3.6/§3.9/§9 已同步 |
 | DP-E Hub 依赖 | **已拍 A：W7a 独立验收，F018 只验收 daemon/CLI**；B 不再考虑 | F016c 仍 discovery；F018 不应重写 transport | 已关闭 |
 
-建议 R1 前只拍 A–E 五项；其余（queue cap、draft flush、A2A depth）可以在 R2
-实现时用 benchmark/真实场景补证，不要现在写成不可变契约。
+DP-A–E 已关闭；F-07/F-08/F-09 已拆到
+`decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md`。queue cap 可按推荐
+自决，F-12 draft flush 留 R2 benchmark，不要现在写成不可变契约。
 
 ## 7. 证据索引
 
