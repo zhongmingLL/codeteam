@@ -302,6 +302,18 @@ settlement=`response_pending`；draft 继续保留给 T2/T4。
 
 ## 11. Clowder 映射
 
+| 类型 | Clowder | codeteam | 关系 |
+|---|---|---|---|
+| 读模型 | `DraftRecord` | `ResponseDraft` | `ResponseDraft` 是 `DraftRecord` 的 codeteam 投影 |
+| 写输入 | `DraftRecord`（直接作为 `upsert(draft)` 入参） | `DraftSnapshotInput` | Clowder 没有独立 input 类型；codeteam 把写侧 `seq`/`now` 拆出来 |
+| Store port | `IDraftStore` | `ResponseDraftStore` | 同一语义；codeteam 扩展 `getByTurn`/`getByAttempt`/`listOrphans` |
+| 实现 | `DraftStore` / `RedisDraftStore` | SQLite `ResponseDraftStore`（待实现） | 存储适配 |
+| 写结果 | `void \| Promise<void>` | `DraftWriteOutcome` | codeteam 需要 `applied/stale/not_found`，Clowder upsert 不返回结果 |
+
+`DraftSnapshotInput` 不是 Clowder 的独立类型；它对应 `IDraftStore.upsert(draft: DraftRecord)`
+的入参字段。`ResponseDraft` 对应 `DraftRecord`，但去掉了 `userId/metadata/extra`，
+增加了 `attemptId/turnExecutionId/parentInvocationId/agentId/contentBlocks/seq`。
+
 | 维度 | Clowder | codeteam | 判断 |
 |---|---|---|---|
 | record key | `userId + threadId + invocationId` | `attemptId + turnExecutionId`；user 从 parent/thread 派生 | 身份适配；codeteam 单 user v1，不把 userId 写进 draft |
