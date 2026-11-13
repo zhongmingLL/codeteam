@@ -163,7 +163,8 @@ claim exact target set
 - `QueueEntry.status` 只持久化 `queued | claimed`；`processing | terminal` 是 transition
   projection，不是 Queue 列。
 - 队列深度：Clowder user source 上限 5（`InvocationQueue.ts:167`）；codeteam target
-  上限是工具参数（post/cross ≤8，multi_mention 2-3），Queue cap 需在实现时定。
+  上限是工具参数（post/cross 1，multi_mention 2-3）；operator ingress 的 multi-target
+  不是工具调用，不受该上限约束。Queue cap 需在实现时定。
 - retry deferral（`queue-retry-deferrals.ts`）：base 10s，连续失败翻倍，上限 1h；
   只对 pre-handoff 仍 pending 的 failed/interrupted target。已 terminal 失败必须显式
   `requestRetry` 追加 attempt+1，不重新 admission source。
@@ -204,8 +205,9 @@ agent 调用 `post_message`/`cross_post_message` 时：
 - 创建一条新的 agent-authored message + 新 queue entry；不是把当前 parent 的 worklist
   直接延长；
 - 目标 cat 得到新的 parent `InvocationRecord` + child `TurnExecution`；
-- depth/loop guard 在 admission 前校验（Clowder 默认 A2A depth 2；codeteam v1 目标
-  depth 15，见 `0010` §3.8）；
+- depth/loop guard 在 admission 前校验（Clowder 实际默认 A2A depth 15；
+  `route-helpers` 注释里的 2 是过时注释；codeteam 当前 15 + guards，
+  DP-F018SURFACE-2 待重拍，见 `0010` §3.8）；
 - 跨 thread 还要求同 user、target thread active/not deleted/有 projectPath，并写
   `extra.crossPost` provenance。
 
@@ -434,7 +436,8 @@ codeteam 对应：operator 的 `@A @B` 是普通 ingress 的 multi-target；`mul
 是 agent 侧工具，也是 2-3 targets 的 fan-out，但额外有完整 orchestrator：
 status/timeout/callback/aggregate（`multi_mention_requests/responses`）。两者都遵循
 “1 source + 1 queue entry + 1 parent + N children”；普通 ingress 不自动产生
-multi_mention 聚合。
+multi_mention 聚合。agent 侧同 thread 多 target 只能走 `multi_mention`；cross-thread
+多 target 在 v1 拆成多次 `cross_post_message`。
 
 ### 7.4 Journey D：运行中取消某个 agent
 
@@ -584,9 +587,9 @@ operator 发消息
 | 客户端幂等键 | `clientMessageId`（MCP client） | `piExtToolCallId`（pi extension） | 见 0013；有意分歧 |
 | operator 寻址 | agent message 行首 `@co-creator` + `mentionsUser` | 同一语义；operator 不是 QueueTarget | operator 回复仍是新 user message |
 | custody / handoff | ball custody、action lease、wait continuation | v1 不做 custody；operator decision 是普通 message | 见 0005 §7 |
-| A2A depth | 默认 2 | v1 15 | 见 0010 §3.8；需要 loop guard |
+| A2A depth | 实际默认 15（`route-helpers` 注释 2 过时） | v1 15 + budget/guard | 见 0010 §3.8；DP-F018SURFACE-2 待重拍 |
 | draft flush | 2s / 2000 chars | 100ms / 4KB | 见 0010 §3.6.1 |
-| queue depth | user source 5 | 工具 targets ≤8；queue cap 待定 | F018 R2 定常量 |
+| queue depth | user source 5 | post/cross 1、multi_mention 2-3；queue cap 待定 | F018 R2 定常量 |
 | multi_mention | `MultiMentionOrchestrator`：status/timeout/callback/aggregate | 完整 orchestrator：`multi_mention_requests/responses` + 聚合 system message | v1 对齐，不再做“假 fan-out” |
 | recovery | StartupReconciler + Zombie + OwnerReaper 多件套 | 单 startup + 单 serialized reaper | 见 DP-F018RECOVERY |
 | session | active/sealing/sealed + restore/compact | active + lightweight seal；无 restore/compact | 见 0009 |
@@ -599,8 +602,9 @@ operator 发消息
    回复关联回原问题（replyTo/causal trigger）需要在 R2 钉死。
 3. **cancel 控制面归属**：单 cancel/cancel all 的 HTTP/CLI 入口属 W7a；F018 需要冻结
    exact execution identity 与 reason taxonomy，避免 cancel 误杀同 slot 的新 child。
-4. **queue cap/priority**：Clowder 5 与 codeteam targets ≤8 不是同一维度；R2 要定
-   source queue cap、排序、operator 手动 processNext 的边界。
+4. **queue cap/priority**：Clowder 5 与 codeteam 的 tool target 上限（post/cross 1、
+   multi_mention 2-3）不是同一维度；R2 要定 source queue cap、排序、operator 手动
+   processNext 的边界。
 5. **multi_mention 聚合**：v1 做完整 orchestrator；需要冻结 status/timeout/
    aggregate/callback 的持久化与恢复边界（见 0010 §3.8 multi_mention）。
 6. **draft settlement 失败**：R terminal 后 draft delete 失败、credential tombstone

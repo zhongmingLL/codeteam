@@ -135,7 +135,7 @@ Hub / CLI / API（W7a，当前缺失）
 | Credential/A2A tools | MCP callback + `clientMessageId` | pi extension + `piExtToolCallId` | adapted（合理） | P2 |
 | Terminal collector | `PerCatTerminalDispositionCollector` | `PerAgent...`；DB latest attempt | aligned | P2 |
 | Recovery | startup + zombie + owner reaper | 单 startup + 单 serialized reaper | adapted | P2 |
-| Read models | live invocations + dispatch summary | 设计有 `MessageDispatchSummary`/live，Hub transport 缺 | **partial/missing** | P2 |
+| Read models | live invocations + dispatch summary | `QueueView`/`LiveInvocationView`/`MessageDispatchSummary` DTO 已定义；Hub transport 归 W7a | adapted | P2 |
 | Operator notification | `mentionsUser` + unread index | message `mentionsUser`（DP-A 已改） | fixed | P1 |
 
 ### 3.2 详细 findings
@@ -243,46 +243,62 @@ Hub / CLI / API（W7a，当前缺失）
   （必要时再加独立 recovery event），不要写 legacy `audit`。
 - 立场：**P2，改。**
 
-#### F-07 `post_message` 多 target 上限与 Clowder 单 successor 不一致（P2，待论证）
+#### F-07 `post_message` 多 target 上限与 Clowder 单 successor 不一致（P2，已拍 A）
+
+> 2026-11-13 已拍 `DP-F018SURFACE-1=A`：`post_message`/`cross_post_message` 单
+> successor；`multi_mention` 是唯一多 target fan-out。0010/0014/plan/F018 已同步。
 
 - Clowder：`post_message` 工具描述强调 same-thread single successor；多 cat 的
   deliberate fan-out 走 `multi_mention`。
-- codeteam：`0010` §3.8 允许 `post_message` / `cross_post_message` targets ≤8。
+- codeteam：`0010` §3.8 曾允许 `post_message` / `cross_post_message` targets ≤8；
+  2026-11-13 DP-F018SURFACE-1=A 已收敛为单 successor。
 - 问题：如果 `post_message` 自己就能 8-way fan-out，`multi_mention` 的独立存在更没
   语义；如果 `multi_mention` 保留 Clowder 聚合语义，`post_message` 多 target 又成了
   第二套 fan-out。
 - 建议：先定工具分工：`post_message` 单 successor；多 target 只走一个明确的 fan-out
   入口（删除 multi_mention 或让它成为唯一 fan-out）。不要同时保留两套。
-- 立场：**P2，随 F-03 一起定。**
+- 立场：**P2，已关闭为 A。**
 
-#### F-08 A2A depth 15 与 Clowder 2 的差异（P2，待论证）
+#### F-08 A2A depth：audit 前提错误，Clowder 实际默认 15（P2，已修正待拍）
 
-- Clowder：route-helpers 默认 `MAX_A2A_DEPTH` 2（env 可调）。
-- codeteam：`0010` §3.8 定 depth 15。
-- 问题：15 跳会显著放大 loop/延迟/成本；仅靠 `a2a_duplicate_delivery` 和
-  `pi_ext_tool_call_conflict` 不足以解释为什么需要 7.5 倍于 Clowder 的上限。
-- 建议：给出真实场景（例如多 agent review 链）和成本估算；否则回到 2–3。若保留 15，
-  必须有 per-thread depth budget 和 early-stop 测试。
-- 立场：**P2，先证明再保留。**
+> 2026-11-13 source audit correction：`route-helpers.ts` 注释写 “default: ... or 2”，
+> 但实际 `getMaxA2ADepth()` 返回 `Number(process.env.MAX_A2A_DEPTH) || 15`；
+> `env-registry.ts` 默认 15，`ConfigRegistry.ts` 也是 15。`ConfigStore` 的 UI
+> 校验范围是 0–10；callback 路径无 worklist 时 fallback 10。`MAX_A2A_MENTION_TARGETS=2`
+> 是“单条消息最多 @ 2 只猫”，不是 depth。
 
-#### F-09 Hub read models 只有概念，没有契约（P2，缺件）
+- Clowder review 链 `A→B→A→B→A` 是预期场景：durable lineage 的 depth 是“接收 turn
+  前已完成的 A2A edges”，不是“同一只猫连续次数”；15 正是为多轮 review 保留的。
+- Ping-pong breaker 在同 pair 连续 4 次**且无实质工作**时才断；F167 Phase D 已加
+  substantive tool/long-output 豁免，避免误杀正常 review。depth 是成本兜底，不是
+  review 的主要限制器。
+- codeteam 旧建议“回到 2–3”会直接杀掉用户举的 review 链，**撤回**。
+- 修订建议：保留 15 + per-thread cost budget + substantive-aware loop guard/early-stop；
+  若成本敏感，用 10（Clowder ConfigStore 上限）+ 同一组 guard。3/5 不作默认。
+- 立场：**P2，前提已修正；等 `DP-F018SURFACE-2` 重拍。**
 
-- codeteam：`0010` 有 `MessageDispatchSummary`、`getThreadLiveInvocations` 的名字，
-  但 `MessageDispatchSummary` 只有一句“简单 read model”；没有字段、分页、排序、
-  evidence rank；`getThreadLiveInvocations` 的 evidence rank 也没定义。
+#### F-09 Hub read models 只有概念，没有契约（P2，已拍 A：DTO ownership）
+
+> 2026-11-13 已拍 `DP-F018SURFACE-3=A`：F018 定义 `QueueView` /
+> `LiveInvocationView` / `MessageDispatchSummary` domain DTO；W7a 只做 Hub transport
+> 映射；`ThreadUnread/MentionView` 归 W7a/v2。0010 §3.10 已补 DTO 字段/排序/降级。
+
+- codeteam：`0010` 有 `MessageDispatchSummary`、`getThreadLiveInvocations` 的名字。
+  `getThreadLiveInvocations` 已在 DP-F018RECOVERY 补字段/evidence rank；
+  `MessageDispatchSummary` 仍只有一句，`QueueView` / unread / mention 没有契约。
 - 问题：Hub 需要 queue 面板、processing/live、dispatch 状态、unread/mention；
   这些不能靠 UI 直接拼 `invocation_attempts`。没有 read model 契约，W7a 会各拼一套。
-- 建议：在 W7a/F018 交界处冻结 4 个 read DTO：`QueueView`、`LiveInvocationView`、
-  `MessageDispatchSummary`、`ThreadUnread/MentionView`；每个给字段、排序、分页、
-  新鲜度/降级语义。
-- 立场：**P2，补契约；实现可后置。**
+- 决定：F018 定义前三个 domain DTO；W7a 只做 transport/DTO 映射；
+  `ThreadUnread/MentionView` 归 W7a/v2，不反推 F018 状态。
+- 立场：**P2，已关闭为 A；W7a 按 DTO 映射实现。**
 
 #### F-10 queue cap/priority 未定（P2，缺件）
 
 - Clowder：user source queue cap 5（`InvocationQueue.ts:167`）；priority 有
   urgent/normal；position/order 明确。
 - codeteam：`0010` 只说 invocation_queue 有 priority/position，没有 cap/排序/
-  operator processNext 的边界；targets ≤8 与 queue cap 不是同一维度。
+  operator processNext 的边界；post/cross 单 target、multi_mention 2-3 与 queue cap
+  不是同一维度。
 - 问题：没有 cap，Hub 可能无限排队；没有排序，operator 手动 processNext 与自动
   drain 可能不一致。
 - 建议：R2 前定：source queue cap（建议先 5，与 Clowder 对齐）、priority 规则、
@@ -524,8 +540,8 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 | operator target vs `mentionsUser` | **语义新增（已退回）** | 已拍 DP-A=A | 已解决：`mentionsUser` |
 | `multi_mention` 无 orchestrator | **同名异义** | **未证明** | P1，删除/改名或实现 Clowder 语义 |
 | TurnExecution + Attempt 双状态 | **过度设计** | **未证明** | P1，单 canonical state |
-| post_message targets ≤8 | **能力扩张** | **未证明** | P2，和 F-03 一起定 |
-| A2A depth 15 vs 2 | **参数分叉** | **未证明** | P2，先证明场景/成本 |
+| post_message targets ≤8 | **能力扩张** | **已拍 A：退回单 successor** | closed |
+| A2A depth 15 vs 2 | **参数分叉（audit 前提错误：Clowder 实际 15）** | **已修正待重拍** | P2；DP-F018SURFACE-2 待拍 15/10 + guards |
 | draft flush 100ms/4KB vs 2s/2000 | **性能取舍** | **待 benchmark** | P3，实测后定 |
 | `completed` vs `succeeded`、parent/child 命名 | 命名适配 | 必要 | 保留，持续标注对照 |
 | `queue_admissions` receipt | SQLite 适配 | 必要 | 保留 |
@@ -553,8 +569,8 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 | DP-D settlement owner | **已拍 A：拆回四层 owner，删除 settleAgentTurn god-service** | Clowder 是 invoke/route/QueueProcessor/recovery 分层 | 0010 §3.6/§3.9/§9 已同步 |
 | DP-E Hub 依赖 | **已拍 A：W7a 独立验收，F018 只验收 daemon/CLI**；B 不再考虑 | F016c 仍 discovery；F018 不应重写 transport | 已关闭 |
 
-DP-A–E 已关闭；F-07/F-08/F-09 已拆到
-`decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md`。queue cap 可按推荐
+DP-A–E 已关闭；F-07/F-09 已拍 A，F-08 前提已修正、待重拍（见
+`decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md`）。queue cap 可按推荐
 自决，F-12 draft flush 留 R2 benchmark，不要现在写成不可变契约。
 
 ## 7. 证据索引

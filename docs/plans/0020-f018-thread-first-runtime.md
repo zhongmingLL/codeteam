@@ -114,18 +114,22 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 
 ## R3 — Cross-thread A2A
 
-- `codeteam_cross_post_message`：target threadId、targets、thread access、
-  depth/loop guard、typed rejects。
+- `codeteam_post_message` / `codeteam_cross_post_message`：单 successor（0 或 1 agent
+  target）；同 thread 多 target → `use_multi_mention`；cross-thread 多 target 拆多次
+  cross-post。
 - `codeteam_multi_mention`：完整 Clowder orchestrator；2-3 targets、one message +
   one queue entry + one parent + N children；`multi_mention_requests/responses` 记录
-  status/timeout/callback/aggregate；`callbackTo` 不新建 child。
+  status/timeout/callback/aggregate；`callbackTo` 不新建 child；它是唯一多 target
+  fan-out 入口。
 - 任意 enabled agent 可被 target；首次成功后加入 participants。
 - `thread post --to` 不再要求 `--task`；CLI/read model 同步。
 - 出口：E3/E4/E5/E6/E8/E10/E11。
 
 ## R4 — Loop guard / observation / 多 agent
 
-- depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`。
+- depth 15（DP-F018SURFACE-2 待重拍：Clowder 实际默认 15；review 链需 >2；
+  当前保留 15，等 operator 在 15+guards / 10+guards 之间确认）、
+  `a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`。
 - observation 识别 4 个新工具；text-@ 负例不误报。
 - 多 agent thread；`multi_mention` timeout/status/aggregate、anti-cascade、
   target cancellation 收敛。

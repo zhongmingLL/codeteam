@@ -405,7 +405,8 @@ thread message / A2A tool
   `piExtToolCallId`；它由 pi extension 从 `toolCallId + toolName` 派生并注入 control
   envelope，**不进入 model-facing tool input**；scope 是 credential（child TurnExecution），
   不是 `(threadId, agentId, key)`。
-- `post_message` / `cross_post_message` targets ≤ 8；`multi_mention` 固定 2-3 个 agent；
+- `post_message` / `cross_post_message` targets 0 或 1 个 agent；`multi_mention` 固定
+  2-3 个 agent（唯一多 target fan-out）；
   `bodyMd` ≤ 32 KiB，`question` / `context` 各 ≤ 5 KiB。
 - `multi_mention` 是完整 orchestrator：一条 message + 一个 queue entry + 一个
   `InvocationRecord`(parent) + N 个 `TurnExecution`(child)；另有

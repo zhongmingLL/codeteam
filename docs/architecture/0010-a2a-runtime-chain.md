@@ -2098,8 +2098,8 @@ interface InvocationCredential {
 
 | 工具 | model-facing input | result | queue |
 |---|---|---|---|
-| `post_message` | `targets`, `bodyMd`, `replyTo?` | `{ message, queueEntryId: string | null, replayed }` | targets 非空：message + queue；targets 空 + `@operator`：仅 message，无 queue |
-| `cross_post_message` | `threadId`, `targets`, `bodyMd`, `replyTo?` | `{ message, queueEntryId, sourceThreadId, targetThreadId, replayed }` | 1 message + 1 queue entry（targets 非空） |
+| `post_message` | `targets`（0 或 1 agent）, `bodyMd`, `replyTo?` | `{ message, queueEntryId: string | null, replayed }` | targets=1：message + queue；targets=0 + `@operator`：仅 message，无 queue |
+| `cross_post_message` | `threadId`, `targets`（0 或 1 agent）, `bodyMd`, `replyTo?` | `{ message, queueEntryId, sourceThreadId, targetThreadId, replayed }` | 1 message + 1 queue entry（targets=1） |
 | `multi_mention` | `targets`（2-3 agents）, `question`, `context?`, `callbackTo`, `timeoutMinutes?` | `{ requestId, status, message, queueEntryId, targetAgentIds, callbackTo, replayed }` | 1 message + 1 queue + 1 parent + N children |
 | `thread_context` | `threadId?`, `anchor?`, `before?`, `after?`, `limit?`, `cursor?` | `{ threadId, messages, hasMore, nextCursor? }` | 不入队 |
 
@@ -2130,9 +2130,13 @@ targets: Array<{ kind: "agent"; id: string }>
   这不是 target，不创建 queue/parent/TurnExecution。
 - `multi_mention` targets 仅 agent（2-3 个），支持完整 orchestrator（见本节
   `multi_mention` 小节）。
-- agent targets 为 N>=1 个时，统一为 **1 message + 1 queue entry + 1 parent
-  `InvocationRecord` + N child `TurnExecution`**；不是 N 条 message，也不是 N 个 parent。
-  targets 为空时只有 1 条 message，没有 queue/parent。
+- `post_message` / `cross_post_message` 最多 1 个 agent target；同 thread 多 target
+  必须用 `multi_mention`（`use_multi_mention`）；cross-thread 多 target 在 v1 拆成
+  多次 `cross_post_message`，不建 cross-thread orchestrator。
+- `post_message` / `cross_post_message` 单 target 时是 **1 message + 1 queue entry +
+  1 parent `InvocationRecord` + 1 child `TurnExecution`**；`multi_mention` 是
+  **1 message + 1 queue entry + 1 parent + N child**。targets 为空时只有 1 条 message，
+  没有 queue/parent。
 - `cross_post_message`：`threadId` 必须存在且不等于 caller thread；target thread 必须
   active、未 soft-deleted、有 `projectPath`，且与 source 同 user；message 写
   `extra.crossPost = { sourceThreadId, sourceTriggerMessageId }`，其中
@@ -2140,9 +2144,13 @@ targets: Array<{ kind: "agent"; id: string }>
   soft-deleted → `thread_deleted`，缺 projectPath → `thread_project_path_required`，
   同 thread → `use_post_message`。`projectPath` 只在 targets 非空时要求；message-only
   cross-post 不需要 projectPath（不会启动 worker）。
-- `targets` 按 `targetKey` 去重；`post_message` / `cross_post_message` 最多 8 个 target，
-  `multi_mention` 固定 2-3 个 agent。target 可以是 caller 自己；这会创建一个新 child
-  并参与 `a2aDepth` / loop guard。
+- `targets` 按 `targetKey` 去重；`post_message` / `cross_post_message` 最多 1 个 agent
+  target，`multi_mention` 固定 2-3 个 agent。target 可以是 caller 自己；这会创建一个
+  新 child 并参与 `a2aDepth` / loop guard。
+> DP-F018SURFACE-2 待重审：Clowder 实际默认 `MAX_A2A_DEPTH=15`；`route-helpers`
+> 注释里的 “or 2” 是过时注释，`MAX_A2A_MENTION_TARGETS=2` 也不是 depth。review
+> 链 `A→B→A→B→A` 正是保留 15 的场景。当前保留 15，等 operator 在
+> “15+guards” / “10+guards” 之间确认；不在本段先改常量。
 - 所有 target 在创建 message 前一次校验；任一 target 非法 → 整笔 fail closed，
   不部分投递（执行期 target 失败仍按 parent 聚合）。
 - `replyTo` 可选；必须存在、与 message 同 thread、未被 deleted/withdrawn，且 caller
@@ -2417,6 +2425,7 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
 | thread | `thread_not_found` / `thread_deleted` / `thread_access_denied` | 目标 thread 不存在/deleted/跨 user |
 | thread | `thread_project_path_required` | target thread 没有 projectPath |
 | cross-post | `use_post_message` | `cross_post_message` 的 threadId 等于 caller thread |
+| fan-out | `use_multi_mention` | `post_message` 传了 >1 个同 thread agent target |
 | reply | `invalid_reply_to` | replyTo 不存在/跨 thread/不可见/deleted/withdrawn |
 | idempotency | `pi_ext_tool_call_conflict` | 同 `piExtToolCallId` 不同 `intentHash` |
 | idempotency | `queue_admission_conflict` | 同 `(sourceRecordId, attempt)` 不同 fingerprint |
@@ -2840,8 +2849,17 @@ interface InvocationAttemptStore {
    - 先由 `TurnExecution` + response `Message` + events 提供简单 timeline；
    - 等需要 trajectory drilldown 再加 projector。
 5. **MessageDispatchSummary**
-   - parent + child 的读模型：targets、running/completed/failed/canceled、responses；
-   - v1 只做简单 read model；完整 schema/分页/排序放 v2。
+   - parent + child 的 domain read model；字段/分页/降级见下方 `read DTO`。
+6. **Read DTO contract（DP-F018SURFACE-3=A）**
+   - F018 拥有 `QueueView` / `LiveInvocationView` / `MessageDispatchSummary` 三个
+     domain DTO；W7a 只做 Hub transport/DTO 映射。
+   - `ThreadUnread/MentionView` 归 W7a/v2，不反推 F018 的 message/attempt 状态。
+
+| DTO | 最小字段 | 排序/分页 | 降级 |
+|---|---|---|---|
+| `QueueView` | threadId、entries[{queueEntryId, sourceRecordId, status, priority, position, targetAgentIds, claimedBy, enqueuedAt, updatedAt}]、cap | priority 先、同 priority FIFO；按 position | stale/degraded 标记；不返回已删除 entry |
+| `LiveInvocationView` | agentId、turnExecutionId、parentInvocationId、startedAt、childStatus、responseStatus、evidenceRank | startedAt 升序；thread/user scoped | 过滤 terminal R；tracker/durable 去重 |
+| `MessageDispatchSummary` | parentInvocationId、sourceMessageId、targetAgentIds、status、successfulAgentIds、failed/canceled 派生、responseMessageIds、terminalReason、updatedAt | updatedAt desc；cursor 分页 | parent 未 terminal 时标注 live |
 
 **v1 不做**
 - Clowder 的完整 owner lease 协议、trajectory projector；v1 用 heartbeat/lease +

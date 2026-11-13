@@ -48,8 +48,9 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 3. Session 是 thread×agent 的持久身份；一个 active session；无 taskId。
 4. Agent 身份是 config-as-code：`.codeteam/agent-catalog.json` →
    `AgentConfig` → `AgentRegistry`；`AgentState` 是运行时状态。
-5. A2A v1 工具面：`codeteam_post_message` / `codeteam_cross_post_message` /
-   `codeteam_multi_mention` / `codeteam_thread_context`。
+5. A2A v1 工具面：`codeteam_post_message` / `codeteam_cross_post_message`（单 successor）
+   / `codeteam_multi_mention`（唯一多 target fan-out，2-3 agents）/
+   `codeteam_thread_context`。
 6. Queue 单账本：thread + sourceRecordId + attempt + targets；target attempt 台账
    append-only；retry 不新建 queue entry、不重新 admission；无 task 依赖。
    ordinary A2A retry 复用 Clowder route recovery，不是 cloud delivery 的
@@ -78,7 +79,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 - [ ] 无 task thread 可以真实 provider 完成 post/response。
 - [ ] same-thread post E2E；cross-thread post E3。
-- [ ] `multi_mention` 2-3 agent fan-out + status/timeout/callback/aggregate E4。
+- [ ] `multi_mention` 2-3 agent fan-out + status/timeout/callback/aggregate E4；
+      post/cross >1 same-thread target → `use_multi_mention`。
 - [ ] `.codeteam/agent-catalog.json` + accounts 加载/校验；AgentRegistry/AgentState；
       disabled agent typed reject；defaultModel 属于 account.models。
 - [ ] A2A targets 用 agentId；消息展示用 displayName。
