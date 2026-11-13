@@ -233,15 +233,18 @@ Hub / CLI / API（W7a，当前缺失）
   `settleAgentTurn`。
 - 立场：**P2，先钉 owner 再实现。**
 
-#### F-06 `response_missing` 使用 legacy audit（P2，不一致）
+#### F-06 `response_missing` 使用 legacy audit（P2，已修）
+
+> 2026-11-13 已去掉 legacy audit：`response_missing` 只写 typed system message +
+> `terminalReason`；abandon/TTL 写 thread event。
 
 - codeteam：`0010` §3.10 / §9.5 说 R 缺失走 `response_missing` recovery：
-  attempt failed + system message/audit；同时 §3.1 又说 `audit` 是 task-first 遗留，
-  不属于 A2A message/lifecycle 契约。
+  曾写 attempt failed + system message/audit；同时 §3.1 又说 `audit` 是 task-first
+  遗留，不属于 A2A message/lifecycle 契约。
 - 问题：A2A 恢复依赖一个被声明为 legacy 的表面，读模型/审计边界会漂移。
 - 建议：`response_missing` 只写 typed system message + `TurnExecution.terminalReason`
   （必要时再加独立 recovery event），不要写 legacy `audit`。
-- 立场：**P2，改。**
+- 立场：**P2，已关闭。**
 
 #### F-07 `post_message` 多 target 上限与 Clowder 单 successor 不一致（P2，已拍 A）
 
@@ -259,7 +262,7 @@ Hub / CLI / API（W7a，当前缺失）
   入口（删除 multi_mention 或让它成为唯一 fan-out）。不要同时保留两套。
 - 立场：**P2，已关闭为 A。**
 
-#### F-08 A2A depth：audit 前提错误，Clowder 实际默认 15（P2，已修正待拍）
+#### F-08 A2A depth：audit 前提错误，Clowder 实际默认 15（P2，已拍 A：15+guards）
 
 > 2026-11-13 source audit correction：`route-helpers.ts` 注释写 “default: ... or 2”，
 > 但实际 `getMaxA2ADepth()` 返回 `Number(process.env.MAX_A2A_DEPTH) || 15`；
@@ -273,9 +276,10 @@ Hub / CLI / API（W7a，当前缺失）
   substantive tool/long-output 豁免，避免误杀正常 review。depth 是成本兜底，不是
   review 的主要限制器。
 - codeteam 旧建议“回到 2–3”会直接杀掉用户举的 review 链，**撤回**。
-- 修订建议：保留 15 + per-thread cost budget + substantive-aware loop guard/early-stop；
-  若成本敏感，用 10（Clowder ConfigStore 上限）+ 同一组 guard。3/5 不作默认。
-- 立场：**P2，前提已修正；等 `DP-F018SURFACE-2` 重拍。**
+- 决定（2026-11-13 `DP-F018SURFACE-2=A`）：保留 15 + per-thread queue cap 5 +
+  substantive-aware ping-pong（warn 2/block 4，实质 tool/长输出豁免）+ early-stop。
+  10 作为成本敏感备选，不再需要。
+- 立场：**P2，已关闭为 A。**
 
 #### F-09 Hub read models 只有概念，没有契约（P2，已拍 A：DTO ownership）
 
@@ -292,18 +296,21 @@ Hub / CLI / API（W7a，当前缺失）
   `ThreadUnread/MentionView` 归 W7a/v2，不反推 F018 状态。
 - 立场：**P2，已关闭为 A；W7a 按 DTO 映射实现。**
 
-#### F-10 queue cap/priority 未定（P2，缺件）
+#### F-10 queue cap/priority 未定（P2，已自决）
+
+> 2026-11-13 已按推荐落 0010 §3.1：user/A2A 分开计数，cap 5；urgent 先、同
+> priority FIFO；operator processNext 只处理自己的 head；queue full 429 不写 source。
 
 - Clowder：user source queue cap 5（`InvocationQueue.ts:167`）；priority 有
   urgent/normal；position/order 明确。
-- codeteam：`0010` 只说 invocation_queue 有 priority/position，没有 cap/排序/
+- codeteam：`0010` 曾只有 invocation_queue 的 priority/position，没有 cap/排序/
   operator processNext 的边界；post/cross 单 target、multi_mention 2-3 与 queue cap
   不是同一维度。
 - 问题：没有 cap，Hub 可能无限排队；没有排序，operator 手动 processNext 与自动
   drain 可能不一致。
 - 建议：R2 前定：source queue cap（建议先 5，与 Clowder 对齐）、priority 规则、
   同 priority FIFO、operator 手动处理只能处理自己的 head、queue full 429 不写 source。
-- 立场：**P2，补常量/规则。**
+- 立场：**P2，已关闭。**
 
 #### F-11 session restore/compaction 缺失（P2，scope cut）
 
@@ -317,7 +324,10 @@ Hub / CLI / API（W7a，当前缺失）
   `session_restore_unavailable` 的显式降级，不要让 UI 以为有 restore。
 - 立场：**P2，scope 明确即可，不在 v1 硬补。**
 
-#### F-12 draft flush 100ms/4KB vs Clowder 2s/2000 chars（P3，待 benchmark）
+#### F-12 draft flush 100ms/4KB vs Clowder 2s/2000 chars（P3，R2 benchmark）
+
+> 2026-11-13 0010/plan 已标 100ms/4KB 为 provisional；R2 做 write amplification/
+> 延迟 benchmark，允许调 250–500ms。
 
 - Clowder：`route-serial.ts:1762` / `route-parallel.ts:1137` 是 2s / 2000 chars。
 - codeteam：`0010` §3.6.1 目标 100ms/4KB，理由是更快的刷新/重连体验。
@@ -359,7 +369,7 @@ Hub / CLI / API（W7a，当前缺失）
 - 判断：这不是“已经有设计”，而是 durable stream 的存储层契约未冻结。
 - 建议：R2 前补 `ResponseDraftStore` 契约（0010 §3.6.1/§4.3.2 或独立 0017）；详细缺口见
   `decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md` §5。
-- 立场：**P2，补契约；不阻塞 F-07/F-08/F-09 三选一。**
+- 立场：**P2，补契约；不阻塞 F-07/F-08/F-09 已拍决策。**
 
 ### 3.3 DP-C 调查：Clowder 到底有没有 InvocationAttempt？
 
@@ -541,7 +551,7 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 | `multi_mention` 无 orchestrator | **同名异义** | **未证明** | P1，删除/改名或实现 Clowder 语义 |
 | TurnExecution + Attempt 双状态 | **过度设计** | **未证明** | P1，单 canonical state |
 | post_message targets ≤8 | **能力扩张** | **已拍 A：退回单 successor** | closed |
-| A2A depth 15 vs 2 | **参数分叉（audit 前提错误：Clowder 实际 15）** | **已修正待重拍** | P2；DP-F018SURFACE-2 待拍 15/10 + guards |
+| A2A depth 15 vs 2 | **参数分叉（audit 前提错误：Clowder 实际 15）** | **已拍 A：15+guards** | P2；DP-F018SURFACE-2=A |
 | draft flush 100ms/4KB vs 2s/2000 | **性能取舍** | **待 benchmark** | P3，实测后定 |
 | `completed` vs `succeeded`、parent/child 命名 | 命名适配 | 必要 | 保留，持续标注对照 |
 | `queue_admissions` receipt | SQLite 适配 | 必要 | 保留 |
@@ -569,7 +579,7 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 | DP-D settlement owner | **已拍 A：拆回四层 owner，删除 settleAgentTurn god-service** | Clowder 是 invoke/route/QueueProcessor/recovery 分层 | 0010 §3.6/§3.9/§9 已同步 |
 | DP-E Hub 依赖 | **已拍 A：W7a 独立验收，F018 只验收 daemon/CLI**；B 不再考虑 | F016c 仍 discovery；F018 不应重写 transport | 已关闭 |
 
-DP-A–E 已关闭；F-07/F-09 已拍 A，F-08 前提已修正、待重拍（见
+DP-A–E 已关闭；F-07/F-08/F-09 均已拍 A（见
 `decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md`）。queue cap 可按推荐
 自决，F-12 draft flush 留 R2 benchmark，不要现在写成不可变契约。
 

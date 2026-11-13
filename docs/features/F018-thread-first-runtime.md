@@ -79,6 +79,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 - [ ] 无 task thread 可以真实 provider 完成 post/response。
 - [ ] same-thread post E2E；cross-thread post E3。
+- [ ] queue cap 5（user/A2A 分开计数）；urgent/FIFO；queue full 429/`queue_full`
+      不写 source。
 - [ ] `multi_mention` 2-3 agent fan-out + status/timeout/callback/aggregate E4；
       post/cross >1 same-thread target → `use_multi_mention`。
 - [ ] `.codeteam/agent-catalog.json` + accounts 加载/校验；AgentRegistry/AgentState；

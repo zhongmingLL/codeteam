@@ -235,6 +235,16 @@ interface QueueTerminalProjection {
   调用 pi worker。
 - operator 通知不在 Queue：message 写 `mentionsUser=true`，由 message/read model 投影。
 
+**Queue cap / priority（F-10 v1 自决，2026-11-13）**
+
+- 每个 thread 的 `queued|claimed` 队列条目上限 **5**：user input 与 agent-sourced
+  A2A（`message_wake`）分别计数，避免 A2A flood 把 operator 消息挡在外面。
+- 超过 cap：user ingress 返回 429，source message 不落库；A2A tool 返回 typed
+  `queue_full`，不创建 message/queue/admission。整笔事务回滚，不部分投递。
+- 排序：`urgent` 先于 `normal`；同 priority 按 `position` FIFO；`position` 只在
+  admission 时分配，claim 不重排。
+- operator 手动 `processNext` 只能处理自己 thread 的 head，不能跳过 priority/cap。
+
 **`parseTarget`（仅 operator conversation ingress）**
 
 - 只解析**行首 `@handle`**（含列表/引用前缀）；正文中间 `@` 不路由。
@@ -1793,7 +1803,8 @@ T4 recovery（ResponseRecoveryService）:
   `response_pending`（child terminal，R 未 terminal）、`settled`（R terminal 且 inputs settled）。
 - `listResponsePending()` 是恢复入口；`TurnExecutionStartupReconciler` 重启后只扫描
   `startedAt < processStartedAt + 1` 且非 protected 的 pending；R 已 terminal 则只清
-  pending；R 不存在则走独立 `response_missing` recovery（system message/audit），
+  pending；R 不存在则走独立 `response_missing` recovery（typed system message +
+  `terminalReason`），
   不写 prestart `delivery_failure`。
 - credential terminalize 在 T1 完成；parent aggregate 在 T3 完成，不等待 R terminal；
   `response_pending` 的 child 已经是 terminal，参与 T3 聚合。
@@ -1856,6 +1867,8 @@ type AgentStreamEvent =
   没有客户端时事件直接丢弃，durable `response_drafts`/R 仍是真相。
 - **batch**：`WorkerEventSink` 按 100ms / 4KB（先到者）flush；同一批同时更新 draft 的
   `seq` 并广播一个或多个 `AgentStreamEvent`，避免 per-token 事件。
+  > 100ms/4KB 是目标值，不是不可变契约；R2 做 write amplification/延迟 benchmark
+  > 后可在 250–500ms 范围调整。
 - **UI merge**：UI 以 `turnExecutionId` 维护 draft bubble；收到 `seq > draft.seq` 的
   `text_delta` 才追加，`tool_call_*` 按 `toolId` 合并；`complete` 用
   `responseMessageId` 替换为持久 R；刷新/重连先加载 processing R + draft（含 `seq`），
@@ -1886,7 +1899,8 @@ type AgentStreamEvent =
   terminal 后 draft 删除，R 变为持久终态消息。
 - crash：`responsePending` + draft 保留；startup reconciler 调
   `settleResponseFromDraft`。R 已 terminal 则只清 pending；R processing 则按 child
-  terminal 状态提交；R 不存在则独立 `response_missing` recovery（system message/audit），
+  terminal 状态提交；R 不存在则独立 `response_missing` recovery（typed system message +
+  `terminalReason`），
   不伪装成 prestart `delivery_failure`。
 - failed/interrupted/canceled：R 也走 terminal settlement，正文带已 stream 的部分 +
   explanation；不再产生第二条 `delivery_failure`（prestart 未创建 R 除外）。
@@ -2147,10 +2161,11 @@ targets: Array<{ kind: "agent"; id: string }>
 - `targets` 按 `targetKey` 去重；`post_message` / `cross_post_message` 最多 1 个 agent
   target，`multi_mention` 固定 2-3 个 agent。target 可以是 caller 自己；这会创建一个
   新 child 并参与 `a2aDepth` / loop guard。
-> DP-F018SURFACE-2 待重审：Clowder 实际默认 `MAX_A2A_DEPTH=15`；`route-helpers`
-> 注释里的 “or 2” 是过时注释，`MAX_A2A_MENTION_TARGETS=2` 也不是 depth。review
-> 链 `A→B→A→B→A` 正是保留 15 的场景。当前保留 15，等 operator 在
-> “15+guards” / “10+guards” 之间确认；不在本段先改常量。
+> DP-F018SURFACE-2=A（2026-11-13）：保留 `MAX_A2A_DEPTH=15`。guard 组合是
+> per-thread queue cap 5 + substantive-aware ping-pong（同 pair 连续 2 warn / 4
+> block，实质 tool/长输出豁免）+ early-stop。Clowder 实际默认也是 15；
+> `route-helpers` 注释里的 “or 2” 是过时注释，`MAX_A2A_MENTION_TARGETS=2` 是
+> 单条消息的 mention cap，不是 depth。review 链 `A→B→A→B→A` 正是保留 15 的场景。
 - 所有 target 在创建 message 前一次校验；任一 target 非法 → 整笔 fail closed，
   不部分投递（执行期 target 失败仍按 parent 聚合）。
 - `replyTo` 可选；必须存在、与 message 同 thread、未被 deleted/withdrawn，且 caller
@@ -2430,6 +2445,7 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
 | idempotency | `pi_ext_tool_call_conflict` | 同 `piExtToolCallId` 不同 `intentHash` |
 | idempotency | `queue_admission_conflict` | 同 `(sourceRecordId, attempt)` 不同 fingerprint |
 | queue | `a2a_duplicate_delivery` | 同 source+target 已 queued/running |
+| queue | `queue_full` | per-thread queued/claimed cap 5 超限；不写 source |
 | source | `source_withdrawn` | 原 message/queue 已撤回或不可重放 |
 | depth | `a2a_depth_exceeded` / `loop_guard` | 超过 15 / ping-pong guard |
 | auth | `tool_not_allowed` | tool 不在 credential.allowedTools |
@@ -2581,7 +2597,7 @@ credential claim 必须在同一 `ControlTransaction` 提交。`queue_admissions
   同一事务把 parent 置 `canceled`（`terminalReason='operator_abandon'`）、删除 queue
   entry、保留 attempts/R；重复调用幂等返回已 canceled。
 - `FAILED_ENTRY_TTL_MS` reaper 对超过 30 天、无 running child 的 failed/partial_failed
-  entry 执行同一收敛，reason=`retry_ttl_expired`；删除前写 audit/thread event。
+  entry 执行同一收敛，reason=`retry_ttl_expired`；删除前写 thread event。
 
 **Clowder 的两条 retry 路径（为什么 v1 选 route recovery）**
 
@@ -2821,7 +2837,7 @@ interface InvocationAttemptStore {
      R processing 则按 child terminal 状态提交（draft 缺失则空正文 + reason）。
    - settlement 失败保留 pending，下次 startup 再试，不 fail startup。
    - R 不存在 → 独立 `response_missing` recovery：attempt failed +
-     `terminalReason='response_missing'` + system message/audit；不写 prestart
+     `terminalReason='response_missing'` + typed system message；不写 prestart
      `delivery_failure`。
 2. **InvocationOwnerReaper（合并 Zombie + OwnerReaper）**
    - 单个 serialized reaper：`runOnce` + interval inFlight guard；startup reconciler 只做启动

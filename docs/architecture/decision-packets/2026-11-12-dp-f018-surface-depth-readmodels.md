@@ -1,7 +1,7 @@
 ---
 title: "DP-F018SURFACE: fan-out surface / A2A depth / read models"
 doc_kind: decision-packet
-status: decided 1/3; 2 revised pending
+status: decided 1/2/3
 created: 2026-11-12
 updated: 2026-11-13
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
@@ -72,7 +72,7 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 
 **决策：`DP-F018SURFACE-1=A`**
 
-## 3. DP-F018SURFACE-2：A2A depth（前提已修正，待重拍）
+## 3. DP-F018SURFACE-2：A2A depth（已拍 A：15+guards）
 
 > **2026-11-13 audit correction**：Clowder 实际默认 `MAX_A2A_DEPTH=15`，不是 2。
 > `route-helpers.ts` 注释里的 “default: ... or 2” 是过时注释；
@@ -96,16 +96,16 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 
 | 选项 | 内容 | 优点 | 代价 |
 |---|---|---|---|
-| **A（推荐）** | 保留 15；per-thread cost budget + substantive-aware loop guard/early-stop | 与 Clowder 实际默认一致；支持 5+ 轮 review；有成本兜底 | 需要实现 budget/guard，不只是常量 |
+| **A（已拍）** | 保留 15；per-thread queue cap 5 + substantive-aware loop guard/early-stop | 与 Clowder 实际默认一致；支持 5+ 轮 review；有成本兜底 | 需要实现 queue cap/guard，不只是常量 |
 | B | 改为 10；同一组 guard | 仍覆盖 5 轮 review；比 15 省成本 | 与 Clowder 默认不完全一致 |
 | C | 默认 3 / 硬上限 5 | 成本最低 | **撤回**：会杀掉用户举的 `A→B→A→B→A` review 链 |
 | D | 保留 15，不加 budget/guard | 不改实现 | 长链成本不可控，不推荐 |
 
-### 推荐
+### 决定
 
-**A**：保留 15 + per-thread cost budget + substantive-aware loop guard/early-stop。
-如果 operator 更在意成本，选 **B：10 + 同一组 guard**；两者都能覆盖 5 跳 review，
-不要再回到 2–3。
+**A（2026-11-13）**：保留 15 + per-thread queue cap 5 + substantive-aware ping-pong
+（同 pair 连续 2 warn / 4 block，实质 tool/长输出豁免）+ early-stop。10 作为成本敏感
+备选，不再需要；不要再回到 2–3。
 
 ### 不拍的后果
 
@@ -118,7 +118,7 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 - `0010` §3.8、§5.1、§9；plan 0020 R4；E15/E16。
 - pin per-thread budget、substantive-aware loop guard、early-stop 测试。
 
-**决策：待拍**。`DP-F018SURFACE-2=A`（15+guards）或 `B`（10+guards）；原 C（3/5）撤回。
+**决策：`DP-F018SURFACE-2=A`（2026-11-13）**
 
 ## 4. DP-F018SURFACE-3：read model 的 ownership 与最小 DTO
 
@@ -203,11 +203,12 @@ interface ResponseDraftStore {
 
 ## 6. 决策状态
 
-- 已拍：`DP-F018SURFACE-1=A`、`DP-F018SURFACE-3=A`。
-- 待拍：`DP-F018SURFACE-2=A`（15 + guards）或 `B`（10 + guards）。
+- 已拍：`DP-F018SURFACE-1=A`、`DP-F018SURFACE-2=A`、`DP-F018SURFACE-3=A`。
+- `DP-F018SURFACE-2=A` 的 guard：depth 15、per-thread queue cap 5、
+  substantive-aware ping-pong、early-stop。
 - 原 `C`（默认 3 / 上限 5）已撤回，不再作为选项。
 
-只需回一行：`DP-F018SURFACE-2=A` 或 `DP-F018SURFACE-2=B`。
+无需再选；三件均已关闭。
 
 ## 7. 参考
 

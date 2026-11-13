@@ -38,13 +38,16 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - `runs` → `turn_executions` + `invocation_records`：parent 消息生命周期 +
   child 执行 core（Clowder `TurnExecutionRecord`：identity/causal/status/时间）；无 taskId。
 - `queue_entries` → `invocation_queue`：只做调度；`InvocationRecord` 在 claim 后创建。
+  per-thread cap 5（user/A2A 分开计数）；urgent 先、同 priority FIFO；超限
+  `queue_full`/429，不写 source。
 - `invocation_attempts`：Clowder `QueueTargetAttempt` 语义的 append-only 投递/重试台账；
   unique `(parent_invocation_id, target_agent_id, attempt)`；retry 追加新 attempt，
   旧行不改；queue entry 保留到所有 target attempt 终态（`targets_json` 可为空）；
   承载 `delivery_state` + session/worker/provider/model/usage +
   `settlement`/`response_message_id`。
 - `response_drafts`：processing R 的 in-flight body；`attempt_id`/`turn_execution_id`
-  1:1；stream 按 100ms/4KB bounded flush；R terminal 后删除。
+  1:1；stream 目标 100ms/4KB bounded flush（R2 benchmark 后定，不写成不可变契约）；
+  R terminal 后删除。
 - `invocation_credentials`：child TurnExecution capability；allowedTools/
   toolCallClaims（piExtToolCallId claim map）/state/disposition（含 replaced）；无 taskId/role/run。
 - `invocation_attempts.settlement`：`NULL | streaming | response_pending | settled`；
@@ -127,8 +130,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 
 ## R4 — Loop guard / observation / 多 agent
 
-- depth 15（DP-F018SURFACE-2 待重拍：Clowder 实际默认 15；review 链需 >2；
-  当前保留 15，等 operator 在 15+guards / 10+guards 之间确认）、
+- depth 15（DP-F018SURFACE-2=A：Clowder 实际默认 15；review 链需 >2；
+  guard = per-thread queue cap 5 + substantive-aware ping-pong + early-stop）、
   `a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`。
 - observation 识别 4 个新工具；text-@ 负例不误报。
 - 多 agent thread；`multi_mention` timeout/status/aggregate、anti-cascade、
@@ -174,7 +177,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 |---|---|---|---|
 | 3 | AgentSessionManager / AgentReadStateStore 接口 | **已收口**：0009 §6.1 完整签名 + history/worker 协作时序 + ack 事务边界；reset 顺序已定 | R1 按接口实现 |
 | 4 | interruptRunningBefore / reaper bulk API | **已收口**：store 有 startup-only `interruptRunningBefore`；runtime reaper 用 `listRunning + worker liveness`，不提供通用 bulk | R2 实现 reaper |
-| 5 | live stream transport / UI draft | **已收口**：control socket event channel；100ms/4KB batch；`seq` 合并；刷新从 processing R + draft 恢复 | R2 实现 transport/UI |
+| 5 | live stream transport / UI draft | **方向已定**：control socket event channel；100ms/4KB 为 provisional（R2 benchmark 后可能调 250–500ms）；`seq` 合并；刷新从 processing R + draft 恢复 | R2 实现 transport/UI + benchmark |
 | 6 | durable partial response | **已收口**：DP-F018X-2=B；processing R + response_drafts + attempt settlement | R2 实现 |
 | 7 | delivery_failure reason taxonomy | **已收口**：pre-admission typed reject 与 admitted prestart `delivery_failure` 分离；E6/E8/E10/E11 映射已写 | R2/R3 实现并补负例 |
 | 8 | MessageStore migration unknowns | **契约已收口**：legacy→new mapping/preflight 表已写 | R1 执行 preflight，unknown 进清单 |

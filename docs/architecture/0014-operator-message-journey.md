@@ -101,7 +101,8 @@ Clowder `AgentRouter.resolveTargetsAndIntent`（`AgentRouter.ts:1400`）：
 - `strategy`：`ideate && targetCats.length > 1` → `parallel`，否则 `serial`
   （`AgentRouter.ts:1529`）；实际 dispatch 在 `AgentRouter.ts:1584`。
 
-> 注意：`@agentA @agentB` 在 Clowder 默认就是 2 targets → `ideate` → `parallel`。
+> 注意：`@agentA @agentB` 在 Clowder 默认就是 2 targets
+> （`MAX_A2A_MENTION_TARGETS`，不是 A2A depth）→ `ideate` → `parallel`。
 > `#execute` 可强制串行；`#ideate` 可强制并行。
 
 ### 2.3 入口幂等
@@ -206,8 +207,8 @@ agent 调用 `post_message`/`cross_post_message` 时：
   直接延长；
 - 目标 cat 得到新的 parent `InvocationRecord` + child `TurnExecution`；
 - depth/loop guard 在 admission 前校验（Clowder 实际默认 A2A depth 15；
-  `route-helpers` 注释里的 2 是过时注释；codeteam 当前 15 + guards，
-  DP-F018SURFACE-2 待重拍，见 `0010` §3.8）；
+  `route-helpers` 注释里的 2 是过时注释；codeteam 已拍 15 + guards，
+  见 `0010` §3.8）；
 - 跨 thread 还要求同 user、target thread active/not deleted/有 projectPath，并写
   `extra.crossPost` provenance。
 
@@ -587,7 +588,7 @@ operator 发消息
 | 客户端幂等键 | `clientMessageId`（MCP client） | `piExtToolCallId`（pi extension） | 见 0013；有意分歧 |
 | operator 寻址 | agent message 行首 `@co-creator` + `mentionsUser` | 同一语义；operator 不是 QueueTarget | operator 回复仍是新 user message |
 | custody / handoff | ball custody、action lease、wait continuation | v1 不做 custody；operator decision 是普通 message | 见 0005 §7 |
-| A2A depth | 实际默认 15（`route-helpers` 注释 2 过时） | v1 15 + budget/guard | 见 0010 §3.8；DP-F018SURFACE-2 待重拍 |
+| A2A depth | 实际默认 15（`route-helpers` 注释 2 过时） | v1 15 + queue cap 5 + substantive-aware loop guard | 见 0010 §3.8；DP-F018SURFACE-2=A |
 | draft flush | 2s / 2000 chars | 100ms / 4KB | 见 0010 §3.6.1 |
 | queue depth | user source 5 | post/cross 1、multi_mention 2-3；queue cap 待定 | F018 R2 定常量 |
 | multi_mention | `MultiMentionOrchestrator`：status/timeout/callback/aggregate | 完整 orchestrator：`multi_mention_requests/responses` + 聚合 system message | v1 对齐，不再做“假 fan-out” |
