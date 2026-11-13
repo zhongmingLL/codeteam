@@ -23,7 +23,7 @@ Operator 拍板包。每个 packet 只给价值取舍、推荐、证据和“不
 | 2026-11-11 | `2026-11-11-dp-f018-terminal-aggregate.md` | decided: 1=A/2=A/3=A/4=A/5=A/6=A/7=A | `../0010-a2a-runtime-chain.md` |
 | 2026-11-11 | `2026-11-11-dp-f018-recovery-liveness.md` | decided: 1=A/2=A/3=A/4=A/5=A/6=A/7=A | `../0010-a2a-runtime-chain.md` |
 | 2026-11-11 | `2026-11-11-dp-f018-operator-journey.md` | decided: A/B/E；C/D investigation complete | `../0010-a2a-runtime-chain.md`、`../0015-codeteam-operator-journey-audit.md` |
-| 2026-11-12 | `2026-11-12-dp-f018-surface-depth-readmodels.md` | decided: 1/2/3 + DraftStore F-15 | `../0010-a2a-runtime-chain.md`、`../0015-codeteam-operator-journey-audit.md` |
+| 2026-11-12 | `2026-11-12-dp-f018-surface-depth-readmodels.md` | decided: 1/2/3；F-15 契约见 `0017` | `../0010-a2a-runtime-chain.md`、`../0015-codeteam-operator-journey-audit.md` |
 
 拍板格式：`DP-XXX-N=A`，多项一行。2026-10-25 已 decided：ball-custody A/A/A、memory A/A/A、observability A/A/B、bubble-pipeline A（W1 冻结，W7 approved-for-direction）、github-signals A/A（GitHub-only + 复用 tasks/waits/audit/forge_deliveries，含 audit 收窄护栏）、plugin A/A（skill surface only + repo-local curated）、skill 内容迁移 A/A/A（矩阵 + W0/W4 范围 + 一次性 fork）；merge authority **D**（clowder parity；A 仅零-secret 临时偏差，不得写成 clowder SOP；漂移审计见 `../merge-authority-drift-audit.md`）；W0–W4 dogfood **`DP-MERGE-2=A`**（D-first，local `MergeExecutor`；W8 GitHub adapter）；harness-eval **A/A/A**（P0 envelope/finding/lifecycle；artifacts+events；review/eval 分账）；前端复用 **`DP-WEB-1=B`**（W7a C + W7b Console 均 classic）。
 
@@ -38,7 +38,7 @@ Operator 拍板包。每个 packet 只给价值取舍、推荐、证据和“不
 2026-11-13 定稿：**`DP-F018SURFACE=A/A/A`**：post/cross 单 successor + `multi_mention`
 唯一 fan-out；A2A depth 15 + per-thread queue cap 5 + substantive-aware ping-pong/
 early-stop；F018 定义 `QueueView`/`LiveInvocationView`/`MessageDispatchSummary` domain
-DTO。附 `ResponseDraftStore` 缺口 F-15。
+DTO。F-15 `ResponseDraftStore` 契约见 `../0017-response-draft-store.md`。
 
 > 覆盖审计（2026-10-25）：11/11 decided packet 均有 plans 落点，逐项映射见 `../../plans/0007-architecture-plan-coverage.md` §1.1；三猫 v2 复审全部 accept，0007 冻结为唯一对账索引。
 

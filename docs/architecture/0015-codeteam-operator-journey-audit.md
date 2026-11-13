@@ -131,7 +131,7 @@ Hub / CLI / API（W7a，当前缺失）
 | invoke-single-agent | invokeSingleCat；provider/stream/retry | 同构；只负责 provider/stream | aligned | P2 |
 | TurnExecution | child canonical execution | 同构；`completed` 命名 | aligned | P1（与 attempt 双状态） |
 | InvocationAttempt | 无独立 child attempt 状态 | 新增 append-only attempt 台账 + state | **problem** | P1 |
-| ResponseDraft/R | DraftStore + processing R | `response_drafts` 表 + 行为草图；无 Store 契约 | **partial** | P2 |
+| ResponseDraft/R | DraftStore + processing R | `response_drafts` + `0017` ResponseDraftStore 契约（snapshot/seq/delete/orphan） | adapted | P2 |
 | Credential/A2A tools | MCP callback + `clientMessageId` | pi extension + `piExtToolCallId` | adapted（合理） | P2 |
 | Terminal collector | `PerCatTerminalDispositionCollector` | `PerAgent...`；DB latest attempt | aligned | P2 |
 | Recovery | startup + zombie + owner reaper | 单 startup + 单 serialized reaper | adapted | P2 |
@@ -359,17 +359,19 @@ Hub / CLI / API（W7a，当前缺失）
   terminal 删除后仍能 replay/conflict。
 - 立场：**P3，保留。**
 
-#### F-15 ResponseDraftStore 只有表/行为草图，没有 Store 契约（P2，缺件）
+#### F-15 ResponseDraftStore 只有表/行为草图，没有 Store 契约（P2，已设计）
+
+> 2026-11-13 契约已落 `0017-response-draft-store.md`：create + 全量 snapshot
+> upsert(seq CAS) + getByTurn/getByThread + delete/listOrphans；无 TTL；T2 删除失败
+> 保留 `response_pending`，T4 重试。状态 draft-for-review，待非作者 review 后实现。
 
 - 已有：`response_drafts` 表、100ms/4KB bounded flush、`message_end` 覆盖、T2 删除、
   T4 用 draft 恢复 R。
-- 缺：`ResponseDraftStore` interface；append/upsert/merge 语义；`seq` 单调、重复/乱序
-  事件处理；tool event 按 `toolId` 合并；thinking 追加；并发写/乐观锁；初始行由谁创建；
-  orphan/删除失败/保留策略；Hub 重连读取 API；draft 大小上限；对应测试。
-- 判断：这不是“已经有设计”，而是 durable stream 的存储层契约未冻结。
-- 建议：R2 前补 `ResponseDraftStore` 契约（0010 §3.6.1/§4.3.2 或独立 0017）；详细缺口见
-  `decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md` §5。
-- 立场：**P2，补契约；不阻塞 F-07/F-08/F-09 已拍决策。**
+- 本轮补齐：`ResponseDraftStore` interface；`create`/`upsertSnapshot(seq CAS)`；
+  tool event 在 WorkerEventSink 内存按 `toolId` 合并；单 writer；初始行由 T1 dispatch
+  创建；T2 删除失败/T4 重试；Hub 重连读取；orphan 清理；测试矩阵。
+- 判断：契约已冻结，不再靠“表 + 一句行为”实现。
+- 立场：**P2，契约已落；待非作者 review 后实现。**
 
 ### 3.3 DP-C 调查：Clowder 到底有没有 InvocationAttempt？
 

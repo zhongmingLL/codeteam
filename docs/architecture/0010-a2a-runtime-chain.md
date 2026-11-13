@@ -836,7 +836,7 @@ for entry of entries:
    `attempt = 该 target 的最新 attempt + 1`，无历史则为 1，即 target attempt）
    + 创建 processing R + `TurnExecutionStore.createRunning`（core）
    + `bindAppended` 回填 `turn_execution_id`/`response_message_id`/`settlement='streaming'`
-   + `InvocationRegistry.create`；
+   + `InvocationRegistry.create` + `ResponseDraftStore.create`（空 snapshot，seq=0）；
 5. **QueueProcessor 外层事务**：parent + 上述 dispatch 子事务 +
    `retireTargets(claimId, 已派发 targetKeys)`；`ControlTransaction` 可重入；
 6. 事务外：启动 provider（pi worker）；
@@ -1306,7 +1306,8 @@ async function* routeSerial(input: RouteInput): AsyncIterable<AgentStreamEvent> 
    （`parentInvocationId` + `turnExecutionId`）；`TurnExecutionStore.createRunning`
    （core；幂等；同 session 唯一 running）；`bindAppended`
    （`turn_execution_id`/`response_message_id`/`settlement='streaming'`）；
-   `InvocationRegistry.create`（credential，绑 child id）；
+   `InvocationRegistry.create`（credential，绑 child id）+
+   `ResponseDraftStore.create`（空 snapshot，seq=0）；
 5. `loadHistory`（§3.5.1）→ `deliveryBoundarySeq`；
 6. `workerPool.ensure`（ephemeral；spawn ~0.5s；pi v1 一 worker 一 session）+
    `bindWorker`；
@@ -1776,6 +1777,7 @@ attempt start（T1 dispatch transaction）:
   bindAppended: turn_execution_id = turnExecutionId
                 response_message_id = R.id
                 settlement = 'streaming'
+  create response_drafts(seq=0, content='', blocks=[], toolEvents=[])
   → credential + retireTargets                   // same transaction
 stream:
   message_update.text_delta / tool events → response_drafts(turnExecutionId)
@@ -1820,7 +1822,8 @@ T4 recovery（ResponseRecoveryService）:
 4. dispatch 事务：`appendQueued` → `markStarting`；创建 processing R
    （`parentInvocationId` + `turnExecutionId`）；`TurnExecutionStore.createRunning`；
    `bindAppended`（`turn_execution_id`/`response_message_id`/`settlement='streaming'`；
-   `worker_id=null`）；`InvocationRegistry.create`（credential，绑 child id）；
+   `worker_id=null`）；`InvocationRegistry.create`（credential，绑 child id）+
+   `ResponseDraftStore.create`（空 snapshot，seq=0）；
 5. `loadHistory`（§3.5.1）→ `deliveryBoundarySeq`；
 6. `WorkerPool.ensure` + `attempt.bindWorker(workerId)`；
 7. build prompt + provider/prompt/stream；prompt RPC 接收后
@@ -1882,12 +1885,14 @@ type AgentStreamEvent =
 - processing R 是 `messages` 行；history assembly/read model 必须按 `lifecycle.status`
   区分 processing 与 terminal，不能把 processing R 当 completed response。
 - stream：
-  - `WorkerEventSink` 处理 `message_update.text_delta` → 追加到
-    `response_drafts(turnExecutionId)`；
-  - tool start/end → 追加 tool event 到 draft；
-  - bounded flush（如 100ms / 4KB）；同时发 ephemeral `AgentStreamEvent` 给 UI 做即时反馈；
+  - `WorkerEventSink` 在内存 accumulator 追加 `message_update.text_delta` / thinking；
+    tool start/end 按 `toolId` 合并；
+  - bounded flush（目标 100ms / 4KB）时调用
+    `ResponseDraftStore.upsertSnapshot(turnExecutionId, seq, 全量 snapshot)`，同时发
+    ephemeral `AgentStreamEvent` 给 UI 做即时反馈；
   - **每个 delta 不写 messages/run_events**；draft 是唯一 in-flight body。
-- `message_end`：用最终 text/tool events 覆盖 draft，避免 delta 重复。
+- `message_end`：用最终 text/tool events 覆盖 accumulator，再 upsert 全量 snapshot，
+  避免 delta 重复。
 - `agent_settled`：触发 T1；child terminal 事务把 TurnExecution 标 terminal、
   attempt.delivery_state 投影为 handled/failed/interrupted/canceled、
   attempt.settlement 标 `response_pending`。
@@ -1904,6 +1909,9 @@ type AgentStreamEvent =
   不伪装成 prestart `delivery_failure`。
 - failed/interrupted/canceled：R 也走 terminal settlement，正文带已 stream 的部分 +
   explanation；不再产生第二条 `delivery_failure`（prestart 未创建 R 除外）。
+
+`ResponseDraftStore` 的完整 interface、seq CAS、删除失败/T4 重试和测试矩阵见
+`0017-response-draft-store.md`。
 
 **为什么不是每 delta 写 messages**
 
@@ -3196,6 +3204,9 @@ CREATE INDEX response_drafts_thread
 - stream 每 100ms 或 4KB flush 一次；`message_end` 用最终值覆盖；R terminal 后删除。
 - daemon 崩溃时 draft 保留；`response_pending` + startup reconciler 用它结算 R。
 
+Store 契约见 `0017-response-draft-store.md`：`create` + `upsertSnapshot(seq)` 全量
+snapshot，不在 Store 做 delta merge；T2 删除失败保留 `response_pending`，T4 重试。
+
 ### 4.4 `invocation_credentials`
 
 ```sql
@@ -3466,7 +3477,8 @@ parent partial_failed: successful=[A], failed=[B]
   （session/worker/provider/model/usage）+ response settlement；
   latest-attempt 聚合；显式 retry 追加 attempt+1；不做跨重启持久化 backoff。
 - `ResponseDraftStore` + `response_drafts`：processing R 的 in-flight body；100ms/4KB
-  bounded flush；不是 message history。
+  bounded flush（provisional）；全量 snapshot + seq CAS；不是 message history。契约见
+  `0017-response-draft-store.md`。
 - T2 `RouteResponseCommitter`：正常路径提交 R terminal、settle input dispatchRefs、
   删除 draft、清 `response_pending`、A2A successor。
 - T4 `ResponseRecoveryService` + `settleResponseFromDraft`：只修未完成 R /

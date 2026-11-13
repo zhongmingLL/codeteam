@@ -167,39 +167,23 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 
 **决策：`DP-F018SURFACE-3=A`**
 
-## 5. 附：`ResponseDraftStore` 缺口（F-15，不是本次三选一）
+## 5. 附：`ResponseDraftStore`（F-15）
 
-### 现状
+> 2026-11-13 契约已落 `0017-response-draft-store.md`。这里只保留结论，旧候选
+> `appendText`/`appendThinking`/`upsertToolEvent` 已弃用：Store 不在 SQL 里做 delta
+> merge，避免顺序/并发复杂度。
 
-codeteam **有表和行为草图，但没有完整 Store 契约**：
-
-- 已有：`response_drafts` 表（§4.3.2）、`attempt_id`/`turn_execution_id` 1:1、
-  100ms/4KB bounded flush、`message_end` 覆盖、T2 删除、T4 用 draft 恢复 R。
-- 未定义：`ResponseDraftStore` interface；append/upsert/merge 语义；`seq` 单调与乱序/
-  重复事件处理；tool event 按 `toolId` 合并；thinking 追加；并发写/乐观锁；初始行由谁创建；
-  orphan/失败删除/保留策略；Hub 重连读取 API；draft 大小上限；对应测试。
-
-### 判断
-
-这是 **P2 缺件**，不是“已经有设计”。它不阻塞 F-07/F-08/F-09 的三个拍板，但阻塞 R2 的
-durable stream 实现。建议在 R2 前补 `ResponseDraftStore` 契约（0010 §3.6.1/§4.3.2 或
-独立 0017），至少覆盖：
-
-```ts
-interface ResponseDraftStore {
-  create(input: { attemptId; turnExecutionId; parentInvocationId; threadId; agentId }): ResponseDraft;
-  appendText(input: { turnExecutionId; seq; delta }): ResponseDraft;
-  appendThinking(input: { turnExecutionId; seq; delta }): ResponseDraft;
-  upsertToolEvent(input: { turnExecutionId; seq; toolId; event }): ResponseDraft;
-  replaceFromMessageEnd(input: { turnExecutionId; content; contentBlocks; toolEvents; thinking }): ResponseDraft;
-  getByTurn(turnExecutionId: string): ResponseDraft | null;
-  listByThread(threadId: string, cursor?): ResponseDraft[];
-  delete(turnExecutionId: string): void;
-  listOrphans(olderThan: number): ResponseDraft[];
-}
-```
-
-具体签名可在实现时调整；关键是**单写者、seq 幂等、并发合并、保留/清理**要有契约。
+- `create`：T1 dispatch 事务内建空 snapshot；`attemptId + turnExecutionId` 幂等。
+- `upsertSnapshot`：WorkerEventSink 在内存累积 text/thinking/tool events，flush 时写
+  全量 snapshot；`seq` 严格递增，CAS `seq < :seq`，同/低 seq 返回 `stale`。
+- 单 writer：只有 WorkerEventSink 写；T2/T4 只删；Hub 只读。
+- 无 TTL：draft 活到 R terminal；T2 删除失败保留 `response_pending`，T4 只重试
+  delete + settle，不重复 commit R。
+- 读取：`getByTurn`（重连）、`getByThread`（live/cursor）、`getByAttempt`（T2/T4）。
+- 清理：`delete` / `deleteByThread` / `listOrphans`；删除后 late flush 返回 `not_found`，
+  不重建 draft。
+- 测试：seq 幂等/乱序、snapshot 覆盖、删除失败/T4、crash 窗口、parallel/multi_mention
+  per-child draft、重连读取。
 
 ## 6. 决策状态
 

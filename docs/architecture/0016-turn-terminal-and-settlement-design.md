@@ -436,7 +436,8 @@ projection 失败，startup `repairFromCanonical` 修复。这是 Clowder
 正常 route 的 R 提交是独立事务：
 
 1. `MessageStore.commitLifecycleResponseTerminal`（R processing → terminal）；
-2. `draftStore.delete`（失败保留 pending，下次 settlement 再删）；
+2. `draftStore.delete`（失败保留 pending，下次 settlement 再删；契约见
+   `0017-response-draft-store.md`）；
 3. `attempt.settlement='settled'`；
 4. `clearResponsePending`；
 5. A2A successor admission（同事务或紧随，按现有 route 实现）。

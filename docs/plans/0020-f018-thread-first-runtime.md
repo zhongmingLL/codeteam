@@ -47,7 +47,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   `settlement`/`response_message_id`。
 - `response_drafts`：processing R 的 in-flight body；`attempt_id`/`turn_execution_id`
   1:1；stream 目标 100ms/4KB bounded flush（R2 benchmark 后定，不写成不可变契约）；
-  R terminal 后删除。
+  R terminal 后删除；Store 契约见 `0017-response-draft-store.md`
+  （create + upsertSnapshot(seq CAS) + get/delete/orphan）。
 - `invocation_credentials`：child TurnExecution capability；allowedTools/
   toolCallClaims（piExtToolCallId claim map）/state/disposition（含 replaced）；无 taskId/role/run。
 - `invocation_attempts.settlement`：`NULL | streaming | response_pending | settled`；
@@ -102,7 +103,9 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   记录 `worker_spawn_ms` / `worker_busy_ms` / `worker_evicted_count`。
 - live stream（DP-F018X-2=B）：attempt start 创建 attempt + processing R；`WorkerEventSink` 处理
   `message_update.text_delta` + tool start/end，写 `response_drafts`，同时发 ephemeral
-  `AgentStreamEvent` 给 UI；不按 delta 写 messages。
+  `AgentStreamEvent` 给 UI；不按 delta 写 messages。draft 用
+  `ResponseDraftStore.upsertSnapshot` 全量 snapshot + seq CAS；T2 删除失败保留
+  `response_pending`，T4 重试。
 - response settlement（DP-C/DP-D=A/A，2026-11-12）：
   - T1 `invoke-single-agent` + `TurnExecutionLifecycle`：TurnExecution terminal +
     `projectChildTerminal` + attempt `settlement='response_pending'` + credential
