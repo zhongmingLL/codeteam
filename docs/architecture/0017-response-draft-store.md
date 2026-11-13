@@ -302,14 +302,42 @@ settlement=`response_pending`；draft 继续保留给 T2/T4。
 
 ## 11. Clowder 映射
 
-| Clowder | codeteam |
-|---|---|
-| `DraftRecord.userId/threadId/invocationId` | `threadId/agentId/attemptId/turnExecutionId`；user 派生 |
-| `upsert(draft)` | `create` + `upsertSnapshot(seq)` |
-| `getByThread` | `getByThread`（cursor/limit）+ `getByTurn`/`getByAttempt` |
-| `delete` / `deleteByThread` | 同 |
-| 无 TTL；R terminal 后删；delete 失败由 pending 账本重试 | 同；T2 删除失败保留 `response_pending`，T4 重试 |
-| `toolEvents`/`thinking` 全量 field | 同，全量 JSON |
+| 维度 | Clowder | codeteam | 判断 |
+|---|---|---|---|
+| record key | `userId + threadId + invocationId` | `attemptId + turnExecutionId`；user 从 parent/thread 派生 | 身份适配；codeteam 单 user v1，不把 userId 写进 draft |
+| 创建时机 | route stream 首次 flush 时 lazy `upsert` | T1 dispatch 事务显式 `create` 空 snapshot | 有意差异：codeteam 有 attempt/TurnExecution/R 的 FK/1:1，需同事务建行 |
+| 写入 | `upsert(draft)` 全量 snapshot | `upsertSnapshot(seq)` 全量 snapshot | 语义相同；codeteam 加 seq CAS |
+| 字段 | content/toolEvents/thinking/metadata/extra | content/contentBlocks/toolEvents/thinking | codeteam 不存 metadata/extra/rich；T2 从最终正文生成 rich |
+| 读取 | `getByThread(userId, threadId)` | `getByThread(threadId, cursor/limit)` + `getByTurn` + `getByAttempt` | 存储适配；codeteam settlement 用显式 attempt/turn 定位 |
+| 删除 | `delete(userId, threadId, invocationId)` / `deleteByThread` | `delete(turnExecutionId)` / `deleteByThread` | 语义相同，key 不同 |
+| TTL | 无 TTL（F117 KD-21/23） | 无 TTL | 相同 |
+| R terminal 后删除 | route commit R → delete draft → clear pending | T2 R terminal → delete draft → attempt settled + clear pending | 相同顺序；codeteam 拆成 T2/T4 owner |
+| 删除失败 | 保留 response-pending，下次 settlement 重试 | 保留 `response_pending`，T4 只重试 delete + settle | 相同 |
+| settlement | `settleResponseFromDraft` 按 thread+invocationId 读 draft，提交 R，再 delete/clear | T2 `RouteResponseCommitter` + T4 `ResponseRecoveryService`；读 draft 提交 R，delete/clear | 语义相同；owner 拆分 |
+| orphan 清理 | Redis thread index 在 `getByThread` 时顺手清理 stale member | `listOrphans` + `deleteByThread` | 存储适配；SQLite 无 Redis index |
+| seq | 无 seq；Redis 后写覆盖，`updatedAt` 只做时间 | `seq` 严格递增 + CAS | codeteam 扩展：防重复/乱序 flush + 重连去重 |
+| 多 user 隔离 | userId 作为 key 的一部分 | thread access + user 派生；draft 不存 userId | v1 单 user 有意简化；multi-user 再加 userId/ACL |
+
+### 11.1 语义相同的部分
+
+- 一个 child turn 只有一份 draft；不是 message history。
+- flush 写全量 snapshot（Clowder `upsert`；codeteam `upsertSnapshot`）。
+- 不设 TTL；draft 活到 R terminal。
+- R terminal 后删除 draft；删除失败保留 pending，下次 settlement 重试。
+- Hub 刷新/重连从 processing R + draft 恢复；不把每个 delta 写成 message。
+
+### 11.2 为什么不做逐行照抄
+
+- **存储不同**：Clowder 是 Redis hash + thread index；codeteam 是 SQLite 单表 + FK，
+  所以需要 `getByTurn`/`getByAttempt`、`listOrphans` 和 `deleteByThread`。
+- **身份不同**：Clowder 的 draft key 用 child `invocationId`；codeteam 的 child 坐标是
+  `turnExecutionId`，attempt 是投递台账，两者都要能定位 draft。
+- **创建时机不同**：Clowder 没有 attempt/TurnExecution FK，可以首次 flush lazy create；
+  codeteam 在 T1 dispatch 事务里建空 draft，保证 attempt/R/child/draft 原子绑定。
+- **事件顺序不同**：codeteam 的 stream 事件经 control socket/批处理，可能重复/乱序，
+  所以加 `seq` CAS；Clowder Redis 版本没有这个字段，按后写覆盖。
+- **settlement owner 不同**：codeteam 已拍 T2 route/committer、T4 recovery；Clowder 的
+  settlement 更集中。draft 的读写语义保持不变，只拆 owner。
 
 ## 12. 参考
 
