@@ -127,8 +127,9 @@ reject `agent_disabled`，不能静默降级为隐式路由。
 
 - `targets` 是 `AgentConfig.id`；不是 displayName，也不是 mentionPatterns。
 - operator 用户消息中的显式 `@pattern`（正文任意位置）用 `AgentConfig.mentionPatterns`
-  解析到 `id`；pattern
-  含前导 `@`、trim + 去重、大小写不敏感、全局唯一；未知/歧义 → `agent_not_found`。
+  解析到 `id`；pattern 含前导 `@`、trim + 去重、大小写不敏感、全局唯一；未命中任何
+  pattern 的 `@token` 是普通文本；命中但 registry 缺 → `agent_not_found`；disabled →
+  `agent_disabled`；歧义是 catalog 加载期错误，不到运行期 reject。
 - 匹配规则复用 Clowder：longest-pattern-first + token boundary；跳过 fenced/inline
   code 与 URL-ish token；A2A tool body / agent final response 的正文 `@` 仍不路由。
 - 消息展示用 `displayName`；A2A tool call 用 `id`。

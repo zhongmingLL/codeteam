@@ -68,7 +68,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 |---|---|---|
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
 | R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 `toolCallClaims`）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
-| R2 | same-thread post / thread context；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18/E19/E22 |
+| R2 | same-thread post / thread context；observation；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18/E19/E22 |
 | R3 | cross-thread post；multi_mention orchestrator（status/timeout/aggregate + callback child）；thread access；participants | E3/E4/E5/E6/E8/E10/E11/E16/E21 |
 | R4 | loop guard/idempotency/observation；multi_mention timeout/anti-cascade；多 agent thread；recovery | E17/E20 |
 | R5 | cutover CLI/daemon；旧 code delivery 归档；F018 close | A2A runtime 单一真相 |
