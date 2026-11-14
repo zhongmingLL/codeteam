@@ -34,8 +34,9 @@ source: "Clowder local reference checkout; codeteam F018 0005/0007/0011/0013"
    - `message_lifecycle_updated`：processing R → terminal R 的 durable 快照；
    - `messages_delivered` / `queue_updated`：source 从 Queue 进入 History、队列变化；
    - `spawn_started` / `intent_mode` / `heartbeat`：运行态提示。
-3. **Queue 不是 History**。source message 在 admission 时写 `deliveryStatus='queued'`，
-   真正进入 History 是 delivery 时；UI 不能把 queued 行直接渲染成一条永久消息。
+3. **Queue 不是 History**。source message + queue entry 在 admission 同事务写入；
+   `queued` 是 queue/read-model 投影，不写 `StoredMessage.deliveryStatus`。真正进入
+   History 是 delivery 时；UI 不能把 queued 行直接渲染成一条永久消息。
 4. **draft 不是消息**。流式正文先写 `response_drafts`；它是 processing R 的 in-flight
    body，R terminal 后删除。刷新/重连时，draft 只折叠进它对应的 processing R。
 5. **cancel 是控制面，不是再发一条消息**。单 cancel 只 abort 某个 `(thread, agent)`
@@ -83,10 +84,12 @@ Clowder `messages.ts:328` 的顺序：
    还要求可见性匹配。
 5. target resolution（见 §2.2）。
 6. `InvocationQueue.send`：**message append + queue entry + queue_admissions 同一事务**；
-   `deliveryStatus='queued'`；幂等键由客户端提供或服务端生成。
+   queue entry `status='queued'`，read model 投影 delivery 状态；幂等键由客户端提供或
+   服务端生成。
 7. 队列满 → HTTP 429 `QUEUE_FULL`，不写 ghost message。
-8. `onQueueEntriesAdmitted` 发布 participants；`messages_queued`/`queue_updated` 只做
-   Queue 投影，不把 source 提前塞进 History。
+8. Clowder 在 `onQueueEntriesAdmitted` 发布 participants；codeteam v1 有意改为
+   **首个 child `completed` 时写 `thread_participants`**（0009/0005 E5，0007 T1）。
+   `messages_queued`/`queue_updated` 只做 Queue 投影，不把 source 提前塞进 History。
 9. `notifyAdmission` 唤醒 QueueProcessor 的 per-thread drain。
 
 ### 2.2 target / intent 解析
@@ -169,7 +172,7 @@ claim exact target set
   projection，不是 Queue 列。
 - 队列深度：Clowder user source 上限 5（`InvocationQueue.ts:167`）；codeteam target
   上限是工具参数（post/cross 1，multi_mention 2-3）；operator ingress 的 multi-target
-  不是工具调用，不受该上限约束。Queue cap 需在实现时定。
+  不是工具调用，不受该上限约束。Queue cap 已定为 per-thread 5（user/A2A 分开计数）。
 - retry deferral（`queue-retry-deferrals.ts`）：base 10s，连续失败翻倍，上限 1h；
   只对 pre-handoff 仍 pending 的 failed/interrupted target。已 terminal 失败必须显式
   `requestRetry` 追加 attempt+1，不重新 admission source。
@@ -555,7 +558,7 @@ Clowder 对 `routing_preflight_rejected` 保留 queue entry，等待恢复；cod
 ```text
 operator 发消息
   → target busy / thread active / queue 有前序
-  → source message 已持久化，deliveryStatus=queued
+  → source message 已持久化，queue entry status=queued（read model 投影）
   → queue entry queued；Queue panel 显示
   → History 不出现 source（或只显示 queued receipt，按 UI 设计）
   → 前序 terminal → onInvocationComplete → drain
@@ -594,7 +597,7 @@ operator 发消息
 | custody / handoff | ball custody、action lease、wait continuation | v1 不做 custody；operator decision 是普通 message | 见 0005 §7 |
 | A2A depth | 实际默认 15（`route-helpers` 注释 2 过时） | v1 15 + queue cap 5 + substantive-aware loop guard | 见 0007 §3.8；DP-F018SURFACE-2=A |
 | draft flush | 2s / 2000 chars | 100ms / 4KB | 见 0007 §3.6.1 |
-| queue depth | user source 5 | post/cross 1、multi_mention 2-3；queue cap 待定 | F018 R2 定常量 |
+| queue depth | user source 5 | post/cross 1、multi_mention 2-3；per-thread cap 5（user/A2A 分开计数） | 已定，见 0007 §3.1 |
 | multi_mention | `MultiMentionOrchestrator`：status/timeout/callback/aggregate | 完整 orchestrator：`multi_mention_requests/responses` + 聚合 system message | v1 对齐，不再做“假 fan-out” |
 | recovery | StartupReconciler + Zombie + OwnerReaper 多件套 | 单 startup + 单 serialized reaper | 见 DP-F018RECOVERY |
 | session | active/sealing/sealed + restore/compact | active + lightweight seal；无 restore/compact | 见 0010 |

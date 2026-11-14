@@ -487,14 +487,17 @@ interface AgentSessionManager {
 runAgentTurn
   1. ensureActive(threadId, agentId)
        → active session 行；可能先做 resume 前置检查 / lightweight seal + seq+1 reset
-  2. attempt(queued) + TurnExecution.createRunning
-       → 唯一 running per session，先拿执行互斥
-  3. markStarting + bindAppended（turnExecutionId/R/settlement=streaming；workerId = null）
-  4. loadHistory(threadId, agentId)
+  2. WorkerPool.checkCapacity
+       → 容量不足：target 保持 pending，releaseClaim + defer；不创建 attempt/R/child
+  3. attempt(queued) + markStarting
+       → 先拿唯一 active delivery（starting）；执行互斥在这里，不在 TurnExecution
+  4. dispatch：processing R + TurnExecution.createRunning + bindAppended
+       （turnExecutionId/R/settlement=streaming；workerId = null）
+       + InvocationCredential.create + ResponseDraftStore.create
+  5. loadHistory(threadId, agentId)
        → rows + boundarySeq；只读 cursor，不 ack
-  5. acquireWorker(session)
+  6. acquireWorker(session)
        → WorkerHandle；attempt.bindWorker(handle.workerId)
-  6. InvocationCredential.create
   7. build prompt + provider prompt
        → RPC send 成功后 attempt.markPromptDelivered({ deliveryBoundarySeq, now })
   8. stream → response_drafts；首次可见输出 → sessionManager.recordUserVisibleOutput；
@@ -511,9 +514,9 @@ runAgentTurn
 
 顺序理由：
 
-- **互斥先于 history/worker**：`markStarting` + `bindAppended` 在 spawn 前拿唯一
-  active delivery（`starting|appended`），
-  避免两个并发 turn 都构建 history、都 spawn worker。
+- **互斥先于 TurnExecution/history/worker**：`markStarting` 先拿唯一 active delivery
+  （`starting`），随后 `createRunning`/`bindAppended`；避免两个并发 turn 都创建
+  TurnExecution、都构建 history、都 spawn worker。
 - **history 先于 worker**：prompt 构建失败/上下文不可读时，不浪费一次
   ~0.5s 的 worker spawn；history 只读 cursor，不改变投递状态。
 - **ack 在 T1 child terminal 事务内**：cursor 只在本轮有 durable terminal 时前进；
@@ -554,12 +557,13 @@ reset(threadId, agentId, reason):
 
 | 失败点 | 持久状态 | cursor | 下一轮行为 |
 |---|---|---|---|
-| worker_capacity / spawn 前失败 | attempt failed（无 promptDelivered） | 不 ack | 重放同一批消息；QueueProcessor defer |
-| credential / prompt 构建失败 | attempt failed（无 promptDelivered） | 不 ack | 重放同一批消息 |
+| worker_capacity 预检失败（dispatch 前） | 无 attempt/R/child；target 保持 pending | 不 ack | QueueProcessor defer；不写 delivery_failure |
+| dispatch 事务内失败（credential/R/child create） | 事务回滚，无 attempt/R/child | 不 ack | 写 delivery_failure；target 可重试 |
+| dispatch 后 spawn / prompt 构建失败 | attempt starting/appended → failed（无 promptDelivered） | 不 ack | 重放同一批消息；写 delivery_failure |
 | provider prompt 已接收后失败 | attempt failed/interrupted + R failed | tx A ack（promptDelivered=true） | 不重放；下一轮看到 failed R |
 | 取消在 prompt 前 | attempt canceled | 不 ack | 重放 |
 | 取消在 prompt 后 | attempt canceled + R canceled | tx A ack | 不重放 |
-| 崩溃在 tx A 前 | attempt running | 不 ack | startup reconciler terminalize；按 promptDelivered 决定是否 ack |
+| 崩溃在 tx A 前 | attempt starting/appended（不是 running） | 不 ack | startup reconciler terminalize；按 promptDelivered 决定是否 ack |
 | 崩溃在 tx A 后、R settlement 前 | settlement=response_pending | 已 ack | response reconciler 收敛 R；不重放 |
 | 崩溃在 R settlement 后、worker release 前 | worker stale | 已 ack | reaper retire；不重放 |
 
@@ -633,11 +637,12 @@ domain 子集**，不是 Clowder 的 Redis adapter。不能按类名 1:1 对表�
 1. `(thread_id, agent_id)` 同时只有一行 active；`UNIQUE(thread_id, agent_id, seq)` 保留 sealed 链。
 2. `piSessionId` 与 `piSessionFile` 同时为空或同时非空；`piSessionId` 非空时全局唯一。
 3. `workingDirectory` 非空；只允许在创建时写入；v1 换工作区 → typed reject。
-4. `messageCount` 单调不减；每个 completed invocation 恰好 +1；首次可见输出提前 0→1，
+4. `messageCount` 单调不减；每个 completed turnExecution 恰好 +1；首次可见输出提前 0→1，
    done 通过 `lastCountedTurnExecutionId` 去重；无可见输出的 completed turn 也 +1。
 5. `consecutiveResumeFailures`：resume 失败 +1，成功 completed turn 归零，3 次触发 reset。
 6. `deliveryCursor` 单调前进；只有 `promptDelivered && terminal` 才 ack；只有 reset 能 rewind。
-7. 同一 session 同时最多一个 running attempt；同一 worker 同时只服务一个 session。
+7. 同一 session 同时最多一个 active delivery（`starting|appended`）；running
+   TurnExecution 由该 delivery 派生；同一 worker 同时只服务一个 session。
 8. worker release 按 `handle.generation` 幂等；stale release 不能 retire replacement。
 9. child terminal 事务 A 要么同时提交 terminal + messageCount + cursor ack，要么全回滚。
 10. v1 有 lightweight seal（active → sealed + 新行 seq+1），没有 transcript/digest/

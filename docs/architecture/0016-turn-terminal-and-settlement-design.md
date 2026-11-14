@@ -296,7 +296,11 @@ CREATE TABLE invocation_attempts (
   CHECK (settlement <> 'streaming' OR delivery_state = 'appended'),
   CHECK (settlement <> 'response_pending' OR delivery_state NOT IN ('queued', 'starting', 'appended')),
   CHECK (settlement <> 'settled' OR delivery_state NOT IN ('queued', 'starting', 'appended')),
-  CHECK (prompt_delivered_at IS NULL OR delivery_state = 'appended'),
+  CHECK (prompt_delivered_at IS NULL OR worker_id IS NOT NULL),
+  CHECK (delivery_state <> 'handled' OR prompt_delivered_at IS NOT NULL),
+  CHECK (prompt_delivered_at IS NULL OR delivery_state IN (
+    'appended', 'handled', 'failed', 'interrupted', 'canceled'
+  )),
   UNIQUE (parent_invocation_id, target_agent_id, attempt),
   FOREIGN KEY (parent_invocation_id)
     REFERENCES invocation_records(invocation_id) ON DELETE RESTRICT,
@@ -321,7 +325,7 @@ CREATE TABLE invocation_attempts (
 ```ts
 interface InvocationAttemptStore {
   appendQueued(input: {...}): AttemptResult;
-  markStarting(attemptId: string, input: { claimId: string; now: number }): AttemptResult;
+  markStarting(attemptId: string, input: { now: number }): AttemptResult;
   bindAppended(attemptId: string, input: {
     turnExecutionId: string;
     agentSessionId: string;
@@ -379,7 +383,7 @@ interface InvocationAttemptStore {
 | 阶段 | owner | 唯一职责 | 不做什么 |
 |---|---|---|---|
 | T1 child terminal | `invoke-single-agent` + `TurnExecutionLifecycle` | `TurnExecution.transitionTerminal`；project credential terminal；project attempt `handled/failed/...`；set settlement `response_pending` | 不提交 response R；不删 draft；不写 parent aggregate |
-| T2 response commit | `route-serial` / `route-parallel` | commit response R（content/toolEvents/thinking）；delete draft；A2A successor | 不写 child terminal；不写 credential；不写 parent aggregate |
+| T2 response commit | `route-serial` / `route-parallel` | commit response R（content/toolEvents/thinking）；settle input dispatchRefs；delete draft；clear pending；A2A successor | 不写 child terminal；不写 credential；不写 parent aggregate |
 | T3 parent aggregate | `QueueProcessor` + `PerAgentTerminalDispositionCollector` | parent status/successfulAgentIds/terminalReason；queue entry terminal/retry；tracker slot release | 不写 child；不写 credential；不提交正常 R |
 | T4 recovery | `ResponseRecoveryService` | `settleResponseFromDraft` for response_pending/abandoned；`response_missing` recovery | 不改写已完成 child/credential；不重新 terminal parent |
 
@@ -388,11 +392,12 @@ interface InvocationAttemptStore {
 ```text
 invoke-single-agent:
   [T1a] dispatch tx
-    attempt queued→starting→appended
-    TurnExecution.createRunning
-    credential.create
+    attempt queued→starting            // 先拿唯一 active delivery
     response R(processing)
-    attempt.response_message_id=R.id; settlement='streaming'
+    TurnExecution.createRunning
+    attempt.bindAppended(turnExecutionId, R.id, settlement='streaming')
+    credential.create
+    draft.create
   stream provider events
   [T1b] finally:
     canonical = TurnExecution.transitionTerminal(completed)
@@ -403,6 +408,7 @@ invoke-single-agent:
 
 route-serial/parallel:
   [T2] commitLifecycleResponseTerminal(R, final body)
+       settleLifecycleResponseInputs(R) / advanceLifecycleInputDispatch(settled)
        draftStore.delete
        attempt.settlement='settled'
        clearResponsePending
@@ -436,11 +442,12 @@ projection 失败，startup `repairFromCanonical` 修复。这是 Clowder
 正常 route 的 R 提交是独立事务：
 
 1. `MessageStore.commitLifecycleResponseTerminal`（R processing → terminal）；
-2. `draftStore.delete`（失败保留 pending，下次 settlement 再删；契约见
+2. `settleLifecycleResponseInputs` / `advanceLifecycleInputDispatch(settled)`；
+3. `draftStore.delete`（失败保留 pending，下次 settlement 再删；契约见
    `0017-response-draft-store.md`）；
-3. `attempt.settlement='settled'`；
-4. `clearResponsePending`；
-5. A2A successor admission（同事务或紧随，按现有 route 实现）。
+4. `attempt.settlement='settled'`；
+5. `clearResponsePending`；
+6. A2A successor admission（同事务或紧随，按现有 route 实现）。
 
 T2 失败不回滚 T1；R 仍 processing、attempt `response_pending`，由
 `ResponseRecoveryService` 从 draft 重试。parent aggregate 可以基于 T1 的 child

@@ -63,7 +63,7 @@ User
             │     ├─ content: TextContent | ToolCallContent | ToolResultContent
             │     └─ lifecycle: input.dispatchRefs / response
             └─< InvocationRecord（source message 的 fan-out parent）
-                  └─< TurnExecution（child）─1:1─ AgentSession
+                  └─< TurnExecution（child）─N:1─ AgentSession
                         └─0..1─ Worker（ephemeral pi 进程）
 ```
 
@@ -276,12 +276,12 @@ interface AgentSession {
   `contentBlocks?`（Text/ToolCall/ToolResult）、`toolEvents?`（执行回放）、
   `lifecycle?`（input/response/delivery_failure）、`replyTo?`、`mentionsUser?`、`seq`、`timestamp`、
   `updatedAt`、`thinking?`、`deletedAt?`/`deletedBy?`、
-  `extra?`（targetAgentIds/rich/crossPost）。
+  `extra?`（targetAgentIds/rich/crossPost/multiMention）。
 - 分层：`content` 是 plain text；`contentBlocks` 是语义内容；`toolEvents` 是执行回放；
   `extra.rich` 是 Hub 呈现块（不是 MessageContent）。三者不互相替代。
 - `StoredMessage.lifecycle` 是 durable 投递回执：input 存 typed `dispatchRefs`
   （target/queueEntryId/attempt/phase/responseMessageId/turnExecutionId）；response 存
-  parent/child/target/status（processing|terminal）/startedAt/completedAt/reason；
+  parent/child/target/status（processing|terminal）/startedAt/endedAt/reason；
   delivery_failure 是独立 system message，记录 inputMessageId/
   requestedTargets/reason。queue live row 保留到 target attempt 终态（`completed`/
   `canceled` 后删除；`partial_failed`/`failed` 作为 retry anchor），`queue_admissions`
@@ -320,7 +320,7 @@ interface InvocationCredential {
 
 token 由 daemon mint，绑定 child `TurnExecution`/thread/agent/session/user；
 没有 task/role/run 字段。`allowedTools` 是 A2A pi extension tools 白名单
-（post/cross/thread_context），不是 AgentConfig 工具策略。
+（post_message/cross_post_message/multi_mention/thread_context），不是 AgentConfig 工具策略。
 
 - `InvocationRegistry` 是 service：`create/verify/commitTerminal`；
 - 存储仍是 `invocation_credentials`；
@@ -417,7 +417,8 @@ thread message / A2A tool
 - `post_message` / `cross_post_message` targets 0 或 1 个 agent；`multi_mention` 固定
   2-3 个 agent（唯一多 target fan-out）；
   `bodyMd` ≤ 32 KiB，`question` / `context` 各 ≤ 5 KiB。
-- `multi_mention` 是完整 orchestrator：一条 message + 一个 queue entry + 一个
+- `multi_mention` 是完整 group lifecycle orchestrator（status/timeout/aggregate；
+  `callbackTo` 只做 metadata、不新建 child）：一条 message + 一个 queue entry + 一个
   `InvocationRecord`(parent) + N 个 `TurnExecution`(child)；另有
   `multi_mention_requests` / `multi_mention_responses` 记录
   `pending/running/partial/done/timeout/failed`、3-20 分钟 timeout、`callbackTo`、
@@ -431,7 +432,8 @@ thread message / A2A tool
   `pi_ext_tool_call_conflict`。
 - 目标 thread 不存在、soft-deleted、跨 user、target agent disabled 都是 typed
   reject，不静默降级。
-- `cross_post_message` 的 target thread 还必须满足 `projectPath` 非空；message 写
+- `cross_post_message` 的 target thread 在 targets 非空时还必须满足 `projectPath` 非空；
+  message-only cross-post（targets=0）不要求 `projectPath`。message 写
   `extra.crossPost = { sourceThreadId, sourceTriggerMessageId }`，后者是 caller 的
   `causal.triggerMessageId`。
 - `multi_mention` 的聚合是 v1 能力；`callbackTo` 只承载结果地址/metadata，
@@ -459,7 +461,7 @@ thread message / A2A tool
 | `runs` → `turn_executions` | 新 child core 表：`turnExecutionId`、`parentInvocationId`、`causal`、status/terminalReason/时间；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
 | 新 `invocation_records` | 消息级 parent：`invocationId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
 | 新 `invocation_attempts` | append-only target delivery/retry ledger + execution binding：attemptId、parentInvocationId、queueEntryId、targetAgentId、attempt、delivery_state、turnExecutionId、agentSessionId、workerId、provider/model、usage、settlement、responseMessageId | dispatch 写入 `delivery_state`；T1 只投影 child terminal；retry 追加新行；旧行不改 |
-| 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、contentBlocks、toolEvents、thinking、seq | dispatch 事务创建 R；stream bounded flush；R terminal 后删除 |
+| 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、toolEvents、thinking | dispatch 事务创建 R；stream bounded flush；R terminal 后删除；最终 contentBlocks 在 T2 生成 |
 | `messages` | 加 `content_json` / `tool_events_json` / `lifecycle_json` / `extra_json` / `thinking` / `deleted_at` / `deleted_by` / `mentions_user`；`body_md` 保持 plain text；legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入 | R1 回填 `extra.rich`、`extra.targetAgentIds`、`lifecycle.input.dispatchRefs`、`mentions_user=0`；无法映射的消息进 preflight 清单；legacy 列 R5 drop |
 | 新 `multi_mention_requests` | group lifecycle：request/targets/callbackTo/status/timeout/expires/parent/source/aggregate | 与 source + queue entry 同事务；R3/R4 |
 | 新 `multi_mention_responses` | per-target outcome：received/timeout/failed + turn/response message 指针 | 与 child terminal/R settlement 同事务/幂等 |
@@ -501,7 +503,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | E15 | session 迁移 | 有 running invocation 的 session 不迁移；等 terminal 后处理；sealing/sealed 留 legacy | migration 测试 |
 | E16 | thread access | 同 user 可见；participants 只做路由；跨 user 拒绝 | auth/ACL 测试 |
 | E17 | loop guard | depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict` | 负例 E2E |
-| E18 | legacy thread 的 `projectPath` 为空 | `post_message`/`cross_post_message` 触发 `thread_project_path_required`；补 `projectPath` 后正常 | 负例 E2E |
+| E18 | legacy thread 的 `projectPath` 为空 | targets 非空的 `post_message`/`cross_post_message` 触发 `thread_project_path_required`；message-only 不受影响；补 `projectPath` 后正常 | 负例 E2E |
 
 ## 6. 影响面与风险
 
@@ -565,7 +567,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | D6 | v1 工具权限 | pi 工具策略由 pi 执行层负责；A2A pi extension tools 的 allowlist 在 InvocationCredential；AgentConfig 不定义 tool policy | operator 2026-11-04，2026-11-06 修订 |
 | D7 | A2A runtime 链路 | 直接复用 Clowder 10 组件骨架：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/AgentRouter/runAgentTurn/routeAgents/invoke-single-agent/TurnExecution/InvocationRegistry/terminal+recovery；v1 轻量化；routeSerial 单体实现删除，serial 保留薄循环 | operator 2026-11-06 |
 | D8 | session / history / settlement | AgentSessionStore + ephemeral WorkerPool + 薄 AgentSessionManager；per-`(thread, agent)` deliveryCursor；v1 durable streaming：processing R + response_drafts + attempt settlement | 工程结论 2026-11-09 Q&A；Worker/stream 2026-11-10 拍板 |
-| D9 | Message 单层 | v1 不定义 domain `Message`；`StoredMessage` 是唯一记录；from/content/contentBlocks/toolEvents/lifecycle/replyTo/seq/timestamp/thinking/deletedAt/extra(targetAgentIds,rich,crossPost)；无 userId/status/deliveryStatus/mentions；userId 存储策略见 0011 §11 | operator 2026-11-10 确认 |
+| D9 | Message 单层 | v1 不定义 domain `Message`；`StoredMessage` 是唯一记录；from/content/contentBlocks/toolEvents/lifecycle/replyTo/seq/timestamp/thinking/deletedAt/extra(targetAgentIds,rich,crossPost,multiMention)；无 userId/status/deliveryStatus/mentions；userId 存储策略见 0011 §11 | operator 2026-11-10 确认 |
 
 **术语**：Thread 是主体；`InvocationRecord` 是消息级 parent；
 `TurnExecution` 是单 agent 一次执行；Session 是 thread×agent 的持久身份；

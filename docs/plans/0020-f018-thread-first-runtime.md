@@ -48,7 +48,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - `response_drafts`：processing R 的 in-flight body；`attempt_id`/`turn_execution_id`
   1:1；stream 目标 100ms/4KB bounded flush（R2 benchmark 后定，不写成不可变契约）；
   R terminal 后删除；Store 契约见 `0017-response-draft-store.md`
-  （create + upsertSnapshot(seq CAS) + get/delete/orphan）。
+  （单个 `DraftRecord` + create/upsert 全量 snapshot + get/delete/orphan；单 writer 串行 flush）。
 - `invocation_credentials`：child TurnExecution capability；allowedTools/
   toolCallClaims（piExtToolCallId claim map）/state/disposition（含 replaced）；无 taskId/role/run。
 - `invocation_attempts.settlement`：`NULL | streaming | response_pending | settled`；
@@ -63,7 +63,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - `messages`：v1 不定义 domain `Message`，`StoredMessage` 是唯一记录；加
   `content_json`（text/tool_call/tool_result）、`tool_events_json`、
   `lifecycle_json`、`thinking`、`deleted_at`/`deleted_by`、`extra_json`
-  （targetAgentIds/rich `{v:1,blocks}`/crossPost）；`body_md` 是 plain text body；
+  （targetAgentIds/rich `{v:1,blocks}`/crossPost/multiMention）；`body_md` 是 plain text body；
   legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json` 停止写入，R5 drop。
 - `a2a_requests`：legacy 只读；v1 不再写入；piExtToolCallId 幂等迁到
   `invocation_credentials.tool_call_claims_json`（DP-F018AUTH-3=B）。
@@ -104,7 +104,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - live stream（DP-F018X-2=B）：attempt start 创建 attempt + processing R；`WorkerEventSink` 处理
   `message_update.text_delta` + tool start/end，写 `response_drafts`，同时发 ephemeral
   `AgentStreamEvent` 给 UI；不按 delta 写 messages。draft 用
-  `ResponseDraftStore.upsertSnapshot` 全量 snapshot + seq CAS；T2 删除失败保留
+  `ResponseDraftStore.upsert` 全量 snapshot，单 writer 串行 flush；T2 删除失败保留
   `response_pending`，T4 重试。
 - response settlement（DP-C/DP-D=A/A，2026-11-12）：
   - T1 `invoke-single-agent` + `TurnExecutionLifecycle`：TurnExecution terminal +
@@ -180,7 +180,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 |---|---|---|---|
 | 3 | AgentSessionManager / AgentReadStateStore 接口 | **已收口**：0010 §6.1 完整签名 + history/worker 协作时序 + ack 事务边界；reset 顺序已定 | R1 按接口实现 |
 | 4 | interruptRunningBefore / reaper bulk API | **已收口**：store 有 startup-only `interruptRunningBefore`；runtime reaper 用 `listRunning + worker liveness`，不提供通用 bulk | R2 实现 reaper |
-| 5 | live stream transport / UI draft | **方向已定**：control socket event channel；100ms/4KB 为 provisional（R2 benchmark 后可能调 250–500ms）；`seq` 合并；刷新从 processing R + draft 恢复 | R2 实现 transport/UI + benchmark |
+| 5 | live stream transport / UI draft | **方向已定**：control socket event channel；100ms/4KB 为 provisional（R2 benchmark 后可能调 250–500ms）；`AgentStreamEvent.seq` 合并；刷新从 processing R + draft 恢复 | R2 实现 transport/UI + benchmark |
 | 6 | durable partial response | **已收口**：DP-F018X-2=B；processing R + response_drafts + attempt settlement | R2 实现 |
 | 7 | delivery_failure reason taxonomy | **已收口**：pre-admission typed reject 与 admitted prestart `delivery_failure` 分离；E6/E8/E10/E11 映射已写 | R2/R3 实现并补负例 |
 | 8 | MessageStore migration unknowns | **契约已收口**：legacy→new mapping/preflight 表已写 | R1 执行 preflight，unknown 进清单 |

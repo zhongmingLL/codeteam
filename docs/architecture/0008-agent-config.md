@@ -22,7 +22,8 @@ related_features: [codeteam/F018, codeteam/F017]
 - **v1 扁平 AgentConfig**：每个 agent 一个独立身份/模型；不引入 Breed/Variant 两层。
 - `role` 不进入 AgentConfig；旧 `roles` 表是 legacy。
 - `clowderCatId` / `toolPolicyProfile` v1 不保留。
-- 只保留 `displayName`；A2A tool call 传 `id`，消息展示用 `displayName`。
+- `displayName` 只做消息展示；operator 行首 `@` 用稳定的 `handle` 路由。
+  A2A tool call 传 `id`；`handle` 不是 target id。
 - `avatar` / `color` 保留，Hub 后续用。
 - `mentionPatterns` v1 不需要（路由只认 typed `targets`）。
 - `clientId` / `carrier` v1 不需要；统一走 pi。
@@ -48,6 +49,7 @@ interface AgentCatalog {
 
 interface AgentConfig {
   id: string;                 // A2A target id；稳定身份
+  handle: string;             // operator @mention 路由键；全局唯一、规范化
   displayName: string;        // 消息展示
   avatar?: string;            // Hub 后续用
   color?: { primary: string; secondary: string };
@@ -115,6 +117,8 @@ interface ThreadAgentState {
 ## 3. A2A 语义
 
 - `targets` 是 `AgentConfig.id`；不是 displayName，不是 mentionPatterns。
+- operator 正文行首 `@handle` 用 `AgentConfig.handle` 解析到 `id`；`handle` 全局唯一、
+  大小写不敏感、只允许 `[a-z0-9_-]`；未知/歧义 → `agent_not_found`。
 - 消息展示用 `displayName`；A2A tool call 用 `id`。
 - `enabled: false` 的 agent：注册但不可路由；target 它返回 `agent_disabled` typed error。
 - 未知 id：`agent_not_found`。
@@ -136,6 +140,7 @@ interface ThreadAgentState {
 | 旧字段 | 新 AgentConfig | 处理 |
 |---|---|---|
 | `id` | `id` | 直接 |
+| 无 | `handle` | 默认 `id`；若 id 不是 `[a-z0-9_-]` 或冲突，迁移时生成稳定 slug 并进 preflight |
 | `displayName` | `displayName` | 直接 |
 | `roleDescription` | `roleDescription` | 直接 |
 | `restrictions` JSON object | `restrictions: string[]` | 转自然语言禁令数组；无法映射的保留原文 |
@@ -147,11 +152,12 @@ interface ThreadAgentState {
 | `agent_sessions.role` / `runs.role` / `workers.role` | 不保留 | legacy |
 | `roles` 表 | 不保留 | legacy |
 
-需要补默认值的：`avatar`（optional）、`color`（optional）、`contextWindow`（从旧 session capacity/account 补）、`accountRef`（按 provider/account 建）、`sessionChain`（true）、`strengths`（[]）、`enabled`（true）。
+需要补默认值的：`handle`（默认 `id` 的 slug；冲突进 preflight）、`avatar`（optional）、`color`（optional）、`contextWindow`（从旧 session capacity/account 补）、`accountRef`（按 provider/account 建）、`sessionChain`（true）、`strengths`（[]）、`enabled`（true）。
 
 ## 6. 校验规则
 
 - `id` 非空且全局唯一。
+- `handle` 非空、全局唯一、规范化后只含 `[a-z0-9_-]`。
 - `displayName` 非空。
 - `contextWindow` 正整数。
 - `roleId` 非空。
