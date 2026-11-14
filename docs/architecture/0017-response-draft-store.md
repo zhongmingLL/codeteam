@@ -351,6 +351,23 @@ settlement=`response_pending`；draft 继续保留给 T2/T4。
 - **settlement owner 不同**：codeteam 已拍 T2 route/committer、T4 recovery；Clowder 的
   settlement 更集中。draft 的读写语义保持不变，只拆 owner。
 
+### 11.3 `metadata` / `extra` 的作用与取舍
+
+- `metadata`：`MessageMetadata` 是 provider/model/sessionId/usage/diagnostics/
+  subexecution events 等 carrier。Clowder route 每次 flush 用
+  `mergeMessageMetadataSnapshots` 写入 draft，注释用途是 F5 recovery；但当前
+  `messages.ts` 的 draft 读取路径只合并 `extra.outputLayout`，**没有消费
+  `draft.metadata`**；R settlement 也是从 route state/response 取 metadata，不是从
+  draft 取。它更像历史/预留字段。
+- `extra.outputLayout`：`MessageOutputLayoutV1` 是富输出的布局引用（owner/runs/order/
+  contentRevision），不是第二份正文；`messages.ts` 用它恢复 streaming message 的
+  布局。
+- codeteam v1：没有 output-layout projection；最终 `extra.rich` 在 T2 由最终
+  text/contentBlocks 生成；provider/model/usage 在 `invocation_attempts`。因此
+  draft 不存 `metadata`/`extra`，不损失 R settlement 或 live text/tool 恢复。
+- 如果以后产品要求“流式中显示 provider/model/usage 或富布局”，再给 draft 加一个
+  小的 `extra` 扩展；不要现在整包复制 Clowder 的 metadata。
+
 ## 12. 参考
 
 - `0010` §3.6.1（durable stream）、§4.3.2（`response_drafts` 表）、§3.9（T1/T2/T3/T4）。
