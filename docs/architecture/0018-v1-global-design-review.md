@@ -66,7 +66,7 @@ completed 去重接受风险 / 全 failed 保持 done+allFailed）。**
 | G-13 | P1 | participants 写入时机只有“首次成功”一句话，没有 owner | T1 completed 同事务 `INSERT OR IGNORE thread_participants`；failed/canceled 不写；0014 标注 codeteam 有意偏离 Clowder admission-time |
 | G-14 | P2 | queue cap 要求 user/A2A 分开计数，但 `countQueued(threadId)` 只有一个总数 | 改为 `countQueued(threadId, kind)`；QueueView/验收同步 |
 | G-15 | P2 | `multi_mention_requests.idempotency_key` 是未使用的第二套 key | 删除列和 unique；幂等仍由 credential `toolCallClaims` 承担 |
-| G-16 | P2 | `markStarting(claimId)` 的 claimId 不落库、无法校验 | 改为 `markStarting(attemptId, { now })`；调用方必须已持有 queue claim |
+| G-16 | P2 | `markStarting(claimId)` 的 claimId 不落库、无法校验 | 改为 `markStarting(attemptId, { agentSessionId, now })`；调用方必须已持有 queue claim，唯一 active delivery 从 Phase A 生效 |
 | G-17 | P2 | `routing_guard` 有 enum/表，但没有 creator/terminal owner | 明确 v1 不创建；保留 enum 只为 Clowder 对齐；后续引入时补 owner |
 | G-18 | P2 | `lastActiveAt` 没有写入 owner | MessageStore `append` 与 T2 response terminal 同事务更新 `threads.last_active_at` |
 | G-19 | P2 | 错误码 `unknown_target` / `unknown_agent` / `agent_not_found`、`account_missing` / `account_not_found` 混用 | canonical 统一为 `agent_not_found` / `account_not_found`；0007/0008 同步 |
