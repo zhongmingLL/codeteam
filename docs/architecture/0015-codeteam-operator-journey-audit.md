@@ -605,6 +605,3 @@ DP-A–E 已关闭；F-07/F-08/F-09 均已拍 A（见
 | codeteam recovery | `docs/architecture/0007-a2a-runtime-chain.md` §3.10；DP-F018RECOVERY |
 | codeteam read models | `docs/architecture/0007-a2a-runtime-chain.md` §3.10；`0005` §5 |
 | W7a/Hub dependency | `docs/features/F016-w7a-headless-surface.md:65`；`docs/plans/0004-w5-w8-scale-product.md:390` |
-
-
-

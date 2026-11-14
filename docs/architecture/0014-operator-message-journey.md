@@ -650,6 +650,3 @@ operator 发消息
 > codeteam 当前契约：`docs/architecture/0005-thread-first-runtime.md`、
 > `docs/architecture/0007-a2a-runtime-chain.md`、`docs/architecture/0011-identity-contract.md`、
 > `docs/architecture/0013-idempotency-key-map.md`。
-
-
-
