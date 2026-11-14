@@ -12,7 +12,7 @@ source: "Clowder local reference checkout; paths below are repo-relative, not ru
 # Clowder session 架构全局梳理
 
 > **Clowder reference：** 本文是参考架构分析，不是 codeteam 实现契约；
-> codeteam session contract 是 `0009-session-model.md`。文档地图见
+> codeteam session contract 是 `0010-session-model.md`。文档地图见
 > `0000-architecture-map.md`。
 
 > 目的：先看 Clowder 的 session 系统整体如何分层、谁拥有什么、生命周期如何流转，
@@ -312,7 +312,7 @@ provider PreCompact hook
    done 时本 turn 未计数则 +1（无输出 completed turn 也 +1）。
 3. v1 delivery cursor 用 numeric `messages.seq`，还是预留 visibility cursor
    `v2:<seq>:<messageId>` 的扩展点？
-4. **已拍板（2026-11-11）**：`AgentState` 留在 0007 运行时层，不建 DB 表；
+4. **已拍板（2026-11-11）**：`AgentState` 留在 0008 运行时层，不建 DB 表；
    多 thread 用 `(threadId, agentId)` 投影，`AgentState` 只做 per-agent 汇总。
    Clowder `SessionStore.getCatState/setCatState` 在参考仓 0 调用点，无遗漏。
 5. v1 是否需要 `RuntimeSessionStore`？如果只跑 pi RPC，答案是 v2；如果未来接

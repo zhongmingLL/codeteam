@@ -21,7 +21,7 @@ supersedes_phase_a_of: codeteam/F017
 > 冻结/弃用。后续 agent team 能力在 A2A runtime 上逐步实现，各自单独立项。
 >
 > 架构基线：`docs/architecture/0005-thread-first-runtime.md`；
-> A2A runtime 链路：`docs/architecture/0010-a2a-runtime-chain.md`。
+> A2A runtime 链路：`docs/architecture/0007-a2a-runtime-chain.md`。
 
 ## Why
 

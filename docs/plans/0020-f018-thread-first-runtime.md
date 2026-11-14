@@ -7,14 +7,14 @@ updated: 2026-11-12
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
-source_architecture: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/0010-a2a-runtime-chain.md"
+source_architecture: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/0007-a2a-runtime-chain.md"
 source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=A, DP-D=A"
 ---
 
 # F018 — A2A runtime v1 实施计划
 
 > 本计划执行 `docs/architecture/0005-thread-first-runtime.md` 与
-> `docs/architecture/0010-a2a-runtime-chain.md` 的 R0-R5。
+> `docs/architecture/0007-a2a-runtime-chain.md` 的 R0-R5。
 > v1 只做纯 A2A runtime；TaskItem/code delivery/custody 不在本计划。
 > 所有阶段共享单 queue/message/session 账本，不造第二套 store。
 
@@ -178,7 +178,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 
 | # | 问题 | 设计状态 | 剩余动作 |
 |---|---|---|---|
-| 3 | AgentSessionManager / AgentReadStateStore 接口 | **已收口**：0009 §6.1 完整签名 + history/worker 协作时序 + ack 事务边界；reset 顺序已定 | R1 按接口实现 |
+| 3 | AgentSessionManager / AgentReadStateStore 接口 | **已收口**：0010 §6.1 完整签名 + history/worker 协作时序 + ack 事务边界；reset 顺序已定 | R1 按接口实现 |
 | 4 | interruptRunningBefore / reaper bulk API | **已收口**：store 有 startup-only `interruptRunningBefore`；runtime reaper 用 `listRunning + worker liveness`，不提供通用 bulk | R2 实现 reaper |
 | 5 | live stream transport / UI draft | **方向已定**：control socket event channel；100ms/4KB 为 provisional（R2 benchmark 后可能调 250–500ms）；`seq` 合并；刷新从 processing R + draft 恢复 | R2 实现 transport/UI + benchmark |
 | 6 | durable partial response | **已收口**：DP-F018X-2=B；processing R + response_drafts + attempt settlement | R2 实现 |
@@ -186,9 +186,9 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 | 8 | MessageStore migration unknowns | **契约已收口**：legacy→new mapping/preflight 表已写 | R1 执行 preflight，unknown 进清单 |
 | 9 | queue trace 完整 payload audit | **v1 决策**：不建 dispatch_events/queue_retirement_audit；attempt.queueEntryId + queue_admissions + dispatchRefs 足够 | 若未来要 forensic replay/queue 压缩，v2 再加 |
 | 10 | WorkerPool reaper/capacity | **契约已收口**：capacity backoff、单 reaper 循环、warmTtl=0 crash/cleanup 顺序已定 | R2 实现 |
-| P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **已拍 A/A（2026-11-12）**：TurnExecution 单 canonical、attempt 只做投递状态；settlement 拆回 invoke/route/QueueProcessor/recovery 四层 owner，删除 `settleAgentTurn` god-service | R2 按四层 owner 实现；0010 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9 已同步 |
+| P0-1 | invokeSingleAgent + settleAgentTurn 拆分 | **已拍 A/A（2026-11-12）**：TurnExecution 单 canonical、attempt 只做投递状态；settlement 拆回 invoke/route/QueueProcessor/recovery 四层 owner，删除 `settleAgentTurn` god-service | R2 按四层 owner 实现；0007 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9 已同步 |
 | P2 | `extra.kind` 是否保留 | **已删**：`kind` 是 task-first legacy；不迁入 A2A `extra`，legacy 列只读至 R5 drop | 实现时不得重新引入 |
-| P3 | Phase A final review（0005/0010） | **设计整合已完成（2026-11-11）**：session/history/worker 与 0005/0010 的一致性终审已收口；operator 暂停外部 review 的前置条件已满足；PR #86 的旧 findings 已应用 | 进入最终 Phase A review；非作者 verdict 覆盖 exact HEAD 后再 merge |
+| P3 | Phase A final review（0005/0007） | **设计整合已完成（2026-11-11）**：session/history/worker 与 0005/0007 的一致性终审已收口；operator 暂停外部 review 的前置条件已满足；PR #86 的旧 findings 已应用 | 进入最终 Phase A review；非作者 verdict 覆盖 exact HEAD 后再 merge |
 
 ## 回滚
 

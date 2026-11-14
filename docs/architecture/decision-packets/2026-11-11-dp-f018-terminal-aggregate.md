@@ -5,7 +5,7 @@ status: decided
 created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related: ../0010-a2a-runtime-chain.md
+related: ../0007-a2a-runtime-chain.md
 related_features: [codeteam/F018]
 operator_decision: "DP-F018TERM-1=A, DP-F018TERM-2=A, DP-F018TERM-3=A, DP-F018TERM-4=A, DP-F018TERM-5=A, DP-F018TERM-6=A, DP-F018TERM-7=A (2026-11-11)"
 ---
@@ -17,7 +17,7 @@ operator_decision: "DP-F018TERM-1=A, DP-F018TERM-2=A, DP-F018TERM-3=A, DP-F018TE
 
 > **2026-11-12 后续决策**：DP-C=A、DP-D=A 已把 child terminal / R / parent
 > aggregate 拆成 T1/T2/T3/T4；本 packet 中“child terminal → parent aggregate →
-> credential 同事务”的旧表述由 `0010` §3.9 与 `0016` 取代。历史决策本身不变。
+> credential 同事务”的旧表述由 `0007` §3.9 与 `0016` 取代。历史决策本身不变。
 
 ## 0. 一句话
 
@@ -39,9 +39,9 @@ operator_decision: "DP-F018TERM-1=A, DP-F018TERM-2=A, DP-F018TERM-3=A, DP-F018TE
 ## 2. 背景与 current truth
 
 - 3.9 已定义 child terminal → collector → parent aggregate → credential/session 同事务；
-  attempt append-only；retry 复用同一 queue entry（`0010 §3.9`）。
+  attempt append-only；retry 复用同一 queue entry（`0007 §3.9`）。
 - `InvocationRecordStore` 已有 `requestRetry`/`markRunning`/`applyTerminalAggregate`
-  （`0010 §3.3`），但 §3.9 又说 `requestRetry` 是 QueueProcessor 编排，不是单个 store
+  （`0007 §3.3`），但 §3.9 又说 `requestRetry` 是 QueueProcessor 编排，不是单个 store
   方法；这是需要拍板的 API 边界。
 - §3.9 聚合表把 `failed/interrupted/canceled` 混在一起，且没有 auto-retry pending 行；
   Clowder `PerCatTerminalDispositionCollector` 明确区分 `areAllTargetsCanceled()` 和
@@ -159,11 +159,11 @@ codeteam 应把同一信息落到 parent `terminalReason`。
 
 拍板后更新：
 
-- `0010 §3.9`：聚合表新增 all-canceled/retryablePending；tracker slot release；
+- `0007 §3.9`：聚合表新增 all-canceled/retryablePending；tracker slot release；
   `settleAgentTurn` already_terminal；requestRetry 事务边界；
-- `0010 §3.3`：`InvocationRecordStore.requestRetry`/`markRunning`/`applyTerminalAggregate`
+- `0007 §3.3`：`InvocationRecordStore.requestRetry`/`markRunning`/`applyTerminalAggregate`
   与 service 的分工；
-- `0010 §3.1/3.2`：queue entry retention/abandon、DispatchRef retry；
+- `0007 §3.1/3.2`：queue entry retention/abandon、DispatchRef retry；
 - `F018` feature / plan 0020：并发 terminal、all-canceled、auto-retry、canceled retry 负例；
 - 实现侧：`a2a/terminal.ts`、QueueProcessor、InvocationRecordStore、InvocationAttemptStore。
 

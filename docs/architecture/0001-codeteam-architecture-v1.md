@@ -11,7 +11,7 @@ audience: [operator, architect, implementer, reviewer]
 # codeteam 架构 v1
 
 > **历史/参考：** 2026-11-04 之后，runtime / A2A / queue / identity / state-machine
-> 章节由 `0005-thread-first-runtime.md` + `0010-a2a-runtime-chain.md` 取代。本文仅作
+> 章节由 `0005-thread-first-runtime.md` + `0007-a2a-runtime-chain.md` 取代。本文仅作
 > 非 runtime 领域参考（例如 RichBlock 形状）；实现基线不读本文。阅读顺序见
 > `0000-architecture-map.md`。
 

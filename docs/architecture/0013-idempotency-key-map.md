@@ -8,7 +8,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-11: DP-F018A2A-1=A+ (piExtToolCallId)"
 related_features: [codeteam/F018, codeteam/F017]
-related: [0010-a2a-runtime-chain.md, 0011-identity-contract.md, decision-packets/2026-11-11-dp-f018-a2a-tools.md]
+related: [0007-a2a-runtime-chain.md, 0011-identity-contract.md, decision-packets/2026-11-11-dp-f018-a2a-tools.md]
 ---
 
 # codeteam Idempotency Key Map

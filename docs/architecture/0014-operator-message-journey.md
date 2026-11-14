@@ -6,14 +6,14 @@ created: 2026-11-11
 updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F018]
-related: [0005-thread-first-runtime.md, 0010-a2a-runtime-chain.md, 0011-identity-contract.md, 0013-idempotency-key-map.md]
-source: "Clowder local reference checkout; codeteam F018 0005/0010/0011/0013"
+related: [0005-thread-first-runtime.md, 0007-a2a-runtime-chain.md, 0011-identity-contract.md, 0013-idempotency-key-map.md]
+source: "Clowder local reference checkout; codeteam F018 0005/0007/0011/0013"
 ---
 
 # Operator message journey — Hub ingress to streaming reply
 
 > **体验视图：** 本文解释 operator 从发出消息到流式回复“看到什么”；组件/事务/
-> 状态机以 `0010`、`0016`、`0017` 为准。若本文机制描述与契约文档冲突，契约文档胜出。
+> 状态机以 `0007`、`0016`、`0017` 为准。若本文机制描述与契约文档冲突，契约文档胜出。
 > 文档地图见 `0000-architecture-map.md`。
 
 > 目的：把 operator 在前端发出一句话，到 Hub 收到流式答复的完整链路拆开。
@@ -21,7 +21,7 @@ source: "Clowder local reference checkout; codeteam F018 0005/0010/0011/0013"
 > cancel/retry/queue/operator-decision 分别插在哪一段。
 >
 > 参考实现：Clowder 本地只读 checkout。本文路径均为 repo-relative，不是 codeteam 的
-> runtime dependency。codeteam v1 的规范契约仍以 `0005`、`0010`、`0011`、`0013` 为准。
+> runtime dependency。codeteam v1 的规范契约仍以 `0005`、`0007`、`0011`、`0013` 为准。
 > codeteam 侧的逐组件缺件/差异审计见 `0015-codeteam-operator-journey-audit.md`。
 
 ## 0. 结论先行
@@ -212,7 +212,7 @@ agent 调用 `post_message`/`cross_post_message` 时：
 - 目标 cat 得到新的 parent `InvocationRecord` + child `TurnExecution`；
 - depth/loop guard 在 admission 前校验（Clowder 实际默认 A2A depth 15；
   `route-helpers` 注释里的 2 是过时注释；codeteam 已拍 15 + guards，
-  见 `0010` §3.8）；
+  见 `0007` §3.8）；
 - 跨 thread 还要求同 user、target thread active/not deleted/有 projectPath，并写
   `extra.crossPost` provenance。
 
@@ -243,7 +243,7 @@ skills、MCP tools、co-creator mention 约定、A2A 协作规则等。它不读
 - worker_capacity/spawn 失败不 ack；prompt delivered 后 failed/canceled 仍 ack；
 - reset 时 cursor rewind 与 pi session binding clear 同事务。
 
-codeteam v1 对应 `AgentReadState.deliveryCursor`（`0010` §3.5.1）；per-`(thread, agent)`
+codeteam v1 对应 `AgentReadState.deliveryCursor`（`0007` §3.5.1）；per-`(thread, agent)`
 一个 cursor，不做 seenCursor/mentionAck。
 
 ### 5.4 invokeSingleCat
@@ -260,7 +260,7 @@ codeteam v1 已按 DP-D=A（2026-11-12）拆回四层：T1 `invoke-single-agent`
 `TurnExecutionLifecycle` 写 child terminal/credential/attempt projection；T2
 `route`/`RouteResponseCommitter` 写 R/draft/A2A successor；T3 `QueueProcessor` +
 collector 写 parent/queue/retry/slot；T4 `ResponseRecoveryService` 只修未完成 R。
-生产代码不引入 `settleAgentTurn`；细节见 `0010` §3.6/§3.9。
+生产代码不引入 `settleAgentTurn`；细节见 `0007` §3.6/§3.9。
 
 ## 6. 流式回传：draft → R → Hub
 
@@ -312,7 +312,7 @@ Hub 真正消费的主要是 `text` / `tool_use` / `tool_result` / `error` / `do
 ### 6.5 codeteam v1 差异
 
 codeteam v1 不在每个 delta 写 messages/run_events；processing R + `response_drafts` 是
-唯一 in-flight body。目标 flush 是 100ms/4KB（`0010` §3.6.1），不是 Clowder 当前的
+唯一 in-flight body。目标 flush 是 100ms/4KB（`0007` §3.6.1），不是 Clowder 当前的
 2s/2000 chars。Hub 传输由 W7a 提供；F018 只定义 `AgentStreamEvent` 语义和 daemon
 广播边界。
 
@@ -548,7 +548,7 @@ requestRetry(B)
 **F4. all targets routing rejected**
 
 Clowder 对 `routing_preflight_rejected` 保留 queue entry，等待恢复；codeteam 在
-`0010` §3.9/§9.1 采用同一方向：不要把“当前不可用”误判成永久失败。
+`0007` §3.9/§9.1 采用同一方向：不要把“当前不可用”误判成永久失败。
 
 ### 7.7 Journey G：消息在排队中
 
@@ -592,21 +592,21 @@ operator 发消息
 | 客户端幂等键 | `clientMessageId`（MCP client） | `piExtToolCallId`（pi extension） | 见 0013；有意分歧 |
 | operator 寻址 | agent message 行首 `@co-creator` + `mentionsUser` | 同一语义；operator 不是 QueueTarget | operator 回复仍是新 user message |
 | custody / handoff | ball custody、action lease、wait continuation | v1 不做 custody；operator decision 是普通 message | 见 0005 §7 |
-| A2A depth | 实际默认 15（`route-helpers` 注释 2 过时） | v1 15 + queue cap 5 + substantive-aware loop guard | 见 0010 §3.8；DP-F018SURFACE-2=A |
-| draft flush | 2s / 2000 chars | 100ms / 4KB | 见 0010 §3.6.1 |
+| A2A depth | 实际默认 15（`route-helpers` 注释 2 过时） | v1 15 + queue cap 5 + substantive-aware loop guard | 见 0007 §3.8；DP-F018SURFACE-2=A |
+| draft flush | 2s / 2000 chars | 100ms / 4KB | 见 0007 §3.6.1 |
 | queue depth | user source 5 | post/cross 1、multi_mention 2-3；queue cap 待定 | F018 R2 定常量 |
 | multi_mention | `MultiMentionOrchestrator`：status/timeout/callback/aggregate | 完整 orchestrator：`multi_mention_requests/responses` + 聚合 system message | v1 对齐，不再做“假 fan-out” |
 | recovery | StartupReconciler + Zombie + OwnerReaper 多件套 | 单 startup + 单 serialized reaper | 见 DP-F018RECOVERY |
-| session | active/sealing/sealed + restore/compact | active + lightweight seal；无 restore/compact | 见 0009 |
+| session | active/sealing/sealed + restore/compact | active + lightweight seal；无 restore/compact | 见 0010 |
 
 ## 9. 已决与剩余实现
 
 ### 已决（机制细节见对应契约）
 
 - **queue cap/priority**：per-thread cap 5（user/A2A 分开计数）、urgent 先、同 priority
-  FIFO、queue full 429/`queue_full` 不写 source；见 0010 §3.1。
+  FIFO、queue full 429/`queue_full` 不写 source；见 0007 §3.1。
 - **multi_mention**：v1 做完整 orchestrator（status/timeout/callback/aggregate）；见
-  0010 §3.8。
+  0007 §3.8。
 - **A2A depth**：保留 15；guard = per-thread queue cap 5 + substantive-aware ping-pong
   + early-stop；见 `DP-F018SURFACE-2=A`。
 - **draft settlement 失败**：`ResponseDraftStore` 无 TTL；R terminal 后 delete 失败
@@ -648,7 +648,7 @@ operator 发消息
 | Hub consumer | `packages/web/src/hooks/useSocket.ts`、`packages/web/src/hooks/useAgentMessages.ts` |
 
 > codeteam 当前契约：`docs/architecture/0005-thread-first-runtime.md`、
-> `docs/architecture/0010-a2a-runtime-chain.md`、`docs/architecture/0011-identity-contract.md`、
+> `docs/architecture/0007-a2a-runtime-chain.md`、`docs/architecture/0011-identity-contract.md`、
 > `docs/architecture/0013-idempotency-key-map.md`。
 
 

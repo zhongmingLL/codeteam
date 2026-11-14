@@ -5,7 +5,7 @@ status: decided
 created: 2026-11-09
 updated: 2026-11-09
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related: ../../architecture/0010-a2a-runtime-chain.md
+related: ../../architecture/0007-a2a-runtime-chain.md
 related_features: [codeteam/F018]
 operator_decision: "DP-F018R-1=A, DP-F018R-2=A, DP-F018R-3=A (2026-11-09)"
 ---
@@ -111,11 +111,11 @@ routeSerial 的历史责任拆解：
 
 ## 6. 落点
 
-- `0010 §3.0`：Operator ingress + target resolution；
-- `0010 §3.5`：AgentRouter + runAgentTurn + routeAgents；
-- `0010 §4`：`messages.target_agent_ids_json`；
-- `0010 §9/§11`：验收与决策记录；
+- `0007 §3.0`：Operator ingress + target resolution；
+- `0007 §3.5`：AgentRouter + runAgentTurn + routeAgents；
+- `0007 §4`：`messages.target_agent_ids_json`；
+- `0007 §9/§11`：验收与决策记录；
 - `0005`：Message/Queue 与 runtime 链路；
-- `0008`：participants 作为隐式路由候选。
+- `0009`：participants 作为隐式路由候选。
 
 [宪宪/deepseek-flash🐾]

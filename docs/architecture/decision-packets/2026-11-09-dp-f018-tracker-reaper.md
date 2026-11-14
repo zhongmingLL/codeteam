@@ -5,7 +5,7 @@ status: decided
 created: 2026-11-09
 updated: 2026-11-09
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related: ../../architecture/0010-a2a-runtime-chain.md
+related: ../../architecture/0007-a2a-runtime-chain.md
 related_features: [codeteam/F018]
 operator_decision: "DP-F018T-1=B (start 抢占), DP-F018T-2=B, DP-F018T-3=A (2026-11-09)"
 ---

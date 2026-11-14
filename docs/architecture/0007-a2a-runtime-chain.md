@@ -1386,7 +1386,7 @@ interface AgentReadState {
 - v1 只做 `deliveryCursor`；`seenCursor` / `mentionAck` / unread badge 是 v2。
 - 存储接口 `AgentReadStateStore`：`get(threadId, agentId)` /
   `ack(threadId, agentId, seq)` / `rewind(threadId, agentId, seq)`；`rewind` 只给
-  session fresh/reset 用。完整签名与事务边界见 `0009-session-model.md` §6.1。
+  session fresh/reset 用。完整签名与事务边界见 `0010-session-model.md` §6.1。
 
 | Clowder `DeliveryCursorStore` | codeteam `AgentReadStateStore` | 关系 |
 |---|---|---|
@@ -3512,7 +3512,7 @@ parent partial_failed: successful=[A], failed=[B]
 | guide/concierge/memory/SOP/entity nudge 的 route 分支 | v1 不挂；后续作为 `runAgentTurn` feature hooks |
 | task/role/run/profile 坐标 | thread-first；credential 绑 child TurnExecution |
 | custody / action lease / wait continuation | v2 |
-| full session seal / transcript / digest / restore / compression / handoff | v1 lightweight seal only（0009） |
+| full session seal / transcript / digest / restore / compression / handoff | v1 lightweight seal only（0010） |
 | `outputFence` / `coveredMessageIds` / `queueCompletionPolicy` / `appendAcceptance` | v2 的 action/prompt/carrier/phase 审计 |
 | Clowder action successor 的 `idempotencyKey` / `intent` | v1 A2A 消息用 `piExtToolCallId` + `intentHash`；没有 action successor 的 parent key/usage intent；usage 保留为 `usageByAgent`/`usageRecordedAt` |
 | `InvocationTrajectoryProjector` 完整版 | v1 用简单 timeline；trajectory drilldown 后续 |
@@ -3530,7 +3530,7 @@ parent partial_failed: successful=[A], failed=[B]
    `invocation_attempts`、`response_drafts`、`invocation_credentials`（重建）。
 2. **旧 task-first 表**：`queue_entries`、`runs`、`agent_sessions`、旧 `invocation_credentials` 中的 task-first 数据保留在 `legacy_*`，新 runtime 不读。
 3. **drain**：有 running task-first invocation 的 session 先 drain/terminal，再迁移；不把旧 run 混进新 TurnExecution。
-4. **agent_sessions**：按 0009 只迁 active；sealing/sealed 行 legacy。
+4. **agent_sessions**：按 0010 只迁 active；sealing/sealed 行 legacy。
 5. **preflight**：`agentId`/`userId`/`workingDirectory`/`Task.sourceMessageId`（legacy 领域指针）无法确定的进入 preflight，不静默置空。
 6. **不迁移**：`task_id/role/stage_id/handoff_id/approval_id`、custody/action/wait/compaction 字段。
 7. **文档同步**：`0005` §2.2/2.4/2.5 指向本文；`docs/reuse/callback-auth.md` 从 per-run token 更新为 per-invocation tool capability。
@@ -3734,7 +3734,7 @@ parent partial_failed: successful=[A], failed=[B]
 6. **Auth 从 MCP callback 改为 pi extension tool capability**：credential 绑 child TurnExecution，allowedTools 限 A2A tools；transport 是 local control socket；MCP/task/role/run 字段删除。
 7. **终态四层 owner（DP-C/DP-D=A/A）**：T1 child terminal + attempt projection +
    credential terminalize；T2 R/draft；T3 parent aggregate/queue/retry；T4 recovery。
-8. **Session active + lightweight seal**（0009）：v1 做 `active → sealed + seq+1`，
+8. **Session active + lightweight seal**（0010）：v1 做 `active → sealed + seq+1`，
    不做 transcript/digest/restore/compression/handoff。
 9. **v1 不做 custody/action/wait/compaction/managed/collective**；全部 v2。
 10. **QueueEntry 多層次设计**：`owner/from/targets/payload/execution/claim` 分组；targets 是 agent `QueueTarget[]`。

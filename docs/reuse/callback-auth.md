@@ -42,7 +42,7 @@ updated: 2026-11-06
 > 改为 pi extension tools（local control socket）。credential 是 child
 > `TurnExecution` 的工具能力，不是 run/task 身份；复用 F174 的 hash+salt、
 > state/disposition、terminal tombstone、liveness 语义，但删除 task/role/run
-> 坐标。详见 `../architecture/0010-a2a-runtime-chain.md`。
+> 坐标。详见 `../architecture/0007-a2a-runtime-chain.md`。
 
 ## codeteam mapping
 

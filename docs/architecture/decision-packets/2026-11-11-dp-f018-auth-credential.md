@@ -5,7 +5,7 @@ status: decided
 created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related: ../0010-a2a-runtime-chain.md
+related: ../0007-a2a-runtime-chain.md
 related_features: [codeteam/F018]
 operator_decision: "DP-F018AUTH-1=A, DP-F018AUTH-2=A, DP-F018AUTH-3=B, DP-F018AUTH-4=A, DP-F018AUTH-5=A (2026-11-11)"
 ---
@@ -133,7 +133,7 @@ map 上限建议 1000 条/credential，超限 fail closed（不静默驱逐，�
 **拍板理由**：operator 选择 B，接受“不可 join、JSON 容量控制”的代价，换取
 credential 与 request claims 同生命周期、字段集中。A 的推荐保留在本文作为历史对比。
 
-**落点**：`0010 §3.7` credential 增加 `clientMessageIds`；`§3.8 post_message` 在
+**落点**：`0007 §3.7` credential 增加 `clientMessageIds`；`§3.8 post_message` 在
 message/queue 同事务 reserve；`§4.4` 增加 `client_message_ids_json`；`a2a_requests`
 标 legacy。
 
@@ -195,11 +195,11 @@ child/run terminal → terminalize；running unowned → interrupt 后 terminali
 
 拍板后更新：
 
-- `0010 §3.7`：InvocationRegistry / InvocationCredential 接口与状态；control socket envelope；startup sweep；
-- `0010 §3.8`：pi extension tool surface + `post_message`/`cross_post_message`/`multi_mention`；credential-scoped request claim；
-- `0010 §4.4`：`invocation_credentials` 字段（turnExecution/thread/agent/session/allowedTools/clientMessageIds）；
-- `0010 §9.4`：auth 验收与负例；
-- `0010 §11`：决策记录；
+- `0007 §3.7`：InvocationRegistry / InvocationCredential 接口与状态；control socket envelope；startup sweep；
+- `0007 §3.8`：pi extension tool surface + `post_message`/`cross_post_message`/`multi_mention`；credential-scoped request claim；
+- `0007 §4.4`：`invocation_credentials` 字段（turnExecution/thread/agent/session/allowedTools/clientMessageIds）；
+- `0007 §9.4`：auth 验收与负例；
+- `0007 §11`：决策记录；
 - 实现侧：`packages/codeteam-daemon/src/auth/*`、`workers/control.ts`、`workers/worker-extension.ts`、`a2a/tool-surface.ts`、`a2a/requests.ts`、`control/recovery.ts`。
 
 [宪宪/deepseek-flash🐾]

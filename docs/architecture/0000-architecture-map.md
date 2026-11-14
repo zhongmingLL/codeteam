@@ -15,7 +15,7 @@ related_features: [codeteam/F018]
 **不合并成一个大文件。** 采用 **3 个整体视角文件 + 分册设计 + 历史/参考分层**：
 
 1. **方向**：`0005-thread-first-runtime.md` — 为什么 thread-first、v1 边界、约束。
-2. **V1 目标契约**：`0010-a2a-runtime-chain.md` — 组件、事务、数据模型、验收，是实现的 canonical contract。
+2. **V1 目标契约**：`0007-a2a-runtime-chain.md` — 组件、事务、数据模型、验收，是实现的 canonical contract。
 3. **体验**：`0014-operator-message-journey.md` — operator 从发出消息到流式回复的完整 journey；解释“用户看到什么”，不替代机制契约。
 
 分册设计：AgentConfig / Thread / Session / Identity / Idempotency / Terminal & Settlement / DraftStore。
@@ -27,8 +27,8 @@ related_features: [codeteam/F018]
 新猫/新实现者按这个顺序读：
 
 1. `0005-thread-first-runtime.md`：方向、范围、v1 不做什么。
-2. `0010-a2a-runtime-chain.md`：V1 全链路和契约。
-3. 按任务读分册：`0007` / `0008` / `0009` / `0011` / `0013` / `0016` / `0017`。
+2. `0007-a2a-runtime-chain.md`：V1 全链路和契约。
+3. 按任务读分册：`0008` / `0009` / `0010` / `0011` / `0013` / `0016` / `0017`。
 4. `0014-operator-message-journey.md`：用 operator journey 校验体验。
 5. 需要 Clowder 对照时读 `reuse-review/`、`0012`、`0002` 的对应段落。
 6. 历史审计/旧决议只做追溯：`0001` / `0003` / `0004` / `0006` / `0015`。
@@ -37,16 +37,16 @@ related_features: [codeteam/F018]
 
 | 层 | canonical | 冲突时 |
 |---|---|---|
-| 方向/范围 | `0005` | 0005 只解释 why/scope；具体机制以 0010 为准 |
-| V1 runtime 机制 | `0010` | 0010 是实现基线；深挖章节以 0016/0017 为准并回链 0010 |
-| domain contract | `0007`/`0008`/`0009`/`0011`/`0013` | 领域细节以对应文档为准；0010 负责集成 |
+| 方向/范围 | `0005` | 0005 只解释 why/scope；具体机制以 0007 为准 |
+| V1 runtime 机制 | `0007` | 0007 是实现基线；深挖章节以 0016/0017 为准并回链 0007 |
+| domain contract | `0008`/`0009`/`0010`/`0011`/`0013` | 领域细节以对应文档为准；0007 负责集成 |
 | 深挖设计 | `0016`/`0017` | 0016 管 terminal/settlement；0017 管 draft store |
-| operator 体验 | `0014` | 解释体验；机制冲突以 0010/0016/0017 为准 |
+| operator 体验 | `0014` | 解释体验；机制冲突以 0007/0016/0017 为准 |
 | 历史/审计 | `0001`/`0003`/`0004`/`0006`/`0015` | 只做追溯，不得作为实现基线 |
 | Clowder reference | `0002`/`0012`/`reuse-review/` | 只作参考；codeteam 契约以本仓文档为准 |
 | 决策记录 | `decision-packets/` | 记录拍板；已拍结论已折入 canonical docs |
 
-**规则：** 任何新设计先判断它属于哪一层；不要新增与 0005/0010 平行的“第二真相源”。历史文档保留原文，但加边界横幅。
+**规则：** 任何新设计先判断它属于哪一层；不要新增与 0005/0007 平行的“第二真相源”。历史文档保留原文，但加边界横幅。
 
 ## 3. V1 canonical chain
 
@@ -82,19 +82,19 @@ Operator / Hub ingress（W7a transport）
 
 ### 已确认的单一链路
 
-- 方向、V1 契约、operator 体验三层已经分离，不再让 0001 的旧 runtime 章节与 0005/0010 竞争。
-- 0015 的 findings 已转为决策/审计记录；当前实现只读 0005/0010/0016/0017。
-- 0014 保留为用户旅程视图；其机制描述如与 0010 冲突，以 0010 为准。
+- 方向、V1 契约、operator 体验三层已经分离，不再让 0001 的旧 runtime 章节与 0005/0007 竞争。
+- 0015 的 findings 已转为决策/审计记录；当前实现只读 0005/0007/0016/0017。
+- 0014 保留为用户旅程视图；其机制描述如与 0007 冲突，以 0007 为准。
 
 ### 发现的重复/冲突与处置
 
 | 问题 | 处置 |
 |---|---|
-| `0001` 旧 runtime/A2A/数据模型与 thread-first 冲突 | 标为 reference；runtime 章节由 0005/0010 取代，非 runtime 章节仅参考 |
-| `0005` 含数据模型/执行链/验收摘要，与 `0010` 重复 | 保留为方向/范围；具体机制以 0010 为准 |
-| `0014` 含组件机制描述，与 `0010` 重复 | 保留为体验/journey；机制以 0010/0016/0017 为准 |
+| `0001` 旧 runtime/A2A/数据模型与 thread-first 冲突 | 标为 reference；runtime 章节由 0005/0007 取代，非 runtime 章节仅参考 |
+| `0005` 含数据模型/执行链/验收摘要，与 `0007` 重复 | 保留为方向/范围；具体机制以 0007 为准 |
+| `0014` 含组件机制描述，与 `0007` 重复 | 保留为体验/journey；机制以 0007/0016/0017 为准 |
 | `0015` 是审计与决策证据，不是当前设计 | 标为 historical；不再作为实现基线 |
-| `0003`/`0004` 是旧评审/计划 | 标为 historical；执行结果看 0005/0010/plans |
+| `0003`/`0004` 是旧评审/计划 | 标为 historical；执行结果看 0005/0007/plans |
 | `0006` 是 legacy inventory | 保留为 legacy-reference；不得据此写新代码 |
 | `0002`/`0012` 是 pi/Clowder reference | 标为 reference；codeteam 契约以本仓 canonical docs 为准 |
 
@@ -103,20 +103,20 @@ Operator / Hub ingress（W7a transport）
 - `0017 ResponseDraftStore` 仍是 `draft-for-review`，实现前需要非作者 review。
 - W7a 的 Hub ingress/WS/SSE/replay 与 read DTO transport 尚未实现；F018 不能声称端到端。
 - R2/R3/R4 的产品代码尚未开始；当前是 contract/design 完成，不是 implementation 完成。
-- 0014 的“风险与待定项”只作为体验提醒；其中已拍项以 0010/0016/0017 为准。
+- 0014 的“风险与待定项”只作为体验提醒；其中已拍项以 0007/0016/0017 为准。
 
 ## 6. 文档索引
 
 | 文档 | 角色 | 状态 |
 |---|---|---|
 | `0005-thread-first-runtime.md` | 方向/范围 | accepted direction |
-| `0010-a2a-runtime-chain.md` | V1 target contract | accepted |
-| `0014-operator-message-journey.md` | operator 体验/journey | draft-for-review（非机制契约） |
-| `0007-agent-config.md` | AgentConfig 分册 | draft-for-review |
-| `0008-thread-model.md` | Thread 分册 | draft-for-review |
-| `0009-session-model.md` | Session 分册 | accepted |
+| `0007-a2a-runtime-chain.md` | V1 target contract | accepted |
+| `0008-agent-config.md` | AgentConfig 分册 | draft-for-review |
+| `0009-thread-model.md` | Thread 分册 | draft-for-review |
+| `0010-session-model.md` | Session 分册 | accepted |
 | `0011-identity-contract.md` | Identity 分册 | accepted |
 | `0013-idempotency-key-map.md` | Idempotency 分册 | accepted |
+| `0014-operator-message-journey.md` | operator 体验/journey | draft-for-review（非机制契约） |
 | `0016-turn-terminal-and-settlement-design.md` | terminal/settlement 深挖 | accepted |
 | `0017-response-draft-store.md` | draft store 深挖 | draft-for-review |
 | `0001-codeteam-architecture-v1.md` | 旧总架构/参考 | reference（runtime 已 superseded） |

@@ -5,7 +5,7 @@ status: decided
 created: 2026-11-07
 updated: 2026-11-07
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related: ../../architecture/0010-a2a-runtime-chain.md
+related: ../../architecture/0007-a2a-runtime-chain.md
 related_features: [codeteam/F018, codeteam/F017]
 operator_decision: "DP-F018Q-1=A, DP-F018Q-2=B, DP-F018Q-3=A (2026-11-07)"
 ---
@@ -16,7 +16,7 @@ operator_decision: "DP-F018Q-1=A, DP-F018Q-2=B, DP-F018Q-3=A (2026-11-07)"
 
 > **2026-11-12 后续决策**：DP-C=A、DP-D=A 已把 child terminal / R / parent
 > aggregate 拆成 T1/T2/T3/T4；本 packet 中“response 与 parent/credential 同事务”
-> 的旧表述由 `0010` §3.9 与 `0016` 取代。历史决策本身不变。
+> 的旧表述由 `0007` §3.9 与 `0016` 取代。历史决策本身不变。
 
 > 只给价值取舍、推荐、证据和“不拍的后果”。不需要 operator 选技术实现。
 
@@ -153,6 +153,6 @@ fingerprint 只覆盖不可变字段（source、owner、kind、from、payload、
 - `DP-F018Q-2=B`：保留 `QueueLedgerStatus` 四值 union；拆成 `QueueDurableStatus`（queued/claimed，落库）与 `QueueProjectionStatus`（processing/terminal，只出现在 transition projection）。
 - `DP-F018Q-3=A`：新增 `queue_admissions` receipt，关闭“队列行已删除后同一 source 重试”的二次执行窗口。
 
-落点：`0010-a2a-runtime-chain.md` §3.1（接口与投影）、§4.1（DDL）、§11（决策记录 16-19）。
+落点：`0007-a2a-runtime-chain.md` §3.1（接口与投影）、§4.1（DDL）、§11（决策记录 16-19）。
 
 [宪宪/deepseek-flash🐾]

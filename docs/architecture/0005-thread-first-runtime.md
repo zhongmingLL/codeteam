@@ -8,7 +8,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_direction: "2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery setup frozen/deprecated"
 review_verdict: "2026-11-03 base APPROVE; 2026-11-04 deltas APPROVE; superseded by operator C scope change"
-delta_review: "2026-11-04 C: pure A2A runtime rewrite; direction accepted 2026-11-14; details in 0010"
+delta_review: "2026-11-04 C: pure A2A runtime rewrite; direction accepted 2026-11-14; details in 0007"
 supersedes_phase_a_of: codeteam/F017
 related_features: [codeteam/F018, codeteam/F017]
 ---
@@ -17,11 +17,11 @@ related_features: [codeteam/F018, codeteam/F017]
 
 > **定位：direction/scope，不是详细机制契约。** 本文回答“为什么 thread-first、
 > v1 做什么/不做什么”；数据模型、事务、状态机和验收细节以
-> `0010-a2a-runtime-chain.md` 为准。若本文摘要与 0010 冲突，0010 胜出。
+> `0007-a2a-runtime-chain.md` 为准。若本文摘要与 0007 冲突，0007 胜出。
 > 文档地图与阅读顺序见 `0000-architecture-map.md`。
 >
-> **与 0010 的分工：** 本文保留方向、范围、关键取舍、迁移原则和验收摘要；
-> 逐组件契约、DDL、状态机、错误 taxonomy、E2E 细项在 0010。本文第 2/3/5 节是
+> **与 0007 的分工：** 本文保留方向、范围、关键取舍、迁移原则和验收摘要；
+> 逐组件契约、DDL、状态机、错误 taxonomy、E2E 细项在 0007。本文第 2/3/5 节是
 > 摘要，不是第二份契约。
 
 > **状态：accepted direction。** operator 2026-11-04 选择 **C：v1 只做纯 A2A
@@ -140,7 +140,7 @@ User
 ### 2.0 AgentConfig
 
 Agent 身份是 config-as-code，完整模型见
-`docs/architecture/0007-agent-config.md`：
+`docs/architecture/0008-agent-config.md`：
 
 - `.codeteam/agent-catalog.json` → `AgentConfig` → `AgentRegistry` 内存注册表；
 - `AgentConfig.id` 用于 A2A `targets` 和 Thread participants；
@@ -184,7 +184,7 @@ interface Thread {
 ### 2.2 Invocation
 
 A2A runtime 的调用链拆成两层，详细字段/状态机/链路见
-`docs/architecture/0010-a2a-runtime-chain.md`：
+`docs/architecture/0007-a2a-runtime-chain.md`：
 
 - `InvocationRecord`（parent）：一条消息的消息级生命周期；
   `sourceRecordId` unique、`userMessageId`、`targetAgentIds[]`、`status`、
@@ -219,7 +219,7 @@ interface AgentSession {
 ```
 
 - 详细字段、resume 前置检查、fresh/熔断、schema 与迁移见
-  `docs/architecture/0009-session-model.md`；本节只保留架构摘要。
+  `docs/architecture/0010-session-model.md`；本节只保留架构摘要。
 - v1 是 active + lightweight seal session：一个 `(thread_id, agent_id)` 同时只有
   一行 active；`seq/status/sealReason/sealedAt` 保留，circuit breaker/fresh 时
   旧行 sealed + 新行 `seq+1`。transcript/digest/restore/chain 导航放 v2。
@@ -237,10 +237,10 @@ interface AgentSession {
 - 服务分层：`AgentSessionStore`（durable identity）+ `WorkerPool`（ephemeral worker；
   一 worker 一 session，turn 结束默认 retire）+ 薄 `AgentSessionManager`
   （ensure/acquire/release/reset）；`invocation_attempts.agentSessionId` 只是指针。详见
-  `0009-session-model.md` §6.1 与 `0010-a2a-runtime-chain.md` §3.5.2。
+  `0010-session-model.md` §6.1 与 `0007-a2a-runtime-chain.md` §3.5.2。
 - 历史加载：每个 `(threadId, agentId)` 一个 `AgentReadState.deliveryCursor`
   （thread-global seq 的已消费位置），不是 per-target cursor；详见
-  `0010-a2a-runtime-chain.md` §3.5.1。
+  `0007-a2a-runtime-chain.md` §3.5.1。
 
 ### 2.4 Message / Queue
 
@@ -285,15 +285,15 @@ interface AgentSession {
   delivery_failure 是独立 system message，记录 inputMessageId/
   requestedTargets/reason。queue live row 保留到 target attempt 终态（`completed`/
   `canceled` 后删除；`partial_failed`/`failed` 作为 retry anchor），`queue_admissions`
-  只做 admission 幂等，不替代投递回执。详见 0010 §3.1。
+  只做 admission 幂等，不替代投递回执。详见 0007 §3.1。
 - `mentions` 不存：A2A targets 是 typed `dispatchRefs`；文本 `@` 不路由。
   `mentionsUser` 存 agent message 的 operator 通知标记（正文行首 `@operator`）。
 - `userId`/`status`/`deliveryStatus` 不存：分别从 thread、lifecycle、queue 派生。
 - v1 response 采用 durable streaming（DP-F018X-2=B）：attempt start 创建 processing R；
   stream 写 `response_drafts`；child terminal 把 attempt `settlement` 标
   `response_pending`；settlement 提交 R terminal + settle inputs + attempt `settled`；
-  `listResponsePending`/`settleResponseFromDraft` 是恢复入口。详见 0010 §3.6。
-- 详细链路见 `0010-a2a-runtime-chain.md`。
+  `listResponsePending`/`settleResponseFromDraft` 是恢复入口。详见 0007 §3.6。
+- 详细链路见 `0007-a2a-runtime-chain.md`。
 
 ### 2.5 Credential
 
@@ -325,7 +325,7 @@ token 由 daemon mint，绑定 child `TurnExecution`/thread/agent/session/user�
 - `InvocationRegistry` 是 service：`create/verify/commitTerminal`；
 - 存储仍是 `invocation_credentials`；
 - 鉴权面从 MCP callback 改为 pi extension tools + local control socket；
-- 详细字段/schema/校验见 `0010-a2a-runtime-chain.md`。
+- 详细字段/schema/校验见 `0007-a2a-runtime-chain.md`。
 
 ### 2.6 Usage / budget（v1 不做）
 

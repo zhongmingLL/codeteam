@@ -6,7 +6,7 @@ created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 operator_decisions: "2026-11-11: DP-A=A, DP-B=B, DP-E=A; 2026-11-12: DP-C=A, DP-D=A"
-related: [0010-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-codeteam-operator-journey-audit.md, 0016-turn-terminal-and-settlement-design.md]
+related: [0007-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-codeteam-operator-journey-audit.md, 0016-turn-terminal-and-settlement-design.md]
 ---
 
 # DP-F018JOURNEY
@@ -15,11 +15,11 @@ related: [0010-a2a-runtime-chain.md, 0014-operator-message-journey.md, 0015-code
 
 | 决策 | 结论 | 状态 | 落点 |
 |---|---|---|---|
-| DP-A operator 通知 | operator 不是 `QueueTarget`；agent 正文行首 `@operator` 只写 message `mentionsUser`；`post_message` targets 可为空但仅限该情形 | decided A | `0010` §3.0/§3.8；`0005` §2.4/§3.3；`0014` Journey B |
-| DP-B `multi_mention` | 真正实现 Clowder orchestrator：2-3 targets、status、3-20min timeout、callbackTo、aggregate；不保留假 fan-out | decided B | `0010` §3.8；`0005` §3.3；plan R3/R4 |
-| DP-C child 终态 | Clowder 没有 child `InvocationAttempt`；attempt 是 `QueueTargetAttempt`（投递台账），child canonical 是 `TurnExecution`；codeteam 收敛为 `delivery_state` | decided A | `0010` §3.5/§4.3.1/§5.2.1；`0015` §3.3 |
-| DP-D settlement owner | Clowder 是 invoke（child terminal）/route（R+draft）/QueueProcessor（parent+queue）/recovery 四层；`settleAgentTurn` god-service 拆回 | decided A | `0010` §3.6/§3.9/§9；`0015` §3.4 |
-| DP-E Hub 依赖 | Hub ingress/WS/SSE/replay 归 W7a/F016c 独立验收；F018 只验收 daemon/CLI | decided A | `0010` §7.2；plan 验证段；`0015` §4.2 |
+| DP-A operator 通知 | operator 不是 `QueueTarget`；agent 正文行首 `@operator` 只写 message `mentionsUser`；`post_message` targets 可为空但仅限该情形 | decided A | `0007` §3.0/§3.8；`0005` §2.4/§3.3；`0014` Journey B |
+| DP-B `multi_mention` | 真正实现 Clowder orchestrator：2-3 targets、status、3-20min timeout、callbackTo、aggregate；不保留假 fan-out | decided B | `0007` §3.8；`0005` §3.3；plan R3/R4 |
+| DP-C child 终态 | Clowder 没有 child `InvocationAttempt`；attempt 是 `QueueTargetAttempt`（投递台账），child canonical 是 `TurnExecution`；codeteam 收敛为 `delivery_state` | decided A | `0007` §3.5/§4.3.1/§5.2.1；`0015` §3.3 |
+| DP-D settlement owner | Clowder 是 invoke（child terminal）/route（R+draft）/QueueProcessor（parent+queue）/recovery 四层；`settleAgentTurn` god-service 拆回 | decided A | `0007` §3.6/§3.9/§9；`0015` §3.4 |
+| DP-E Hub 依赖 | Hub ingress/WS/SSE/replay 归 W7a/F016c 独立验收；F018 只验收 daemon/CLI | decided A | `0007` §7.2；plan 验证段；`0015` §4.2 |
 
 ## DP-A 关键边界
 
@@ -77,12 +77,12 @@ route/invokeSingleAgent 重叠。建议拆回四层 owner；`settleResponseFromD
 recovery/response_pending 第二段。
 
 回推范围：`a654788e5`/`09bdb678d` 的 `runAgentTurn` ownership 表和步骤 8–12
-（`runAgentTurn + routeAgents` 拆分保留）；`0010 §3.5/§3.6`、`0005` 对应段、
+（`runAgentTurn + routeAgents` 拆分保留）；`0007 §3.5/§3.6`、`0005` 对应段、
 plan P0-1。不是整条 operator routing 设计回退。
 
 ## 已决与下一步
 
-- DP-C=A、DP-D=A 已于 2026-11-12 拍板；`0010` §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9、
+- DP-C=A、DP-D=A 已于 2026-11-12 拍板；`0007` §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9、
   `0005`、plan 0020 P0-1、`0015`、`0016` 已同步。
 - R2 按 T1/T2/T3/T4 四层 owner 实现；生产代码不得引入 `settleAgentTurn`。
 

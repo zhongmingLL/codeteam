@@ -7,7 +7,7 @@ updated: 2026-11-12
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 operator_decisions: "2026-11-12: DP-C=A, DP-D=A"
 related_features: [codeteam/F018]
-related: [0010-a2a-runtime-chain.md, 0015-codeteam-operator-journey-audit.md, 0020-f018-thread-first-runtime.md, decision-packets/2026-11-11-dp-f018-operator-journey.md]
+related: [0007-a2a-runtime-chain.md, 0015-codeteam-operator-journey-audit.md, 0020-f018-thread-first-runtime.md, decision-packets/2026-11-11-dp-f018-operator-journey.md]
 source: "Clowder local reference checkout; codeteam commits 28cfee444/086b4b1f2/a654788e5/09bdb678d"
 ---
 
@@ -21,7 +21,7 @@ source: "Clowder local reference checkout; codeteam commits 28cfee444/086b4b1f2/
 > 终态、settlement 拆回 Clowder 的四层 owner。
 >
 > 状态：**accepted**（2026-11-12 operator 确认 DP-C=A、DP-D=A）。本文件是
-> 0010/0005/plan 的 normative 设计依据；实现按 T1/T2/T3/T4 四层 owner 落 R2。
+> 0007/0005/plan 的 normative 设计依据；实现按 T1/T2/T3/T4 四层 owner 落 R2。
 
 ## 0. 结论先行
 
@@ -48,7 +48,7 @@ source: "Clowder local reference checkout; codeteam commits 28cfee444/086b4b1f2/
 
 ### 1.1 双终态
 
-当前 0010 同时定义：
+当前 0007 同时定义：
 
 | 对象 | 状态字段 | 当前状态机 |
 |---|---|---|
@@ -503,7 +503,7 @@ parent 重跑 collector（幂等），不重复 terminal child/credential。
 parallel/serial 调度——是对的，应该保留。问题在它的 ownership 表和 `runAgentTurn`
 步骤 8–12：
 
-- `0010 §3.5` 把 `response/terminal` 写成 `runAgentTurn` 的职责；
+- `0007 §3.5` 把 `response/terminal` 写成 `runAgentTurn` 的职责；
 - `runAgentTurn` 步骤 9 同时做 `transitionTerminal + collector + parent aggregate +
   credential terminalize`，步骤 12 做 `settleResponseFromDraft`；
 - 同一节的 ownership 表又说 `QueueProcessor` 拥有 collector 调用、`runAgentTurn`
@@ -556,9 +556,9 @@ QueueProcessor:
 
 回推清单：
 
-- `0010 §3.5` ownership 表 + `runAgentTurn` 步骤 8–12；
-- `0010 §3.6` 步骤 11/12；
-- `0010 §3.9` 的 `settleAgentTurn` 接口；
+- `0007 §3.5` ownership 表 + `runAgentTurn` 步骤 8–12；
+- `0007 §3.6` 步骤 11/12；
+- `0007 §3.9` 的 `settleAgentTurn` 接口；
 - `0005` 的 `AgentRouter.routeAgents(mode)` 段落；
 - plan 0020 P0-1；
 - `a654788e5` / `09bdb678d` 的 DP-F018R-3 说明（split 保留，ownership 段作废）。
@@ -646,7 +646,7 @@ QueueProcessor:
 - retry：同一 parent/source/queue；新 attempt+1/新 child/新 R；旧 attempt 不可变。
 - multi_mention：per-target attempt 投影 + aggregate message 不重复。
 
-## 8. 与 0010 的具体修改点（已确认，执行中）
+## 8. 与 0007 的具体修改点（已确认，执行中）
 
 | 位置 | 修改 |
 |---|---|
@@ -670,7 +670,7 @@ QueueProcessor:
 
 已确认 A/A，落盘状态：
 
-1. 0010 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9 已同步；
+1. 0007 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9 已同步；
 2. 0005、plan 0020 P0-1/R2、0015、决策包已同步；
 3. R2 待实现 migration + single-writer/crash-window tests；
 4. 生产代码加入 `settleAgentTurn` grep/guard，禁止重新引入。
@@ -683,7 +683,7 @@ QueueProcessor:
 - Clowder `CallbackAuthTurnExecutionLifecycle.ts:66-83`
 - Clowder `route-serial.ts:3488+`、`route-parallel.ts:2015+`
 - Clowder `QueueProcessor.ts:2865/2669/2717`
-- codeteam `0010` §3.9/§4.3.1；`0015` §3.3/§3.4/§3.5；plan 0020 P0-1
+- codeteam `0007` §3.9/§4.3.1；`0015` §3.3/§3.4/§3.5；plan 0020 P0-1
 - codeteam commits `28cfee444`、`086b4b1f2`、`a654788e5`、`09bdb678d`
 
 [宪宪/deepseek-flash🐾]

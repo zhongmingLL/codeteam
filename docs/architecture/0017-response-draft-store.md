@@ -5,7 +5,7 @@ status: draft-for-review
 created: 2026-11-13
 updated: 2026-11-13
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related: [0010-a2a-runtime-chain.md, 0016-turn-terminal-and-settlement-design.md, 0020-f018-thread-first-runtime.md, decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md]
+related: [0007-a2a-runtime-chain.md, 0016-turn-terminal-and-settlement-design.md, 0020-f018-thread-first-runtime.md, decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md]
 related_features: [codeteam/F018]
 source: "Clowder DraftStore/response-draft-settlement; F018 F-15 gap"
 ---
@@ -13,7 +13,7 @@ source: "Clowder DraftStore/response-draft-settlement; F018 F-15 gap"
 # ResponseDraftStore contract
 
 > 目的：把 F-15 的 durable streaming 存储层契约钉死。`response_drafts` 表已有
-> 0010 §4.3.2；本文补 **Store interface、写/合并/seq、生命周期、删除失败、重连读取、
+> 0007 §4.3.2；本文补 **Store interface、写/合并/seq、生命周期、删除失败、重连读取、
 > orphan/清理和测试**。实现按本文落 R2。
 
 ## 0. 结论先行
@@ -30,9 +30,9 @@ source: "Clowder DraftStore/response-draft-settlement; F018 F-15 gap"
 
 已有：
 
-- `0010` §4.3.2 的 `response_drafts` 表：`attempt_id` / `turn_execution_id` 1:1，
+- `0007` §4.3.2 的 `response_drafts` 表：`attempt_id` / `turn_execution_id` 1:1，
   `content` / `content_blocks_json` / `tool_events_json` / `thinking` / `seq` / 时间。
-- `0010` §3.6.1 的行为草图：stream → draft；`message_end` 覆盖；T2 删除；T4 恢复。
+- `0007` §3.6.1 的行为草图：stream → draft；`message_end` 覆盖；T2 删除；T4 恢复。
 
 缺：
 
@@ -60,7 +60,7 @@ codeteam 的适配：
 
 ## 3. 数据模型
 
-沿用 `0010` §4.3.2：
+沿用 `0007` §4.3.2：
 
 ```ts
 interface ResponseDraft {
@@ -370,7 +370,7 @@ settlement=`response_pending`；draft 继续保留给 T2/T4。
 
 ## 12. 参考
 
-- `0010` §3.6.1（durable stream）、§4.3.2（`response_drafts` 表）、§3.9（T1/T2/T3/T4）。
+- `0007` §3.6.1（durable stream）、§4.3.2（`response_drafts` 表）、§3.9（T1/T2/T3/T4）。
 - `0016` §5.3（T2/T4 事务边界）、§5.4（错误/取消/重试）。
 - `0015` §3.2 F-15；`decision-packets/2026-11-12-dp-f018-surface-depth-readmodels.md` §5。
 - Clowder `packages/api/src/domains/cats/services/stores/ports/DraftStore.ts`、`RedisDraftStore.ts`、

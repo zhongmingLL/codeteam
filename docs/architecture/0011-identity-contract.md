@@ -11,7 +11,7 @@ related_features: [codeteam/F018, codeteam/F017]
 
 # codeteam identity contract v1
 
-> 唯一命名真相源。`0010`、`0005` 和后续实现只使用本文的规范名；旧名只允许出现在迁移映射表。
+> 唯一命名真相源。`0007`、`0005` 和后续实现只使用本文的规范名；旧名只允许出现在迁移映射表。
 
 ## 0. 一句话
 
@@ -21,8 +21,8 @@ ID 按对象分层：**scope → message → admission → queue → lifecycle �
 
 | 冲突 | 旧现状 | 后果 |
 |---|---|---|
-| `sourceMessageId` | codeteam 旧域词（Task/Artifact/Schedule 的触发消息）；`0010` 又拿它当队列身份 + parent unique | 一个词三个语义 |
-| `sourceId` / `sourceRecordId` | `0001` 现有队列：`sourceId` = message，`sourceRecordId` = run/backlog 等领域记录；`0010` 的 `sourceRecordId` 又变成队列身份 | 同名反义 |
+| `sourceMessageId` | codeteam 旧域词（Task/Artifact/Schedule 的触发消息）；`0007` 又拿它当队列身份 + parent unique | 一个词三个语义 |
+| `sourceId` / `sourceRecordId` | `0001` 现有队列：`sourceId` = message，`sourceRecordId` = run/backlog 等领域记录；`0007` 的 `sourceRecordId` 又变成队列身份 | 同名反义 |
 | `invocationId` / `parentInvocationId` / `turnExecutionId` | Clowder 的 `invocationId` 是 child；codeteam 把 parent record 叫 `invocationId`、child 叫 `turnExecutionId`、child→parent FK 叫 `parentInvocationId` | 同名不同层；A2A 因果父单独用 `a2aParentTurnExecutionId` |
 
 ## 2. 规范分层
@@ -133,14 +133,14 @@ userId
 |---|---|---|---|
 | `QueueEntry.sourceId` | 0001 现有队列 | `messageId` | rename |
 | `QueueEntry.sourceRecordId`（run/backlog） | 0001 现有队列 | `originRecordId` | rename |
-| `QueueEntry.sourceMessageId` | 0010 | 删除 | 拆到 `sourceRecordId` + `messageId` |
-| `InvocationRecord.sourceMessageId` | 0010 | `sourceRecordId` | rename + unique |
+| `QueueEntry.sourceMessageId` | 0007 | 删除 | 拆到 `sourceRecordId` + `messageId` |
+| `InvocationRecord.sourceMessageId` | 0007 | `sourceRecordId` | rename + unique |
 | `InvocationRecord.userMessageId` | Clowder | 保留 | v1 = `messageId` |
 | `InvocationRecord.idempotencyKey` | Clowder | 删除 | v1 用 `sourceRecordId UNIQUE` + queue receipt |
 | auth `invocationId` | Clowder | `turnExecutionId` | rename；它本来就是 child |
 | Clowder `parentInvocationId` | Clowder | `parentInvocationId` | 保留；child → lifecycle parent |
-| `InvocationRecord.invocationRecordId` | 0010 | `invocationId` | rename；parent record id |
-| `TurnExecution.invocationRecordId` | 0010 | `parentInvocationId` | rename；child FK |
+| `InvocationRecord.invocationRecordId` | 0007 | `invocationId` | rename；parent record id |
+| `TurnExecution.invocationRecordId` | 0007 | `parentInvocationId` | rename；child FK |
 | `QueueEntry.id` | 双方 | `queueEntryId` | 明确对象；派生 |
 | `QueueLedgerPayload.sourceRecordId` | Clowder | 保留 | 队列身份 |
 | `QueueLedgerPayload.messageId` | Clowder | 保留 | 消息指针 |
@@ -181,7 +181,7 @@ credentialId（auth）
 
 ## 9. 验收检查
 
-`0010` / `0005` / 新实现中不允许出现：
+`0007` / `0005` / 新实现中不允许出现：
 
 - `sourceMessageId`（A2A runtime）
 - `sourceId`（队列/执行）
@@ -196,7 +196,7 @@ credentialId（auth）
 
 ## 10. 落点
 
-- `0010-a2a-runtime-chain.md`：QueueEntry / InvocationRecord / TurnExecution / Credential 全部改用本文名。
+- `0007-a2a-runtime-chain.md`：QueueEntry / InvocationRecord / TurnExecution / Credential 全部改用本文名。
 - `0005-thread-first-runtime.md`：runtime chain 与字段同步。
 - `0001-codeteam-architecture-v1.md`：legacy `QueueEntry` / `Run` 保留实现原貌，新增注释指向本文。
 

@@ -5,7 +5,7 @@ status: decided
 created: 2026-11-11
 updated: 2026-11-11
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related: ../0010-a2a-runtime-chain.md
+related: ../0007-a2a-runtime-chain.md
 related_features: [codeteam/F018]
 operator_decision: "DP-F018RECOVERY-1=A, DP-F018RECOVERY-2=A, DP-F018RECOVERY-3=A, DP-F018RECOVERY-4=A, DP-F018RECOVERY-5=A, DP-F018RECOVERY-6=A, DP-F018RECOVERY-7=A (2026-11-11)"
 ---
@@ -147,10 +147,10 @@ codeteam 读模型应复用同一语义。
 
 拍板后更新：
 
-- `0010 §3.10`：startup cutoff/protected、response-pending scope、单 reaper、zombie 收敛顺序、
+- `0007 §3.10`：startup cutoff/protected、response-pending scope、单 reaper、zombie 收敛顺序、
   live projection evidence rank；
-- `0010 §3.9`：recovery 调用同一 collector/aggregate；`response_missing` typed reason；
-- `0010 §3.2`：zombie queue entry restore/remove 规则；
+- `0007 §3.9`：recovery 调用同一 collector/aggregate；`response_missing` typed reason；
+- `0007 §3.2`：zombie queue entry restore/remove 规则；
 - `F018` feature / plan 0020：restart/long-turn/zombie/live 负例；
 - 实现侧：`TurnExecutionStartupReconciler`、`InvocationOwnerReaper`、`getThreadLiveInvocations`、
   QueueProcessor recovery。

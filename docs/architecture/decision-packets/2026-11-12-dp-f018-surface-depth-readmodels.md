@@ -5,7 +5,7 @@ status: decided 1/2/3
 created: 2026-11-12
 updated: 2026-11-13
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related: [../0010-a2a-runtime-chain.md, ../0014-operator-message-journey.md, ../0015-codeteam-operator-journey-audit.md, ../../plans/0020-f018-thread-first-runtime.md]
+related: [../0007-a2a-runtime-chain.md, ../0014-operator-message-journey.md, ../0015-codeteam-operator-journey-audit.md, ../../plans/0020-f018-thread-first-runtime.md]
 related_features: [codeteam/F018]
 ---
 
@@ -31,14 +31,14 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 ## 2. DP-F018SURFACE-1：`post_message` / `multi_mention` 的 fan-out 分工
 
 > **2026-11-13 已拍 A**：`post_message`/`cross_post_message` 单 successor；
-> `multi_mention` 是唯一多 target fan-out。0010/0014/plan/F018 已同步。
+> `multi_mention` 是唯一多 target fan-out。0007/0014/plan/F018 已同步。
 
 ### 前因
 
 - Clowder：`post_message` 是 same-thread **single successor**；多 target 的 deliberate
   fan-out 走 `multi_mention` orchestrator。两者语义不同：前者是“传给下一棒”，后者有
   status/timeout/callback/aggregate。
-- codeteam：`0010` §3.8 曾允许 `post_message` / `cross_post_message` targets ≤8，
+- codeteam：`0007` §3.8 曾允许 `post_message` / `cross_post_message` targets ≤8，
   `multi_mention` 固定 2–3 个 agent。DP-B 又把 `multi_mention` 定为完整 orchestrator。
 - 结果：同一个“多 target”能力有两条入口；调用方无法从工具名判断要不要聚合/超时/回调，
   实现和测试也会出现两套 fan-out。
@@ -64,7 +64,7 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 
 ### 落点
 
-- `0010` §3.8：post/cross targets=1；`multi_mention` 2–3 且唯一多 target。
+- `0007` §3.8：post/cross targets=1；`multi_mention` 2–3 且唯一多 target。
 - `0014` Journey C：operator `@A @B` 仍是 ingress multi-target；agent 侧同 thread
   多 target 才用 `multi_mention`。
 - plan 0020 R3/R4、F018 E4/E14；CLI/tool 描述同步。
@@ -115,7 +115,7 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 
 ### 落点
 
-- `0010` §3.8、§5.1、§9；plan 0020 R4；E15/E16。
+- `0007` §3.8、§5.1、§9；plan 0020 R4；E15/E16。
 - pin per-thread budget、substantive-aware loop guard、early-stop 测试。
 
 **决策：`DP-F018SURFACE-2=A`（2026-11-13）**
@@ -124,7 +124,7 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 
 > **2026-11-13 已拍 A**：F018 定义 `QueueView` / `LiveInvocationView` /
 > `MessageDispatchSummary` domain DTO；W7a 只做 Hub transport 映射；unread/mention
-> 归 W7a/v2。0010 §3.10 已补 DTO 字段/排序/降级。
+> 归 W7a/v2。0007 §3.10 已补 DTO 字段/排序/降级。
 
 ### 前因
 
@@ -162,7 +162,7 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 
 ### 落点
 
-- `0010` §3.10 + 新 read DTO 小节；W7a API contract；plan 0020 验收。
+- `0007` §3.10 + 新 read DTO 小节；W7a API contract；plan 0020 验收。
 - 测试：queue 排序/cap、live 去重/过滤、dispatch 分页/降级。
 
 **决策：`DP-F018SURFACE-3=A`**
@@ -197,7 +197,7 @@ DP-A/B/C/D/E 已关闭 operator、attempt、settlement 语义；本 packet 只�
 ## 7. 参考
 
 - `0015` §3.2 F-07/F-08/F-09；§3.1 组件矩阵。
-- `0010` §3.8（targets/depth/multi_mention）、§3.10（read models）、§4.3.2（draft 表）。
+- `0007` §3.8（targets/depth/multi_mention）、§3.10（read models）、§4.3.2（draft 表）。
 - Clowder `MultiMentionOrchestrator.ts`、`route-helpers` `MAX_A2A_DEPTH`、
   `InvocationQueue.ts:167` queue cap 5、`DraftStore` / `response-draft-settlement.ts`。
 

@@ -6,14 +6,14 @@ created: 2026-11-11
 updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F018]
-related: [0005-thread-first-runtime.md, 0010-a2a-runtime-chain.md, 0011-identity-contract.md, 0013-idempotency-key-map.md, 0014-operator-message-journey.md]
+related: [0005-thread-first-runtime.md, 0007-a2a-runtime-chain.md, 0011-identity-contract.md, 0013-idempotency-key-map.md, 0014-operator-message-journey.md]
 source: "Clowder local reference checkout; codeteam F018 design docs + current task-first code"
 ---
 
 # codeteam operator message journey — component audit
 
 > **历史审计：** 2026-11-11 的组件审计与决策证据；DP-A/B/C/D/E 与 F-07/F-08/F-09
-> 已折入 `0010`/`0014`/`0016`/`0017`。本文不再作为实现基线；文档地图见
+> 已折入 `0007`/`0014`/`0016`/`0017`。本文不再作为实现基线；文档地图见
 > `0000-architecture-map.md`。
 
 > 目的：以 `0014` 的 Clowder 全链路为参照，给出 **codeteam 版本**的 operator
@@ -62,7 +62,7 @@ source: "Clowder local reference checkout; codeteam F018 design docs + current t
 - P3（可后置）：F-12 draft flush 调参、F-13 命名、F-14 queue admissions receipt。
 
 > 2026-11-12 更新：DP-A=A、DP-B=B、DP-E=A 已拍板；DP-C=A、DP-D=A 也已拍板，
-> 0010 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9、0005 与 plan 0020 已同步；`settleAgentTurn`
+> 0007 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9、0005 与 plan 0020 已同步；`settleAgentTurn`
 > 已删除，生产代码不得重新引入。
 
 ## 1. codeteam 目标链路（与 0014 对应）
@@ -162,13 +162,13 @@ Hub / CLI / API（W7a，当前缺失）
 
 #### F-02 operator 被提升为 QueueTarget（P1，意外分叉）
 
-> 已拍 DP-A=A：operator 不进入 QueueTarget；0010/0005/0014 已改为
+> 已拍 DP-A=A：operator 不进入 QueueTarget；0007/0005/0014 已改为
 > message `mentionsUser`。以下保留为决策依据。
 
 - Clowder：agent `post_message` 的 `targetCats` 只放 cat；operator 通知由正文行首
   `@co-creator`/配置 handle 触发 `detectUserMention`，写 message `mentionsUser=true`；
   operator 回复是一条新的 user message（`user-mention.ts`、`callbacks.ts:1875`）。
-- codeteam：`0010` §3.8 把 targets 定义为 `{kind:"agent"|"operator", id}`；operator-only
+- codeteam：`0007` §3.8 把 targets 定义为 `{kind:"agent"|"operator", id}`；operator-only
   只通知、不建 parent/TurnExecution，`delivery.operatorNotifiedAt` 写 queue entry；
   `StoredMessage` 明确不存 `mentionsUser`。
 - 问题：operator 不是执行 target，却进入 QueueTarget union，导致 queue target 解析、
@@ -182,7 +182,7 @@ Hub / CLI / API（W7a，当前缺失）
 
 #### F-03 `multi_mention` 语义与 Clowder 不一致（P1，意外分叉）
 
-> 已拍 DP-B=B：实现完整 Clowder orchestrator；0010 §3.8 multi_mention 已补
+> 已拍 DP-B=B：实现完整 Clowder orchestrator；0007 §3.8 multi_mention 已补
 > status/timeout/callback/aggregate 设计。以下保留为决策依据。
 
 - Clowder：`multi_mention` 是完整 orchestrator：`MultiMentionOrchestrator` 维护
@@ -190,7 +190,7 @@ Hub / CLI / API（W7a，当前缺失）
   每 target response、聚合结果消息、status endpoint、anti-cascade；见
   `MultiMentionOrchestrator.ts`、`callback-multi-mention-routes.ts`、
   `packages/shared/src/types/multi-mention.ts`。
-- codeteam：`0010` §3.8 / `0020` R3 定义 `multi_mention` 为 2–3 targets 的 fan-out，
+- codeteam：`0007` §3.8 / `0020` R3 定义 `multi_mention` 为 2–3 targets 的 fan-out，
   明确 **no orchestrator/status/timeout/aggregate callback**；只是“一条 message + 一个
   queue entry + 一个 parent + N children”。
 - 问题：同名不同义是最危险的复用偏差。调用方会以为能拿到聚合结果/超时/状态，
@@ -202,12 +202,12 @@ Hub / CLI / API（W7a，当前缺失）
 
 #### F-04 TurnExecution 与 InvocationAttempt 双终态（P1，设计问题）
 
-> 2026-11-12 已拍 A：采用 §3.3 修正；0010 schema 已改为 `delivery_state`。
+> 2026-11-12 已拍 A：采用 §3.3 修正；0007 schema 已改为 `delivery_state`。
 
 - Clowder：`TurnExecutionRecord` 是 child canonical；status
   `running/completed/failed/interrupted/canceled`，terminal first-write-wins。
   `InvocationRecord` 是 parent；没有第二个 child state。
-- codeteam：`0010` §4.3 `TurnExecution` 有 status；§4.3.1 `invocation_attempts` 又有
+- codeteam：`0007` §4.3 `TurnExecution` 有 status；§4.3.1 `invocation_attempts` 又有
   `state`（同五态）和 `settlement`；child terminal 与 attempt terminal 同事务更新。
 - 问题：同一个 child 有两个 canonical state。只要任一路径漏写/重试/恢复顺序不同，
   collector、reaper、response settlement 就会读到矛盾状态；`state` 还会与
@@ -224,7 +224,7 @@ Hub / CLI / API（W7a，当前缺失）
 
 - Clowder：routeSerial/routeParallel 负责 response commit、draft delete、A2A successor；
   QueueProcessor 负责 parent/child/admission；`invokeSingleCat` 只产流。
-- codeteam：`0010` §3.6/§3.9 说 `invoke-single-agent` 只负责 provider/stream；
+- codeteam：`0007` §3.6/§3.9 说 `invoke-single-agent` 只负责 provider/stream；
   `settleAgentTurn` 封装 child terminal + attempt terminal + parent aggregate +
   credential + response settlement；但 `routeExecution` 仍被描述为执行链的一环，
   没有写清谁调用 `settleAgentTurn`、谁提交 R、谁删 draft。
@@ -242,7 +242,7 @@ Hub / CLI / API（W7a，当前缺失）
 > 2026-11-13 已去掉 legacy audit：`response_missing` 只写 typed system message +
 > `terminalReason`；abandon/TTL 写 thread event。
 
-- codeteam：`0010` §3.10 / §9.5 说 R 缺失走 `response_missing` recovery：
+- codeteam：`0007` §3.10 / §9.5 说 R 缺失走 `response_missing` recovery：
   曾写 attempt failed + system message/audit；同时 §3.1 又说 `audit` 是 task-first
   遗留，不属于 A2A message/lifecycle 契约。
 - 问题：A2A 恢复依赖一个被声明为 legacy 的表面，读模型/审计边界会漂移。
@@ -253,11 +253,11 @@ Hub / CLI / API（W7a，当前缺失）
 #### F-07 `post_message` 多 target 上限与 Clowder 单 successor 不一致（P2，已拍 A）
 
 > 2026-11-13 已拍 `DP-F018SURFACE-1=A`：`post_message`/`cross_post_message` 单
-> successor；`multi_mention` 是唯一多 target fan-out。0010/0014/plan/F018 已同步。
+> successor；`multi_mention` 是唯一多 target fan-out。0007/0014/plan/F018 已同步。
 
 - Clowder：`post_message` 工具描述强调 same-thread single successor；多 cat 的
   deliberate fan-out 走 `multi_mention`。
-- codeteam：`0010` §3.8 曾允许 `post_message` / `cross_post_message` targets ≤8；
+- codeteam：`0007` §3.8 曾允许 `post_message` / `cross_post_message` targets ≤8；
   2026-11-13 DP-F018SURFACE-1=A 已收敛为单 successor。
 - 问题：如果 `post_message` 自己就能 8-way fan-out，`multi_mention` 的独立存在更没
   语义；如果 `multi_mention` 保留 Clowder 聚合语义，`post_message` 多 target 又成了
@@ -289,9 +289,9 @@ Hub / CLI / API（W7a，当前缺失）
 
 > 2026-11-13 已拍 `DP-F018SURFACE-3=A`：F018 定义 `QueueView` /
 > `LiveInvocationView` / `MessageDispatchSummary` domain DTO；W7a 只做 Hub transport
-> 映射；`ThreadUnread/MentionView` 归 W7a/v2。0010 §3.10 已补 DTO 字段/排序/降级。
+> 映射；`ThreadUnread/MentionView` 归 W7a/v2。0007 §3.10 已补 DTO 字段/排序/降级。
 
-- codeteam：`0010` 有 `MessageDispatchSummary`、`getThreadLiveInvocations` 的名字。
+- codeteam：`0007` 有 `MessageDispatchSummary`、`getThreadLiveInvocations` 的名字。
   `getThreadLiveInvocations` 已在 DP-F018RECOVERY 补字段/evidence rank；
   `MessageDispatchSummary` 仍只有一句，`QueueView` / unread / mention 没有契约。
 - 问题：Hub 需要 queue 面板、processing/live、dispatch 状态、unread/mention；
@@ -302,12 +302,12 @@ Hub / CLI / API（W7a，当前缺失）
 
 #### F-10 queue cap/priority 未定（P2，已自决）
 
-> 2026-11-13 已按推荐落 0010 §3.1：user/A2A 分开计数，cap 5；urgent 先、同
+> 2026-11-13 已按推荐落 0007 §3.1：user/A2A 分开计数，cap 5；urgent 先、同
 > priority FIFO；operator processNext 只处理自己的 head；queue full 429 不写 source。
 
 - Clowder：user source queue cap 5（`InvocationQueue.ts:167`）；priority 有
   urgent/normal；position/order 明确。
-- codeteam：`0010` 曾只有 invocation_queue 的 priority/position，没有 cap/排序/
+- codeteam：`0007` 曾只有 invocation_queue 的 priority/position，没有 cap/排序/
   operator processNext 的边界；post/cross 单 target、multi_mention 2-3 与 queue cap
   不是同一维度。
 - 问题：没有 cap，Hub 可能无限排队；没有排序，operator 手动 processNext 与自动
@@ -330,11 +330,11 @@ Hub / CLI / API（W7a，当前缺失）
 
 #### F-12 draft flush 100ms/4KB vs Clowder 2s/2000 chars（P3，R2 benchmark）
 
-> 2026-11-13 0010/plan 已标 100ms/4KB 为 provisional；R2 做 write amplification/
+> 2026-11-13 0007/plan 已标 100ms/4KB 为 provisional；R2 做 write amplification/
 > 延迟 benchmark，允许调 250–500ms。
 
 - Clowder：`route-serial.ts:1762` / `route-parallel.ts:1137` 是 2s / 2000 chars。
-- codeteam：`0010` §3.6.1 目标 100ms/4KB，理由是更快的刷新/重连体验。
+- codeteam：`0007` §3.6.1 目标 100ms/4KB，理由是更快的刷新/重连体验。
 - 问题：SQLite 单写者 + 100ms flush 可能放大写锁竞争；Clowder 的 2s 是 Redis/
   低写入压力的选择。没有 benchmark 就改 20 倍频率，属于“体验目标未验证”。
 - 建议：R2 做一次 write amplification/延迟 benchmark；先保留 100ms 作为目标，但
@@ -348,7 +348,7 @@ Hub / CLI / API（W7a，当前缺失）
   `parentInvocationId` 是 FK；Clowder `clientMessageId` → codeteam
   `piExtToolCallId`。
 - 判断：这些是必要的命名/坐标适配，已有 `0011`/`0013` 解释；保留。
-- 建议：在 0010/0011 的对照表里继续标注“Clowder 名 / codeteam 名”，避免读者把
+- 建议：在 0007/0011 的对照表里继续标注“Clowder 名 / codeteam 名”，避免读者把
   `invocationId` 当 child。
 - 立场：**P3，保留。**
 
@@ -401,7 +401,7 @@ Clowder 的 attempt 是 **QueueTargetAttempt**，属于 Queue 投递/重试台�
 - retry 时 parent `failed → running` 重新 claim；新的 attempt append；新的 child
   `TurnExecution`；旧 child/attempt 不改。
 
-**codeteam 的根因**：`0010` 的 `invocation_attempts` 把两层合并了：
+**codeteam 的根因**：`0007` 的 `invocation_attempts` 把两层合并了：
 
 - `state` 复制了 TurnExecution 的五态（running/completed/failed/...）；
 - 同时又有 `turnExecutionId` 指向 child；
@@ -450,7 +450,7 @@ Clowder 实际 owner：
   正常 route 的 R 不是它提交的。
 - `settleResponseFromDraft` 是 recovery/second phase，不是正常 path 的唯一 settlement。
 
-**codeteam 的根因**：`0010` §3.9 的 `settleAgentTurn` 同时封装
+**codeteam 的根因**：`0007` §3.9 的 `settleAgentTurn` 同时封装
 child terminal + attempt terminal + parent aggregate + credential + response settlement；
 它把四个 owner 的职责合并，却没有定义“谁在正常路径调用它、谁在异常路径调用它”。
 于是 `invoke-single-agent`、route、QueueProcessor 都可能触发 terminal/settlement，
@@ -470,7 +470,7 @@ child terminal + attempt terminal + parent aggregate + credential + response set
   `commitResponseAndAggregate`，并明确只由 QueueProcessor/route 其中一个调用；
   不要叫 `settleAgentTurn` 并暗示所有层都调用。
 
-> DP-C/DP-D 已于 2026-11-12 拍板 A/A；0010 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9、
+> DP-C/DP-D 已于 2026-11-12 拍板 A/A；0007 §3.5/§3.6/§3.9/§4.3.1/§5.2.1/§9、
 > 0005 和 plan P0-1 已同步。
 
 ### 3.5 设计史：为什么 codeteam 会留下这两个重叠
@@ -505,7 +505,7 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 
 | 缺件 | 现状 | 建议 |
 |---|---|---|
-| `OperatorMessageIngress` 契约 | `0014` 只有概念；`0010` 没有 request/response/error/idempotency 定义 | 冻结输入（`threadId`/`content`/`targets`/`idempotencyKey`/`replyTo`）、输出（`message`/`queueEntryId`/`replayed`）、typed reject |
+| `OperatorMessageIngress` 契约 | `0014` 只有概念；`0007` 没有 request/response/error/idempotency 定义 | 冻结输入（`threadId`/`content`/`targets`/`idempotencyKey`/`replyTo`）、输出（`message`/`queueEntryId`/`replayed`）、typed reject |
 | Queue cap/priority/order | `invocation_queue` 有字段，没有常量/规则 | 建议 source cap 5、urgent/normal、同优先级 FIFO、operator 手动 processNext 只处理自己的 head |
 | Read model DTO | `MessageDispatchSummary` 只有一句；live evidence rank 未定义 | 冻结 `QueueView` / `LiveInvocationView` / `DispatchSummary` / `UnreadMentionView` 字段、排序、分页、降级 |
 | Operator decision 关联 | `replyTo`/`causal.triggerMessageId` 有，但没有“这是一个待决策问题”的 typed 关联 | 明确用 `replyTo` + `mentionsUser` 关联；定义 decision request/answer 的读模型 |
@@ -516,7 +516,7 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 | 缺件 | 现状 | 影响 |
 |---|---|---|
 | `POST /api/messages` 等 operator ingress | F016c discovery/signoff pending | 没有 operator 发消息入口，Journey A–H 无法端到端 |
-| WebSocket/SSE + event replay/catch-up | 0010 只定义 `AgentStreamEvent` 语义 | Hub 无法收流式答复/断线恢复 |
+| WebSocket/SSE + event replay/catch-up | 0007 只定义 `AgentStreamEvent` 语义 | Hub 无法收流式答复/断线恢复 |
 | cancel / cancel-all / retry 控制 API | F018 只有 tracker/service 语义 | operator 无法从 UI 执行取消/重试 |
 | operator auth/session | W7a 鉴权矩阵未落地 | 无法区分 operator / worker / webhook |
 | Hub 兼容 DTO / thread/message 读面 | W7a 兼容子集未落地 | Hub 无法读 thread/queue/dispatch |
@@ -539,7 +539,7 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 - `a2a_requests` legacy；claim 迁到 credential `toolCallClaims`；
 - `agent_sessions` 只迁 active，sealing/sealed 留 legacy。
 
-这不是“再设计一套”，而是 0010 R1 已写明的迁移；不要把 legacy 代码的 task-first
+这不是“再设计一套”，而是 0007 R1 已写明的迁移；不要把 legacy 代码的 task-first
 字段带进新表。
 
 ## 5. 与 Clowder 的差异：哪些合理，哪些不合理
@@ -580,9 +580,9 @@ Clowder 的边界，而不是再给 `settleAgentTurn` 加参数。
 | 决策 | 推荐 | 为什么 | 不拍的后果 |
 |---|---|---|---|
 | DP-A operator 通知 | **已拍 A：退回 `mentionsUser`**；B 不再考虑 | operator 不是执行 target；Clowder 已有 message flag；少一层 union/queue/depth | 已关闭 |
-| DP-B `multi_mention` | **已拍 B：实现 Clowder orchestrator（status/timeout/callback/aggregate）**；A 不再考虑 | 同名异义会误导调用方；做就做全 | 已关闭；设计补进 0010 §3.8 |
-| DP-C child 终态 | **已拍 A：TurnExecution 单 canonical，attempt 收敛为 QueueTargetAttempt** | Clowder 没有 child InvocationAttempt；codeteam 把投递 attempt 和 child state 混了 | 0010 §3.5/§4.3.1/§5.2.1 已同步 |
-| DP-D settlement owner | **已拍 A：拆回四层 owner，删除 settleAgentTurn god-service** | Clowder 是 invoke/route/QueueProcessor/recovery 分层 | 0010 §3.6/§3.9/§9 已同步 |
+| DP-B `multi_mention` | **已拍 B：实现 Clowder orchestrator（status/timeout/callback/aggregate）**；A 不再考虑 | 同名异义会误导调用方；做就做全 | 已关闭；设计补进 0007 §3.8 |
+| DP-C child 终态 | **已拍 A：TurnExecution 单 canonical，attempt 收敛为 QueueTargetAttempt** | Clowder 没有 child InvocationAttempt；codeteam 把投递 attempt 和 child state 混了 | 0007 §3.5/§4.3.1/§5.2.1 已同步 |
+| DP-D settlement owner | **已拍 A：拆回四层 owner，删除 settleAgentTurn god-service** | Clowder 是 invoke/route/QueueProcessor/recovery 分层 | 0007 §3.6/§3.9/§9 已同步 |
 | DP-E Hub 依赖 | **已拍 A：W7a 独立验收，F018 只验收 daemon/CLI**；B 不再考虑 | F016c 仍 discovery；F018 不应重写 transport | 已关闭 |
 
 DP-A–E 已关闭；F-07/F-08/F-09 均已拍 A（见
@@ -598,12 +598,12 @@ DP-A–E 已关闭；F-07/F-08/F-09 均已拍 A（见
 | Clowder child state | `packages/api/src/domains/cats/services/agents/invocation/QueueProcessor.ts:4113`、`PerCatTerminalDispositionCollector.ts` |
 | Clowder route/stream | `route-serial.ts:481`、`route-parallel.ts:181`、`SocketManager.ts:437` |
 | Clowder queue/retry | `InvocationQueue.ts:167`、`queue-retry-deferrals.ts` |
-| codeteam operator target（历史） | `docs/architecture/0010-a2a-runtime-chain.md` §3.8；`0005` §3.3 |
-| codeteam multi_mention | `docs/architecture/0010-a2a-runtime-chain.md` §3.8；`docs/plans/0020-f018-thread-first-runtime.md` R3 |
-| codeteam terminal/attempt | `docs/architecture/0010-a2a-runtime-chain.md` §3.9、§4.3、§4.3.1、§5.2.1 |
-| codeteam settlement | `docs/architecture/0010-a2a-runtime-chain.md` §3.6、§3.9；DP-F018TERM |
-| codeteam recovery | `docs/architecture/0010-a2a-runtime-chain.md` §3.10；DP-F018RECOVERY |
-| codeteam read models | `docs/architecture/0010-a2a-runtime-chain.md` §3.10；`0005` §5 |
+| codeteam operator target（历史） | `docs/architecture/0007-a2a-runtime-chain.md` §3.8；`0005` §3.3 |
+| codeteam multi_mention | `docs/architecture/0007-a2a-runtime-chain.md` §3.8；`docs/plans/0020-f018-thread-first-runtime.md` R3 |
+| codeteam terminal/attempt | `docs/architecture/0007-a2a-runtime-chain.md` §3.9、§4.3、§4.3.1、§5.2.1 |
+| codeteam settlement | `docs/architecture/0007-a2a-runtime-chain.md` §3.6、§3.9；DP-F018TERM |
+| codeteam recovery | `docs/architecture/0007-a2a-runtime-chain.md` §3.10；DP-F018RECOVERY |
+| codeteam read models | `docs/architecture/0007-a2a-runtime-chain.md` §3.10；`0005` §5 |
 | W7a/Hub dependency | `docs/features/F016-w7a-headless-surface.md:65`；`docs/plans/0004-w5-w8-scale-product.md:390` |
 
 

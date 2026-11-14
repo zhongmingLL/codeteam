@@ -409,7 +409,7 @@ interface AgentReadStateStore {
 
 interface HistoryWindow {
   mode: "bootstrap" | "incremental";
-  rows: StoredMessage[];        // StoredMessage 定义见 0010 §3.1
+  rows: StoredMessage[];        // StoredMessage 定义见 0007 §3.1
   boundarySeq: number;
   degraded?: string;
 }
@@ -426,7 +426,7 @@ interface AgentSessionManager {
     agentId: string;
     turnExecutionId: string;
     session: AgentSession;
-  }): Promise<WorkerHandle>;    // WorkerHandle 定义见 0010 §3.5.2
+  }): Promise<WorkerHandle>;    // WorkerHandle 定义见 0007 §3.5.2
 
   releaseWorker(handle: WorkerHandle, reason: string): Promise<void>;
 
@@ -458,9 +458,9 @@ interface AgentSessionManager {
     lightweight seal 旧行、新建 `seq+1` active 行、cursor rewind，然后本轮在新行 fresh。
   - 该 reset 若遇到同 session 的 running attempt（另一个并发 turn），返回 typed
     `session_busy`；调用方 defer，不强行 reset。
-- `loadHistory`：委托 `HistoryAssembler`（0010 §3.5.1 的只读加载器），只读 `AgentReadStateStore` 与
+- `loadHistory`：委托 `HistoryAssembler`（0007 §3.5.1 的只读加载器），只读 `AgentReadStateStore` 与
   `MessageStore`；返回 `rows + boundarySeq + mode`。**这里不 ack**。完整规则见
-  `0010 §3.5.1`。
+  `0007 §3.5.1`。
 - `acquireWorker`：`WorkerPool.ensure`；容量不足返回 typed `worker_capacity`，
   由 QueueProcessor `releaseClaim + defer`，不在 manager 内热循环。
 - `releaseWorker(handle)`：turn 结束/取消后 retire（`warmTtl=0`）；按
@@ -582,7 +582,7 @@ domain 子集**，不是 Clowder 的 Redis adapter。不能按类名 1:1 对表�
 | `getMentionAckCursor` / `setMentionAckCursor` / `deleteMentionAckCursor` | v2；v1 不做 mention ack |
 | `getSeenCursor` / `setSeenCursor` / `deleteSeenCursor` | v2；v1 不做 seen cursor |
 | `reconcile*CursorFormat` / `replace*CursorIfEqual` | v1 不需要：SQLite 单一 schema，没有 v1/v2 cursor 格式迁移 |
-| `getCatState` / `setCatState` | `AgentState`（0007），runtime state，不是 session |
+| `getCatState` / `setCatState` | `AgentState`（0008），runtime state，不是 session |
 
 **为什么 DeliveryCursor 不放进 `AgentSessionStore`**：
 
@@ -600,8 +600,8 @@ domain 子集**，不是 Clowder 的 Redis adapter。不能按类名 1:1 对表�
 | `SessionChainStore` / `SessionRecord`（cliSessionId/status/seq/messageCount/consecutiveRestoreFailures/seal/compression/handoff） | `AgentSession`（piSessionId/file、workingDirectory、messageCount、consecutiveResumeFailures、seq/status/sealReason/sealedAt） | v1 保留 lightweight seal 的 seq/status；transcript/digest/restore/compression/handoff 是 v2 |
 | `RuntimeSessionStore`（runtime/runtimeSessionId/thread/cat/user/identityHistory/lifecycle） | `AgentSession.piSessionId/piSessionFile` + `WorkerBinding` | codeteam 不建独立 runtime metadata store；pi 是唯一 backend，runtime 绑定落在 session row + worker binding |
 | `DeliveryCursorStore.getCursor/ackCursor`（`stores/ports/DeliveryCursorStore.ts`） | `AgentReadStateStore.get/ack/rewind` | 同为 monotonic cursor；Clowder 是 visibility cursor `v2:<seq>:<messageId>` + delivery/mention/seen 三 namespace；codeteam v1 只有 delivery + numeric `messages.seq` |
-| `ContextAssembler` + incremental context（`route-helpers.ts` `assembleIncrementalContextInternal`） | `HistoryAssembler`（0010 §3.5.1） | 同样是 fetch-after-cursor → visibility filter → boundary；codeteam 去掉 smart window/seen/mention/overlay，v1 只做 delivery |
-| `AcpProcessPool`（`providers/acp/AcpProcessPool.ts:114`） | `WorkerPool`（0010 §3.5.2） | Clowder 长驻、可 multiplexing、内存 pool；codeteam ephemeral、一 worker 一 session、SQLite registry（pi RPC 无 session/new/load） |
+| `ContextAssembler` + incremental context（`route-helpers.ts` `assembleIncrementalContextInternal`） | `HistoryAssembler`（0007 §3.5.1） | 同样是 fetch-after-cursor → visibility filter → boundary；codeteam 去掉 smart window/seen/mention/overlay，v1 只做 delivery |
+| `AcpProcessPool`（`providers/acp/AcpProcessPool.ts:114`） | `WorkerPool`（0007 §3.5.2） | Clowder 长驻、可 multiplexing、内存 pool；codeteam ephemeral、一 worker 一 session、SQLite registry（pi RPC 无 session/new/load） |
 | `SessionManager.delete` + `SessionChainStore` seal | `AgentSessionManager.reset` + `AgentReadStateStore.rewind` | codeteam 把“lightweight seal 旧行 + 新建 seq+1 + cursor 回退”收成一个显式 reset；不生成 transcript/digest |
 | `messageCount` / `consecutiveRestoreFailures` | `messageCount` / `consecutiveResumeFailures` | 语义对齐：首次可见输出 0→1，done 时本 turn 未计数则 +1（无输出也 +1）；连续失败 3 次 lightweight seal + fresh |
 | transcript/digest/restore/chain 导航 | v2 | v1 只做 lightweight seal；A2A runtime 验收不要求长 session 恢复 |
@@ -642,7 +642,7 @@ domain 子集**，不是 Clowder 的 Redis adapter。不能按类名 1:1 对表�
 9. child terminal 事务 A 要么同时提交 terminal + messageCount + cursor ack，要么全回滚。
 10. v1 有 lightweight seal（active → sealed + 新行 seq+1），没有 transcript/digest/
     restore/chain 导航；旧行/旧 pi 文件保留，不删除。
-11. `WorkerBinding` 是 durable row；`WorkerHandle` 是 runtime handle，定义见 `0010 §3.5.2`；`worker_id` / `worker_binding_state` 不写回 AgentSession identity。
+11. `WorkerBinding` 是 durable row；`WorkerHandle` 是 runtime handle，定义见 `0007 §3.5.2`；`worker_id` / `worker_binding_state` 不写回 AgentSession identity。
 
 ## 7. 事件
 
