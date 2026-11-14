@@ -486,13 +486,16 @@ interface AgentSessionManager {
 #### 6.1.1 一个 turn 的协作时序
 
 ```text
-runAgentTurn
-  1. ensureActive(threadId, agentId)
+processEntry（QueueProcessor）
+  1. 每个 claimed target：ensureActive(threadId, agentId)
        → active session 行；可能先做 resume 前置检查 / lightweight seal + seq+1 reset
-  2. WorkerPool.checkCapacity
-       → 容量不足：target 保持 pending，releaseClaim + defer；不创建 attempt/R/child
-  3. Phase A（parent/claim 事务）：attempt(queued) + markStarting(agentSessionId)
+  2. WorkerPool.checkCapacity（全部 claimed targets）
+       → 任一不足：releaseClaim + defer；不创建 parent/attempt/R/child
+  3. Phase A（QueueProcessor 单事务）：parent + markRunning + 每个 target
+       attempt(queued) + markStarting(agentSessionId)
        → 先拿唯一 active delivery（starting）并持久化；执行互斥在这里，不在 TurnExecution
+
+runAgentTurn（per target；Phase A 已提交）
   4. Phase B（独立 dispatch 事务）：processing R + TurnExecution.createRunning + bindAppended
        （turnExecutionId/R/settlement=streaming；workerId = null）
        + InvocationCredential.create + ResponseDraftStore.create + retireTargets
@@ -560,8 +563,8 @@ reset(threadId, agentId, reason):
 | 失败点 | 持久状态 | cursor | 下一轮行为 |
 |---|---|---|---|
 | worker_capacity 预检失败（dispatch 前） | 无 attempt/R/child；target 保持 pending | 不 ack | QueueProcessor defer；不写 delivery_failure |
-| Phase A 失败（parent/attempt starting） | 事务回滚，无 attempt/R/child | 不 ack | releaseClaim + defer；不写 delivery_failure |
-| Phase B 失败（R/child/credential/draft/retire） | attempt starting → failed，无 R | 不 ack | 写 delivery_failure；target 保持 pending，可重试 |
+| Phase A 失败（parent + 全部 attempt starting） | 整批事务回滚，无 parent/attempt/R/child | 不 ack | releaseClaim + defer；不写 delivery_failure |
+| Phase B 失败（R/child/credential/draft/retire） | attempt starting → failed，无 R | 不 ack | 写 delivery_failure；target 保持 pending，可重试；释放该 target tracker slot |
 | Phase B 后 loadHistory / spawn / prompt 构建失败 | attempt appended → failed，R failed（无 promptDelivered） | 不 ack | 重放同一批消息；不写 delivery_failure |
 | provider prompt 已接收后失败 | attempt failed/interrupted + R failed | tx A ack（promptDelivered=true） | 不重放；下一轮看到 failed R |
 | 取消在 prompt 前 | attempt canceled | 不 ack | 重放 |

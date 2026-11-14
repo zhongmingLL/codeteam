@@ -318,10 +318,13 @@ interface InvocationAttemptStore {
 ### 5.1 删除 `settleAgentTurn`
 
 `settleAgentTurn` 这个名字同时暗示“child terminal、attempt、parent、credential、R”
-都由它负责，正是重叠的根源。修改后不再有该接口；改为四个明确 owner：
+都由它负责，正是重叠的根源。修改后不再有该接口；改为四个阶段（T1 拆成 reservation /
+dispatch 两步）的明确 owner：
 
 | 阶段 | owner | 唯一职责 | 不做什么 |
 |---|---|---|---|
+| T1a attempt reservation | `QueueProcessor` | parent `markRunning` + 全部 claimed target 的 attempt `queued→starting(agentSessionId)` | 不创建 R/child/credential |
+| T1b dispatch | `invoke-single-agent` | Phase B 的 R/TurnExecution/credential/draft/`retireTargets` | 不写 parent aggregate；不跨 target 事务 |
 | T1 child terminal | `invoke-single-agent` + `TurnExecutionLifecycle` | `TurnExecution.transitionTerminal`；project credential terminal；project attempt `handled/failed/...`；set settlement `response_pending` | 不提交 response R；不删 draft；不写 parent aggregate |
 | T2 response commit | `route-serial` / `route-parallel` | commit response R（content/toolEvents/thinking）；settle input dispatchRefs；delete draft；clear pending；A2A successor；multi_mention target response 回填 | 不写 child terminal；不写 credential；不写 parent aggregate；不改 target outcome status |
 | T3 parent aggregate | `QueueProcessor` + `PerAgentTerminalDispositionCollector` | parent status/successfulAgentIds/terminalReason；queue entry terminal/retry；tracker slot release；multi_mention callback status projection | 不写 child；不写 credential；不提交正常 R；不改写 group request |
@@ -330,15 +333,19 @@ interface InvocationAttemptStore {
 ### 5.2 正常路径（成功）
 
 ```text
+QueueProcessor:
+  [T1a] Phase A reservation tx (all claimed targets)
+    parent + markRunning
+    per target: attempt queued→starting(agentSessionId) // 先拿唯一 active delivery；持久化
+
 invoke-single-agent:
-  [T1a] Phase A tx
-    attempt queued→starting(agentSessionId) // 先拿唯一 active delivery；持久化
-  [T1b] Phase B tx
+  [T1b] Phase B dispatch tx (attempt already starting)
     response R(processing)
     TurnExecution.createRunning
     attempt.bindAppended(turnExecutionId, R.id, settlement='streaming')
     credential.create
     draft.create
+    advanceLifecycleInputDispatch(dispatched)
     retireTargets
   stream provider events
   [T1c] finally:
@@ -429,8 +436,8 @@ parent 重跑 collector（幂等），不重复 terminal child/credential。
 | provider 失败 | child failed；attempt failed；settlement response_pending | R failed（带 draft 正文） | parent partial_failed/failed |
 | provider 超时 | child failed（reason=member_timeout）；attempt failed | R failed | parent 按 target 聚合 |
 | operator cancel | child canceled；attempt canceled；credential canceled | R canceled（带已 stream 正文） | parent canceled/partial |
-| Phase A prestart 失败 | 无 attempt/R/child；target pending | 不执行 | releaseClaim + defer；不写 delivery_failure |
-| Phase B prestart 失败 | attempt starting→failed，无 R/child | 不执行 | delivery_failure message；parent target failed |
+| Phase A prestart 失败 | 整批回滚，无 parent/attempt/R/child；target pending | 不执行 | releaseClaim + defer；不写 delivery_failure |
+| Phase B prestart 失败 | attempt starting→failed，无 R/child | 不执行 | delivery_failure message；target 保持 pending（retryablePending）；释放 tracker slot |
 | R commit 失败 | child terminal 已提交；settlement response_pending | 失败，R 仍 processing | parent 可先聚合；T4 重试 R |
 | daemon crash before T1 | child running；attempt appended | 无 | startup reaper → T1 interrupted，再 T3/T4 |
 | daemon crash between T1/T2 | child terminal；attempt response_pending | 未执行 | startup T4 从 draft 提交 R；T3 重跑 aggregate |

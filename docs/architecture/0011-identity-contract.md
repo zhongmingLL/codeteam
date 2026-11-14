@@ -173,6 +173,9 @@ credentialId        = UUID   // unique(turnExecutionId)
 
 | 应用层 canonical | SQL 物理列 |
 |---|---|
+| `messageId` | `message_id` |
+| `sourceRecordId` | `source_record_id` |
+| `userMessageId` | `user_message_id` |
 | `invocationId`（parent record） | `invocation_id` |
 | `parentInvocationId`（child → parent FK） | `parent_invocation_id` |
 | `turnExecutionId` | `turn_execution_id` |

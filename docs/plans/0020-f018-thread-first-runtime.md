@@ -89,9 +89,10 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - dispatch thread branch：QueueProcessor、InvocationRecord、attempt、core TurnExecution、
   processing R、credential；不调用
   budget/deployment/managed-work guard。
-- dispatch 分 Phase A（parent + attempt `starting`）与 Phase B（R/TurnExecution/
-  credential/draft/retireTargets）；Phase A 失败 defer，Phase B 失败写 delivery_failure
-  并保留 target pending；Phase B 后 worker/provider 失败走 R terminal。
+- dispatch 分 Phase A（QueueProcessor 单事务：parent + 全部 claimed target 的 attempt
+  `starting`）与 Phase B（每 target 独立事务：R/TurnExecution/credential/draft/
+  retireTargets）；Phase A 整批失败 defer，Phase B 失败写 delivery_failure 并保留
+  target pending；Phase B 后 worker/provider 失败走 R terminal。
 - retry：target-level `requestRetry`；同 parent/同 source message/同 queue entry，不重新
   admission；已终态失败只接受显式 retry 追加 attempt+1；pre-handoff pending target 用
   process-local bounded backoff（base 10s、上限 1h）自动重试。

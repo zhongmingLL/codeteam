@@ -256,9 +256,10 @@ interface AgentSession {
 - `QueueEntry` 保持 Clowder-aligned 多層次结构：
   `owner/from/targets/payload/execution/claim`；`targets` 只允许
   `{kind:"agent", id}`；operator 通知由 message `mentionsUser` 承载。
-- `QueueProcessor` 用 `InvocationQueue.listQueued` + `claim` 选候选；claim 后创建
-  parent `InvocationRecord`，与 child/credential/`retireTargets` 同事务；queue
-  entry 不持有消息终态。
+- `QueueProcessor` 用 `InvocationQueue.listQueued` + `claim` 选候选；claim 后 Phase A
+  事务创建 parent `InvocationRecord` + 全部 claimed target 的 attempt `starting`；
+  Phase B 每 target 独立事务创建 child/credential/draft/`retireTargets`；queue entry
+  不持有消息终态。
 - `invocation_attempts` 是 append-only target attempt 台账；retry 追加 `attempt+1`，
   旧行不改；queue entry 保留到所有 target attempt 终态，`partial_failed`/`failed`
   作为 retry anchor。
@@ -464,7 +465,7 @@ thread message / A2A tool
 | `runs` → `turn_executions` | 新 child core 表：`turnExecutionId`、`parentInvocationId`、`causal`、status/terminalReason/时间；无 taskId | 旧 runs/task 数据保留只读 legacy，不双写 |
 | 新 `invocation_records` | 消息级 parent：`invocationId`、sourceRecordId unique、userMessageId、targetAgentIds、status、successfulAgentIds、usageByAgent/usageRecordedAt、retryCount | 由 QueueProcessor 在 claim 后创建；无 task-first 字段 |
 | 新 `invocation_attempts` | append-only target delivery/retry ledger + execution binding：attemptId、parentInvocationId、queueEntryId、targetAgentId、attempt、delivery_state、turnExecutionId、agentSessionId、workerId、provider/model、usage、settlement、responseMessageId | dispatch 写入 `delivery_state`；T1 只投影 child terminal；retry 追加新行；旧行不改 |
-| 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、toolEvents、thinking | dispatch 事务创建 R；stream bounded flush；R terminal 后删除；最终 contentBlocks 在 T2 生成 |
+| 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、toolEvents、thinking | Phase B dispatch 事务创建 R；stream bounded flush；R terminal 后删除；最终 contentBlocks 在 T2 生成 |
 | `messages` | 加 `content_json` / `tool_events_json` / `lifecycle_json` / `extra_json` / `thinking` / `deleted_at` / `deleted_by` / `mentions_user`；`body_md` 保持 plain text；legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入 | R1 回填 `extra.rich`、`extra.targetAgentIds`、`lifecycle.input.dispatchRefs`、`mentions_user=0`；无法映射的消息进 preflight 清单；legacy 列 R5 drop |
 | 新 `multi_mention_requests` | group lifecycle：request/initiatorTurnExecutionId/targets/callbackTo/status/timeout/expires/parent/source/aggregate | 与 source + queue entry 同事务；R3/R4 |
 | 新 `multi_mention_responses` | per-target outcome：received/timeout/failed + response_state pending/terminal/missing + turn/response message 指针 | 与 child terminal/R settlement 同事务/幂等 |
