@@ -8,7 +8,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
 source_architecture: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/0007-a2a-runtime-chain.md"
-source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=A, DP-D=A"
+source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=A, DP-D=A; 2026-11-14 BBBA"
 ---
 
 # F018 — A2A runtime v1 实施计划
@@ -32,7 +32,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   `last_active_at`、`deleted_at`。
 - `thread_participants`。
 - `.codeteam/agent-catalog.json` + `.codeteam/accounts.json`：AgentConfig /
-  AccountConfig 加载、校验、AgentRegistry；AgentState 运行时状态。
+  AccountConfig 加载、校验、AgentRegistry；`mentionPatterns` 建 pattern→agentId
+  索引并校验跨 agent 唯一；AgentState 运行时状态。
 - `agent_sessions`：thread×agent 单 active；`agent_id` 目标列；`task_id`/
   `profile_id` legacy。
 - `runs` → `turn_executions` + `invocation_records`：parent 消息生命周期 +
@@ -76,6 +77,8 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 
 - `ensureThreadSession(threadId, agentId)`：一个 thread×agent 一个 active
   session、`workingDirectory=thread.projectPath`。
+- operator 用户消息解析正文任意显式 `@`（跳过 code/URL），用
+  `AgentConfig.mentionPatterns` 索引；A2A tool body / agent final response 不解析。
 - 空 thread 允许创建；post 时 targets 必须非空；`deletedAt != null` 的 thread
   拒绝 post。
 - A2A target 从 AgentRegistry 解析；`enabled=false` / 未知 id / account 缺失
@@ -124,9 +127,10 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   target）；同 thread 多 target → `use_multi_mention`；cross-thread 多 target 拆多次
   cross-post。
 - `codeteam_multi_mention`：完整 Clowder orchestrator；2-3 targets、one message +
-  one queue entry + one parent + N children；`multi_mention_requests/responses` 记录
-  status/timeout/callback/aggregate；`callbackTo` 不新建 child；它是唯一多 target
-  fan-out 入口。
+  one queue entry + one parent + N children；`multi_mention_requests/responses/callbacks` 记录
+  status/timeout/aggregate；terminal 后写 aggregate system message，并为
+  `callbackTo` 创建 `multi_mention_callbacks` + callback queue/parent/child；
+  callback depth ≤2；它是唯一多 target fan-out 入口。
 - 任意 enabled agent 可被 target；首次成功后加入 participants。
 - `thread post --to` 不再要求 `--task`；CLI/read model 同步。
 - 出口：E3/E4/E5/E6/E8/E10/E11。
@@ -136,9 +140,10 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - depth 15（DP-F018SURFACE-2=A：Clowder 实际默认 15；review 链需 >2；
   guard = per-thread queue cap 5 + substantive-aware ping-pong + early-stop）、
   `a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`。
-- observation 识别 4 个新工具；text-@ 负例不误报。
+- observation 识别 4 个新工具；agent final response / A2A body @ 负例不误报；
+  operator 正文 @ 正例覆盖。
 - 多 agent thread；`multi_mention` timeout/status/aggregate、anti-cascade、
-  target cancellation 收敛。
+  callback child/`allFailed`、target cancellation 收敛；startup 只重试 pending callback。
 - 出口：E14/E15/E16/E17。
 
 ## R5 — Cutover 与清理

@@ -104,8 +104,9 @@ Operator / Hub ingress（W7a transport）
 - W7a 的 Hub ingress/WS/SSE/replay 与 read DTO transport 尚未实现；F018 不能声称端到端。
 - R2/R3/R4 的产品代码尚未开始；当前是 contract/design 完成，不是 implementation 完成。
 - 0014 的“风险与待定项”只作为体验提醒；其中已拍项以 0007/0016/0017 为准。
-- 2026-11-14 的全局设计 review 见 `0018-v1-global-design-review.md`；其中 D-1/D-2/D-3
-  是 R2/R3 前仍需拍板的语义分叉。
+- 2026-11-14 的全局设计 review 见 `0018-v1-global-design-review.md`；D-0/D-1/D-2/D-3
+  已按 operator `BBBA` 拍板：正文 `@` 匹配、callback child、completed 去重接受风险、
+  `allFailed` 派生。
 
 ## 6. 文档索引
 

@@ -49,7 +49,7 @@ related_features: [codeteam/F018, codeteam/F017]
 7. **v1 只记录 invocation usage**：不引入 ThreadGoal/tokenBudget/
    thread_member_effort；旧 task budget 是 legacy，后续 thread budget 另立 feature。
 8. **v1 不做**：TaskItem、worktree、code delivery、review/merge/gate、custody、
-   SOP handoff；`multi_mention` 做完整 orchestrator（status/timeout/callback/aggregate）。
+   SOP handoff；`multi_mention` 做完整 orchestrator（status/timeout/aggregate + callback child）。
 
 ### 0.1 对象关系：Thread / Agent / Session / Message / pi session
 
@@ -144,6 +144,7 @@ Agent 身份是 config-as-code，完整模型见
 
 - `.codeteam/agent-catalog.json` → `AgentConfig` → `AgentRegistry` 内存注册表；
 - `AgentConfig.id` 用于 A2A `targets` 和 Thread participants；
+  `mentionPatterns` 用于 operator 用户消息显式 `@` 路由；
   `displayName` 用于消息展示；
 - `roleId` 是 workflow 触发段 key，不是旧 codeteam role；
 - `enabled: false` 的 agent 注册但不路由；
@@ -246,7 +247,9 @@ interface AgentSession {
 
 - `messages.threadId` 必填；`taskId` 是 legacy 可空列，v1 不写。
 - `messages.targetAgentIds`：仅 user message；本次 admission 解析/隐式选中的 agent targets；与 message + queue entry 同事务写入。
-- operator 行首 `@` 是 operator 侧 A2A admission；无 @ → 上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；都没有才 `no_target`。
+- operator 用户消息的显式 `@`（正文任意位置）是 operator 侧 A2A admission；无 @ →
+  上一 human `targetAgentIds` → 最近成功 replier → participant → default agent；
+  都没有才 `no_target`。
 - `queue_entries` 重命名为 `invocation_queue`；`QueueStore` →
   `SqliteQueueLedgerStore`（implements `QueueLedgerStore`）+ `InvocationQueue`
   服务。它只做 admission/claim/lease/target 移除，是唯一 pending-wake 账本。
@@ -340,7 +343,7 @@ token 由 daemon mint，绑定 child `TurnExecution`/thread/agent/session/user�
 
 - TaskItem / worktree / review / merge / SOP gate；
 - custody / action lease / handoff / return-recovery；
-- `multi_mention` 的 `callbackTo` 新建 child（v1 只投递聚合结果，不 cascade）；
+- cross-thread multi_mention / cross-thread callback child（v1 callback 只在原 thread）；
 - agent-created thread propose/approve；
 - code delivery 的重新设计或弃用结论。
 
@@ -397,15 +400,15 @@ thread message / A2A tool
 |---|---|---|---|
 | `codeteam_post_message` | 同 thread 写消息；可唤醒 agents | `targets`, `bodyMd` | targets 是 `{kind:"agent", id}`；可为空 = message-only write，不唤醒；`@operator` 只写 `mentionsUser` |
 | `codeteam_cross_post_message` | 跨 thread 发言并唤醒 agents | `threadId`, `targets`, `bodyMd` | source/target thread 同 user；target thread active/not deleted/有 projectPath；写 `extra.crossPost`；depth/loop guard；targets 同上 |
-| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent，并聚合结果 | `targets` (2-3 agents), `question`, `context?`, `callbackTo`, `timeoutMinutes?` | one message + one queue entry + one InvocationRecord + N TurnExecutions；status/timeout/callback/aggregate；`callbackTo` 只收聚合结果，不新建 child |
+| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent，聚合结果并 callback | `targets` (2-3 agents), `question`, `context?`, `callbackTo`, `timeoutMinutes?` | one source message + one queue entry + one InvocationRecord + N TurnExecutions；terminal 后 one aggregate system message + one callback queue/parent/child；status/timeout/aggregate |
 | `codeteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
 
 约束：
 
 - **彻底弃用** `codeteam_a2a_send` 与 `codeteam_handoff_*`：v1 不注册、不保留
   legacy alias、不提供 custody 工具窗口。
-- operator conversation 只解析**行首 `@`**（含列表/引用前缀）为 agent targets；
-  A2A tools / final response 的正文 `@` 不路由，只由 typed `targets` 决定。
+- operator conversation 解析**正文任意显式 `@`**（跳过 code/URL）为 agent targets；
+  A2A tools / agent final response 的正文 `@` 不路由，只由 typed `targets` 决定。
 - `post_message` / `cross_post_message` targets 只允许 agent；targets 可为空 =
   message-only write，不创建 queue/parent/TurnExecution。operator mention 写 message
   `mentionsUser`；普通 final response 已是 message，operator decision 不需要再调
@@ -417,13 +420,13 @@ thread message / A2A tool
 - `post_message` / `cross_post_message` targets 0 或 1 个 agent；`multi_mention` 固定
   2-3 个 agent（唯一多 target fan-out）；
   `bodyMd` ≤ 32 KiB，`question` / `context` 各 ≤ 5 KiB。
-- `multi_mention` 是完整 group lifecycle orchestrator（status/timeout/aggregate；
-  `callbackTo` 只做 metadata、不新建 child）：一条 message + 一个 queue entry + 一个
-  `InvocationRecord`(parent) + N 个 `TurnExecution`(child)；另有
-  `multi_mention_requests` / `multi_mention_responses` 记录
-  `pending/running/partial/done/timeout/failed`、3-20 分钟 timeout、`callbackTo`、
-  per-target outcome 和聚合 system message。聚合结果不新建 child；调用方可用
-  status read/`thread_context` 读取。
+- `multi_mention` 是完整 group lifecycle orchestrator（status/timeout/aggregate +
+  callback child）：一条 source message + 一个 queue entry + 一个 `InvocationRecord`
+  (parent) + N 个 `TurnExecution`(child)；terminal 后写聚合 system message，并为
+  `callbackTo` 创建一个新的 callback queue/parent/child。另有
+  `multi_mention_requests` / `multi_mention_responses` / `multi_mention_callbacks`
+  记录 `pending/running/partial/done/timeout/failed`、3-20 分钟 timeout、per-target
+  outcome、aggregate 和 callback 状态；调用方可用 status read/`thread_context` 读取。
 - 消息送达不等于责任转移；v1 没有 handoff/claim/complete/return。
 - targets 可以是任意 enabled agent；首次成功 invocation 后加入 thread
   participants。participants 是路由/上下文，不是 ACL。
@@ -436,8 +439,8 @@ thread message / A2A tool
   message-only cross-post（targets=0）不要求 `projectPath`。message 写
   `extra.crossPost = { sourceThreadId, sourceTriggerMessageId }`，后者是 caller 的
   `causal.triggerMessageId`。
-- `multi_mention` 的聚合是 v1 能力；`callbackTo` 只承载结果地址/metadata，
-  不为它创建新的 parent/child（避免 cascade）。
+- `multi_mention` 的聚合 + callback child 是 v1 能力；callback depth 最多 2，
+  a2aDepth 仍受 15 限制，callback 失败不回滚 group。
 
 ## 4. 迁移与 cutover
 
@@ -463,8 +466,9 @@ thread message / A2A tool
 | 新 `invocation_attempts` | append-only target delivery/retry ledger + execution binding：attemptId、parentInvocationId、queueEntryId、targetAgentId、attempt、delivery_state、turnExecutionId、agentSessionId、workerId、provider/model、usage、settlement、responseMessageId | dispatch 写入 `delivery_state`；T1 只投影 child terminal；retry 追加新行；旧行不改 |
 | 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、toolEvents、thinking | dispatch 事务创建 R；stream bounded flush；R terminal 后删除；最终 contentBlocks 在 T2 生成 |
 | `messages` | 加 `content_json` / `tool_events_json` / `lifecycle_json` / `extra_json` / `thinking` / `deleted_at` / `deleted_by` / `mentions_user`；`body_md` 保持 plain text；legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入 | R1 回填 `extra.rich`、`extra.targetAgentIds`、`lifecycle.input.dispatchRefs`、`mentions_user=0`；无法映射的消息进 preflight 清单；legacy 列 R5 drop |
-| 新 `multi_mention_requests` | group lifecycle：request/targets/callbackTo/status/timeout/expires/parent/source/aggregate | 与 source + queue entry 同事务；R3/R4 |
+| 新 `multi_mention_requests` | group lifecycle：request/initiatorTurnExecutionId/targets/callbackTo/status/timeout/expires/parent/source/aggregate | 与 source + queue entry 同事务；R3/R4 |
 | 新 `multi_mention_responses` | per-target outcome：received/timeout/failed + turn/response message 指针 | 与 child terminal/R settlement 同事务/幂等 |
+| 新 `multi_mention_callbacks` | callback child delivery：aggregate/queue/parent/turn/status/callbackDepth | group terminal 同事务 pending；admission 后 queued/running；R3/R4 |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
 | `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、toolCallClaims、state/disposition（含 replaced）、token hash/salt | 旧 task/role/run credential legacy |
 | `a2a_requests` | **legacy 只读**；v1 不再写入；piExtToolCallId 幂等迁到 `invocation_credentials.tool_call_claims_json`（DP-F018AUTH-3=B） | 旧行保留历史；新 runtime 不读不写；不删除历史 |
@@ -489,20 +493,20 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | E1 | operator 在 thread 向 1 个 agent 发消息 | 创建 thread session + InvocationRecord + TurnExecution + response bubble；无 task | CLI/daemon E2E，DB 断言无 task 写 |
 | E2 | 同 thread 两个 agent 互发 `post_message` | 两条 invocation 按 queue 唤醒 | 真实 pi RPC + mock provider |
 | E3 | `cross_post_message` 到另一个 thread | 目标 thread 收到消息并唤醒 target；source/target 不变 | 双 thread E2E |
-| E4 | `multi_mention` 给 2-3 个 agent | one message + one queue entry + one InvocationRecord + N TurnExecutions；status running→partial→done；timeout 聚合 partial；callbackTo metadata；无新 child | E2E |
+| E4 | `multi_mention` 给 2-3 个 agent | one source message + one queue + one InvocationRecord + N TurnExecutions；status running→partial→done；timeout 聚合 partial；terminal 后 aggregate + callback queue/parent/child；`allFailed` 正确 | E2E |
 | E5 | 任意 enabled agent 被拉入 thread | 首次成功后成为 participant | participant 表断言 |
-| E6 | text @ / final response @ | 不产生额外 queue/wake；只有 typed targets 路由 | 负例 E2E |
+| E6 | agent final response @ / A2A tool body @ | 不产生额外 queue/wake；operator 用户消息的正文 `@` 正常路由；只有 agent 侧 typed targets 决定 A2A | 负例 E2E |
 | E7 | token scope 负例 | 跨 thread / 错 user / 错 agent 的 token 被拒 | auth 单测 + E2E |
 | E8 | 目标 thread soft-deleted / 跨 user / target disabled | typed reject，不静默降级 | 负例 E2E |
 | E9 | 并发首条消息 | 同一 thread×agent session 不双开；queue 不重复消费 | 并发测试 |
 | E10 | `piExtToolCallId` replay/conflict | 同 intent replay；不同 intent `pi_ext_tool_call_conflict` | 负例 E2E |
 | E11 | `replyTo` 跨 thread / 不存在 | typed reject，不静默丢弃 | 负例 E2E |
-| E12 | observation 工具名 | 识别 4 个新工具；text-@ 负例不误报 `missing_a2a_tool_call` | observation 单测 |
+| E12 | observation 工具名 | 识别 4 个新工具；agent final response 的 text-@ 负例不误报 `missing_a2a_tool_call`；operator 正文 @ 正例 | observation 单测 |
 | E13 | 旧 A2A 工具 | `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 | registry 断言 |
 | E14 | 旧 code delivery 表 | v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges | DB 访问断言 |
 | E15 | session 迁移 | 有 running invocation 的 session 不迁移；等 terminal 后处理；sealing/sealed 留 legacy | migration 测试 |
 | E16 | thread access | 同 user 可见；participants 只做路由；跨 user 拒绝 | auth/ACL 测试 |
-| E17 | loop guard | depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict` | 负例 E2E |
+| E17 | loop guard / callback | depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`、callback depth 2、callback pending recovery | 负例 E2E |
 | E18 | legacy thread 的 `projectPath` 为空 | targets 非空的 `post_message`/`cross_post_message` 触发 `thread_project_path_required`；message-only 不受影响；补 `projectPath` 后正常 | 负例 E2E |
 
 ## 6. 影响面与风险
@@ -549,7 +553,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 - 不在 v1 做 TaskItem / worktree / code delivery / review / merge / SOP gate；
 - 不在 v1 做 custody / handoff / return / replace；
 - 不在 v1 注册 `a2a_send` / `handoff_*`，不留 legacy alias 窗口；
-- v1 做完整 `multi_mention` orchestrator（status/timeout/callback/aggregate）；
+- v1 做完整 `multi_mention` orchestrator（status/timeout/aggregate + callback child）；
 - 不在 v1 做 agent-created thread propose/approve；
 - 不引入第二套 queue/message/session store；
 - 直接复用 Clowder 的 runtime 结构与语义；不引入 Clowder runtime/Redis/transport

@@ -150,7 +150,8 @@ retry with same piExtToolCallId:
    （DDL `tool_call_claims_json`），key 是 `piExtToolCallId`，避免被读成第二个 ID。
 5. 错误 taxonomy：`pi_ext_tool_call_conflict`（同 key 不同 intent）、
    `queue_admission_conflict`（同 source+attempt 不同 fingerprint）、
-   `a2a_duplicate_delivery`（同 source+target 已 queued/running）。
+   `a2a_duplicate_delivery`（同 source+target 已 queued/running；**不覆盖
+   completed**，见 DP-F018IDEM-1=B）。
 6. `a2a_requests` 标 legacy；不迁移旧 `request_id`。
 7. terminal credential tombstone retention ≥ 客户端重试窗口（建议 30 天，与 Clowder 默认一致）。
 
@@ -169,8 +170,11 @@ retry with same piExtToolCallId:
 3. **retention**：credential tombstone 的 GC deadline 具体值（建议 30 天）。
 4. **Hub API 幂等**：`POST /api/messages` / `POST /api/threads` 的 `idempotencyKey` 是 W7a
    独立缺口；不与 F018 A2A 工具混用。
-5. **模型层重试**：extension bounded retry 失败后返回 typed outcome unknown；是否需要在
-   extension 内维护 `intentHash → piExtToolCallId` 短期表，避免模型重试生成新 key。
+5. **模型层重试（DP-F018IDEM-1=B，accepted risk）**：extension bounded retry 失败后
+   返回 typed outcome unknown；v1 **不**新增 completed 跨 tool-call 去重索引，也不在
+   extension 内维护 `intentHash → piExtToolCallId` 短期表。已知后果：模型换新
+   `toolCallId` 重发同 intent 可能产生第二条 completed 消息；E10 只覆盖同一 tool call。
+   v2 再评估短窗口 `(threadId, senderAgentId, intentHash)` receipt。
 
 ## 8. 代码 / 文档引用
 

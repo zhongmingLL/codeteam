@@ -122,10 +122,11 @@ reconcile。加载时校验跨 agent pattern 唯一，碰撞 fail closed。`Agen
 ## 3. A2A 语义
 
 - `targets` 是 `AgentConfig.id`；不是 displayName，也不是 mentionPatterns。
-- operator 正文行首 `@pattern` 用 `AgentConfig.mentionPatterns` 解析到 `id`；pattern
+- operator 用户消息中的显式 `@pattern`（正文任意位置）用 `AgentConfig.mentionPatterns`
+  解析到 `id`；pattern
   含前导 `@`、trim + 去重、大小写不敏感、全局唯一；未知/歧义 → `agent_not_found`。
-- 匹配规则复用 Clowder：longest-pattern-first + token boundary；codeteam v1 仍只解析
-  行首 `@`（见 0007 §3.0），不把正文中间的 `@` 当路由。
+- 匹配规则复用 Clowder：longest-pattern-first + token boundary；跳过 fenced/inline
+  code 与 URL-ish token；A2A tool body / agent final response 的正文 `@` 仍不路由。
 - 消息展示用 `displayName`；A2A tool call 用 `id`。
 - `enabled: false` 的 agent：注册但不可路由；target 它返回 `agent_disabled` typed error。
 - 未知 id：`agent_not_found`。

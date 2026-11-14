@@ -13,19 +13,20 @@ related: [0000-architecture-map.md, 0005-thread-first-runtime.md, 0007-a2a-runti
 
 > 这是一次**全局设计检视记录**，不是新契约。canonical 仍是 `0005`/`0007` +
 > 分册；本文只记录本轮发现的冲突、处置和剩余决策。历史审计见 `0015`；
-> 待拍板项见 `decision-packets/2026-11-14-dp-f018-global-review.md`。
+> 决策记录见 `decision-packets/2026-11-14-dp-f018-global-review.md`。
 
 ## 0. 结论
 
-**方向 approve；Phase A 契约可进入最终 review；R1 可以开始；R2/R3 前还有 4 个需要
-operator 拍板的语义分叉。**
+**方向 approve；Phase A 契约可进入最终 review；R1 可以开始。**
+**2026-11-14 operator 已拍板：`BBBA`（mention 正文匹配 / callback child /
+completed 去重接受风险 / 全 failed 保持 done+allFailed）。**
 
 - 架构骨架与 Clowder 同构，主要问题集中在**所有权边界**、**prestart 失败路径**、
   **response settlement 的 recovery 语义**和**文档残留的第二套契约**。
 - 本轮已把会直接导致 R1/R2 实现错误的问题写回 canonical docs，并修复了 20+ 处
   文档冲突。
-- 剩余分叉不是“写错字”，而是产品语义选择：`multi_mention.callbackTo` 是否真的唤醒，
-  以及 completed 消息的跨 tool-call 重试去重窗口。
+- 剩余工作不是“再选方向”，而是按 `BBBA` 落地：正文 `@` 解析、callback child
+  生命周期、completed 去重风险记录、`allFailed` 派生。
 
 ## 1. 检视范围与方法
 
@@ -73,9 +74,16 @@ operator 拍板的语义分叉。**
 | G-21 | P2 | `0016` T1a 先 `appended` 再建 R，顺序不可实现；T2 漏 settle inputs | T1a 改为 attempt→R→createRunning→bindAppended；T2 补 settle inputs |
 | G-22 | P2 | `response_drafts` 的 `contentBlocks`/`seq` 与 `DraftStore` 单类型不一致 | 0007 DDL/0005 schema/plan/0016 同步删除；contentBlocks 在 T2 生成 |
 
-## 3. 仍需 operator 拍板的分叉
+## 3. 已拍板的分叉（2026-11-14 `BBBA`）
 
-### D-0 `mentionPatterns` 的匹配范围
+| ID | 决定 | 含义 |
+|---|---|---|
+| DP-F018MENTION-1 | **B** | operator 用户消息允许正文任意显式 `@`；A2A/final response 仍不解析 |
+| DP-F018MM-1 | **B** | multi_mention group terminal 后为 callbackTo 创建新的 callback child |
+| DP-F018IDEM-1 | **B** | v1 接受 completed 跨 tool-call 重试重复风险；不新增去重索引 |
+| DP-F018MM-2 | **A** | 全 failed group 保持 `done`，status read/聚合附 `allFailed=true` |
+
+### D-0 `mentionPatterns` 的匹配范围（决定：B）
 
 字段已按 Clowder `CatConfig` 改为 `readonly mentionPatterns: readonly string[]`；
 剩余是**在文本哪里匹配**：
@@ -83,32 +91,33 @@ operator 拍板的语义分叉。**
 - **A（推荐 v1）**：只解析行首 `@`（含列表/引用前缀），正文中间 `@` 不路由。保持
   0007 现有 operator ingress 语义，误路由风险最低。
 - **B（Clowder 用户消息行为）**：用户消息里的正文 `@` 也可路由；需要额外处理
-  代码块、URL、边界、歧义和多 target 顺序。A2A/callback 仍用严格行首解析。
+  代码块、URL、边界、歧义和多 target 顺序。A2A tool body / agent final response
+  仍不解析正文 `@`。
 
-**建议**：v1 选 A；B 作为后续能力，若要开必须在 E6 负例里补“正文 @ 不误路由”的
-回归矩阵。
+**已拍板 B**：正文任意显式 `@` 路由；必须补代码块/URL 排除、token boundary、
+歧义和多 target 顺序，以及“agent final response 正文 @ 不路由”的负例。
 
 > 决策包：`decision-packets/2026-11-14-dp-f018-global-review.md` DP-F018MENTION-1。
 
-### D-1 `multi_mention.callbackTo`：metadata-only 还是真正唤醒
+### D-1 `multi_mention.callbackTo`：metadata-only 还是真正唤醒（决定：B）
 
 当前 canonical 写的是“完整 group lifecycle（status/timeout/aggregate），但 `callbackTo`
-只做聚合地址/metadata，不新建 child/queue”。这与 Clowder 的 callback 语义不完全一致，
-也不是“假 fan-out”，但“完整 orchestrator”容易被读成 callback 会唤醒。
+只做聚合地址/metadata，不新建 child/queue”。Clowder 参考仓当前同样只把 callbackTo
+写进聚合 metadata；B 是 codeteam 扩展，不是 1:1 复用。
 
 **选项**
 
 - **A（推荐保持 v1 轻量）**：callbackTo metadata-only；把文案改成“full group lifecycle，
   callback 不 cascade”。R3/R4 验收只测聚合消息可读。
-- **B（严格对齐 Clowder）**：callbackTo 触发一个新的 `post_message`-equivalent child，
+- **B（codeteam 扩展）**：callbackTo 触发一个新的 `post_message`-equivalent child，
   需要 anti-cascade、depth、queue cap、return/aggregate 的新设计；R3/R4 范围变大。
 
-**建议**：v1 选 A，并在 F018 非目标里明确“callback cascade 是 v2”；若选 B，必须补一份
-callback child 的生命周期设计，不能只在现有 orchestrator 上加一个字段。
+**已拍板 B**：callbackTo 创建新的 callback child；设计、schema、recovery 和验收见
+`0007` §3.8。
 
 > 决策包：DP-F018MM-1。
 
-### D-2 completed 消息的跨 tool-call 重试去重
+### D-2 completed 消息的跨 tool-call 重试去重（决定：B）
 
 `piExtToolCallId` 只在同一个 tool call 重试内稳定。如果模型在 tool 成功返回后重新生成
 一个新 `toolCallId` 再发一次相同 intent，`toolCallClaims` 不会命中；
@@ -122,20 +131,18 @@ intent 可能产生第二条消息。
   message/queue 结果。需要 message 表存 `intent_hash` 或单独 receipt 表。
 - **B（接受风险）**：保留现状，只在 0013 记为已知 v1 风险；R3/R4 不做。
 
-**建议**：R3 前选 A；这是“同一 intent 不发两次”的最后一道防线，和 `piExtToolCallId`
-解决的是不同层的问题。
+**已拍板 B**：接受风险；0013 记录已知缺口，E10 只覆盖同一 tool call 的 replay。
 
 > 决策包：DP-F018IDEM-1。
 
-### D-3 `multi_mention` 全部 target failed 时的 group 状态
+### D-3 `multi_mention` 全部 target failed 时的 group 状态（决定：A）
 
 当前 `done` 定义为“全部 target 都有 outcome（received 或 failed 都算 accounted）”，
 所以全部 failed 的 group 也是 `done`，`failed` 只表示 group admission/orchestrator
 自身失败。这与直觉“全失败 = failed”不同。
 
-**建议**：保留 Clowder 的 accounted 语义，但在 status read/聚合正文里明确
-`done + all failed`；如果产品要 `failed` 表示全失败，需要同时改 `done` 的定义和
-E4/E17。请在 R3 前确认。
+**已拍板 A**：保留 accounted 语义，group `done`；status read/聚合正文加
+`allFailed=true`。
 
 > 决策包：DP-F018MM-2。
 
@@ -159,13 +166,14 @@ E4/E17。请在 R3 前确认。
 
 **R2 开始前**：
 
-- D-2（completed 去重）必须有结论；否则 E10/E17 的幂等验收不完整。
-- D-0（mention 匹配范围）必须有结论；字段本身已定，只差行首/正文策略。
+- D-0=B 的正文 `@` 解析、E6 负例更新进入 R2 实现清单。
+- D-2=B 的 accepted-risk note 进入 0013；不新增 completed 去重索引。
 - `WorkerPool.checkCapacity`、`restoreExpiredClaims`、participants insert 进入实现清单。
 
 **R3/R4 开始前**：
 
-- D-1（callbackTo）与 D-3（all-failed group 状态）必须有结论。
+- D-1=B 的 callback child schema/queue/recovery 进入 R3/R4 实现清单。
+- D-3=A 的 `allFailed` 派生进入 multi_mention status read/aggregate。
 - multi_mention status read/aggregate 的 W7a/CLI 暴露方式确定。
 
 ## 6. 证据入口

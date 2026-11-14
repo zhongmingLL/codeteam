@@ -10,7 +10,7 @@ created: 2026-11-04
 updated: 2026-11-11
 source_plan: "docs/plans/0020-f018-thread-first-runtime.md"
 source_architecture: "docs/architecture/0005-thread-first-runtime.md"
-source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery frozen"
+source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery frozen; 2026-11-14 BBBA: mentionPatterns body match / multi_mention callback child / completed dedupe accepted risk / allFailed derived"
 supersedes_phase_a_of: codeteam/F017
 ---
 
@@ -47,9 +47,9 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
    `executionKind=ordinary|routing_guard`，没有 conversation/code。
 3. Session 是 thread×agent 的持久身份；一个 active session；无 taskId。
 4. Agent 身份是 config-as-code：`.codeteam/agent-catalog.json` →
-   `AgentConfig` → `AgentRegistry`；`AgentState` 是运行时状态。
+   `AgentConfig`（含 `mentionPatterns`）→ `AgentRegistry`；`AgentState` 是运行时状态。
 5. A2A v1 工具面：`codeteam_post_message` / `codeteam_cross_post_message`（单 successor）
-   / `codeteam_multi_mention`（唯一多 target fan-out，2-3 agents）/
+   / `codeteam_multi_mention`（唯一多 target fan-out，2-3 agents；terminal 后 callback child）/
    `codeteam_thread_context`。
 6. Queue 单账本：thread + sourceRecordId + attempt + targets；target attempt 台账
    append-only；retry 不新建 queue entry、不重新 admission；无 task 依赖。
@@ -69,7 +69,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
 | R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 `toolCallClaims`）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down |
 | R2 | same-thread post / thread context；真实 provider E2E | E1/E2/E7/E9/E12/E13 |
-| R3 | cross-thread post；multi_mention orchestrator（status/timeout/callback/aggregate）；thread access；participants | E3/E4/E5/E6/E8/E10/E11 |
+| R3 | cross-thread post；multi_mention orchestrator（status/timeout/aggregate + callback child）；thread access；participants | E3/E4/E5/E6/E8/E10/E11 |
 | R4 | loop guard/idempotency/observation；multi_mention timeout/anti-cascade；多 agent thread | E14/E15/E16/E17 |
 | R5 | cutover CLI/daemon；旧 code delivery 归档；F018 close | A2A runtime 单一真相 |
 
@@ -81,7 +81,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - [ ] same-thread post E2E；cross-thread post E3。
 - [ ] queue cap 5（user/A2A 分开计数）；urgent/FIFO；queue full 429/`queue_full`
       不写 source。
-- [ ] `multi_mention` 2-3 agent fan-out + status/timeout/callback/aggregate E4；
+- [ ] `multi_mention` 2-3 agent fan-out + status/timeout/aggregate + callback child E4；
+      `allFailed` 派生；callback depth/anti-cascade；
       post/cross >1 same-thread target → `use_multi_mention`。
 - [ ] `.codeteam/agent-catalog.json` + accounts 加载/校验；AgentRegistry/AgentState；
       disabled agent typed reject；defaultModel 属于 account.models。
@@ -93,7 +94,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
       projectPath 必填且 legacy preflight 可列出需补路径的 thread。
 - [ ] 任意 enabled agent 加入 participants；thread access 同 user。
 - [ ] token scope 负例 E7；target thread 负例 E8。
-- [ ] text @ / final @ 不路由 E6；observation 识别 4 个新工具 E12。
+- [ ] agent final response @ / A2A tool body @ 不路由；operator 用户消息的正文 `@`
+      正常路由；observation 识别 4 个新工具 E12。
 - [ ] `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 E13。
 - [ ] v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges E14。
 - [ ] session 迁移跳过 running invocation E15。
@@ -107,7 +109,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 - TaskItem / worktree / code delivery / review / merge / SOP gate；
 - custody / handoff / return / replace；
-- `multi_mention` 的 `callbackTo` 新建 child（v1 只投递聚合结果）；
+- cross-thread multi_mention / cross-thread callback child（v1 callback 只在原 thread）；
 - agent-created thread propose/approve；
 - Console M0 / W7b；
 - 引入 Clowder runtime/Redis/transport 依赖；只复用结构与语义。

@@ -384,7 +384,7 @@ interface InvocationAttemptStore {
 |---|---|---|---|
 | T1 child terminal | `invoke-single-agent` + `TurnExecutionLifecycle` | `TurnExecution.transitionTerminal`；project credential terminal；project attempt `handled/failed/...`；set settlement `response_pending` | 不提交 response R；不删 draft；不写 parent aggregate |
 | T2 response commit | `route-serial` / `route-parallel` | commit response R（content/toolEvents/thinking）；settle input dispatchRefs；delete draft；clear pending；A2A successor | 不写 child terminal；不写 credential；不写 parent aggregate |
-| T3 parent aggregate | `QueueProcessor` + `PerAgentTerminalDispositionCollector` | parent status/successfulAgentIds/terminalReason；queue entry terminal/retry；tracker slot release | 不写 child；不写 credential；不提交正常 R |
+| T3 parent aggregate | `QueueProcessor` + `PerAgentTerminalDispositionCollector` | parent status/successfulAgentIds/terminalReason；queue entry terminal/retry；tracker slot release；multi_mention callback status projection | 不写 child；不写 credential；不提交正常 R；不改写 group request |
 | T4 recovery | `ResponseRecoveryService` | `settleResponseFromDraft` for response_pending/abandoned；`response_missing` recovery | 不改写已完成 child/credential；不重新 terminal parent |
 
 ### 5.2 正常路径（成功）

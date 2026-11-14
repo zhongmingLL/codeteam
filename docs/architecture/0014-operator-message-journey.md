@@ -96,7 +96,7 @@ Clowder `messages.ts:328` 的顺序：
 
 Clowder `AgentRouter.resolveTargetsAndIntent`（`AgentRouter.ts:1400`）：
 
-- 当前消息有显式 mention（UI `mentions` 或正文行首 `@cat`）→ 只取这些 targets；
+- 当前消息有显式 mention（UI `mentions` 或正文显式 `@cat`，跳过 code/URL）→ 只取这些 targets；
 - 无显式 mention → 隐式链（`AgentRouter.ts:1240-1272`）：
   1. 上一条 human message 的 mentions；
   2. 最近有响应且 healthy 的 participant（`recent_replier`）；
@@ -397,7 +397,8 @@ QueueProcessor drain q2
 - agentB **不是**在 provider 里阻塞等待 operator；它结束这一轮，把问题留在 thread。
 - operator 的回复是一条新的 user message，不是对 agentB 的“恢复执行”。
 - 如果 operator 回复没有 `@`，隐式路由可能落到 recent_replier（通常就是 B），但
-  deterministic 的写法是行首 `@agentB`；`replyTo` 只负责引用，不单独决定 target。
+  deterministic 的写法是显式 `@agentB`（推荐独立一行；正文任意位置也可）；`replyTo`
+  只负责引用，不单独决定 target。
 
 **B3. operator 回复 → agentB 结束**
 
@@ -442,9 +443,11 @@ abort 该 cat 的 controller，batch gate 不动。
 
 codeteam 对应：operator 的 `@A @B` 是普通 ingress 的 multi-target；`multi_mention`
 是 agent 侧工具，也是 2-3 targets 的 fan-out，但额外有完整 orchestrator：
-status/timeout/callback/aggregate（`multi_mention_requests/responses`）。两者都遵循
-“1 source + 1 queue entry + 1 parent + N children”；普通 ingress 不自动产生
-multi_mention 聚合。agent 侧同 thread 多 target 只能走 `multi_mention`；cross-thread
+status/timeout/aggregate + callback child（`multi_mention_requests/responses/callbacks`）。
+两者初始 fan-out 都遵循“1 source + 1 queue entry + 1 parent + N children”；
+multi_mention terminal 后另加 1 aggregate system message + 1 callback queue/parent/child。
+普通 ingress 不自动产生 multi_mention 聚合。agent 侧同 thread 多 target 只能走
+`multi_mention`；cross-thread
 多 target 在 v1 拆成多次 `cross_post_message`。
 
 ### 7.4 Journey D：运行中取消某个 agent
@@ -598,7 +601,7 @@ operator 发消息
 | A2A depth | 实际默认 15（`route-helpers` 注释 2 过时） | v1 15 + queue cap 5 + substantive-aware loop guard | 见 0007 §3.8；DP-F018SURFACE-2=A |
 | draft flush | 2s / 2000 chars | 100ms / 4KB | 见 0007 §3.6.1 |
 | queue depth | user source 5 | post/cross 1、multi_mention 2-3；per-thread cap 5（user/A2A 分开计数） | 已定，见 0007 §3.1 |
-| multi_mention | `MultiMentionOrchestrator`：status/timeout/callback/aggregate | 完整 orchestrator：`multi_mention_requests/responses` + 聚合 system message | v1 对齐，不再做“假 fan-out” |
+| multi_mention | `MultiMentionOrchestrator`：status/timeout/callback/aggregate | 完整 orchestrator：`multi_mention_requests/responses/callbacks` + 聚合 system message + callback child | v1 扩展（Clowder 当前 callback 只做 metadata） |
 | recovery | StartupReconciler + Zombie + OwnerReaper 多件套 | 单 startup + 单 serialized reaper | 见 DP-F018RECOVERY |
 | session | active/sealing/sealed + restore/compact | active + lightweight seal；无 restore/compact | 见 0010 |
 
@@ -608,7 +611,8 @@ operator 发消息
 
 - **queue cap/priority**：per-thread cap 5（user/A2A 分开计数）、urgent 先、同 priority
   FIFO、queue full 429/`queue_full` 不写 source；见 0007 §3.1。
-- **multi_mention**：v1 做完整 orchestrator（status/timeout/callback/aggregate）；见
+- **multi_mention**：v1 做完整 orchestrator（status/timeout/aggregate + callback child）；
+  见
   0007 §3.8。
 - **A2A depth**：保留 15；guard = per-thread queue cap 5 + substantive-aware ping-pong
   + early-stop；见 `DP-F018SURFACE-2=A`。

@@ -86,7 +86,7 @@ updated: 2026-11-14
 | [`architecture/0015-codeteam-operator-journey-audit.md`](architecture/0015-codeteam-operator-journey-audit.md) | `[historical]` operator journey 组件审计与决策证据；当前实现看 0007/0014/0016/0017 |
 | [`architecture/0016-turn-terminal-and-settlement-design.md`](architecture/0016-turn-terminal-and-settlement-design.md) | Q2 专项设计（accepted）：TurnExecution/InvocationAttempt 双终态根因、codeteam 设计史、attempt 投递态、四层 settlement owner、迁移/测试/DP-C/DP-D 决策结果 |
 | [`architecture/0017-response-draft-store.md`](architecture/0017-response-draft-store.md) | ResponseDraftStore 契约：单 `DraftRecord`、全量 snapshot、单 writer 串行 flush、T2/T4 删除与恢复、Hub 重连读取、orphan 清理、测试矩阵 |
-| [`architecture/0018-v1-global-design-review.md`](architecture/0018-v1-global-design-review.md) | A2A v1 全局设计 review（2026-11-14）：已修复的 22 项冲突、R1/R2/R3 gate、D-1/D-2/D-3 待拍语义分叉 |
+| [`architecture/0018-v1-global-design-review.md`](architecture/0018-v1-global-design-review.md) | A2A v1 全局设计 review（2026-11-14）：已修复的 22 项冲突、R1/R2/R3 gate、D-0/D-1/D-2/D-3 已按 `BBBA` 拍板 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
 | [`plans/0007-architecture-plan-coverage.md`](plans/0007-architecture-plan-coverage.md) | 架构卡 / Decision Packet → W 任务/验收/风险覆盖矩阵与缺口修复记录；三猫 accept，冻结为 DP→plans 唯一对账索引 |
 | [`architecture/decision-packets/README.md`](architecture/decision-packets/README.md) | Decision Packet 索引与签字结论 |
