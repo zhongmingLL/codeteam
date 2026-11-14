@@ -183,4 +183,41 @@ intent 可能产生第二条消息。
   `QueueProcessor.executeEntry`、`TurnExecutionStore`、`IDraftStore`。
 - 历史审计/决策：`0015`、`decision-packets/`。
 
+## 7. 外部 review 回执（2026-11-14）
+
+### 烁烁（Kimi K3）— approve
+
+- **P2 命名漂移**：disposition **reject as misread**。0011 canonical 是
+  `invocationId`（parent）+ `parentInvocationId`（child FK）；`invocationRecordId` 是
+  被禁用旧名。为消除误读，0011 新增 §7.1 SQL 物理列名映射（`invocation_id` 是
+  `invocationId` 的 snake_case，不是旧名复活）。
+- **P3 `mentionsUser` 表述**：已统一为 `@operator` 行首（BBBA 只放开 operator 用户
+  消息的正文 `@`）。
+- **P3 建表顺序重复**：已合并为 0007 §4 序言单一 canonical 顺序。
+- **P3 reconnect watermark**：已在 0007 §3.6.1 / 0017 §8 定义 `AgentStreamEvent.seq`
+  为 per-turn 内存序号 + 重连 baseline/buffer 协议。
+
+### 砚砚（GLM 5.3 Flash）— changes_requested
+
+- **P1 multi_mention outcome 恢复缺口**：已改为 `status` = canonical child outcome，
+  `response_state` = R 投影（`pending|terminal|missing`）；T3 在 child terminal 记录
+  received，T2/T4 只回填 response；`settleExpired` 先补录 completed child。E17 增加
+  “T2 失败 + T4 晚 settlement 不误标 timeout”负例。
+- **P2 QueueExecution 缺字段**：已补 `multiMentionRequestId/multiMentionCallbackDepth`，
+  0007 §4.1 注记和 fingerprint 覆盖同步。
+- **P2 delivery_failure/prestart 矛盾**：采用 two-phase dispatch：Phase A 持久化
+  attempt `starting`（parent/claim 事务），Phase B 创建 R/TurnExecution/credential/
+  draft + retireTargets；Phase A 失败 defer，Phase B 失败写 `delivery_failure`，
+  Phase B 后 worker/provider 失败走 R terminal。`markStarting` 同时写
+  `agent_session_id`，唯一 active delivery 从 Phase A 生效。0010/0016/0017/plan 同步。
+- **P3 0016/0007 双份 DDL**：0016 §4.3 已改为引用 0007 §4.3.1 单一 normative DDL。
+- **P3 E-matrix round gate**：0005 增加 E19 queue cap、E20 restart/recovery、
+  E21 cancel/retry；plan R2/R3/R4 出口挂靠。
+- **P3 AgentStreamEvent.seq**：已定义 per-turn 内存序号 + 重连 baseline/buffer；
+  terminal R 纠正瞬态重复。
+
+### 梵花猫（Qwen 3.8 Flash）— pending
+
+本轮 multi_mention response 仍为空/processing；待其返回后单独对账，不预判其 verdict。
+
 [宪宪/deepseek-flash🐾]

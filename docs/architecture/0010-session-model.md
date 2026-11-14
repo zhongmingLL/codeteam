@@ -461,8 +461,10 @@ interface AgentSessionManager {
 - `loadHistory`：委托 `HistoryAssembler`（0007 §3.5.1 的只读加载器），只读 `AgentReadStateStore` 与
   `MessageStore`；返回 `rows + boundarySeq + mode`。**这里不 ack**。完整规则见
   `0007 §3.5.1`。
-- `acquireWorker`：`WorkerPool.ensure`；容量不足返回 typed `worker_capacity`，
-  由 QueueProcessor `releaseClaim + defer`，不在 manager 内热循环。
+- `acquireWorker`：`WorkerPool.ensure`。容量应在 dispatch 前用
+  `WorkerPool.checkCapacity` 预检；Phase B 后 ensure 仍因竞态返回
+  `worker_capacity` 时，按 post-dispatch 失败处理：attempt appended→failed + R failed，
+  不 releaseClaim/defer（target 已 retired）。
 - `releaseWorker(handle)`：turn 结束/取消后 retire（`warmTtl=0`）；按
   `handle.generation` 幂等，不误 retire replacement。
 - `recordTurnTerminal`：在 child terminal 事务内完成三件事：
@@ -489,11 +491,11 @@ runAgentTurn
        → active session 行；可能先做 resume 前置检查 / lightweight seal + seq+1 reset
   2. WorkerPool.checkCapacity
        → 容量不足：target 保持 pending，releaseClaim + defer；不创建 attempt/R/child
-  3. attempt(queued) + markStarting
-       → 先拿唯一 active delivery（starting）；执行互斥在这里，不在 TurnExecution
-  4. dispatch：processing R + TurnExecution.createRunning + bindAppended
+  3. Phase A（parent/claim 事务）：attempt(queued) + markStarting(agentSessionId)
+       → 先拿唯一 active delivery（starting）并持久化；执行互斥在这里，不在 TurnExecution
+  4. Phase B（独立 dispatch 事务）：processing R + TurnExecution.createRunning + bindAppended
        （turnExecutionId/R/settlement=streaming；workerId = null）
-       + InvocationCredential.create + ResponseDraftStore.create
+       + InvocationCredential.create + ResponseDraftStore.create + retireTargets
   5. loadHistory(threadId, agentId)
        → rows + boundarySeq；只读 cursor，不 ack
   6. acquireWorker(session)
@@ -558,8 +560,9 @@ reset(threadId, agentId, reason):
 | 失败点 | 持久状态 | cursor | 下一轮行为 |
 |---|---|---|---|
 | worker_capacity 预检失败（dispatch 前） | 无 attempt/R/child；target 保持 pending | 不 ack | QueueProcessor defer；不写 delivery_failure |
-| dispatch 事务内失败（credential/R/child create） | 事务回滚，无 attempt/R/child | 不 ack | 写 delivery_failure；target 可重试 |
-| dispatch 后 spawn / prompt 构建失败 | attempt starting/appended → failed（无 promptDelivered） | 不 ack | 重放同一批消息；写 delivery_failure |
+| Phase A 失败（parent/attempt starting） | 事务回滚，无 attempt/R/child | 不 ack | releaseClaim + defer；不写 delivery_failure |
+| Phase B 失败（R/child/credential/draft/retire） | attempt starting → failed，无 R | 不 ack | 写 delivery_failure；target 保持 pending，可重试 |
+| Phase B 后 loadHistory / spawn / prompt 构建失败 | attempt appended → failed，R failed（无 promptDelivered） | 不 ack | 重放同一批消息；不写 delivery_failure |
 | provider prompt 已接收后失败 | attempt failed/interrupted + R failed | tx A ack（promptDelivered=true） | 不重放；下一轮看到 failed R |
 | 取消在 prompt 前 | attempt canceled | 不 ack | 重放 |
 | 取消在 prompt 后 | attempt canceled + R canceled | tx A ack | 不重放 |
@@ -694,7 +697,9 @@ contract：
 **Session × history × worker**
 
 - `loadHistory` 不 ack；ack 只在 child terminal 事务内且 `promptDelivered=true`。
-- worker_capacity / spawn 前失败 → 不 ack；下一轮重放同一批消息。
+- worker_capacity 预检失败 → 不 ack；下一轮重放同一批消息。Phase B 后 spawn 失败 →
+  attempt appended→failed + R failed，不 ack（prompt 未送达）；该 target 不自动 retry，
+  但同一 agent 下一轮 history 仍会看到该 source。
 - prompt 已送达后 provider failed/canceled → tx A 照常 ack；不重放。
 - 崩溃在 tx A 前 → 不 ack；崩溃在 tx A 后 → ack 已随 terminal 持久化。
 - child terminal 事务回滚时，messageCount / cursor ack 一起回滚。

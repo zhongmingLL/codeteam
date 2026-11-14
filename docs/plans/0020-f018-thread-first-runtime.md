@@ -89,6 +89,9 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - dispatch thread branch：QueueProcessor、InvocationRecord、attempt、core TurnExecution、
   processing R、credential；不调用
   budget/deployment/managed-work guard。
+- dispatch 分 Phase A（parent + attempt `starting`）与 Phase B（R/TurnExecution/
+  credential/draft/retireTargets）；Phase A 失败 defer，Phase B 失败写 delivery_failure
+  并保留 target pending；Phase B 后 worker/provider 失败走 R terminal。
 - retry：target-level `requestRetry`；同 parent/同 source message/同 queue entry，不重新
   admission；已终态失败只接受显式 retry 追加 attempt+1；pre-handoff pending target 用
   process-local bounded backoff（base 10s、上限 1h）自动重试。
@@ -119,7 +122,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   - T4 `ResponseRecoveryService`：`response_pending` / `response_missing` recovery；
     `settleResponseFromDraft` 只属于 T4。
   - 生产代码不引入 `settleAgentTurn`。
-- 出口：E1/E2/E7/E9/E12/E13；真实 pi RPC + mock provider。
+- 出口：E1/E2/E7/E9/E12/E13/E18/E19；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A
 
@@ -133,7 +136,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   callback depth ≤2；它是唯一多 target fan-out 入口。
 - 任意 enabled agent 可被 target；首次成功后加入 participants。
 - `thread post --to` 不再要求 `--task`；CLI/read model 同步。
-- 出口：E3/E4/E5/E6/E8/E10/E11。
+- 出口：E3/E4/E5/E6/E8/E10/E11/E21。
 
 ## R4 — Loop guard / observation / 多 agent
 
@@ -144,7 +147,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   operator 正文 @ 正例覆盖。
 - 多 agent thread；`multi_mention` timeout/status/aggregate、anti-cascade、
   callback child/`allFailed`、target cancellation 收敛；startup 只重试 pending callback。
-- 出口：E14/E15/E16/E17。
+- 出口：E14/E15/E16/E17/E20。
 
 ## R5 — Cutover 与清理
 

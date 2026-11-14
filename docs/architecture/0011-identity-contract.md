@@ -167,6 +167,23 @@ turnExecutionId     = UUID   // child; unique(attemptId) or unique(parentInvocat
 credentialId        = UUID   // unique(turnExecutionId)
 ```
 
+### 7.1 SQL 物理列名映射
+
+应用层字段用 camelCase；SQLite 物理列用 snake_case，二者一一对应，不是第二套命名：
+
+| 应用层 canonical | SQL 物理列 |
+|---|---|
+| `invocationId`（parent record） | `invocation_id` |
+| `parentInvocationId`（child → parent FK） | `parent_invocation_id` |
+| `turnExecutionId` | `turn_execution_id` |
+| `queueEntryId` | `queue_entry_id` |
+| `attemptId` | `attempt_id` |
+| `credentialId` | `credential_id` |
+
+`invocationRecordId` / `invocation_record_id` **不是** canonical 名；parent 用
+`invocationId`，child FK 用 `parentInvocationId`。DDL 里的 `invocation_id` 是
+`invocationId` 的物理写法，不是旧名复活。
+
 ## 8. 每个 work item 生成的 ID
 
 ```text

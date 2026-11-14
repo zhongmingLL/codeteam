@@ -248,70 +248,10 @@ appended
 - `failed/interrupted/canceled`：delivery attempt 终态；prestart 失败允许没有 child。
 - terminal 后不可改写。
 
-### 4.3 表结构（修订）
+### 4.3 表结构（canonical 引用）
 
-```sql
-CREATE TABLE invocation_attempts (
-  attempt_id TEXT PRIMARY KEY,
-  parent_invocation_id TEXT NOT NULL,
-  queue_entry_id TEXT NOT NULL,
-  thread_id TEXT NOT NULL,
-  target_agent_id TEXT NOT NULL,
-  attempt INTEGER NOT NULL CHECK (attempt >= 1),
-
-  turn_execution_id TEXT UNIQUE,
-  delivery_state TEXT NOT NULL CHECK (delivery_state IN (
-    'queued', 'starting', 'appended', 'handled',
-    'failed', 'interrupted', 'canceled'
-  )),
-  terminal_reason TEXT,
-
-  agent_session_id TEXT,
-  worker_id TEXT,
-  provider TEXT,
-  model TEXT,
-  model_family TEXT,
-  usage_json TEXT
-    CHECK (usage_json IS NULL OR
-           (json_valid(usage_json) AND json_type(usage_json) = 'object')),
-
-  settlement TEXT
-    CHECK (settlement IS NULL OR settlement IN ('streaming', 'response_pending', 'settled')),
-  response_message_id TEXT UNIQUE,
-  delivery_boundary_seq INTEGER,
-  prompt_delivered_at INTEGER,
-
-  created_at INTEGER NOT NULL,
-  started_at INTEGER,
-  ended_at INTEGER,
-
-  CHECK (delivery_state NOT IN ('appended', 'handled') OR turn_execution_id IS NOT NULL),
-  CHECK (delivery_state <> 'handled' OR turn_execution_id IS NOT NULL),
-  CHECK (delivery_state NOT IN ('failed', 'interrupted', 'canceled') OR terminal_reason IS NOT NULL),
-  CHECK (delivery_state IN ('queued', 'starting') OR turn_execution_id IS NOT NULL
-         OR delivery_state IN ('failed', 'canceled')),
-  CHECK (settlement IS NULL OR response_message_id IS NOT NULL),
-  CHECK (settlement IS NULL OR delivery_state NOT IN ('queued', 'starting')),
-  CHECK (response_message_id IS NULL OR delivery_state NOT IN ('queued', 'starting')),
-  CHECK (settlement <> 'streaming' OR delivery_state = 'appended'),
-  CHECK (settlement <> 'response_pending' OR delivery_state NOT IN ('queued', 'starting', 'appended')),
-  CHECK (settlement <> 'settled' OR delivery_state NOT IN ('queued', 'starting', 'appended')),
-  CHECK (prompt_delivered_at IS NULL OR worker_id IS NOT NULL),
-  CHECK (delivery_state <> 'handled' OR prompt_delivered_at IS NOT NULL),
-  CHECK (prompt_delivered_at IS NULL OR delivery_state IN (
-    'appended', 'handled', 'failed', 'interrupted', 'canceled'
-  )),
-  UNIQUE (parent_invocation_id, target_agent_id, attempt),
-  FOREIGN KEY (parent_invocation_id)
-    REFERENCES invocation_records(invocation_id) ON DELETE RESTRICT,
-  FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
-  FOREIGN KEY (turn_execution_id)
-    REFERENCES turn_executions(turn_execution_id) ON DELETE SET NULL,
-  FOREIGN KEY (agent_session_id) REFERENCES agent_sessions(id) ON DELETE SET NULL,
-  FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE SET NULL,
-  FOREIGN KEY (response_message_id) REFERENCES messages(id) ON DELETE RESTRICT
-) STRICT;
-```
+**DDL 单一来源：`0007-a2a-runtime-chain.md` §4.3.1。** 本节不复制第二份
+`CREATE TABLE`，只保留 `invocation_attempts` 的语义修订点；实现/迁移以 0007 为准。
 
 关键差异：
 
@@ -325,7 +265,7 @@ CREATE TABLE invocation_attempts (
 ```ts
 interface InvocationAttemptStore {
   appendQueued(input: {...}): AttemptResult;
-  markStarting(attemptId: string, input: { now: number }): AttemptResult;
+  markStarting(attemptId: string, input: { agentSessionId: string; now: number }): AttemptResult;
   bindAppended(attemptId: string, input: {
     turnExecutionId: string;
     agentSessionId: string;
@@ -383,23 +323,25 @@ interface InvocationAttemptStore {
 | 阶段 | owner | 唯一职责 | 不做什么 |
 |---|---|---|---|
 | T1 child terminal | `invoke-single-agent` + `TurnExecutionLifecycle` | `TurnExecution.transitionTerminal`；project credential terminal；project attempt `handled/failed/...`；set settlement `response_pending` | 不提交 response R；不删 draft；不写 parent aggregate |
-| T2 response commit | `route-serial` / `route-parallel` | commit response R（content/toolEvents/thinking）；settle input dispatchRefs；delete draft；clear pending；A2A successor | 不写 child terminal；不写 credential；不写 parent aggregate |
+| T2 response commit | `route-serial` / `route-parallel` | commit response R（content/toolEvents/thinking）；settle input dispatchRefs；delete draft；clear pending；A2A successor；multi_mention target response 回填 | 不写 child terminal；不写 credential；不写 parent aggregate；不改 target outcome status |
 | T3 parent aggregate | `QueueProcessor` + `PerAgentTerminalDispositionCollector` | parent status/successfulAgentIds/terminalReason；queue entry terminal/retry；tracker slot release；multi_mention callback status projection | 不写 child；不写 credential；不提交正常 R；不改写 group request |
-| T4 recovery | `ResponseRecoveryService` | `settleResponseFromDraft` for response_pending/abandoned；`response_missing` recovery | 不改写已完成 child/credential；不重新 terminal parent |
+| T4 recovery | `ResponseRecoveryService` | `settleResponseFromDraft` for response_pending/abandoned；`response_missing` recovery；multi_mention `response_state` 补录 | 不改写已完成 child/credential；不重新 terminal parent；不改 target outcome status |
 
 ### 5.2 正常路径（成功）
 
 ```text
 invoke-single-agent:
-  [T1a] dispatch tx
-    attempt queued→starting            // 先拿唯一 active delivery
+  [T1a] Phase A tx
+    attempt queued→starting(agentSessionId) // 先拿唯一 active delivery；持久化
+  [T1b] Phase B tx
     response R(processing)
     TurnExecution.createRunning
     attempt.bindAppended(turnExecutionId, R.id, settlement='streaming')
     credential.create
     draft.create
+    retireTargets
   stream provider events
-  [T1b] finally:
+  [T1c] finally:
     canonical = TurnExecution.transitionTerminal(completed)
     credential.projectTerminal(canonical)
     attempt.projectChildTerminal(completed)
@@ -487,7 +429,8 @@ parent 重跑 collector（幂等），不重复 terminal child/credential。
 | provider 失败 | child failed；attempt failed；settlement response_pending | R failed（带 draft 正文） | parent partial_failed/failed |
 | provider 超时 | child failed（reason=member_timeout）；attempt failed | R failed | parent 按 target 聚合 |
 | operator cancel | child canceled；attempt canceled；credential canceled | R canceled（带已 stream 正文） | parent canceled/partial |
-| prestart 失败 | 无 child；attempt starting→failed；credential failed | 不执行 | delivery_failure message；parent target failed |
+| Phase A prestart 失败 | 无 attempt/R/child；target pending | 不执行 | releaseClaim + defer；不写 delivery_failure |
+| Phase B prestart 失败 | attempt starting→failed，无 R/child | 不执行 | delivery_failure message；parent target failed |
 | R commit 失败 | child terminal 已提交；settlement response_pending | 失败，R 仍 processing | parent 可先聚合；T4 重试 R |
 | daemon crash before T1 | child running；attempt appended | 无 | startup reaper → T1 interrupted，再 T3/T4 |
 | daemon crash between T1/T2 | child terminal；attempt response_pending | 未执行 | startup T4 从 draft 提交 R；T3 重跑 aggregate |

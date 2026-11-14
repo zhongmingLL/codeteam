@@ -94,7 +94,7 @@ interface DraftRecord {
 ```ts
 interface ResponseDraftStore {
   /**
-   * T1 dispatch tx：幂等 create。
+   * Phase B dispatch tx：幂等 create。
    * 同 identity（attemptId + turnExecutionId）返回 existing；
    * 同 attempt/turn 但 parent/thread/agent 不同 → typed `draft_identity_conflict`，
    * 由 dispatch 事务回滚。
@@ -155,9 +155,10 @@ Store 返回 `null`；Sink 不得再 `create`，只记录
 
 ## 6. 生命周期与事务
 
-### 6.1 T1 dispatch
+### 6.1 Phase B dispatch
 
-与 `invocation_attempts` / processing R / `TurnExecution.createRunning` 同一事务：
+与 Phase B 的 processing R / `TurnExecution.createRunning` / credential / retireTargets
+同一事务；Phase A 已先把 attempt 持久化为 `starting`：
 
 ```text
 create({
@@ -246,6 +247,9 @@ settlement=`response_pending`；draft 继续保留给 T2/T4。
 - Hub 合并规则：processing R + draft 渲染为 processing bubble；用
   `AgentStreamEvent.seq`（传输/事件顺序）去重，不用 draft 持久化 seq；
   `complete` 用 `responseMessageId` 替换。
+- `AgentStreamEvent.seq` 是 per-turn 内存序号，daemon 重启/新连接从 0 开始，不是
+  durable 版本。重连先订阅、再读 processing R + draft 快照；快照期间事件 buffer，
+  完成后只应用 `seq > baseline`；无 baseline 时接受瞬态重复，terminal R 纠正。
 - Store 不做 R 状态过滤；read model 必须过滤 R 已 terminal 的残留 draft，不渲染；
   这些残留由 `listOrphans` / T4 清理。
 - 访问控制：draft 不存 userId；调用方必须已通过 thread access；Store 不做跨 user
@@ -303,7 +307,7 @@ settlement=`response_pending`；draft 继续保留给 T2/T4。
 | 维度 | Clowder | codeteam | 判断 |
 |---|---|---|---|
 | record key | `userId + threadId + invocationId` | `attemptId + turnExecutionId`；user 从 parent/thread 派生 | 身份适配 |
-| 创建时机 | route stream 首次 flush 时 lazy `upsert` | T1 dispatch 事务显式 `create` 空 snapshot | 有意差异：codeteam 有 attempt/TurnExecution/R 的 FK/1:1，需同事务建行 |
+| 创建时机 | route stream 首次 flush 时 lazy `upsert` | Phase B dispatch 事务显式 `create` 空 snapshot | 有意差异：codeteam 有 attempt/TurnExecution/R 的 FK/1:1，需同事务建行 |
 | 写入 | `upsert(draft)` 全量 snapshot | `upsert(draft)` 全量 snapshot | **相同** |
 | 顺序 | Redis 后写覆盖；无 seq | 单 writer 串行 flush；无公开 seq | 语义相同，顺序由 writer 保证 |
 | 读取 | `getByThread(userId, threadId)` | `getByThread(threadId, cursor/limit)` + `getByTurn` | 存储适配 |
@@ -330,7 +334,8 @@ settlement=`response_pending`；draft 继续保留给 T2/T4。
 - **身份不同**：Clowder 的 draft key 用 child `invocationId`；codeteam 的 child 坐标是
   `turnExecutionId`，attempt 是投递台账，两者都要能定位 draft。
 - **创建时机不同**：Clowder 没有 attempt/TurnExecution FK，可以首次 flush lazy create；
-  codeteam 在 T1 dispatch 事务里建空 draft，保证 attempt/R/child/draft 原子绑定。
+  codeteam 在 Phase B dispatch 事务里建空 draft，保证 R/child/draft 原子绑定
+  （attempt 已在 Phase A 持久化为 starting）。
 - **settlement owner 不同**：codeteam 已拍 T2 route/committer、T4 recovery；Clowder 的
   settlement 更集中。draft 的读写语义保持不变，只拆 owner。
 

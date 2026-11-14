@@ -467,7 +467,7 @@ thread message / A2A tool
 | 新 `response_drafts` | processing R 的 in-flight body：attemptId、turnExecutionId、content、toolEvents、thinking | dispatch 事务创建 R；stream bounded flush；R terminal 后删除；最终 contentBlocks 在 T2 生成 |
 | `messages` | 加 `content_json` / `tool_events_json` / `lifecycle_json` / `extra_json` / `thinking` / `deleted_at` / `deleted_by` / `mentions_user`；`body_md` 保持 plain text；legacy `task_id/control_ref/dispatch_refs_json/rich_blocks_json/kind` 停止写入 | R1 回填 `extra.rich`、`extra.targetAgentIds`、`lifecycle.input.dispatchRefs`、`mentions_user=0`；无法映射的消息进 preflight 清单；legacy 列 R5 drop |
 | 新 `multi_mention_requests` | group lifecycle：request/initiatorTurnExecutionId/targets/callbackTo/status/timeout/expires/parent/source/aggregate | 与 source + queue entry 同事务；R3/R4 |
-| 新 `multi_mention_responses` | per-target outcome：received/timeout/failed + turn/response message 指针 | 与 child terminal/R settlement 同事务/幂等 |
+| 新 `multi_mention_responses` | per-target outcome：received/timeout/failed + response_state pending/terminal/missing + turn/response message 指针 | 与 child terminal/R settlement 同事务/幂等 |
 | 新 `multi_mention_callbacks` | callback child delivery：aggregate/queue/parent/turn/status/callbackDepth | group terminal 同事务 pending；admission 后 queued/running；R3/R4 |
 | `queue_entries` → `invocation_queue` | 只做调度：targets、priority、position、claim/lease | 旧 task-first queue 数据 legacy；新 runtime 不读 |
 | `invocation_credentials` | 重建为 child TurnExecution capability：allowedTools、toolCallClaims、state/disposition（含 replaced）、token hash/salt | 旧 task/role/run credential legacy |
@@ -508,6 +508,9 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | E16 | thread access | 同 user 可见；participants 只做路由；跨 user 拒绝 | auth/ACL 测试 |
 | E17 | loop guard / callback | depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`、callback depth 2、callback pending recovery | 负例 E2E |
 | E18 | legacy thread 的 `projectPath` 为空 | targets 非空的 `post_message`/`cross_post_message` 触发 `thread_project_path_required`；message-only 不受影响；补 `projectPath` 后正常 | 负例 E2E |
+| E19 | queue cap / priority | user/A2A 分开计数 cap 5；urgent 先、同 priority FIFO；超限 429/`queue_full`，不写 source | queue/DB 断言 |
+| E20 | daemon restart / recovery | cutoff/protected、response_pending、expired claim restore、callback pending 恢复；不重复 terminal | restart E2E |
+| E21 | cancel / retry | 单/全取消正确；canceled 不 retry；failed/interrupted retry 追加 attempt+1；callback 不因 group retry 重开 | 负例 E2E |
 
 ## 6. 影响面与风险
 

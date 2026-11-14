@@ -104,6 +104,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
   每个 child terminal 释放 tracker、canceled 不 retry、failed entry abandon/TTL。
 - [ ] recovery/liveness：startup cutoff/protected、上一进程 ended R、单 reaper、
   zombie child R/queue 收敛、live projection 去重、response_missing、provider-exit grace。
+- [ ] queue cap/priority E19；daemon restart/recovery E20；cancel/retry E21 均有 round gate。
 
 ## 非目标
 
