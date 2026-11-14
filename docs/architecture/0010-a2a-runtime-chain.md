@@ -3,7 +3,7 @@ title: "codeteam A2A runtime chain v1 — Clowder-aligned"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-11
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06"
@@ -12,6 +12,10 @@ related_features: [codeteam/F018, codeteam/F017]
 ---
 
 # codeteam A2A runtime chain v1
+
+> **V1 target contract：** 本文是 F018 v1 的实现基线；方向/范围见 `0005`，
+> operator 体验见 `0014`，terminal/settlement 深挖见 `0016`，draft store 见 `0017`。
+> 文档地图见 `0000-architecture-map.md`。
 
 > 直接复用 Clowder 已经验证过的 A2A runtime 骨架：
 > **Message/InvocationQueue → QueueProcessor → InvocationRecord → InvocationTracker → AgentRouter → invoke-single-agent/TurnExecution → InvocationRegistry → A2A tools → terminal collector → recovery/read models**。

@@ -14,14 +14,22 @@ updated: 2026-10-31
 
 **工作区边界：** 本仓是 codeteam 代码与契约真相源；`clowder-ai/codeteam/` 只保留迁移前的讨论历史，不再作为开发依据。
 
+## 架构文档怎么读
+
+- **先读** [`architecture/0000-architecture-map.md`](architecture/0000-architecture-map.md)：文档角色、阅读顺序、真相源规则。
+- **方向/范围**看 `0005`；**V1 实现契约**看 `0010`；**operator 体验**看 `0014`。
+- 分册设计看 `0007`/`0008`/`0009`/`0011`/`0013`/`0016`/`0017`。
+- `0001`/`0002`/`0003`/`0004`/`0006`/`0012`/`0015` 是历史或参考，不作为实现基线。
+
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
 | [`SOP.md`](SOP.md) | 通用开发 SOP（Clowder AI 精简基线；项目特定事实见 `AGENTS.md` / `docs/plans/`） |
-| [`architecture/0001-codeteam-architecture-v1.md`](architecture/0001-codeteam-architecture-v1.md) | codeteam 总架构：定位、原则、分层、领域模型、状态机、A2A、SOP、角色、存储、安全、eval、部署、路线图 |
-| [`architecture/0002-pi-runtime-integration.md`](architecture/0002-pi-runtime-integration.md) | pi 运行时接入：SDK/RPC/extension/MCP/durable、L0 system prompt、context 注入、tool 策略、fork 边界 |
-| [`architecture/0003-review-resolutions.md`](architecture/0003-review-resolutions.md) | 三猫评审决议：P1/P2/P3 处置、独立 review、AgentSession、Console M0、W0/W8 |
+| [`architecture/0000-architecture-map.md`](architecture/0000-architecture-map.md) | **架构入口**：文档分层、阅读顺序、canonical/source-of-truth 规则、全局不变量与 2026-11-14 检视结论 |
+| [`architecture/0001-codeteam-architecture-v1.md`](architecture/0001-codeteam-architecture-v1.md) | `[reference]` 旧总架构：非 runtime 领域参考；runtime/A2A 章节已由 0005/0010 取代 |
+| [`architecture/0002-pi-runtime-integration.md`](architecture/0002-pi-runtime-integration.md) | `[reference]` pi 运行时事实参考：SDK/RPC/extension/MCP/durable、L0、context、tool 策略 |
+| [`architecture/0003-review-resolutions.md`](architecture/0003-review-resolutions.md) | `[historical]` 三猫评审决议：当时的 P1/P2/P3 处置，当前契约看 0005/0010 |
 | [`plans/0001-runtime-hardening.md`](plans/0001-runtime-hardening.md) | 下一阶段硬化计划：artifact/event schema、权限与沙箱、SOP 复用/Design Gate、多 task、memory、eval |
 | [`plans/README.md`](plans/README.md) | W0–W8 执行计划索引、顺序、门禁、评审分工 |
 | [`plans/0002-w0-w2-foundation.md`](plans/0002-w0-w2-foundation.md) | W0 fork/L0 spike、W1 数据模型、W2 权限/身份/沙箱 |
@@ -64,18 +72,18 @@ updated: 2026-10-31
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |
 | [`lessons/README.md`](lessons/README.md) | 已交付工作的耐久教训：现象/根因/guardrail 索引 |
-| [`architecture/0004-reuse-architecture-review-plan.md`](architecture/0004-reuse-architecture-review-plan.md) | 复用架构梳理计划：Wave A 10 项（A1×4 + A2×3 + A3×3）、Wave B 11 项（4 项已提前 approved，余 7 项待 W4 dogfood）、统一模板、变量口径、批次依赖 |
-| [`architecture/0005-thread-first-runtime.md`](architecture/0005-thread-first-runtime.md) | A2A runtime v1（draft-for-review）：AgentConfig config-as-code、Thread/Invocation、纯 A2A 四工具、无 Task/custody/code delivery、R0-R5 迁移 |
-| [`architecture/0006-task-first-legacy.md`](architecture/0006-task-first-legacy.md) | Task-first legacy inventory：旧模块/表/工具/feature 的识别、标记与处置，防止误导新开发 |
+| [`architecture/0004-reuse-architecture-review-plan.md`](architecture/0004-reuse-architecture-review-plan.md) | `[historical]` 复用架构梳理计划：结果以 `reuse/` 和 0005/0010 为准 |
+| [`architecture/0005-thread-first-runtime.md`](architecture/0005-thread-first-runtime.md) | **方向/范围（accepted）**：thread-first、纯 A2A 四工具、无 Task/custody/code delivery；详细机制看 0010 |
+| [`architecture/0006-task-first-legacy.md`](architecture/0006-task-first-legacy.md) | `[legacy-reference]` Task-first legacy inventory：识别旧模块/表/工具，防止误导新开发 |
 | [`architecture/0007-agent-config.md`](architecture/0007-agent-config.md) | AgentConfig v1：config-as-code AgentCatalog/AgentConfig/AgentRegistry/AgentState、AccountConfig、roleId workflow key、迁移与校验 |
 | [`architecture/0008-thread-model.md`](architecture/0008-thread-model.md) | Thread v1：projectPath 必填、active/deleted、lastActiveAt、titleSource、空 thread、迁移 preflight |
 | [`architecture/0009-session-model.md`](architecture/0009-session-model.md) | AgentSession v1：active + lightweight seal、piSessionId/piSessionFile resume、Clowder messageCount、连续失败上限、v2 推迟清单 |
 | [`architecture/0010-a2a-runtime-chain.md`](architecture/0010-a2a-runtime-chain.md) | A2A runtime v1 全链路：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/routeParallel/TurnExecution/InvocationRegistry/terminal+recovery，Clowder 对齐 + v1 轻量化 |
 | [`architecture/0011-identity-contract.md`](architecture/0011-identity-contract.md) | 全局身份契约：scope/message/admission/queue/lifecycle/execution/auth 分层、规范 ID、禁用名与 0001/Clowder 映射 |
-| [`architecture/0012-clowder-session-architecture.md`](architecture/0012-clowder-session-architecture.md) | Clowder session 全局架构梳理：五层、SessionRecord/RuntimeSession/DeliveryCursor/ACP pool 生命周期、codeteam 映射问题与复用建议 |
+| [`architecture/0012-clowder-session-architecture.md`](architecture/0012-clowder-session-architecture.md) | `[reference]` Clowder session 参考架构；codeteam session 契约看 0009 |
 | [`architecture/0013-idempotency-key-map.md`](architecture/0013-idempotency-key-map.md) | 幂等 key 全量地图：客户端 key / claim map / queue receipt / 实体 ID / fingerprint 分层，codeteam ↔ Clowder 对照与 A2A v1 目标模型 |
 | [`architecture/0014-operator-message-journey.md`](architecture/0014-operator-message-journey.md) | operator 消息全流程：Hub ingress → Queue → route serial/parallel → prompt/history → draft/R → Hub 流式回传；覆盖简单问答、A2A→operator 决策、并行、单/全取消、失败重试、排队 |
-| [`architecture/0015-codeteam-operator-journey-audit.md`](architecture/0015-codeteam-operator-journey-audit.md) | codeteam operator journey 组件审计：逐组件对齐/缺件/设计问题，P1/P2/P3 verdict，Clowder 差异归因；DP-A/B/E 与 DP-C/D 均已拍板 |
+| [`architecture/0015-codeteam-operator-journey-audit.md`](architecture/0015-codeteam-operator-journey-audit.md) | `[historical]` operator journey 组件审计与决策证据；当前实现看 0010/0014/0016/0017 |
 | [`architecture/0016-turn-terminal-and-settlement-design.md`](architecture/0016-turn-terminal-and-settlement-design.md) | Q2 专项设计（accepted）：TurnExecution/InvocationAttempt 双终态根因、codeteam 设计史、attempt 投递态、四层 settlement owner、迁移/测试/DP-C/DP-D 决策结果 |
 | [`architecture/0017-response-draft-store.md`](architecture/0017-response-draft-store.md) | ResponseDraftStore 契约：全量 snapshot + seq CAS、单 writer、T2/T4 删除与恢复、Hub 重连读取、orphan 清理、测试矩阵 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |

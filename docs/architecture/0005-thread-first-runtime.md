@@ -1,21 +1,30 @@
 ---
 title: "codeteam A2A runtime v1 — thread-first architecture"
 doc_kind: architecture
-status: draft-for-review
+status: accepted
 created: 2026-11-03
-updated: 2026-11-11
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_direction: "2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery setup frozen/deprecated"
 review_verdict: "2026-11-03 base APPROVE; 2026-11-04 deltas APPROVE; superseded by operator C scope change"
-delta_review: "2026-11-04 C: pure A2A runtime rewrite; review pending"
+delta_review: "2026-11-04 C: pure A2A runtime rewrite; direction accepted 2026-11-14; details in 0010"
 supersedes_phase_a_of: codeteam/F017
 related_features: [codeteam/F018, codeteam/F017]
 ---
 
 # codeteam A2A runtime v1
 
-> **状态：draft-for-review。** operator 2026-11-04 选择 **C：v1 只做纯 A2A
+> **定位：direction/scope，不是详细机制契约。** 本文回答“为什么 thread-first、
+> v1 做什么/不做什么”；数据模型、事务、状态机和验收细节以
+> `0010-a2a-runtime-chain.md` 为准。若本文摘要与 0010 冲突，0010 胜出。
+> 文档地图与阅读顺序见 `0000-architecture-map.md`。
+>
+> **与 0010 的分工：** 本文保留方向、范围、关键取舍、迁移原则和验收摘要；
+> 逐组件契约、DDL、状态机、错误 taxonomy、E2E 细项在 0010。本文第 2/3/5 节是
+> 摘要，不是第二份契约。
+
+> **状态：accepted direction。** operator 2026-11-04 选择 **C：v1 只做纯 A2A
 > runtime**。`codeteam_a2a_send` / `codeteam_handoff_*` 彻底弃用；
 > code delivery setup 冻结/弃用，不作为 v1 的一部分。后续 agent team 能力
 > 在 A2A runtime 上逐步实现，各自单独立项。

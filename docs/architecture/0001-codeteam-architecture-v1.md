@@ -1,14 +1,19 @@
 ---
 title: "codeteam 架构 v1 — repo-native code agent team"
 doc_kind: architecture
-status: draft-for-review
+status: reference
 created: 2026-10-21
-updated: 2026-11-07
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 audience: [operator, architect, implementer, reviewer]
 ---
 
 # codeteam 架构 v1
+
+> **历史/参考：** 2026-11-04 之后，runtime / A2A / queue / identity / state-machine
+> 章节由 `0005-thread-first-runtime.md` + `0010-a2a-runtime-chain.md` 取代。本文仅作
+> 非 runtime 领域参考（例如 RichBlock 形状）；实现基线不读本文。阅读顺序见
+> `0000-architecture-map.md`。
 
 > 本文是 2026-10-21 讨论的 consolidated 架构稿。它把“为什么做、系统怎么分层、对象怎么定义、pi 怎么接、安全边界在哪、下一阶段怎么走”写成一份可实施文档。
 >

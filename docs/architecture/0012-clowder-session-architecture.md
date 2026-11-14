@@ -1,15 +1,19 @@
 ---
 title: "Clowder session 架构全局梳理"
 doc_kind: architecture
-status: draft
+status: reference
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F017, codeteam/F018]
 source: "Clowder local reference checkout; paths below are repo-relative, not runtime dependencies"
 ---
 
 # Clowder session 架构全局梳理
+
+> **Clowder reference：** 本文是参考架构分析，不是 codeteam 实现契约；
+> codeteam session contract 是 `0009-session-model.md`。文档地图见
+> `0000-architecture-map.md`。
 
 > 目的：先看 Clowder 的 session 系统整体如何分层、谁拥有什么、生命周期如何流转，
 > 再决定 codeteam 哪些 contract 该复用、哪些该适配、哪些该明确推迟。

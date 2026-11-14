@@ -16,6 +16,7 @@ related_features: [codeteam/F017, codeteam/F018]
 >
 > 新开发只以 `docs/architecture/0005-thread-first-runtime.md` 和 F018 为准。
 > 本文列出的旧模块/表/工具/feature 不得作为“现状应该这样”的依据。
+> 文档地图见 `docs/architecture/0000-architecture-map.md`。
 
 ## 状态标记
 

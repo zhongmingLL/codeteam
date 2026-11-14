@@ -3,7 +3,7 @@ title: "Operator message journey — Hub ingress to streaming reply"
 doc_kind: architecture
 status: draft-for-review
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F018]
 related: [0005-thread-first-runtime.md, 0010-a2a-runtime-chain.md, 0011-identity-contract.md, 0013-idempotency-key-map.md]
@@ -11,6 +11,10 @@ source: "Clowder local reference checkout; codeteam F018 0005/0010/0011/0013"
 ---
 
 # Operator message journey — Hub ingress to streaming reply
+
+> **体验视图：** 本文解释 operator 从发出消息到流式回复“看到什么”；组件/事务/
+> 状态机以 `0010`、`0016`、`0017` 为准。若本文机制描述与契约文档冲突，契约文档胜出。
+> 文档地图见 `0000-architecture-map.md`。
 
 > 目的：把 operator 在前端发出一句话，到 Hub 收到流式答复的完整链路拆开。
 > 这不是新契约，而是 F018 目标态的全链路说明：哪些组件负责什么、哪些状态落在哪里、
@@ -595,27 +599,33 @@ operator 发消息
 | recovery | StartupReconciler + Zombie + OwnerReaper 多件套 | 单 startup + 单 serialized reaper | 见 DP-F018RECOVERY |
 | session | active/sealing/sealed + restore/compact | active + lightweight seal；无 restore/compact | 见 0009 |
 
-## 9. 风险与待定项
+## 9. 已决与剩余实现
 
-1. **Hub transport 未落地**：F018 的事件名/字段需要 W7a 的 WebSocket/API adapter 才能
-   变成真实 Hub 事件；当前文档只能冻结语义，不能声称端到端已实现。
-2. **operator mention 的关联**：`mentionsUser` 不创建 queue/parent；如何把 operator
-   回复关联回原问题（replyTo/causal trigger）需要在 R2 钉死。
-3. **cancel 控制面归属**：单 cancel/cancel all 的 HTTP/CLI 入口属 W7a；F018 需要冻结
-   exact execution identity 与 reason taxonomy，避免 cancel 误杀同 slot 的新 child。
-4. **queue cap/priority**：Clowder 5 与 codeteam 的 tool target 上限（post/cross 1、
-   multi_mention 2-3）不是同一维度；R2 要定 source queue cap、排序、operator 手动
-   processNext 的边界。
-5. **multi_mention 聚合**：v1 做完整 orchestrator；需要冻结 status/timeout/
-   aggregate/callback 的持久化与恢复边界（见 0010 §3.8 multi_mention）。
-6. **draft settlement 失败**：R terminal 后 draft delete 失败、credential tombstone
-   GC、response_pending 重试都要有可观察状态；不能静默泄漏。
-7. **A2A depth 15 与 loop guard**：高上限意味着必须依赖 `a2a_duplicate_delivery` /
-   `pi_ext_tool_call_conflict` / depth 计数，不能只靠目标数量。
-8. **queued source 的可见性**：Queue 不是 History；UI 必须区分 queued receipt 与
-   delivered message，避免刷新后 ghost bubble。
-9. **session seal/restore 不在 v1**：长 thread 的 prompt 只靠 deliveryCursor +
-   ContextAssembler；跨 session 连续性和 compaction 是后续能力。
+### 已决（机制细节见对应契约）
+
+- **queue cap/priority**：per-thread cap 5（user/A2A 分开计数）、urgent 先、同 priority
+  FIFO、queue full 429/`queue_full` 不写 source；见 0010 §3.1。
+- **multi_mention**：v1 做完整 orchestrator（status/timeout/callback/aggregate）；见
+  0010 §3.8。
+- **A2A depth**：保留 15；guard = per-thread queue cap 5 + substantive-aware ping-pong
+  + early-stop；见 `DP-F018SURFACE-2=A`。
+- **draft settlement 失败**：`ResponseDraftStore` 无 TTL；R terminal 后 delete 失败
+  保留 `response_pending`，T4 只重试 delete + settle；见 0017。
+- **operator 通知**：operator 不是 QueueTarget；正文行首 `@operator` 只写
+  `mentionsUser`；见 DP-A。
+
+### 剩余实现/依赖
+
+1. **Hub transport 未落地**：事件名/字段需要 W7a 的 WebSocket/API adapter；F018 只能
+   冻结语义，不能声称端到端已实现。
+2. **operator mention 关联**：`mentionsUser` 不创建 queue/parent；operator 回复如何
+   关联回原问题（replyTo/causal trigger）在 R2 钉死。
+3. **cancel 控制面归属**：单 cancel/cancel all 的 HTTP/CLI 入口属 W7a；F018 冻结
+   exact execution identity 与 reason taxonomy。
+4. **queued source 可见性**：Queue 不是 History；W7a 必须区分 queued receipt 与
+   delivered message，避免 ghost bubble。
+5. **session seal/restore 不在 v1**：长 thread 的 prompt 只靠 deliveryCursor +
+   ContextAssembler；transcript/restore/compaction 是 v2。
 
 ## 10. 参考实现索引
 

@@ -1,9 +1,9 @@
 ---
 title: "codeteam operator message journey — component audit"
 doc_kind: architecture
-status: draft-for-review
+status: historical
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F018]
 related: [0005-thread-first-runtime.md, 0010-a2a-runtime-chain.md, 0011-identity-contract.md, 0013-idempotency-key-map.md, 0014-operator-message-journey.md]
@@ -11,6 +11,10 @@ source: "Clowder local reference checkout; codeteam F018 design docs + current t
 ---
 
 # codeteam operator message journey — component audit
+
+> **历史审计：** 2026-11-11 的组件审计与决策证据；DP-A/B/C/D/E 与 F-07/F-08/F-09
+> 已折入 `0010`/`0014`/`0016`/`0017`。本文不再作为实现基线；文档地图见
+> `0000-architecture-map.md`。
 
 > 目的：以 `0014` 的 Clowder 全链路为参照，给出 **codeteam 版本**的 operator
 > message journey，并逐组件回答三件事：
