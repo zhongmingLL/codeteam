@@ -564,6 +564,7 @@ reset(threadId, agentId, reason):
 |---|---|---|---|
 | worker_capacity 预检失败（dispatch 前） | 无 attempt/R/child；target 保持 pending | 不 ack | QueueProcessor defer；不写 delivery_failure |
 | Phase A 失败（parent + 全部 attempt starting） | 整批事务回滚，无 parent/attempt/R/child | 不 ack | releaseClaim + defer；不写 delivery_failure |
+| tracker startAll 失败（Phase A 后） | attempt starting → failed，无 R/child | 不 ack | releaseClaim + defer；不写 delivery_failure |
 | Phase B 失败（R/child/credential/draft/retire） | attempt starting → failed，无 R | 不 ack | 写 delivery_failure；target 保持 pending，可重试；释放该 target tracker slot |
 | Phase B 后 loadHistory / spawn / prompt 构建失败 | attempt appended → failed，R failed（无 promptDelivered） | 不 ack | 重放同一批消息；不写 delivery_failure |
 | provider prompt 已接收后失败 | attempt failed/interrupted + R failed | tx A ack（promptDelivered=true） | 不重放；下一轮看到 failed R |

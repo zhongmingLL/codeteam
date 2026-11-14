@@ -244,6 +244,11 @@ intent 可能产生第二条消息。
   不把 pending 当失败。
 - **P3 `markStarting` backstop**：补明确处理——返回 null/conflict 时 QueueProcessor
   回滚整个 Phase A 事务并 `releaseClaim` + defer，不写 `delivery_failure`。
+- **P3 高层链路 / startAll**：0007/0005 的全链路摘要仍按旧 per-target dispatch 排序；
+  已同步为 Phase A batch → `InvocationTracker.startAll` → Phase B。`PreparedTarget`
+  增加 Phase A 派生的 `turnExecutionId`（tracker ownership fence 使用），并明确
+  `startAll` 失败时本批 attempt `starting→failed`、releaseClaim + defer、不写
+  `delivery_failure`。
 
 ### 梵花猫（Qwen 3.8 Flash）— pending
 

@@ -66,13 +66,13 @@ related_features: [codeteam/F018, codeteam/F017]
 Message
   → InvocationQueue.enqueue（QueueEntry）
   → QueueProcessor.drain/processEntry
-      → InvocationRecordStore.create（parent，claim 后）
-      → InvocationTracker.start(thread, agent)
+      → InvocationRecordStore.create（parent，claim 后）+ markRunning
+      → InvocationAttemptStore.appendQueued + markStarting
+        （全部 claimed target；Phase A 单事务）
+      → InvocationTracker.startAll(thread, preparedTargets, userId)
       → AgentRouter.routeAgents
           → runAgentTurn（composition root；parallel merge）
-              → invoke-single-agent（T1）
-                  → InvocationAttemptStore.appendQueued
-                  → InvocationAttemptStore.markStarting
+              → invoke-single-agent（Phase B dispatch + T1）
                   → MessageStore.append（processing R）
                   → TurnExecutionStore.createRunning
                   → InvocationAttemptStore.bindAppended
@@ -865,9 +865,9 @@ for entry of entries:
 1. 校验 claim（`claim.targetKeys` ⊆ entry pending targets）；
 2. `targets` 全部是 agent targets；operator 通知已在 message 的 `mentionsUser` 上，
    Queue 不参与；
-3. 对每个 claimed target 解析 `AgentConfig` + `ensureActive` 拿 `agentSessionId`；
-   `WorkerPool.checkCapacity` 预检全部 claimed targets。任一 target 解析失败或容量不足 →
-   `releaseClaim` + defer，不创建 parent/attempt/R；
+3. 对每个 claimed target 解析 `AgentConfig` + `ensureActive` 拿 `agentSessionId` +
+   派生可重放的 `turnExecutionId`；`WorkerPool.checkCapacity` 预检全部 claimed targets。
+   任一 target 解析失败或容量不足 → `releaseClaim` + defer，不创建 parent/attempt/R；
 4. **Phase A（QueueProcessor 单事务，覆盖全部 claimed targets）**：
    - 创建/复用 parent `InvocationRecord`（`sourceRecordId` 幂等）→ `markRunning`；
    - 每个 target 追加 `invocation_attempts` 行（`delivery_state='queued'`，
@@ -876,7 +876,10 @@ for entry of entries:
    - parent + 全部 attempt 同事务提交；`markStarting` 返回 null/conflict（held 门被
      穿透撞唯一索引）→ 整个 Phase A 回滚，`releaseClaim` + defer，不写
      `delivery_failure`；
-5. **Phase B（每 target 独立 dispatch 事务，`runAgentTurn` 内）**：
+5. Phase A commit 后 `InvocationTracker.startAll(preparedTargets)`（用 Phase A 已派生的
+   `turnExecutionId` 做 ownership fence）；任一 slot/worker 不可用 → 本批 attempt
+   `starting → failed`（prestart），`releaseClaim` + defer，不写 `delivery_failure`；
+6. **Phase B（每 target 独立 dispatch 事务，`runAgentTurn` 内）**：
    - 创建 processing R + `TurnExecutionStore.createRunning`（core）+ `bindAppended`
      （`turn_execution_id`/`response_message_id`/`settlement='streaming'`）+
      `InvocationRegistry.create` + `ResponseDraftStore.create`（空 `DraftRecord`）+
@@ -885,10 +888,10 @@ for entry of entries:
    - Phase B 失败：attempt `starting → failed`（无 R/child），写 `delivery_failure`；
      target 保持 pending，记录 `RetryDeferrals`，释放该 target 的 tracker slot，
      继续 sibling；
-6. Phase B commit 后、事务外启动 provider（pi worker）；
-7. T1 child terminal + `projectChildTerminal` + credential terminalize；T2 R/draft；
+7. Phase B commit 后、事务外启动 provider（pi worker）；
+8. T1 child terminal + `projectChildTerminal` + credential terminalize；T2 R/draft；
    T3 `PerAgentTerminalDispositionCollector` → parent aggregate；
-8. 异常/超时 `releaseClaim(claimId)`。
+9. 异常/超时 `releaseClaim(claimId)`。
 
 **不变量**
 
@@ -899,6 +902,8 @@ for entry of entries:
   `releaseClaim` + defer，不写 `delivery_failure`；Phase B 失败 → attempt failed +
   `delivery_failure`，target 仍 pending/可重试，释放该 target 的 tracker slot，
   不拖累 sibling。
+- `InvocationTracker.startAll` 失败（Phase A 已 commit）→ 本批 `starting` attempt
+  标 failed（prestart），释放 claim + defer；不写 `delivery_failure`，target 保持 pending。
 - `starting` 表示“本次 dispatch 已保留该 target 的 active delivery”，不表示 provider
   已启动；serial 中等待前序 target 的 attempt 也保持 `starting`。
 - queue entry 是 route anchor，不再在全部 target dispatch 后立即删除：保留到所有
@@ -1089,7 +1094,11 @@ interface InvocationSlot {
 
 class InvocationTracker {
   start(threadId, agentId, userId, turnExecutionId): AbortController;
-  startAll(threadId, agentIds, userId, turnExecutionId): Map<string, AbortController>;
+  startAll(
+    threadId: string,
+    targets: Array<{ agentId: string; turnExecutionId: string }>,
+    userId: string,
+  ): Map<string, AbortController>;
   complete(threadId, agentId, turnExecutionId?): void;
   completeAll(threadId, agentIds, turnExecutionId?): void;
   cancel(threadId, agentId, reason): boolean;
@@ -1213,8 +1222,9 @@ AgentRouter
        └─ serial:   for target: runAgentTurn(target, priorResponses)
 
 runAgentTurn
-  0. 从 `RouteInput.preparedTargets` 取 Phase A 已解析的 AgentConfig/attemptId/agentSessionId；
-     断言 attempt 仍为 `starting`、session 仍 active（否则 typed defer，不创建 R）
+  0. 从 `RouteInput.preparedTargets` 取 Phase A 已解析的 AgentConfig/attemptId/
+     agentSessionId/turnExecutionId；断言 attempt 仍为 `starting`、session 仍
+     active（否则 typed defer，不创建 R）
   1. Phase B（独立 dispatch 事务）：processing R + TurnExecution.createRunning
       + bindAppended（session/provider/model/R/settlement=streaming；worker=null）
       + InvocationRegistry.create + ResponseDraftStore.create
@@ -1272,6 +1282,7 @@ interface PreparedTarget {
   agentId: string;
   attemptId: string;
   agentSessionId: string;
+  turnExecutionId: string;
   agentConfig: AgentConfig;
 }
 
@@ -1912,9 +1923,10 @@ T4 recovery（ResponseRecoveryService）:
 
 **`invoke-single-agent` 顺序**
 1. 从 `RouteInput.preparedTargets` 读取 Phase A 已解析的 AgentConfig/attemptId/
-   agentSessionId；断言 attempt 仍为 `starting`、session 仍 active；不重新 resolve
-   出第二个 session；
-2. 读取/派生可重放的 `turnExecutionId`（`invocation_attempts` 已有则复用）；
+   agentSessionId/turnExecutionId；断言 attempt 仍为 `starting`、session 仍 active；
+   不重新 resolve 出第二个 session；
+2. 使用 `preparedTarget.turnExecutionId`；若 attempt 已有 `turn_execution_id`，必须
+   与 Phase A 派生值相等，否则 fail closed；
 3. Phase B（独立 dispatch 事务）：创建 processing R（`parentInvocationId` +
    `turnExecutionId`）；`TurnExecutionStore.createRunning`；`bindAppended`
    （`turn_execution_id`/`response_message_id`/`settlement='streaming'`；

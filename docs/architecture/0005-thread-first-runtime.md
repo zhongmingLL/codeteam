@@ -356,12 +356,10 @@ token 由 daemon mint，绑定 child `TurnExecution`/thread/agent/session/user�
 thread message / A2A tool
   → invocation_queue(threadId, sourceRecordId, attempt, targets)
   → QueueProcessor claim
-  → InvocationRecord(parent, claim 后创建)
-  → InvocationTracker.start(threadId, agentId, turnExecutionId)
+  → Phase A（单事务）: InvocationRecord(parent) + invocation_attempts(starting, all claimed targets)
+  → InvocationTracker.startAll(threadId, preparedTargets, userId)
   → AgentRouter.routeAgents(mode)
-  → invocation_attempts(child binding: parentInvocationId/agentSessionId/attempt)
-  → TurnExecution(core: parentInvocationId/causal)
-  → InvocationRegistry.create(child credential)
+  → Phase B（per target）: TurnExecution(core) + processing R + credential + draft + retireTargets
   → pi RPC worker（cwd=thread.projectPath）
   → response bubble + TurnExecution terminal
   → PerAgentTerminalDispositionCollector + parent aggregate

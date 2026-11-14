@@ -437,6 +437,7 @@ parent 重跑 collector（幂等），不重复 terminal child/credential。
 | provider 超时 | child failed（reason=member_timeout）；attempt failed | R failed | parent 按 target 聚合 |
 | operator cancel | child canceled；attempt canceled；credential canceled | R canceled（带已 stream 正文） | parent canceled/partial |
 | Phase A prestart 失败 | 整批回滚，无 parent/attempt/R/child；target pending | 不执行 | releaseClaim + defer；不写 delivery_failure |
+| tracker startAll 失败（Phase A 后） | 本批 attempt starting→failed（prestart），无 R/child | 不执行 | releaseClaim + defer；不写 delivery_failure |
 | Phase B prestart 失败 | attempt starting→failed，无 R/child | 不执行 | delivery_failure message；target 保持 pending（retryablePending）；释放 tracker slot |
 | R commit 失败 | child terminal 已提交；settlement response_pending | 失败，R 仍 processing | parent 可先聚合；T4 重试 R |
 | daemon crash before T1 | child running；attempt appended | 无 | startup reaper → T1 interrupted，再 T3/T4 |
