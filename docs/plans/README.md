@@ -52,6 +52,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0017-a2a-e2e-foundation.md`](0017-a2a-e2e-foundation.md) | A2A E2E Foundation：production composition root、producer/task 绑定、session/worktree 入口、worker A2A tools、terminal resolver、requestId/loop guard、真实 CLI/daemon/worker E2E | 烁烁（A2A/session/worker）+ 砚砚（identity/custody/security）+ 墨墨（vision guard） |
 | [`0018-f016a-a2a-ingress-e2e.md`](0018-f016a-a2a-ingress-e2e.md) | F016a：8 类 ingress × scenario real RPC E2E、P0 工具面（5 现有 + thread_context）、withdraw/parallel/loop guard/typed error、F016b/F016c 边界 | 烁烁（dispatch/queue/terminal）+ 砚砚（auth/custody/withdraw）+ 墨墨（vision guard） |
 | [`0020-f018-thread-first-runtime.md`](0020-f018-thread-first-runtime.md) | F018：A2A runtime v1 R0-R5、AgentConfig/Registry、Thread/Invocation、post/cross/multi_mention/thread_context、无 Task/custody/code delivery | 烁烁（dispatch/queue）+ 砚砚（auth/migration）+ 墨墨（vision/reuse） |
+| [`0021-f018-r1-execution.md`](0021-f018-r1-execution.md) | F018 R1 执行计划：路径 A（supply-chain → #86 → R1）、task-first legacy 处置、R1-a–d schema/migration 切片、R2–R5 门禁 | 烁烁（session/worker/queue）+ 砚砚（schema/auth）+ 墨墨（acceptance/docs） |
 
 ## W0–W8 一览
 
