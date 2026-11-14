@@ -1,14 +1,17 @@
 ---
 title: "codeteam 架构 v1 评审决议"
 doc_kind: decision-log
-status: accepted-for-doc-update
+status: historical
 created: 2026-10-21
-updated: 2026-10-24
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 ---
 
 # codeteam 架构 v1 评审决议
+
+> **历史决策记录：** 2026-10-21 评审决议。当前 architecture/runtime 契约以
+> `0005`/`0007` 为准；本文用于追溯当时的 P1/P2/P3 处置，不作为实现基线。
 
 > 来源：2026-10-21 三猫独立评审（runtime/pi、架构/安全、产品/UX）。
 > 结论：**架构方向成立，不推倒重来；以下决议用于消除契约歧义和开工前风险。**

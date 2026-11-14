@@ -12,6 +12,12 @@ updated: 2026-10-24
 
 # P0 复用卡：Identity / Session
 
+> **2026-11-11 状态**：F018 A2A runtime v1 已取代本卡中 task-first 的
+> `AgentSession` 扩展（taskId/stageId/role/effectiveToolPolicy）。当前 session
+> 设计以 `docs/architecture/0010-session-model.md` 和
+> `docs/architecture/0012-clowder-session-architecture.md` 为准；本卡保留为历史
+> 复用记录，待 F018 收口时重签。
+
 ## 结论
 
 | 项 | 值 |

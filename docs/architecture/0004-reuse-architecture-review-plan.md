@@ -1,14 +1,17 @@
 ---
 title: "codeteam 复用架构梳理计划"
 doc_kind: plan
-status: approved
+status: historical
 created: 2026-10-24
-updated: 2026-10-25
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 ---
 
 # codeteam 复用架构梳理计划
+
+> **历史计划：** 复用架构梳理的执行计划；结果以 `reuse/REUSE-MATRIX.md`、
+> `reuse/README.md` 和当前 `0005`/`0007` 为准。本文不作为实现契约。
 
 > 上游：`../reuse/REUSE-MATRIX.md`（已签字的分档）与 `../reuse/README.md`（11 张 P0 卡）。本文定义“要梳理哪些架构、按什么模板、按什么顺序、变量如何定义”，不展开具体实现。
 >
