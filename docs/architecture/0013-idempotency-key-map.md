@@ -149,9 +149,9 @@ retry with same piExtToolCallId:
 4. claim map 建议从 `clientMessageIds` 改为 `toolCallClaims`
    （DDL `tool_call_claims_json`），key 是 `piExtToolCallId`，避免被读成第二个 ID。
 5. 错误 taxonomy：`pi_ext_tool_call_conflict`（同 key 不同 intent）、
-   `queue_admission_conflict`（同 source+attempt 不同 fingerprint）、
-   `a2a_duplicate_delivery`（同 source+target 已 queued/running；**不覆盖
-   completed**，见 DP-F018IDEM-1=B）。
+   `queue_admission_conflict`（同 source+attempt 不同 fingerprint）；v1 不设
+   `a2a_duplicate_delivery`，也不做 caller-turn×target 的跨 tool-call 去重
+   （DP-F018IDEM-1=B accepted risk）。
 6. `a2a_requests` 标 legacy；不迁移旧 `request_id`。
 7. terminal credential tombstone retention ≥ 客户端重试窗口（建议 30 天，与 Clowder 默认一致）。
 

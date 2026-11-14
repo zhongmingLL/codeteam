@@ -99,6 +99,10 @@ interface ThreadAgentState {
 reconcile。加载时校验跨 agent pattern 唯一，碰撞 fail closed。`AgentState` 运行时状态，
 不写进 catalog。
 
+mention 解析只把**命中 `mentionIndex` 的 token** 当作显式目标；未命中任何 pattern 的
+`@token` 是普通文本，不报错、不路由。命中但 `enabled=false` 的 pattern 必须 typed
+reject `agent_disabled`，不能静默降级为隐式路由。
+
 **状态归属（2026-11-11 拍板）**：Clowder 的 cat 状态不是 server-side store，而是
 `InvocationTracker` + queue/active-invocation + WebSocket 事件的读模型；`SessionStore`
 里的 `getCatState/setCatState` 在当前参考仓 0 个调用点，是遗留接口。codeteam 同样

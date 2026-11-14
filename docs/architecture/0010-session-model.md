@@ -563,6 +563,7 @@ reset(threadId, agentId, reason):
 | 失败点 | 持久状态 | cursor | 下一轮行为 |
 |---|---|---|---|
 | worker_capacity 预检失败（dispatch 前） | 无 attempt/R/child；target 保持 pending | 不 ack | QueueProcessor defer；不写 delivery_failure |
+| admitted 后 target 永久失效 | attempt queued→failed（target_invalid），无 R/child；target retire | 不 ack | delivery_failure message；健康 sibling 继续 |
 | Phase A 失败（parent + 全部 attempt starting） | 整批事务回滚，无 parent/attempt/R/child | 不 ack | releaseClaim + defer；不写 delivery_failure |
 | tracker startAll 失败（Phase A 后） | attempt starting → failed，无 R/child | 不 ack | releaseClaim + defer；不写 delivery_failure |
 | Phase B 失败（R/child/credential/draft/retire） | attempt starting → failed，无 R | 不 ack | 写 delivery_failure；target 保持 pending，可重试；释放该 target tracker slot |

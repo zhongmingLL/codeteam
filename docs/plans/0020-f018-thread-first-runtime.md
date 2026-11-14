@@ -71,7 +71,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - 旧 `tasks`/`handoffs`/`custody_events`/`budgets`/`reviews`/`merges` 冻结 legacy，
   不读不写。
 - 迁移前 drain/terminal 有 running invocation 的 session；跳过 running，等 terminal。
-- 出口：旧 code path 停写；新 A2A schema 可写；migration up/down 可回滚。
+- 出口：旧 code path 停写；新 A2A schema 可写；migration up/down 可回滚；E14/E15。
 
 ## R2 — Same-thread A2A
 
@@ -123,7 +123,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   - T4 `ResponseRecoveryService`：`response_pending` / `response_missing` recovery；
     `settleResponseFromDraft` 只属于 T4。
   - 生产代码不引入 `settleAgentTurn`。
-- 出口：E1/E2/E7/E9/E12/E13/E18/E19；真实 pi RPC + mock provider。
+- 出口：E1/E2/E7/E9/E12/E13/E18/E19/E22；真实 pi RPC + mock provider。
 
 ## R3 — Cross-thread A2A
 
@@ -137,18 +137,19 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
   callback depth ≤2；它是唯一多 target fan-out 入口。
 - 任意 enabled agent 可被 target；首次成功后加入 participants。
 - `thread post --to` 不再要求 `--task`；CLI/read model 同步。
-- 出口：E3/E4/E5/E6/E8/E10/E11/E21。
+- 出口：E3/E4/E5/E6/E8/E10/E11/E16/E21。
 
 ## R4 — Loop guard / observation / 多 agent
 
 - depth 15（DP-F018SURFACE-2=A：Clowder 实际默认 15；review 链需 >2；
   guard = per-thread queue cap 5 + substantive-aware ping-pong + early-stop）、
-  `a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`。
+  `pi_ext_tool_call_conflict`；v1 不做 caller-turn×target 跨 tool-call 去重
+  （DP-F018IDEM-1=B accepted risk）。
 - observation 识别 4 个新工具；agent final response / A2A body @ 负例不误报；
   operator 正文 @ 正例覆盖。
 - 多 agent thread；`multi_mention` timeout/status/aggregate、anti-cascade、
   callback child/`allFailed`、target cancellation 收敛；startup 只重试 pending callback。
-- 出口：E14/E15/E16/E17/E20。
+- 出口：E17/E20。
 
 ## R5 — Cutover 与清理
 
@@ -191,7 +192,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 | 4 | interruptRunningBefore / reaper bulk API | **已收口**：store 有 startup-only `interruptRunningBefore`；runtime reaper 用 `listRunning + worker liveness`，不提供通用 bulk | R2 实现 reaper |
 | 5 | live stream transport / UI draft | **方向已定**：control socket event channel；100ms/4KB 为 provisional（R2 benchmark 后可能调 250–500ms）；`AgentStreamEvent.seq` 合并；刷新从 processing R + draft 恢复 | R2 实现 transport/UI + benchmark |
 | 6 | durable partial response | **已收口**：DP-F018X-2=B；processing R + response_drafts + attempt settlement | R2 实现 |
-| 7 | delivery_failure reason taxonomy | **已收口**：pre-admission typed reject 与 admitted prestart `delivery_failure` 分离；E6/E8/E10/E11 映射已写 | R2/R3 实现并补负例 |
+| 7 | delivery_failure reason taxonomy | **已收口**：pre-admission typed reject 与 admitted prestart `delivery_failure` 分离；Phase A `target_invalid` 与 Phase B 事务失败分属两条路径；E6/E8/E10/E11/E22 映射已写 | R2/R3 实现并补负例 |
 | 8 | MessageStore migration unknowns | **契约已收口**：legacy→new mapping/preflight 表已写 | R1 执行 preflight，unknown 进清单 |
 | 9 | queue trace 完整 payload audit | **v1 决策**：不建 dispatch_events/queue_retirement_audit；attempt.queueEntryId + queue_admissions + dispatchRefs 足够 | 若未来要 forensic replay/queue 压缩，v2 再加 |
 | 10 | WorkerPool reaper/capacity | **契约已收口**：capacity backoff、单 reaper 循环、warmTtl=0 crash/cleanup 顺序已定 | R2 实现 |

@@ -121,8 +121,7 @@ completed 去重接受风险 / 全 failed 保持 done+allFailed）。**
 
 `piExtToolCallId` 只在同一个 tool call 重试内稳定。如果模型在 tool 成功返回后重新生成
 一个新 `toolCallId` 再发一次相同 intent，`toolCallClaims` 不会命中；
-`a2a_duplicate_delivery` 只拦 queued/running，不拦已 completed 的 source。结果是同一
-intent 可能产生第二条消息。
+v1 没有 caller-turn×target 的跨 tool-call 去重，因此同一 intent 可能产生第二条消息。
 
 **选项**
 
@@ -250,9 +249,33 @@ intent 可能产生第二条消息。
   `startAll` 失败时本批 attempt `starting→failed`、releaseClaim + defer、不写
   `delivery_failure`。
 
-### 梵花猫（Qwen 3.8 Flash）— pending
+### 梵花猫（Qwen 3.8 Flash）— changes_requested（锚定 `4216f85`）→ 已逐项处置
 
-本轮 multi_mention response 仍为空/processing；待其返回后单独对账，不预判其 verdict。
-不以“两猫 approve”代替第三猫的独立结论；若最终超时，记录为 no verdict。
+墨墨在 `4216f85` 上给 `changes_requested`；其 P1/P2 在后续 HEAD 仍成立的部分已修复：
+
+- **P1 operator `@` 三态**：`parseOperatorMentions` 只返回命中已配置 pattern 的 token；
+  未命中任何 pattern 的 `@token` 是普通文本，不 reject、不路由；命中但 disabled →
+  `agent_disabled`；命中但 registry 缺 → `agent_not_found`。E6/E12 补“未命中 @ 不拒 +
+  命中 disabled 必拒”负例。
+- **P1 admission 后 target 永久失效**：Phase A 增加 `invalid` 分类；invalid target 走
+  attempt `queued→failed(target_invalid)` + `delivery_failure` + `retireTargets`，
+  健康 sibling 继续；全部 invalid 时 Phase A 后直接 T3 聚合；新增 E22。
+- **P2 E-matrix 相位不一致**：以 0005 §4.1 为唯一相位真相，对齐 feature/plan：
+  E18/E19/E22→R2，E16/E21→R3，E17/E20→R4；验收范围改为 E1-E22。
+- **P2 `a2a_duplicate_delivery` 自造码**：删除该码；v1 不做 caller-turn×target 的跨
+  tool-call 去重，按 `DP-F018IDEM-1=B` 记录 accepted risk；E17/plan/0005 同步。
+- **P2 review 窗口与 push 竞态**：承认流程问题；最终 verdict 必须锁定 exact HEAD，
+  修复窗口内不再推进 review target；本轮后续 delta 由墨墨复核。
+- **P3 multi_mention replay 反查**：`multi_mention_requests.source_record_id` 改为
+  `NOT NULL UNIQUE`；replay 通过 `claim.messageId = source_record_id` 反查 requestId。
+- **P3 depth 措辞**：改为“A2A hop depth 上限 15（同/跨 thread 均计）”。
+- **P3 Phase B 失败 claim 释放**：不单独 release；`processEntry` 结束统一
+  `releaseClaim(claimId)` 释放未 retire target，`RetryDeferrals` 控制下次 drain，
+  不空等 claim TTL。
+- **Open Q2 callback userId**：补 callback parent `userId` 取 `thread.created_by`，
+  system-owned queue entry 不改变 userId invariant。
+
+**待办**：墨墨对最终 exact HEAD（本轮处置 commit 之后）做 delta verdict；不以两猫
+approve 代替第三猫的独立结论。
 
 [宪宪/deepseek-flash🐾]

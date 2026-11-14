@@ -67,15 +67,15 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 | 阶段 | 范围 | 出口 |
 |---|---|---|
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
-| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 `toolCallClaims`）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down |
-| R2 | same-thread post / thread context；真实 provider E2E | E1/E2/E7/E9/E12/E13 |
-| R3 | cross-thread post；multi_mention orchestrator（status/timeout/aggregate + callback child）；thread access；participants | E3/E4/E5/E6/E8/E10/E11 |
-| R4 | loop guard/idempotency/observation；multi_mention timeout/anti-cascade；多 agent thread | E14/E15/E16/E17 |
+| R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 `toolCallClaims`）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
+| R2 | same-thread post / thread context；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18/E19/E22 |
+| R3 | cross-thread post；multi_mention orchestrator（status/timeout/aggregate + callback child）；thread access；participants | E3/E4/E5/E6/E8/E10/E11/E16/E21 |
+| R4 | loop guard/idempotency/observation；multi_mention timeout/anti-cascade；多 agent thread；recovery | E17/E20 |
 | R5 | cutover CLI/daemon；旧 code delivery 归档；F018 close | A2A runtime 单一真相 |
 
 ## 验收方向
 
-以 `docs/architecture/0005-thread-first-runtime.md` §5 的 E1-E17 为准，最低条件：
+以 `docs/architecture/0005-thread-first-runtime.md` §5 的 E1-E22 为准，最低条件：
 
 - [ ] 无 task thread 可以真实 provider 完成 post/response。
 - [ ] same-thread post E2E；cross-thread post E3。
@@ -95,7 +95,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - [ ] 任意 enabled agent 加入 participants；thread access 同 user。
 - [ ] token scope 负例 E7；target thread 负例 E8。
 - [ ] agent final response @ / A2A tool body @ 不路由；operator 用户消息的正文 `@`
-      正常路由；observation 识别 4 个新工具 E12。
+      正常路由；未命中 pattern 的 `@token` 不拒绝；命中 disabled pattern 必拒；
+      observation 识别 4 个新工具 E12。
 - [ ] `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 E13。
 - [ ] v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges E14。
 - [ ] session 迁移跳过 running invocation E15。
@@ -105,6 +106,8 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - [ ] recovery/liveness：startup cutoff/protected、上一进程 ended R、单 reaper、
   zombie child R/queue 收敛、live projection 去重、response_missing、provider-exit grace。
 - [ ] queue cap/priority E19；daemon restart/recovery E20；cancel/retry E21 均有 round gate。
+- [ ] admission 后 target 永久失效：attempt `queued→failed`（target_invalid）+
+      `delivery_failure` + retire；健康 sibling 继续；E22。
 
 ## 非目标
 

@@ -429,9 +429,9 @@ thread message / A2A tool
 - 消息送达不等于责任转移；v1 没有 handoff/claim/complete/return。
 - targets 可以是任意 enabled agent；首次成功 invocation 后加入 thread
   participants。participants 是路由/上下文，不是 ACL。
-- 跨 thread depth 上限 15；同一 source + target 已有 queued/running 返回
-  `a2a_duplicate_delivery`；同一 piExtToolCallId 不同 intent 返回
-  `pi_ext_tool_call_conflict`。
+- A2A hop depth 上限 15（同/跨 thread 均计）；同一 piExtToolCallId 不同 intent 返回
+  `pi_ext_tool_call_conflict`；v1 不做 caller-turn×target 跨 tool-call 去重
+  （DP-F018IDEM-1=B accepted risk）。
 - 目标 thread 不存在、soft-deleted、跨 user、target agent disabled 都是 typed
   reject，不静默降级。
 - `cross_post_message` 的 target thread 在 targets 非空时还必须满足 `projectPath` 非空；
@@ -449,9 +449,9 @@ thread message / A2A tool
 |---|---|---|
 | R0 | 冻结纯 A2A 架构；F017 phase-a-archive；F018 feature/plan；旧 code delivery 标 frozen/legacy | 文档真相源一致；不写产品代码 |
 | R1 | 新 thread-first schema：AgentCatalog/accounts、Thread owner/participants/projectPath/titleSource/lastActiveAt/deletedAt、thread session、InvocationRecord/TurnExecution、credential（含 `toolCallClaims`）；旧 task/custody 表 legacy | 旧 code path 停写；新 A2A schema 可写；migration up/down；E14/E15 |
-| R2 | same-thread post / thread context；observation；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18 |
-| R3 | cross-thread post；multi_mention fan-out + orchestrator；thread access；participants | E3/E4/E5/E6/E8/E10/E11/E16 |
-| R4 | loop guard/idempotency；multi_mention timeout/status/aggregate；多 agent thread | E17 |
+| R2 | same-thread post / thread context；observation；真实 provider E2E | E1/E2/E7/E9/E12/E13/E18/E19/E22 |
+| R3 | cross-thread post；multi_mention fan-out + orchestrator；thread access；participants | E3/E4/E5/E6/E8/E10/E11/E16/E21 |
+| R4 | loop guard/idempotency；multi_mention timeout/status/aggregate；多 agent thread；recovery | E17/E20 |
 | R5 | cutover CLI/daemon；旧 code delivery 归档；F018 close | A2A runtime 单一真相 |
 
 ### 4.2 Schema delta
@@ -494,22 +494,23 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | E3 | `cross_post_message` 到另一个 thread | 目标 thread 收到消息并唤醒 target；source/target 不变 | 双 thread E2E |
 | E4 | `multi_mention` 给 2-3 个 agent | one source message + one queue + one InvocationRecord + N TurnExecutions；status running→partial→done；timeout 聚合 partial；terminal 后 aggregate + callback queue/parent/child；`allFailed` 正确 | E2E |
 | E5 | 任意 enabled agent 被拉入 thread | 首次成功后成为 participant | participant 表断言 |
-| E6 | agent final response @ / A2A tool body @ | 不产生额外 queue/wake；operator 用户消息的正文 `@` 正常路由；只有 agent 侧 typed targets 决定 A2A | 负例 E2E |
+| E6 | agent final response @ / A2A tool body @ | 不产生额外 queue/wake；operator 用户消息的正文 `@` 正常路由；未命中 pattern 的 `@token` 不拒绝、不路由；命中 disabled pattern 必拒；只有 agent 侧 typed targets 决定 A2A | 负例 E2E |
 | E7 | token scope 负例 | 跨 thread / 错 user / 错 agent 的 token 被拒 | auth 单测 + E2E |
-| E8 | 目标 thread soft-deleted / 跨 user / target disabled | typed reject，不静默降级 | 负例 E2E |
+| E8 | admission 时目标 thread soft-deleted / 跨 user / target disabled | typed reject，不静默降级 | 负例 E2E |
 | E9 | 并发首条消息 | 同一 thread×agent session 不双开；queue 不重复消费 | 并发测试 |
 | E10 | `piExtToolCallId` replay/conflict | 同 intent replay；不同 intent `pi_ext_tool_call_conflict` | 负例 E2E |
 | E11 | `replyTo` 跨 thread / 不存在 | typed reject，不静默丢弃 | 负例 E2E |
-| E12 | observation 工具名 | 识别 4 个新工具；agent final response 的 text-@ 负例不误报 `missing_a2a_tool_call`；operator 正文 @ 正例 | observation 单测 |
+| E12 | observation 工具名 / mention 解析 | 识别 4 个新工具；agent final response 的 text-@ 负例不误报 `missing_a2a_tool_call`；operator 正文 @ 正例；未命中 pattern 的 @ 不误报/不拒绝；命中 disabled 负例 | observation 单测 |
 | E13 | 旧 A2A 工具 | `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 | registry 断言 |
 | E14 | 旧 code delivery 表 | v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges | DB 访问断言 |
 | E15 | session 迁移 | 有 running invocation 的 session 不迁移；等 terminal 后处理；sealing/sealed 留 legacy | migration 测试 |
 | E16 | thread access | 同 user 可见；participants 只做路由；跨 user 拒绝 | auth/ACL 测试 |
-| E17 | loop guard / callback | depth 15、`a2a_duplicate_delivery`、`pi_ext_tool_call_conflict`、callback depth 2、callback pending recovery | 负例 E2E |
+| E17 | loop guard / callback | depth 15、`pi_ext_tool_call_conflict`、callback depth 2、callback pending recovery；跨 tool-call 重复按 DP-F018IDEM-1=B accepted risk | 负例 E2E |
 | E18 | legacy thread 的 `projectPath` 为空 | targets 非空的 `post_message`/`cross_post_message` 触发 `thread_project_path_required`；message-only 不受影响；补 `projectPath` 后正常 | 负例 E2E |
 | E19 | queue cap / priority | user/A2A 分开计数 cap 5；urgent 先、同 priority FIFO；超限 429/`queue_full`，不写 source | queue/DB 断言 |
 | E20 | daemon restart / recovery | cutoff/protected、response_pending、expired claim restore、callback pending 恢复；不重复 terminal | restart E2E |
 | E21 | cancel / retry | 单/全取消正确；canceled 不 retry；failed/interrupted retry 追加 attempt+1；callback 不因 group retry 重开 | 负例 E2E |
+| E22 | admission 后 target 永久失效 | 该 target attempt `queued→failed`（target_invalid）+ `delivery_failure` + retire；健康 sibling 继续；parent 按 target 聚合；不无限 queued | 负例 E2E |
 
 ## 6. 影响面与风险
 

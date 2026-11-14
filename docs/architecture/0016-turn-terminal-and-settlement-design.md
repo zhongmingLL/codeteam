@@ -436,6 +436,7 @@ parent 重跑 collector（幂等），不重复 terminal child/credential。
 | provider 失败 | child failed；attempt failed；settlement response_pending | R failed（带 draft 正文） | parent partial_failed/failed |
 | provider 超时 | child failed（reason=member_timeout）；attempt failed | R failed | parent 按 target 聚合 |
 | operator cancel | child canceled；attempt canceled；credential canceled | R canceled（带已 stream 正文） | parent canceled/partial |
+| admitted 后 target 永久失效 | attempt queued→failed（target_invalid），无 R/child；retire target | 不执行 | delivery_failure message；健康 sibling 继续；parent 按 target 聚合 |
 | Phase A prestart 失败 | 整批回滚，无 parent/attempt/R/child；target pending | 不执行 | releaseClaim + defer；不写 delivery_failure |
 | tracker startAll 失败（Phase A 后） | 本批 attempt starting→failed（prestart），无 R/child | 不执行 | releaseClaim + defer；不写 delivery_failure |
 | Phase B prestart 失败 | attempt starting→failed，无 R/child | 不执行 | delivery_failure message；target 保持 pending（retryablePending）；释放 tracker slot |
