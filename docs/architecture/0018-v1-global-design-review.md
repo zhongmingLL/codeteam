@@ -12,11 +12,12 @@ related: [0000-architecture-map.md, 0005-thread-first-runtime.md, 0007-a2a-runti
 # codeteam A2A v1 — global design review
 
 > 这是一次**全局设计检视记录**，不是新契约。canonical 仍是 `0005`/`0007` +
-> 分册；本文只记录本轮发现的冲突、处置和剩余决策。历史审计见 `0015`。
+> 分册；本文只记录本轮发现的冲突、处置和剩余决策。历史审计见 `0015`；
+> 待拍板项见 `decision-packets/2026-11-14-dp-f018-global-review.md`。
 
 ## 0. 结论
 
-**方向 approve；Phase A 契约可进入最终 review；R1 可以开始；R2/R3 前还有 3 个需要
+**方向 approve；Phase A 契约可进入最终 review；R1 可以开始；R2/R3 前还有 4 个需要
 operator 拍板的语义分叉。**
 
 - 架构骨架与 Clowder 同构，主要问题集中在**所有权边界**、**prestart 失败路径**、
@@ -60,7 +61,7 @@ operator 拍板的语义分叉。**
 | G-09 | P1 | cancel 未开始 target 不写 attempt，但聚合从最新 attempt 推导 canceled，target 会被漏掉 | cancel 同事务为未开始 target 追加 `queued → canceled` prestart attempt |
 | G-10 | P1 | `extra.multiMention` 被 multi_mention 写入，但 `StoredMessage.extra` 只允许 3 个 key | extra 扩为 4 个 key；0005/plan/0007 类型同步 |
 | G-11 | P1 | `post_message` 空 targets 在 §9.5 被写成“仅 `mentionsUser` 时”，和 §3.8 的 message-only write 冲突 | §9.5 改为 targets=0 一律 message-only；表行同步 |
-| G-12 | P1 | AgentConfig 没有 handle/alias 字段，但 operator `@handle` 路由依赖它 | AgentConfig 增加稳定 `handle`（全局唯一、规范化）；displayName 只展示；迁移默认 id slug |
+| G-12 | P1 | AgentConfig 没有 operator mention 字段；`handle` 单值也不表意，丢失多别名/大小写/边界语义 | 改用 Clowder `CatConfig` 的 `readonly mentionPatterns: readonly string[]`；最长匹配 + token boundary + 大小写不敏感；displayName 只展示 |
 | G-13 | P1 | participants 写入时机只有“首次成功”一句话，没有 owner | T1 completed 同事务 `INSERT OR IGNORE thread_participants`；failed/canceled 不写；0014 标注 codeteam 有意偏离 Clowder admission-time |
 | G-14 | P2 | queue cap 要求 user/A2A 分开计数，但 `countQueued(threadId)` 只有一个总数 | 改为 `countQueued(threadId, kind)`；QueueView/验收同步 |
 | G-15 | P2 | `multi_mention_requests.idempotency_key` 是未使用的第二套 key | 删除列和 unique；幂等仍由 credential `toolCallClaims` 承担 |
@@ -73,6 +74,21 @@ operator 拍板的语义分叉。**
 | G-22 | P2 | `response_drafts` 的 `contentBlocks`/`seq` 与 `DraftStore` 单类型不一致 | 0007 DDL/0005 schema/plan/0016 同步删除；contentBlocks 在 T2 生成 |
 
 ## 3. 仍需 operator 拍板的分叉
+
+### D-0 `mentionPatterns` 的匹配范围
+
+字段已按 Clowder `CatConfig` 改为 `readonly mentionPatterns: readonly string[]`；
+剩余是**在文本哪里匹配**：
+
+- **A（推荐 v1）**：只解析行首 `@`（含列表/引用前缀），正文中间 `@` 不路由。保持
+  0007 现有 operator ingress 语义，误路由风险最低。
+- **B（Clowder 用户消息行为）**：用户消息里的正文 `@` 也可路由；需要额外处理
+  代码块、URL、边界、歧义和多 target 顺序。A2A/callback 仍用严格行首解析。
+
+**建议**：v1 选 A；B 作为后续能力，若要开必须在 E6 负例里补“正文 @ 不误路由”的
+回归矩阵。
+
+> 决策包：`decision-packets/2026-11-14-dp-f018-global-review.md` DP-F018MENTION-1。
 
 ### D-1 `multi_mention.callbackTo`：metadata-only 还是真正唤醒
 
@@ -89,6 +105,8 @@ operator 拍板的语义分叉。**
 
 **建议**：v1 选 A，并在 F018 非目标里明确“callback cascade 是 v2”；若选 B，必须补一份
 callback child 的生命周期设计，不能只在现有 orchestrator 上加一个字段。
+
+> 决策包：DP-F018MM-1。
 
 ### D-2 completed 消息的跨 tool-call 重试去重
 
@@ -107,6 +125,8 @@ intent 可能产生第二条消息。
 **建议**：R3 前选 A；这是“同一 intent 不发两次”的最后一道防线，和 `piExtToolCallId`
 解决的是不同层的问题。
 
+> 决策包：DP-F018IDEM-1。
+
 ### D-3 `multi_mention` 全部 target failed 时的 group 状态
 
 当前 `done` 定义为“全部 target 都有 outcome（received 或 failed 都算 accounted）”，
@@ -117,6 +137,8 @@ intent 可能产生第二条消息。
 `done + all failed`；如果产品要 `failed` 表示全失败，需要同时改 `done` 的定义和
 E4/E17。请在 R3 前确认。
 
+> 决策包：DP-F018MM-2。
+
 ## 4. 剩余 P2 / R1 前可顺手收紧
 
 | # | 问题 | 建议 |
@@ -126,7 +148,7 @@ E4/E17。请在 R3 前确认。
 | R-03 | `response_missing` 在“R 行完全不存在”时没有精确的 R 替代策略 | R2 钉死：写 typed system message，attempt settlement 收敛为 settled；不伪造 R，不改 child |
 | R-04 | `multi_mention` 的 `partial` 与 timeout 聚合需要真实 reaper 测试 | R3 用 fake clock + 单 reaper 循环测；不要用第二个 timer |
 | R-05 | `thread_context` 的可见性复用 HistoryAssembler，是否应让 agent 看到其他 target 的定向消息 | R2 前明确产品语义；当前按 per-agent visibility 过滤 |
-| R-06 | `AgentConfig.handle` 变更会影响 `@` 路由；目前没有改名流程 | R1 只允许 operator/CLI 显式改；改名不需要迁移历史消息 |
+| R-06 | `AgentConfig.mentionPatterns` 变更会影响 `@` 路由；目前没有改名流程 | R1 只允许 operator/CLI 显式改；改名不需要迁移历史消息；matching policy 见 DP-F018MENTION-1 |
 
 ## 5. R1/R2 gate
 
@@ -138,6 +160,7 @@ E4/E17。请在 R3 前确认。
 **R2 开始前**：
 
 - D-2（completed 去重）必须有结论；否则 E10/E17 的幂等验收不完整。
+- D-0（mention 匹配范围）必须有结论；字段本身已定，只差行首/正文策略。
 - `WorkerPool.checkCapacity`、`restoreExpiredClaims`、participants insert 进入实现清单。
 
 **R3/R4 开始前**：

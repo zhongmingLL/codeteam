@@ -123,9 +123,12 @@ agent-authored A2A message 的 targets 由 `lifecycle.dispatchRefs` 承载。
 
 **解析顺序**
 
-1. `parseOperatorMentions(body)`：纯函数，只解析行首 `@`（含列表/引用前缀），跳过 fenced/inline code；返回 handles。
-2. `resolveExplicitTargets(handles)`：用 `AgentConfig.handle` 解析到 `agentId`；
-   AgentRegistry 校验存在/enabled；未知/歧义/disabled → typed reject（fail closed）。
+1. `parseOperatorMentions(body)`：纯函数，只解析行首 `@`（含列表/引用前缀），跳过
+   fenced/inline code；返回命中的 mention pattern（含前导 `@`）。
+2. `resolveExplicitTargets(patterns)`：用 AgentRegistry 从
+   `AgentConfig.mentionPatterns` 构建的 pattern→agentId 索引解析；匹配规则是
+   longest-pattern-first + token boundary + 大小写不敏感。AgentRegistry 再校验
+   enabled；未知/歧义/disabled → typed reject（fail closed）。
 3. 无显式 `@` → `resolveImplicitTargets(threadId)`：
    1. 最近一条 user message 的 `targetAgentIds`；
    2. 最近成功响应过的 agent（TurnExecution completed）；
@@ -137,7 +140,8 @@ agent-authored A2A message 的 targets 由 `lifecycle.dispatchRefs` 承载。
 **operator mention（不是 target）**
 
 - operator 不是执行 target；`QueueTarget` 只允许 `{kind:"agent", id}`。
-- agent 在正文行首 `@operator`（或配置 handle）时，message 写 `mentionsUser=true`；
+- agent 在正文行首 `@operator`（或配置的 operator mention pattern）时，message 写
+  `mentionsUser=true`；
   operator 的可见/未读/通知由 message + read model 投影，不进入 Queue。
 - operator 自己不进入 target 列表；行首 `@` 只解析为 agent target。
 - agent tools 的 `targets` 也只接受 agent id；正文 `@operator` 只设置 mention 标记。
@@ -147,7 +151,7 @@ agent-authored A2A message 的 targets 由 `lifecycle.dispatchRefs` 承载。
 - QueueProcessor / AgentRouter / invoke-single-agent 不再解析 `@`；
 - agent final response 不解析 `@`；
 - A2A tools 只接受 typed `{kind,id}`；
-- 未知/歧义/disabled handle 不静默当普通文本，fail closed。
+- 未知/歧义/disabled mention pattern 不静默当普通文本，fail closed。
 
 ### 3.1 Message + InvocationQueue / QueueLedger
 
@@ -252,9 +256,10 @@ interface QueueTerminalProjection {
 
 **`parseTarget`（仅 operator conversation ingress）**
 
-- 只解析**行首 `@handle`**（含列表/引用前缀）；正文中间 `@` 不路由。
+- 只解析**行首 `@mentionPattern`**（含列表/引用前缀）；正文中间 `@` 不路由。
 - 多个 `@` → 多个 agent `QueueTarget`；按 targetKey 去重。
-- 通过 AgentConfig `handle` 解析；未知/歧义 → typed reject `agent_not_found`；disabled → `agent_disabled`。
+- 通过 AgentConfig `mentionPatterns` 解析（longest-first + token boundary + 大小写
+  不敏感）；未知/歧义 → typed reject `agent_not_found`；disabled → `agent_disabled`。
 - 没有行首 `@` → 隐式路由（上一 human `targetAgentIds` → 最近成功 replier → participant → default agent）；都没有才 `no_target`。
 - **不解析 agent final response 的 `@`，也不解析 A2A tool 正文的 `@`。**
 - A2A tools 的 `targets` 是显式 `{kind:"agent",id}` 对象数组；正文 `@operator` 只写 message `mentionsUser`。
@@ -2189,7 +2194,8 @@ targets: Array<{ kind: "agent"; id: string }>
 - 普通 final response 本身已经是一条 message；agent 要“只给 operator 留言”不需要
   再调用 `post_message`，直接结束本轮并在正文行首 `@operator` 即可。
 - 非空 agent target 必须存在且 enabled。
-- agent 正文行首 `@operator`（或配置 handle）只设置 message `mentionsUser=true`；
+- agent 正文行首 `@operator`（或配置的 operator mention pattern）只设置 message
+  `mentionsUser=true`；
   这不是 target，不创建 queue/parent/TurnExecution。
 - `multi_mention` targets 仅 agent（2-3 个），支持完整 orchestrator（见本节
   `multi_mention` 小节）。

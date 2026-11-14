@@ -385,7 +385,7 @@ Clowder 当前实现：
 ```text
 QueueProcessor drain q2
   → parent p2, child iB
-  → agentB 的最终内容包含行首 "@co-creator" / 配置的 operator handle
+  → agentB 的最终内容包含行首 "@co-creator" / 配置的 operator mention pattern
   → detectUserMention → message.mentionsUser=true
   → 该 message 是普通 agent response，不是 cat target
   → operator 收到未读/通知；没有 parent/TurnExecution “等 operator”
