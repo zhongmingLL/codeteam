@@ -94,7 +94,8 @@ git worktree add /home/ming/agent/codeteam-f018-r1 \
 |---|---|
 | `dispatch/`、`scheduling/`、`review/`、`merge/`、`gates/`、`sop/`、`managed-work/`、`deployment-wait/`、`custody/` | 物理 `git mv` 到 `legacy/task-first/`；旧路径留 compatibility shim；不扩展、不重构 |
 | `a2a_send` / `handoff_*` handlers | 移到 `legacy/task-first/a2a/`；v1 不注册、不保留 alias；`thread_context` 保留在 active path |
-| legacy control stores（tasks/runs/handoffs/custody/budgets/reviews/merges/worktree-leases/schedules/waits/inbox/backlog/workflow-sops/sop-check-evidence 等） | 按依赖顺序移到 `legacy/task-first/control/stores/`；共享 `control/stores/types.ts` 留在原位并标 legacy types |
+| legacy control stores（tasks/runs/handoffs/custody/budgets/reviews/merges/worktree-leases/schedules/waits/inbox/backlog/workflow-sops/sop-check-evidence 等） | 按依赖顺序移到 `legacy/task-first/control/stores/` |
+| `control/stores/types.ts` 的全部 legacy 定义（Role/Profile/Session/Worker/Thread/Message/Queue/Task/Run/Handoff/...） | 原样移到 `legacy/task-first/control/stores/types.ts`；`control/stores/types.ts` 只留 `@deprecated` compatibility barrel，供旧代码 import；新 F018 类型在 `src/f018/types/` 重新定义 |
 | `workers/`、`auth/` | 共享目录不整体移动；`workers/executor.ts`/`prompt.ts`/`tool-policy.ts`/`harness.ts` 的 task-bound 分支、`auth/mint.ts` 的 task-scope 分支加 boundary 标记，R1/R2 再拆 |
 | `cli/task.ts`、task read models | 移到 `legacy/task-first/cli/`；旧 CLI 入口留 shim；v1 不依赖 |
 
@@ -102,6 +103,11 @@ git worktree add /home/ming/agent/codeteam-f018-r1 \
   `src/dispatch/index.ts` → `legacy/task-first/dispatch/index.ts`。
 - 新 v1 code 不得 import legacy path 或 shim；由 `check-legacy-boundary` 强制。
 - 文件不删除；R5 再归档/删除。
+
+**类型双代际**：legacy types 与 F018 types **不互相继承、不互相 alias**。
+旧代码只从 compatibility barrel 取 legacy；新 v1 只从 `src/f018/types/` 取 F018。
+两套允许同名（`Thread`/`AgentSession`/`QueueEntry` 等），但 import 路径不同；
+任何文件不得同时依赖两套。R5 删除 legacy barrel/types。
 
 ### 2.2 数据表与列
 
@@ -167,6 +173,9 @@ runtime 暂不读新表。
 - `AGENTS.md` legacy rule；`src/legacy/task-first/README.md`。
 - 纯 legacy 目录/stores 物理移到 `src/legacy/task-first/`；旧路径 compatibility
   shim；共享模块的 task-bound 分支 boundary 注释。
+- `control/stores/types.ts` 的全部定义移到 `legacy/task-first/control/stores/types.ts`；
+  `control/stores/types.ts` 变 `@deprecated` compatibility barrel；建
+  `src/f018/types/` 目录和双代际 import 规则。
 - `scripts/check-legacy-boundary.mjs` + CI/`check` 接线；baseline allowlist。
 - E13/E14 的早期断言：retired tools 不进 v1 registry；v1 entrypoints 不 import
   legacy modules。
@@ -176,6 +185,7 @@ runtime 暂不读新表。
 - `npm --prefix packages/codeteam-daemon run build` + 该包测试通过；旧 CLI/daemon
   入口经 shim 仍可编译；无行为变化。
 - guard 对当前 baseline 通过；故意新增一个 legacy import / retired tool 时 fail。
+- 旧代码经 compatibility barrel 仍编译；新 v1 code import legacy barrel/types 时 fail。
 - allowlist 文件、owner、移除阶段可读；不允许通配整目录。
 
 **出口**：legacy 代码物理隔离在 `legacy/task-first/`；旧入口经 shim 可回滚；
@@ -186,6 +196,9 @@ runtime 暂不读新表。
 **交付**
 
 - schema version 表 + migration runner + up/down 测试 + 空库/new baseline fixture。
+- **F018 types 重新定义**（不从 legacy 继承）：`Thread`/`ThreadParticipant`、
+  `StoredMessage`/`MessageLifecycle`、`AgentSession`/`AgentReadState`、`AgentConfig`
+  相关类型；按 `0007`/`0011`/`0016`/`0017` 写，不 alias 旧 `Thread`/`Message`。
 - `.codeteam/agent-catalog.json` / `.codeteam/accounts.json` 加载与校验；
   `AgentConfig`（含 `mentionPatterns`）、`AccountConfig`、`AgentRegistry`
   `mentionIndex`（跨 agent 唯一，碰撞 fail closed）。
@@ -198,6 +211,7 @@ runtime 暂不读新表。
 - 空库 → new baseline 的 migration up/down；legacy 数据不参与。
 - catalog 加载、pattern 唯一性/disabled/registry 缺、defaultModel 属于 account.models。
 - thread owner/projectPath、message 映射/validation；新 baseline 不含 legacy 列。
+- F018 types 与 legacy types 无 import 交叉；新 store 只依赖 `src/f018/types/`。
 - `check:doc-index` 不因新增文档失败。
 
 **出口**：R1-a migration 可在空库上 up/down；新表可写但不被 runtime 读取。
@@ -207,6 +221,8 @@ runtime 暂不读新表。
 **交付**
 
 - `invocation_records`、`turn_executions`、`invocation_attempts` DDL + stores。
+- `src/f018/types/` 的 `InvocationRecord`/`InvocationAttempt`/`TurnExecution`/
+  `QueueEntry`/`QueueAdmission`/`QueueTarget`/`QueueClaim` 按 0007/0011/0016 定义。
 - 身份契约：`invocationId`（parent）、`parentInvocationId`（child FK）、
   `turnExecutionId`、`attemptId`；`sourceRecordId`/`messageId` 分离。
 - `delivery_state`：`queued → starting → appended → handled|failed|interrupted|
@@ -229,6 +245,8 @@ runtime 暂不读新表。
 
 - `invocation_credentials` 重写：allowedTools、`toolCallClaims`、state/disposition；
   token scope 从 task 改 child TurnExecution/thread/agent/session。
+- `src/f018/types/` 的 `InvocationCredential`/`Worker`/`WorkerBinding`/
+  `AgentSession`/`DraftRecord` 按 0007/0010/0016/0017 定义；不复用 legacy `Run`/`AgentProfile`。
 - `response_drafts` 单 `DraftRecord` + create/upsert/get/delete/orphan；Phase B 事务
   原子绑定 R/child/draft。
 - `agent_sessions` 单 active + `workers`/`worker_bindings` + delivery cursor ack/reset。
@@ -297,6 +315,7 @@ runtime 暂不读新表。
 | 上下文压缩后新 session 误用 legacy 代码 | R1-0：AGENTS.md 常驻规则 + 代码标记 + `check-legacy-boundary` CI guard；不靠记忆 |
 | greenfield reset 丢掉 dev 数据 | 本环境无真实用户数据；新 `CODETEAM_DATA_DIR`，旧 dev DB 不动；E15 留给有数据部署 |
 | legacy move 造成 import/构建 churn | R1-0 用 `git mv` + 旧路径 re-export shim；先跑 daemon build/tests；不删除 |
+| legacy/F018 类型双代际 import 漂移 | `control/stores/types.ts` 只作 deprecated barrel；新 v1 只 import `src/f018/types/`；guard 禁止跨代际 import |
 | auth scope 从 task 改 invocation | 跨 thread/user/agent 负例；token 只绑 child/thread/agent/session |
 | SQLite 单写者事务边界 | Phase A/Phase B、T1–T4 按契约拆；不合成一个大事务 |
 | worker/provider E2E 不稳定 | fake clock + mock provider + 真实 pi RPC 双层；失败重试有界 |
@@ -314,7 +333,8 @@ runtime 暂不读新表。
 1. 开 `fix/supply-chain-node-forge`，node-forge 1.4.3 + audit/build 验证，单独 PR。
 2. supply-chain 绿后更新 #86、merge 到 `codeteam-work`。
 3. 从 `codeteam-work` 开 R1-0 worktree；建 `legacy/task-first/`，`git mv` 纯 legacy
-   目录/stores，旧路径留 shim；落 `check-legacy-boundary` + baseline allowlist。
+   目录/stores 和 `control/stores/types.ts` 定义，旧路径留 shim/barrel；建
+   `src/f018/types/` 骨架；落 `check-legacy-boundary` + baseline allowlist。
 4. R1-0 第一个 checkpoint：guard 能拦住新 legacy import/retired tool；旧代码仍可回滚。
 5. R1-0 合后开 R1-a worktree；落 migration harness + catalog/thread/message。
 6. R1-a checkpoint：migration up/down + catalog/thread/message review；通过后进 R1-b。
@@ -323,6 +343,8 @@ runtime 暂不读新表。
 
 - R1-0/a/b/c/d 全部 merge；新 schema migration up/down 在空库上通过。
 - legacy boundary guard 在 CI 常驻；新 runtime import legacy 会 fail。
+- `control/stores/types.ts` 是 deprecated compatibility barrel；F018 code 只 import
+  `src/f018/types/`，两代类型无交叉 import。
 - E13/E14 有可运行证据；v1 runtime 不读不写 legacy 表；旧 code path 停写；
   E15 标记为有数据部署另行 migration plan。
 - auth/draft/session/queue store 级测试通过；无 task-scope token 新写。
