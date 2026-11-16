@@ -1,13 +1,13 @@
-# @codeteam/daemon
+# @superagentteam/daemon
 
-Minimal daemon lifecycle for codeteam: `CODETEAM_DATA_DIR` state, an append-only boot ledger, a
+Minimal daemon lifecycle for SuperAgentTeam: `CODETEAM_DATA_DIR` state, an append-only boot ledger, a
 single-writer fence, loopback `/health`, and `requested → ready → stopping → stopped/failed`.
 
 ```ts
-import { startDaemon } from "@codeteam/daemon";
+import { startDaemon } from "@superagentteam/daemon";
 
 const daemon = await startDaemon({
-  installationRoot: "/path/to/codeteam",
+  installationRoot: "/path/to/superagentteam",
   runningRevision: "abc123",
   services: ["api"],
 });
@@ -29,7 +29,7 @@ handoffs, approvals, reviews, and the rest of the W1 schema; it is not the pi tr
 transactional `dispatchBacklog` and `cutoverQueueEntry` services.
 
 ```ts
-import { openControlDatabase } from "@codeteam/daemon";
+import { openControlDatabase } from "@superagentteam/daemon";
 
 const control = openControlDatabase({ dataDir: process.env.CODETEAM_DATA_DIR });
 console.log(control.schemaVersion);

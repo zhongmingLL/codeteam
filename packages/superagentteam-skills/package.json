@@ -1,8 +1,8 @@
 {
-	"name": "@codeteam/skills",
+	"name": "@superagentteam/skills",
 	"version": "0.0.0",
 	"private": true,
-	"description": "codeteam curated skill catalog and allowlist resolver",
+	"description": "SuperAgentTeam curated skill catalog and allowlist resolver",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -28,7 +28,7 @@
 		"yaml": "2.9.0"
 	},
 	"devDependencies": {
-		"@codeteam/pi-adapter": "0.0.0",
+		"@superagentteam/pi-adapter": "0.0.0",
 		"@earendil-works/pi-ai": "1.4.0",
 		"@earendil-works/pi-coding-agent": "1.4.0",
 		"@types/node": "22.19.19",

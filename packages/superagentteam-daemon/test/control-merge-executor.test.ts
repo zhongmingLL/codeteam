@@ -42,7 +42,7 @@ function commitFile(path: string, content: string): string {
 }
 
 function createRepo(): void {
-	repo = mkdtempSync(join(tmpdir(), "codeteam-merge-repo-"));
+	repo = mkdtempSync(join(tmpdir(), "superagentteam-merge-repo-"));
 	dirs.push(repo);
 	git(repo, ["init", "-b", "main"]);
 	git(repo, ["config", "user.email", "test@example.com"]);
@@ -190,7 +190,7 @@ function execute(input: {
 
 beforeEach(() => {
 	createRepo();
-	dataDir = mkdtempSync(join(tmpdir(), "codeteam-merge-data-"));
+	dataDir = mkdtempSync(join(tmpdir(), "superagentteam-merge-data-"));
 	dirs.push(dataDir);
 	initOperatorCredential({ dataDir });
 	store = openControlStore({ dataDir });
@@ -265,8 +265,8 @@ describe("local MergeExecutor", () => {
 	it("blocks code merges without the required independent review and leaves HEAD unchanged", () => {
 		const { task } = createWork();
 		git(repo, ["checkout", "-b", "feature-code", "-q"]);
-		mkdirSync(join(repo, "packages/codeteam-daemon/src/auth"), { recursive: true });
-		const featureSha = commitFile("packages/codeteam-daemon/src/auth/foo.ts", "export const x = 1;\n");
+		mkdirSync(join(repo, "packages/superagentteam-daemon/src/auth"), { recursive: true });
+		const featureSha = commitFile("packages/superagentteam-daemon/src/auth/foo.ts", "export const x = 1;\n");
 		git(repo, ["checkout", "main", "-q"]);
 		const before = git(repo, ["rev-parse", "main"]);
 		expect(() => execute({ taskId: task.id, headSha: featureSha })).toThrow(/merge_gate_blocked/);
@@ -276,9 +276,9 @@ describe("local MergeExecutor", () => {
 	it("executes a standard code-lane merge with an approving review at exact HEAD/base", () => {
 		const { task, thread } = createWork();
 		git(repo, ["checkout", "-b", "feature-standard", "-q"]);
-		mkdirSync(join(repo, "packages/codeteam-daemon/src/control"), { recursive: true });
+		mkdirSync(join(repo, "packages/superagentteam-daemon/src/control"), { recursive: true });
 		const featureSha = commitFile(
-			"packages/codeteam-daemon/src/control/foo.ts",
+			"packages/superagentteam-daemon/src/control/foo.ts",
 			"export const standardLane = true;\n",
 		);
 		git(repo, ["checkout", "main", "-q"]);

@@ -127,9 +127,9 @@ jobs:
         if: needs.changes.outputs.mode == 'upstream'
         run: npm test
 
-      - name: Test (codeteam packages)
-        if: needs.changes.outputs.mode == 'codeteam'
-        run: npm test --workspace @codeteam/pi-adapter --workspace @codeteam/skills --workspace @codeteam/daemon
+      - name: Test (SuperAgentTeam packages)
+        if: needs.changes.outputs.mode == 'superagentteam'
+        run: npm test --workspace @superagentteam/pi-adapter --workspace @superagentteam/skills --workspace @superagentteam/daemon
 
   supply-chain:
     runs-on: ubuntu-latest

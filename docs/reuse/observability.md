@@ -71,7 +71,7 @@ updated: 2026-10-29
 - **明确后置**：`/api/telemetry/traces`、`/api/invocations/:id/trajectory`、
   `/api/tool-usage`、`/api/logs/tail` 的 operator auth/HTTP/Console 面归 W7a；
   `/request-generations` 归 W7+。契约冻结在
-  `packages/codeteam-daemon/src/observability/contracts.ts`。
+  `packages/superagentteam-daemon/src/observability/contracts.ts`。
 
 ## 风险与回滚
 

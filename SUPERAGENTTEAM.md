@@ -40,6 +40,6 @@ phase; do not let it drift like the old W0a entry did.
 
 ## Development rule
 
-Prefer the product package surface (`packages/codeteam-*` today; `packages/superagentteam-*`
-after F019.2), extensions, MCP servers, and SDK adapters. Keep the pi kernel read-only
+Prefer the product package surface (`packages/superagentteam-*`), extensions, MCP servers,
+and SDK adapters. Keep the pi kernel read-only
 unless a failure is recorded in `KERNEL_GAPS.md` and a minimal patch is justified.

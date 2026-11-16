@@ -18,7 +18,7 @@ related_features: [codeteam/F017, codeteam/F018]
 > 本文列出的旧模块/表/工具/feature 不得作为“现状应该这样”的依据。
 > 文档地图见 `docs/architecture/0000-architecture-map.md`。
 >
-> 物理迁移后的统一入口：代码 `packages/codeteam-daemon/src/legacy/task-first/`，
+> 物理迁移后的统一入口：代码 `packages/superagentteam-daemon/src/legacy/task-first/`，
 > 文档 `docs/legacy/task-first/INDEX.md`；R1 计划见
 > `docs/plans/0021-f018-r1-execution.md`。
 

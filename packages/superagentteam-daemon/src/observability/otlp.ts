@@ -13,7 +13,7 @@ export function resolveOtlpConfig(env: NodeJS.ProcessEnv = process.env): OtlpCon
 	const endpoint = env.CODETEAM_OTLP_ENDPOINT?.trim();
 	const timeoutMs = parsePositiveInteger(env.CODETEAM_OTLP_TIMEOUT_MS, 2000);
 	const maxPending = parsePositiveInteger(env.CODETEAM_OTLP_MAX_PENDING, 1000);
-	const serviceName = env.CODETEAM_OTLP_SERVICE_NAME?.trim() || "codeteam-daemon";
+	const serviceName = env.CODETEAM_OTLP_SERVICE_NAME?.trim() || "superagentteam-daemon";
 	if (enabled && !endpoint) throw new Error("otlp_endpoint_missing");
 	return { enabled, endpoint, timeoutMs, maxPending, serviceName };
 }
@@ -113,7 +113,7 @@ export class OtlpHttpExporter implements SpanExporter {
 					},
 					scopeSpans: [
 						{
-							scope: { name: "codeteam-daemon", version: "0.0.0" },
+							scope: { name: "superagentteam-daemon", version: "0.0.0" },
 							spans: [
 								{
 									traceId: span.traceId,

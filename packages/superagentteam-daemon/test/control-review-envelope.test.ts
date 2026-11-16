@@ -76,7 +76,9 @@ function request(overrides: Partial<ReviewRequestInput> = {}): ReviewRequestInpu
 		baseSha: BASE,
 		round: 1,
 		diffArtifact: { artifactId: "artifact-diff", mediaType: "text/x-diff", revision: "1" },
-		testEvidence: [{ kind: "test_report", ref: "npm --prefix packages/codeteam-daemon test", summary: "green" }],
+		testEvidence: [
+			{ kind: "test_report", ref: "npm --prefix packages/superagentteam-daemon test", summary: "green" },
+		],
 		acceptanceCriteria: ["reviewer is independent", "headSha is traceable"],
 		impactSurface: {
 			changedFiles: ["src/module.ts"],
@@ -93,7 +95,7 @@ function request(overrides: Partial<ReviewRequestInput> = {}): ReviewRequestInpu
 }
 
 beforeEach(() => {
-	const root = mkdtempSync(join(tmpdir(), "codeteam-review-envelope-"));
+	const root = mkdtempSync(join(tmpdir(), "superagentteam-review-envelope-"));
 	dirs.push(root);
 	store = openControlStore({ dataDir: join(root, "data") });
 	store.seedIdentity({

@@ -1,6 +1,6 @@
 ---
 name: codeteam-verify
-description: Run codeteam's verification ladder before claiming a change is done.
+description: Run SuperAgentTeam's verification ladder before claiming a change is done.
 triggers: ["before claiming done", "after code changes", "before PR"]
 ---
 
@@ -9,7 +9,7 @@ triggers: ["before claiming done", "after code changes", "before PR"]
 Run from the active worktree and report observed exit codes, not intent.
 
 1. Targeted package tests while iterating, for example
-   `NODE_ENV=development npm test --workspace @codeteam/pi-adapter`.
+   `NODE_ENV=development npm test --workspace @superagentteam/pi-adapter`.
 2. `NODE_ENV=development npm run build:offline`.
 3. `NODE_ENV=development npm run check`.
 4. `node scripts/npm-audit.mjs`.

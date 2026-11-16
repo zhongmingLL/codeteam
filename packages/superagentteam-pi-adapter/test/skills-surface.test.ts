@@ -23,7 +23,7 @@ describe("curated skill surface", () => {
 	let compiled: CompiledL0;
 
 	beforeEach(() => {
-		root = mkdtempSync(join(tmpdir(), "codeteam-skills-surface-"));
+		root = mkdtempSync(join(tmpdir(), "superagentteam-skills-surface-"));
 		cwd = join(root, "work");
 		agentDir = join(root, "agent");
 		mkdirSync(cwd);

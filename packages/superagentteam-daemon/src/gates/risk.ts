@@ -13,11 +13,11 @@ const ASSURANCE_RANK: Record<AssuranceLevel, number> = { light: 0, standard: 1, 
 const LANE_RANK: Record<RiskLane, number> = { docs: 0, product_fast: 1, small_change: 2, standard: 3 };
 
 const META_PATH =
-	/^(packages\/codeteam-daemon\/src\/(?:gates|review|sop|auth|policy|merge)\/|packages\/codeteam-daemon\/src\/control\/migrations\/|scripts\/sop-definitions\.mjs$|\.github\/)/;
+	/^(packages\/superagentteam-daemon\/src\/(?:gates|review|sop|auth|policy|merge)\/|packages\/superagentteam-daemon\/src\/control\/migrations\/|scripts\/sop-definitions\.mjs$|\.github\/)/;
 const SECURITY_PATH = /(?:^|\/)(?:auth|credentials?|tokens?|secrets?|sandbox|policy)(?:\/|\.|$)/i;
 const DATA_PATH = /(?:^|\/)(?:migrations?|\.sql$|database\.ts$)/i;
 const CONTRACT_PATH =
-	/^(packages\/codeteam-daemon\/src\/(?:cli(?:\.ts|\/)|control\/|index\.ts$)|packages\/[^/]+\/package\.json$|sop-definitions\/|package\.json$|tsconfig|test\.sh$)/;
+	/^(packages\/superagentteam-daemon\/src\/(?:cli(?:\.ts|\/)|control\/|index\.ts$)|packages\/[^/]+\/package\.json$|sop-definitions\/|package\.json$|tsconfig|test\.sh$)/;
 const BEHAVIOR_PATH = /^(packages\/[^/]+\/src\/|apps\/|scripts\/)/;
 const DOCS_PATH = /^(?:docs\/|.*\.md$|LICENSE(?:\.|$)|CHANGELOG(?:\.|$)|UPSTREAM\.md$|KERNEL_GAPS\.md$)/i;
 

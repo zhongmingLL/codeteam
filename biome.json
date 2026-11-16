@@ -35,7 +35,7 @@
 			"!**/test-sessions.ts",
 			"!**/models.generated.ts",
 			"!**/*.models.ts",
-			"!packages/codeteam-daemon/src/control/sop-definition.generated.ts",
+			"!packages/superagentteam-daemon/src/control/sop-definition.generated.ts",
 			"!packages/mom/data/**/*",
 			"!!**/node_modules",
 			"!!apps"

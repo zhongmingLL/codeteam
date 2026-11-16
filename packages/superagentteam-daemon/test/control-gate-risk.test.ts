@@ -6,7 +6,7 @@ function file(path: string, additions = 1, deletions = 0) {
 	return { path, additions, deletions };
 }
 
-describe("codeteam five-axis risk classifier", () => {
+describe("SuperAgentTeam five-axis risk classifier", () => {
 	it("classifies docs-only changes as the docs lane", () => {
 		const risk = classifyRisk({ changedFiles: [file("docs/plans/0009.md", 20, 2), file("README.md", 2, 1)] });
 		expect(risk.axes).toEqual([]);
@@ -17,10 +17,10 @@ describe("codeteam five-axis risk classifier", () => {
 
 	it("escalates auth, migrations, and gate harness changes to critical", () => {
 		for (const path of [
-			"packages/codeteam-daemon/src/auth/operator.ts",
-			"packages/codeteam-daemon/src/control/migrations/010-merge.ts",
-			"packages/codeteam-daemon/src/gates/service.ts",
-			"packages/codeteam-daemon/src/review/policy.ts",
+			"packages/superagentteam-daemon/src/auth/operator.ts",
+			"packages/superagentteam-daemon/src/control/migrations/010-merge.ts",
+			"packages/superagentteam-daemon/src/gates/service.ts",
+			"packages/superagentteam-daemon/src/review/policy.ts",
 		]) {
 			const risk = classifyRisk({ changedFiles: [file(path, 5, 1)] });
 			expect(risk.assurance).toBe("critical");
@@ -30,23 +30,23 @@ describe("codeteam five-axis risk classifier", () => {
 	});
 
 	it("classifies tiny behavior-only changes as product_fast and larger ones as small_change", () => {
-		const tiny = classifyRisk({ changedFiles: [file("packages/codeteam-daemon/src/cli/args.ts", 40, 2)] });
+		const tiny = classifyRisk({ changedFiles: [file("packages/superagentteam-daemon/src/cli/args.ts", 40, 2)] });
 		expect([...tiny.axes].sort()).toEqual(["behavior", "contract"]);
 		expect(tiny.lane).toBe("standard");
 		const pureBehavior = classifyRisk({
-			changedFiles: [file("packages/codeteam-pi-adapter/src/session/session.ts", 40, 2)],
+			changedFiles: [file("packages/superagentteam-pi-adapter/src/session/session.ts", 40, 2)],
 		});
 		expect(pureBehavior.axes).toEqual(["behavior"]);
 		expect(pureBehavior.lane).toBe("product_fast");
 		const larger = classifyRisk({
-			changedFiles: [file("packages/codeteam-pi-adapter/src/session/session.ts", 300, 20)],
+			changedFiles: [file("packages/superagentteam-pi-adapter/src/session/session.ts", 300, 20)],
 		});
 		expect(larger.lane).toBe("small_change");
 	});
 
 	it("only escalates declared risk; lower declarations become P1/P2 mismatches", () => {
 		const risk = classifyRisk({
-			changedFiles: [file("packages/codeteam-daemon/src/auth/operator.ts", 5, 0)],
+			changedFiles: [file("packages/superagentteam-daemon/src/auth/operator.ts", 5, 0)],
 			declaredLane: "docs",
 			declaredAssurance: "light",
 			declaredAxes: [],
@@ -68,7 +68,7 @@ describe("codeteam five-axis risk classifier", () => {
 			{ path: "src/a.ts", additions: 10, deletions: 2 },
 			{ path: "docs/b.md", additions: 0, deletions: 5 },
 		]);
-		const risk = classifyRisk({ changedFiles: [file("packages/codeteam-pi-adapter/src/a.ts", 1300, 0)] });
+		const risk = classifyRisk({ changedFiles: [file("packages/superagentteam-pi-adapter/src/a.ts", 1300, 0)] });
 		expect(risk.assurance).toBe("high");
 	});
 

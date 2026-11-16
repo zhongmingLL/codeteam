@@ -1,8 +1,8 @@
 {
-	"name": "@codeteam/pi-adapter",
+	"name": "@superagentteam/pi-adapter",
 	"version": "0.0.0",
 	"private": true,
-	"description": "codeteam pi runtime adapter: L0 compilation and session wiring",
+	"description": "SuperAgentTeam pi runtime adapter: L0 compilation and session wiring",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",

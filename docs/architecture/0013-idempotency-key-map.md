@@ -178,14 +178,14 @@ retry with same piExtToolCallId:
 
 ## 8. 代码 / 文档引用
 
-- `packages/codeteam-daemon/src/workers/worker-extension.ts:31-40`（`execute(toolCallId, ...)`）、
+- `packages/superagentteam-daemon/src/workers/worker-extension.ts:31-40`（`execute(toolCallId, ...)`）、
   `:108-119`（a2aCall）、`:126`（`wreq-N`）、`:219`（当前忽略 `_toolCallId`）。
-- `packages/codeteam-daemon/src/workers/control.ts:199-240`（a2a_call + worker binding）。
-- `packages/codeteam-daemon/src/a2a/tools.ts:244-302`（当前 requestId 路径）。
-- `packages/codeteam-daemon/src/a2a/requests.ts:69-110`（legacy ledger）。
-- `packages/codeteam-daemon/src/control/migrations/016-a2a-request-dedupe.ts`。
-- `packages/codeteam-daemon/src/control/migrations/003-governance.ts:50/76/130/149`（handoff/approval）。
-- `packages/codeteam-daemon/src/control/migrations/001-core.ts:96-115`（messages 无 idempotency 列）。
+- `packages/superagentteam-daemon/src/workers/control.ts:199-240`（a2a_call + worker binding）。
+- `packages/superagentteam-daemon/src/a2a/tools.ts:244-302`（当前 requestId 路径）。
+- `packages/superagentteam-daemon/src/a2a/requests.ts:69-110`（legacy ledger）。
+- `packages/superagentteam-daemon/src/control/migrations/016-a2a-request-dedupe.ts`。
+- `packages/superagentteam-daemon/src/control/migrations/003-governance.ts:50/76/130/149`（handoff/approval）。
+- `packages/superagentteam-daemon/src/control/migrations/001-core.ts:96-115`（messages 无 idempotency 列）。
 - Clowder：`packages/mcp-server/src/tools/callback-tools.ts:343/774`（post/cross schema）、
   `packages/api/src/routes/callbacks.ts:666-669/1996-2005`（callback key + message store lookup）、
   `packages/api/src/domains/cats/services/agents/invocation/InvocationQueue.ts:711-790`、
