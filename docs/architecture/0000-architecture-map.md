@@ -1,14 +1,14 @@
 ---
-title: "codeteam architecture map — canonical docs and reading order"
+title: "SuperAgentTeam architecture map — canonical docs and reading order"
 doc_kind: index
 status: active
 created: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-16
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F018]
 ---
 
-# codeteam architecture map
+# SuperAgentTeam architecture map
 
 ## 0. 结论
 
@@ -43,7 +43,7 @@ related_features: [codeteam/F018]
 | 深挖设计 | `0016`/`0017` | 0016 管 terminal/settlement；0017 管 draft store |
 | operator 体验 | `0014` | 解释体验；机制冲突以 0007/0016/0017 为准 |
 | 历史/审计 | `0001`/`0003`/`0004`/`0006`/`0015` | 只做追溯，不得作为实现基线 |
-| Clowder reference | `0002`/`0012`/`reuse-review/` | 只作参考；codeteam 契约以本仓文档为准 |
+| Clowder reference | `0002`/`0012`/`reuse-review/` | 只作参考；SuperAgentTeam 契约以本仓文档为准 |
 | 决策记录 | `decision-packets/` | 记录拍板；已拍结论已折入 canonical docs |
 
 **规则：** 任何新设计先判断它属于哪一层；不要新增与 0005/0007 平行的“第二真相源”。历史文档保留原文，但加边界横幅。
@@ -96,7 +96,7 @@ Operator / Hub ingress（W7a transport）
 | `0015` 是审计与决策证据，不是当前设计 | 标为 historical；不再作为实现基线 |
 | `0003`/`0004` 是旧评审/计划 | 标为 historical；执行结果看 0005/0007/plans |
 | `0006` 是 legacy inventory | 保留为 legacy-reference；不得据此写新代码 |
-| `0002`/`0012` 是 pi/Clowder reference | 标为 reference；codeteam 契约以本仓 canonical docs 为准 |
+| `0002`/`0012` 是 pi/Clowder reference | 标为 reference；SuperAgentTeam 契约以本仓 canonical docs 为准 |
 
 ### 仍然开放/待实现
 

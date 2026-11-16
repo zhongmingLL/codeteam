@@ -1,16 +1,17 @@
 ---
-title: "codeteam 执行计划索引"
+title: "SuperAgentTeam 执行计划索引"
 doc_kind: index
 status: reviewed
 created: 2026-10-21
-updated: 2026-11-04
+updated: 2026-11-16
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 ---
 
-# codeteam 执行计划索引
+# SuperAgentTeam 执行计划索引
 
 > 上游：`architecture/0001`–`0003`、`plans/0001-runtime-hardening.md`。
 > 本目录把 W0–W8 拆成可执行、可评审、可验收的计划。每个 W 都必须有 evidence，不以“代码写完”作为完成。
+> F019 起平台显示名为 SuperAgentTeam；计划中的 `codeteam-work`、`@codeteam/*`、`codeteam` CLI 是迁移前入口，按各阶段落地后切换为 `superagentteam*`。
 
 ## 执行顺序
 
@@ -54,7 +55,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0020-f018-thread-first-runtime.md`](0020-f018-thread-first-runtime.md) | F018：A2A runtime v1 R0-R5、AgentConfig/Registry、Thread/Invocation、post/cross/multi_mention/thread_context、无 Task/custody/code delivery | 烁烁（dispatch/queue）+ 砚砚（auth/migration）+ 墨墨（vision/reuse） |
 | [`0021-f018-r1-execution.md`](0021-f018-r1-execution.md) | F018 R1 执行计划：路径 A（supply-chain → #86 → R1）、greenfield baseline、Clowder-style `codeteam-shared` + daemon `domains`、task-first code/docs legacy move + guard、R1-0 + R1-a–d schema/migration 切片、R2–R5 门禁 | 烁烁（session/worker/queue）+ 砚砚（schema/auth）+ 墨墨（acceptance/docs） |
 | [`0022-codeteam-web-surface.md`](0022-codeteam-web-surface.md) | W7b web surface 目录设计：Next/React 分层、domains、shared DTO、API/WS 边界；不属 R1 | 墨墨（UX/流程）+ 砚砚（security/provenance）+ 烁烁（runtime 接口） |
-| [`0023-f019-agentteam-rename.md`](0023-f019-agentteam-rename.md) | F019 AgentTeam rename：platform/team/SOP 分层、`@agentteam/*`、env/data/CLI/tool alias、repo/branch last；R1-0 前置 | 砚砚（packages/auth/security）+ 墨墨（docs/naming）+ 烁烁（runtime/CLI） |
+| [`0023-f019-superagentteam-rename.md`](0023-f019-superagentteam-rename.md) | F019 SuperAgentTeam rename：platform/team/SOP 分层、`@superagentteam/*`、env/data/CLI/tool alias、repo/branch last；R1-0 前置 | 砚砚（packages/auth/security）+ 墨墨（docs/naming）+ 烁烁（runtime/CLI） |
 
 ## W0–W8 一览
 

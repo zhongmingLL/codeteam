@@ -20,9 +20,9 @@ source_review: "docs/architecture/0018-v1-global-design-review.md"
 > legacy move 和后续阶段门禁；
 > 设计契约仍以 `0005`/`0007` + 分册为准，本文不新增契约。
 >
-> **F019 前置**：AgentTeam rename 是独立 F019，排在 R1-0 前。F019.1–F019.3
+> **F019 前置**：SuperAgentTeam rename 是独立 F019，排在 R1-0 前。F019.1–F019.3
 > 完成前 R1-0 暂停；完成后本文的 `@codeteam/*` / `codeteam-daemon` 目标名替换为
-> `@agentteam/*` / `agentteam-daemon`。当前先保留旧名，避免 F018 文档与 F019
+> `@superagentteam/*` / `superagentteam-daemon`。当前先保留旧名，避免 F018 文档与 F019
 > 代码交错。
 
 ## 0. 执行顺序
@@ -382,7 +382,7 @@ runtime 暂不读新表。
 
 ## 8. 第一批动作
 
-1. 完成 F019.0–F019.3：AgentTeam 命名/包/env/data/CLI/tools alias；见 `0023`。
+1. 完成 F019.0–F019.3：SuperAgentTeam 命名/包/env/data/CLI/tools alias；见 `0023`。
 2. 开 `fix/supply-chain-node-forge`，node-forge 1.4.3 + audit/build 验证，单独 PR。
 3. supply-chain 绿后更新 #86、merge 到 `codeteam-work`。
 4. 从 `codeteam-work` 开 R1-0 worktree；建 `legacy/task-first/`，`git mv` 纯 legacy

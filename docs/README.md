@@ -1,18 +1,27 @@
 ---
-title: "codeteam 文档索引"
+title: "SuperAgentTeam 文档索引"
 doc_kind: index
 status: active
 created: 2026-10-21
-updated: 2026-11-14
+updated: 2026-11-16
 ---
 
-# codeteam 文档
+# SuperAgentTeam 文档
 
-这里是 codeteam 项目的架构与计划文档入口。2026-10-26 从 `clowder-ai/codeteam/` 迁入本仓 `docs/`。
+这里是 SuperAgentTeam 项目的架构与计划文档入口。2026-10-26 从 `clowder-ai/codeteam/` 迁入本仓 `docs/`。
+`codeteam` 是历史/别名项目名；仓库名、分支、包 scope、env/data/CLI/tool 名在
+F019.2–F019.4 前仍沿用旧拼写。
 
-**本目录是 codeteam 项目的文档真相源。** 讨论历史和评审记录仍可在 clowder-ai thread 中追溯；README/0001 里出现的“已落地/已证明”是讨论时点声明，开工前需要重新对码基线。
+**本目录是 SuperAgentTeam 项目的文档真相源。** 讨论历史和评审记录仍可在 clowder-ai thread 中追溯；README/0001 里出现的“已落地/已证明”是讨论时点声明，开工前需要重新对码基线。
 
-**工作区边界：** 本仓是 codeteam 代码与契约真相源；`clowder-ai/codeteam/` 只保留迁移前的讨论历史，不再作为开发依据。
+**工作区边界：** 本仓是 SuperAgentTeam 代码与契约真相源；`clowder-ai/codeteam/` 只保留迁移前的讨论历史，不再作为开发依据。
+
+## 命名迁移（F019）
+
+- 平台/产品显示名：**SuperAgentTeam**；`codeteam` 仅保留为历史/兼容名。
+- 新/活跃文档的 feature namespace 用 `superagentteam/Fxxx`；F001–F018 历史文档保留 `codeteam/Fxxx`。
+- 仓库名、`codeteam-work` 分支、`@codeteam/*` 包、`CODETEAM_*` env、`~/.codeteam` 数据、`codeteam` CLI 与 `codeteam_*` 工具名在 F019.2–F019.4 前仍是当前入口，落地后切换为 `superagentteam*`；不要提前硬切。
+- 入口：[`SUPERAGENTTEAM.md`](../SUPERAGENTTEAM.md)；旧 [`CODETEAM.md`](../CODETEAM.md) 是 `status: moved` stub。
 
 ## 架构文档怎么读
 
@@ -65,13 +74,13 @@ updated: 2026-11-14
 | [`features/F016-w7a-headless-surface.md`](features/F016-w7a-headless-surface.md) | F016：W7a umbrella（A2A ingress E2E、wait scheduler、headless API/Hub 兼容） |
 | [`features/F017-a2a-surface-unification.md`](features/F017-a2a-surface-unification.md) | F017：A2A 模型面统一（phase-a-archive；full custody/task-first 坐标已归档为历史输入） |
 | [`features/F018-thread-first-runtime.md`](features/F018-thread-first-runtime.md) | F018：A2A runtime v1（AgentConfig config-as-code、Thread/Invocation、post/cross/multi_mention/thread_context、纯 A2A、code delivery 冻结） |
-| [`features/F019-agentteam-rename.md`](features/F019-agentteam-rename.md) | F019：AgentTeam rename（platform/team/SOP 分层、`@agentteam/*`、env/data/CLI/tool alias、repo/branch last；F018 R1-0 前置） |
+| [`features/F019-superagentteam-rename.md`](features/F019-superagentteam-rename.md) | F019：SuperAgentTeam rename（platform/team/SOP 分层、`@superagentteam/*`、env/data/CLI/tool alias、repo/branch last；F018 R1-0 前置） |
 | [`plans/0015-w6c-observability-trajectory.md`](plans/0015-w6c-observability-trajectory.md) | W6c observability/trajectory 实施计划与 AC 映射 |
 | [`plans/0018-f016a-a2a-ingress-e2e.md`](plans/0018-f016a-a2a-ingress-e2e.md) | F016a：8 类 ingress × scenario real RPC E2E、P0 工具面、withdraw/parallel/loop guard |
 | [`plans/0020-f018-thread-first-runtime.md`](plans/0020-f018-thread-first-runtime.md) | F018：A2A runtime v1 R0-R5、AgentConfig/Registry、schema/migration、same/cross-thread post、multi_mention fan-out、验收与回滚 |
 | [`plans/0021-f018-r1-execution.md`](plans/0021-f018-r1-execution.md) | F018 R1 执行计划：greenfield baseline、Clowder-style shared/domains、legacy code/docs move、R1-0 + R1-a–d、R2–R5 门禁 |
 | [`plans/0022-codeteam-web-surface.md`](plans/0022-codeteam-web-surface.md) | W7b web surface 目录设计：Next/React、domains、shared DTO、API/WS 边界 |
-| [`plans/0023-f019-agentteam-rename.md`](plans/0023-f019-agentteam-rename.md) | F019 AgentTeam rename 执行计划：命名矩阵、包/文档/env/data/CLI/tools 分阶段、repo/branch last、兼容与回滚 |
+| [`plans/0023-f019-superagentteam-rename.md`](plans/0023-f019-superagentteam-rename.md) | F019 SuperAgentTeam rename 执行计划：命名矩阵、包/文档/env/data/CLI/tools 分阶段、repo/branch last、兼容与回滚 |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |
@@ -85,11 +94,11 @@ updated: 2026-11-14
 | [`architecture/0009-thread-model.md`](architecture/0009-thread-model.md) | Thread v1：projectPath 必填、active/deleted、lastActiveAt、titleSource、空 thread、迁移 preflight |
 | [`architecture/0010-session-model.md`](architecture/0010-session-model.md) | AgentSession v1：active + lightweight seal、piSessionId/piSessionFile resume、Clowder messageCount、连续失败上限、v2 推迟清单 |
 | [`architecture/0011-identity-contract.md`](architecture/0011-identity-contract.md) | 全局身份契约：scope/message/admission/queue/lifecycle/execution/auth 分层、规范 ID、禁用名与 0001/Clowder 映射 |
-| [`architecture/0012-clowder-session-architecture.md`](architecture/0012-clowder-session-architecture.md) | `[reference]` Clowder session 参考架构；codeteam session 契约看 0010 |
-| [`architecture/0013-idempotency-key-map.md`](architecture/0013-idempotency-key-map.md) | 幂等 key 全量地图：客户端 key / claim map / queue receipt / 实体 ID / fingerprint 分层，codeteam ↔ Clowder 对照与 A2A v1 目标模型 |
+| [`architecture/0012-clowder-session-architecture.md`](architecture/0012-clowder-session-architecture.md) | `[reference]` Clowder session 参考架构；SuperAgentTeam session 契约看 0010 |
+| [`architecture/0013-idempotency-key-map.md`](architecture/0013-idempotency-key-map.md) | 幂等 key 全量地图：客户端 key / claim map / queue receipt / 实体 ID / fingerprint 分层，SuperAgentTeam ↔ Clowder 对照与 A2A v1 目标模型 |
 | [`architecture/0014-operator-message-journey.md`](architecture/0014-operator-message-journey.md) | operator 消息全流程：Hub ingress → Queue → route serial/parallel → prompt/history → draft/R → Hub 流式回传；覆盖简单问答、A2A→operator 决策、并行、单/全取消、失败重试、排队 |
 | [`architecture/0015-codeteam-operator-journey-audit.md`](architecture/0015-codeteam-operator-journey-audit.md) | `[historical]` operator journey 组件审计与决策证据；当前实现看 0007/0014/0016/0017 |
-| [`architecture/0016-turn-terminal-and-settlement-design.md`](architecture/0016-turn-terminal-and-settlement-design.md) | Q2 专项设计（accepted）：TurnExecution/InvocationAttempt 双终态根因、codeteam 设计史、attempt 投递态、四层 settlement owner、迁移/测试/DP-C/DP-D 决策结果 |
+| [`architecture/0016-turn-terminal-and-settlement-design.md`](architecture/0016-turn-terminal-and-settlement-design.md) | Q2 专项设计（accepted）：TurnExecution/InvocationAttempt 双终态根因、SuperAgentTeam 设计史、attempt 投递态、四层 settlement owner、迁移/测试/DP-C/DP-D 决策结果 |
 | [`architecture/0017-response-draft-store.md`](architecture/0017-response-draft-store.md) | ResponseDraftStore 契约：单 `DraftRecord`、全量 snapshot、单 writer 串行 flush、T2/T4 删除与恢复、Hub 重连读取、orphan 清理、测试矩阵 |
 | [`architecture/0018-v1-global-design-review.md`](architecture/0018-v1-global-design-review.md) | A2A v1 全局设计 review（2026-11-14）：已修复的 22 项冲突、R1/R2/R3 gate、D-0/D-1/D-2/D-3 已按 `BBBA` 拍板 |
 | [`plans/0005-plan-review-resolutions.md`](plans/0005-plan-review-resolutions.md) | 三猫计划评审 P1/P2 处置与已修正项 |
@@ -101,7 +110,7 @@ updated: 2026-11-14
 
 ## 一句话
 
-**codeteam 是 repo-native、headless-first、durable 的 code agent team runtime：复用 clowder 的风险车道 SOP（告示牌 + 点状硬门禁，猫保留推进权），可替换角色 agent 做判断，git worktree + artifact ledger 保证可恢复、可审查、可验证。**
+**SuperAgentTeam 是 repo-native、headless-first、durable 的 A2A team runtime：thread/invocation/queue/turn/worker/credential 是共享内核，team profile 与 SOP 在其上组合；code team 只是其中一个 team。** 复用 clowder 的风险车道 SOP（告示牌 + 点状硬门禁，猫保留推进权），可替换角色 agent 做判断，git worktree + artifact ledger 保证可恢复、可审查、可验证。
 
 **设计继承：** 直接沿用 clowder 已被实践验证的 `Message`、`RichBlock`、Ball custody、`Approval Hub`、Mission Hub、Memory/Eval、Skill/SOP，以及 thread 模型；只剔除与代码交付无关的能力（voice、IM 网关、社交 feed、日记等）。**SOP 全面复用 clowder**：`sop-definitions/development.yaml`、feature/backlog 级 `WorkflowSop`、`BacklogItem`、`resumeCapsule`/baton、五轴风险、`merge-gate`/`worktree`/Design Gate/`completion`。复用优先级为 **默认复用 > 适配 > 新建**；新建概念必须说明 clowder 版本为什么不适用，并经 operator 确认。
 

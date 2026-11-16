@@ -1,20 +1,34 @@
-# codeteam project instructions
+# SuperAgentTeam project instructions
 
 ## Project truth
 
 - This is a downstream mirror of `earendil-works/pi`, pinned at `v1.4.0`.
-- `docs/` is the project documentation source of truth. Start with `CODETEAM.md`, `docs/README.md`, `docs/plans/README.md`, and `docs/features/F001-architecture-v1.md`.
-- `main` is the pi release baseline. `codeteam-work` is the default development branch. Feature branches are short-lived and target `codeteam-work`; releasing to `main` is a separate PR.
+- `docs/` is the project documentation source of truth. Start with `SUPERAGENTTEAM.md`
+  (`CODETEAM.md` is a `status: moved` stub), `docs/README.md`, `docs/plans/README.md`,
+  and `docs/features/F001-architecture-v1.md`.
+- `main` is the pi release baseline. `codeteam-work` is the default development branch
+  until the F019.4 repo/branch rename. Feature branches are short-lived and target
+  `codeteam-work` for now; releasing to `main` is a separate PR.
 - Never force-push, rewrite `main`, or merge without the applicable review and verification evidence.
 - `BACKLOG.md` is the full feature index: allocate the next `Fxxx`, create
   `docs/features/Fxxx-*.md`, and add the BACKLOG row before implementation; at
   close, keep the done row and update its status. This overrides the generic
-  `feat-lifecycle` "remove done row" step for codeteam.
+  `feat-lifecycle` "remove done row" step for this project.
+
+## Naming migration (F019)
+
+- Product/display name: **SuperAgentTeam**. `codeteam` is the legacy/alias name.
+- New and active docs use `superagentteam/Fxxx`; F001–F018 keep `codeteam/Fxxx` for history.
+- Repository, branch, package, env, data, CLI, and tool names stay `codeteam` until
+  F019.2–F019.4 land, then become `superagentteam*`; follow the current paths in this
+  file for each stage.
 
 ## Scope and boundaries
 
-- Product code lives in this repository. Do not write codeteam product code into clowder-ai.
-- Prefer `packages/codeteam-*`, extensions, MCP servers, and SDK adapters. Keep the pi kernel read-only unless a reproducible failure is recorded in `KERNEL_GAPS.md`.
+- Product code lives in this repository. Do not write SuperAgentTeam product code into clowder-ai.
+- Prefer the product package surface (`packages/codeteam-*` today; `packages/superagentteam-*`
+  after F019.2), extensions, MCP servers, and SDK adapters. Keep the pi kernel read-only
+  unless a reproducible failure is recorded in `KERNEL_GAPS.md`.
 - Treat any upstream file change as a downstream divergence; record it in `UPSTREAM.md` and keep the diff minimal.
 - Use isolated development and test data only. Never point experiments at production user data.
 - **Task-first legacy is frozen, not a reference implementation.** Do not import,
@@ -35,12 +49,12 @@
   implementation contract.
 - Read the named Clowder AI source files as a **reference implementation**, not
   as a runtime dependency. Copy the contract and semantics; adapt storage,
-  transport, auth, and execution wiring to codeteam.
+  transport, auth, and execution wiring to SuperAgentTeam.
 - Local reference checkout: `${CLOWDER_AI_SOURCE:-/home/ming/agent/clowder-ai}`
   (read-only). This is a local-only path; never embed it in product code, docs,
   CI, or generated artifacts.
 - Do not add clowder-ai packages, data stores, credentials, or deployment
-  assumptions to codeteam. If the reference needs a Clowder-only prerequisite,
+  assumptions to SuperAgentTeam. If the reference needs a Clowder-only prerequisite,
   record it as `unknown` or adapt it; do not import it.
 - Record every intentional divergence in the PR. If the divergence changes the
   reuse decision, update the cell card and `REUSE-MATRIX.md`.
@@ -55,12 +69,12 @@
 - Load the matching Clowder skill when its trigger applies: `feat-lifecycle`,
   `writing-plans`, `worktree`, `tdd`, `debugging`, `quality-gate`,
   `request-review`, `receive-review`, `merge-gate`.
-- Keep `docs/SOP.md` generic. codeteam-specific commands, branches and
+- Keep `docs/SOP.md` generic. Project-specific commands, branches and
   constraints belong in this file and `docs/plans/`.
 - If this file and `docs/SOP.md` differ on project facts, this file wins.
   Safety, identity, review and irreversible-action boundaries are never relaxed.
 - Check `git status` and use an isolated worktree for code changes.
-- For pi package work, also read `docs/upstream/pi-development-rules.md`. That file contains upstream pi rules; this file adds codeteam-specific rules.
+- For pi package work, also read `docs/upstream/pi-development-rules.md`. That file contains upstream pi rules; this file adds project-specific rules.
 
 ## Commands
 
