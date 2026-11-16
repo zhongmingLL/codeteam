@@ -31,6 +31,7 @@ created: 2026-10-25
 | F016 | W7a headless surface + A2A ingress E2E | in_progress (F016a done; F016b next) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
 | F017 | A2A surface unification（post/cross-post + full A2A custody） | phase-a-archive (historical input; F018 owns A2A runtime v1) | 宪宪 | [F017](docs/features/F017-a2a-surface-unification.md) |
 | F018 | A2A runtime v1（AgentConfig config-as-code；Thread/InvocationRecord/TurnExecution；post/cross/multi_mention/thread_context；纯 A2A；code delivery 冻结） | spec (Phase A design accepted; R1 next) | 宪宪 | [F018](docs/features/F018-thread-first-runtime.md) |
+| F019 | AgentTeam rename（platform/team/SOP 分层；`@agentteam/*`；env/data/CLI/tool aliases；repo/branch last） | spec (before F018 R1-0) | 宪宪 | [F019](docs/features/F019-agentteam-rename.md) |
 
 > F016 是 W7a umbrella：F016a = A2A ingress/tool E2E，F016b = wait scheduler，
 > F016c = headless API/Hub 兼容。Console M0 是 W7b，独立立项。

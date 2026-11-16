@@ -65,11 +65,13 @@ updated: 2026-11-14
 | [`features/F016-w7a-headless-surface.md`](features/F016-w7a-headless-surface.md) | F016：W7a umbrella（A2A ingress E2E、wait scheduler、headless API/Hub 兼容） |
 | [`features/F017-a2a-surface-unification.md`](features/F017-a2a-surface-unification.md) | F017：A2A 模型面统一（phase-a-archive；full custody/task-first 坐标已归档为历史输入） |
 | [`features/F018-thread-first-runtime.md`](features/F018-thread-first-runtime.md) | F018：A2A runtime v1（AgentConfig config-as-code、Thread/Invocation、post/cross/multi_mention/thread_context、纯 A2A、code delivery 冻结） |
+| [`features/F019-agentteam-rename.md`](features/F019-agentteam-rename.md) | F019：AgentTeam rename（platform/team/SOP 分层、`@agentteam/*`、env/data/CLI/tool alias、repo/branch last；F018 R1-0 前置） |
 | [`plans/0015-w6c-observability-trajectory.md`](plans/0015-w6c-observability-trajectory.md) | W6c observability/trajectory 实施计划与 AC 映射 |
 | [`plans/0018-f016a-a2a-ingress-e2e.md`](plans/0018-f016a-a2a-ingress-e2e.md) | F016a：8 类 ingress × scenario real RPC E2E、P0 工具面、withdraw/parallel/loop guard |
 | [`plans/0020-f018-thread-first-runtime.md`](plans/0020-f018-thread-first-runtime.md) | F018：A2A runtime v1 R0-R5、AgentConfig/Registry、schema/migration、same/cross-thread post、multi_mention fan-out、验收与回滚 |
 | [`plans/0021-f018-r1-execution.md`](plans/0021-f018-r1-execution.md) | F018 R1 执行计划：greenfield baseline、Clowder-style shared/domains、legacy code/docs move、R1-0 + R1-a–d、R2–R5 门禁 |
 | [`plans/0022-codeteam-web-surface.md`](plans/0022-codeteam-web-surface.md) | W7b web surface 目录设计：Next/React、domains、shared DTO、API/WS 边界 |
+| [`plans/0023-f019-agentteam-rename.md`](plans/0023-f019-agentteam-rename.md) | F019 AgentTeam rename 执行计划：命名矩阵、包/文档/env/data/CLI/tools 分阶段、repo/branch last、兼容与回滚 |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |

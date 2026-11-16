@@ -15,6 +15,9 @@ related_plans: [0020-f018-thread-first-runtime.md, 0021-f018-r1-execution.md]
 > 这是 W7b Console 的前置目录设计，不是 R1 实现。R1/R2 只交付 daemon/CLI 与
 > domain contract；web 通过 headless API/WS 消费 `@codeteam/shared`，不 import
 > daemon 内部 store/runtime。
+>
+> F019 后包/scope 变为 `@agentteam/*`、`packages/agentteam-web`；本文暂用
+> `codeteam` 名，F019.2 统一替换。
 
 ## 0. 参考
 
