@@ -1,9 +1,9 @@
-# AgentTeam project instructions
+# SuperAgentTeam project instructions
 
 ## Project truth
 
 - This is a downstream mirror of `earendil-works/pi`, pinned at `v1.4.0`.
-- `docs/` is the project documentation source of truth. Start with `AGENTTEAM.md`
+- `docs/` is the project documentation source of truth. Start with `SUPERAGENTTEAM.md`
   (`CODETEAM.md` is a `status: moved` stub), `docs/README.md`, `docs/plans/README.md`,
   and `docs/features/F001-architecture-v1.md`.
 - `main` is the pi release baseline. `codeteam-work` is the default development branch
@@ -17,15 +17,16 @@
 
 ## Naming migration (F019)
 
-- Product/display name: **AgentTeam**. `codeteam` is the legacy/alias name.
-- New and active docs use `agentteam/Fxxx`; F001–F018 keep `codeteam/Fxxx` for history.
+- Product/display name: **SuperAgentTeam**. `codeteam` is the legacy/alias name.
+- New and active docs use `superagentteam/Fxxx`; F001–F018 keep `codeteam/Fxxx` for history.
 - Repository, branch, package, env, data, CLI, and tool names stay `codeteam` until
-  F019.2–F019.4 land; follow the current paths in this file for each stage.
+  F019.2–F019.4 land, then become `superagentteam*`; follow the current paths in this
+  file for each stage.
 
 ## Scope and boundaries
 
-- Product code lives in this repository. Do not write AgentTeam product code into clowder-ai.
-- Prefer the product package surface (`packages/codeteam-*` today; `packages/agentteam-*`
+- Product code lives in this repository. Do not write SuperAgentTeam product code into clowder-ai.
+- Prefer the product package surface (`packages/codeteam-*` today; `packages/superagentteam-*`
   after F019.2), extensions, MCP servers, and SDK adapters. Keep the pi kernel read-only
   unless a reproducible failure is recorded in `KERNEL_GAPS.md`.
 - Treat any upstream file change as a downstream divergence; record it in `UPSTREAM.md` and keep the diff minimal.
@@ -48,12 +49,12 @@
   implementation contract.
 - Read the named Clowder AI source files as a **reference implementation**, not
   as a runtime dependency. Copy the contract and semantics; adapt storage,
-  transport, auth, and execution wiring to AgentTeam.
+  transport, auth, and execution wiring to SuperAgentTeam.
 - Local reference checkout: `${CLOWDER_AI_SOURCE:-/home/ming/agent/clowder-ai}`
   (read-only). This is a local-only path; never embed it in product code, docs,
   CI, or generated artifacts.
 - Do not add clowder-ai packages, data stores, credentials, or deployment
-  assumptions to AgentTeam. If the reference needs a Clowder-only prerequisite,
+  assumptions to SuperAgentTeam. If the reference needs a Clowder-only prerequisite,
   record it as `unknown` or adapt it; do not import it.
 - Record every intentional divergence in the PR. If the divergence changes the
   reuse decision, update the cell card and `REUSE-MATRIX.md`.

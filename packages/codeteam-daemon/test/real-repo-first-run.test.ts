@@ -27,7 +27,7 @@ describe.skipIf(!enabled)("real repository sandbox first run", () => {
 				["git", "rev-parse", "HEAD"],
 				["git", "diff", "--stat"],
 				["ls", "packages"],
-				["wc", "-l", "AGENTTEAM.md"],
+				["wc", "-l", "SUPERAGENTTEAM.md"],
 			];
 			for (const argv of matrix) {
 				const result = await runCommand(policy, { argv }, { sandbox: true, timeoutMs: 30_000 });

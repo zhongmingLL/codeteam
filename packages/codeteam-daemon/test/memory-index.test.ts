@@ -176,12 +176,12 @@ describe("memory indexer", () => {
 		expect(summary.status).toBe("degraded");
 	});
 
-	it("includes both the AgentTeam entry and the codeteam moved stub", () => {
+	it("includes both the SuperAgentTeam entry and the codeteam moved stub", () => {
 		const root = fixtureRoot();
-		write(root, "AGENTTEAM.md", "# AgentTeam\n");
+		write(root, "SUPERAGENTTEAM.md", "# SuperAgentTeam\n");
 		write(root, "CODETEAM.md", "# codeteam (moved)\n");
 		const files = listRepoEvidenceFiles(root);
-		expect(files).toContain("AGENTTEAM.md");
+		expect(files).toContain("SUPERAGENTTEAM.md");
 		expect(files).toContain("CODETEAM.md");
 	});
 });
