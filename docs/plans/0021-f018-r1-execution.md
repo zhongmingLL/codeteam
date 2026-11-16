@@ -26,15 +26,17 @@ source_review: "docs/architecture/0018-v1-global-design-review.md"
    ↓
 1. merge PR #86（设计契约 + 本文）
    ↓
-2. R1-a  migration harness + catalog/thread/message
+2. R1-0  legacy boundary（规则 + 标记 + CI guard）
    ↓
-3. R1-b  invocation/attempt + queue/admission
+3. R1-a  migration harness + catalog/thread/message
    ↓
-4. R1-c  credential/auth + draft + session/worker
+4. R1-b  invocation/attempt + queue/admission
    ↓
-5. R1-d  legacy preflight + migration drill + R1 gate
+5. R1-c  credential/auth + draft + session/worker
    ↓
-6. R2 same-thread runtime → R3 cross-thread/multi_mention
+6. R1-d  legacy preflight + migration drill + R1 gate
+   ↓
+7. R2 same-thread runtime → R3 cross-thread/multi_mention
    → R4 guard/observation/recovery → R5 cutover
 ```
 
@@ -123,9 +125,50 @@ git worktree add /home/ming/agent/codeteam-f018-r1 \
 - 迁移 preflight 报告：projectPath 为空、running session、无法映射的 legacy
   message/agent profile 必须列出，不静默丢。
 
+### 2.5 R1-0 legacy boundary（先于 R1-a）
+
+只写文档不够：上下文压缩可能让新 session 丢掉 legacy 警告。R1-0 在写新 runtime 前
+建立可执行边界，不删除旧代码：
+
+1. **always-loaded 规则**：`AGENTS.md` 已加入项目级规则——task-first 路径
+   `legacy-frozen`，F018 A2A runtime 不得 import/read/copy；实现只以
+   `0005`/`0007`/分册为准，legacy 清单见 `0006`。R1-0 负责把这条规则变成
+   代码标记和 CI guard。
+2. **代码标记**：在 `dispatch/`、`scheduling/`、`review/`、`merge/`、`gates/`、
+   `sop/`、`managed-work/`、`deployment-wait/`、`custody/`、`a2a/tools.ts`、
+   `auth/mint.ts`、`workers/` 的 task-bound 分支、`cli/task.ts`、
+   `control/stores/` 的 legacy stores 加目录/文件级 boundary 注释或 README。
+   不物理移动代码，避免破坏 import/历史。
+3. **机器 guard**：新增 `scripts/check-legacy-boundary.mjs` 并接入 CI/`check`：
+   - v1 A2A entrypoints（`a2a/`、`thread/`、`invocation/`、`queue/` 新路径）
+     不得 import legacy 模块；
+   - v1 tool registry 不得出现 `a2a_send` / `handoff_*`；
+   - v1 runtime source 不得引用 `0006` 列出的 legacy 表/列。
+4. **baseline allowlist**：现有共享入口如果仍 import legacy，必须显式列出文件、
+   owner、移除阶段；新增 import 一律 fail。allowlist 只减不增。
+5. **删除/归档留到 R5**：旧代码和历史数据保留可回滚；R5 用快照 + 归档/删除；
+   v1 不做 dual-write。
+
 ## 3. R1 工作单元
 
-R1 拆成 4 个可独立 review 的切片；每个切片 additive migration，runtime 暂不读新表。
+R1 拆成 R1-0 + 4 个可独立 review 的切片；每片独立 PR，additive migration，
+runtime 暂不读新表。
+
+### R1-0 — legacy boundary
+
+**交付**
+
+- `AGENTS.md` legacy rule；关键 legacy 目录/文件的 boundary 标记。
+- `scripts/check-legacy-boundary.mjs` + CI/`check` 接线；baseline allowlist。
+- E13/E14 的早期断言：retired tools 不进 v1 registry；v1 entrypoints 不 import
+  legacy modules。
+
+**测试**
+
+- guard 对当前 baseline 通过；故意新增一个 legacy import / retired tool 时 fail。
+- allowlist 文件、owner、移除阶段可读；不允许通配整目录。
+
+**出口**：新 runtime 代码无法在 CI 中静默 import legacy；旧代码仍可回滚。
 
 ### R1-a — migration harness + catalog/thread/message
 
@@ -207,10 +250,10 @@ R1 拆成 4 个可独立 review 的切片；每个切片 additive migration，ru
 
 ## 4. R1 PR 策略
 
-- 分支：`feat/f018-r1-a-schema` / `-b-invocation-queue` / `-c-auth-draft-session` /
-  `-d-legacy-gate`，全部 target `codeteam-work`，短生命周期。
+- 分支：`feat/f018-r1-0-legacy-boundary` / `-a-schema` / `-b-invocation-queue` /
+  `-c-auth-draft-session` / `-d-legacy-gate`，全部 target `codeteam-work`，短生命周期。
 - 每个 PR 自带 migration + tests + evidence；不把多个切片塞进一个超大 PR。
-- R1-a 先合，R1-b/c 基于 R1-a；R1-d 最后。
+- R1-0 先合；R1-a 再合；R1-b/c 基于 R1-a；R1-d 最后。
 - 代码 review 走非作者 fresh-context；R1 schema/auth 面找砚砚，验收/文档找墨墨，
   session/worker/queue 集成找烁烁。
 - 只有改动 `docs/architecture/` 契约文档时才需要重新锚设计 verdict；纯代码/计划
@@ -240,6 +283,7 @@ R1 拆成 4 个可独立 review 的切片；每个切片 additive migration，ru
 | 风险 | 处置 |
 |---|---|
 | `node-forge` supply-chain 阻塞 #86 | 路径 A：先独立 dependency PR；不用 admin override |
+| 上下文压缩后新 session 误用 legacy 代码 | R1-0：AGENTS.md 常驻规则 + 代码标记 + `check-legacy-boundary` CI guard；不靠记忆 |
 | 旧数据迁移丢字段/丢 session | preflight + 快照 + up/down drill；unknown 显式报告 |
 | auth scope 从 task 改 invocation | 跨 thread/user/agent 负例；token 只绑 child/thread/agent/session |
 | SQLite 单写者事务边界 | Phase A/Phase B、T1–T4 按契约拆；不合成一个大事务 |
@@ -257,14 +301,16 @@ R1 拆成 4 个可独立 review 的切片；每个切片 additive migration，ru
 
 1. 开 `fix/supply-chain-node-forge`，node-forge 1.4.3 + audit/build 验证，单独 PR。
 2. supply-chain 绿后更新 #86、merge 到 `codeteam-work`。
-3. 从 `codeteam-work` 开 R1-a worktree；先落 migration harness + catalog/thread/
-   message。
-4. 第一个 checkpoint：migration up/down + catalog/thread/message review。
-5. checkpoint 通过后进 R1-b；R1-a 的 schema 命名冻结，不在后续切片改契约。
+3. 从 `codeteam-work` 开 R1-0 worktree；落 AGENTS.md 规则、legacy 标记、
+   `check-legacy-boundary` + baseline allowlist。
+4. R1-0 第一个 checkpoint：guard 能拦住新 legacy import/retired tool；旧代码仍可回滚。
+5. R1-0 合后开 R1-a worktree；落 migration harness + catalog/thread/message。
+6. R1-a checkpoint：migration up/down + catalog/thread/message review；通过后进 R1-b。
 
 ## 9. R1 完成定义
 
-- R1-a/b/c/d 全部 merge；migration up/down 在 legacy 快照上通过。
+- R1-0/a/b/c/d 全部 merge；migration up/down 在 legacy 快照上通过。
+- legacy boundary guard 在 CI 常驻；新 runtime import legacy 会 fail。
 - E14/E15 有可运行证据；v1 runtime 不读不写 legacy 表；旧 code path 停写。
 - auth/draft/session/queue store 级测试通过；无 task-scope token 新写。
 - 非作者 review 覆盖 R1 exact HEAD；无 P0/P1 未处置。
