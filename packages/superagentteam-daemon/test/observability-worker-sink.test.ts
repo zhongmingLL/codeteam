@@ -63,7 +63,7 @@ describe("W6c worker event sink observability", () => {
 		expect(JSON.stringify(traces)).not.toContain("secret body");
 		expect(traces.spans.some((span) => span.attributes["tool.name"] === "mcp__fs__read")).toBe(true);
 		expect(traces.spans.some((span) => span.attributes["tool.input.keys"] === "path,content")).toBe(true);
-		expect(observability.metrics.renderPrometheus()).toContain("codeteam_tool_calls_total");
+		expect(observability.metrics.renderPrometheus()).toContain("superagentteam_tool_calls_total");
 		expect(observability.logs).not.toBeNull();
 	});
 

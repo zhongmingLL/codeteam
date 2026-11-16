@@ -19,9 +19,9 @@
 
 - Product/display name: **SuperAgentTeam**. `codeteam` is the legacy/alias name.
 - New and active docs use `superagentteam/Fxxx`; F001–F018 keep `codeteam/Fxxx` for history.
-- Repository, branch, package, env, data, CLI, and tool names stay `codeteam` until
-  F019.2–F019.4 land, then become `superagentteam*`; follow the current paths in this
-  file for each stage.
+- F019.2 packages and F019.3 env/data/CLI/tool/skill names now default to
+  `superagentteam*`; `codeteam*` remains a compatibility alias through F019.5.
+  Repository and branch names stay `codeteam` until F019.4.
 
 ## Scope and boundaries
 

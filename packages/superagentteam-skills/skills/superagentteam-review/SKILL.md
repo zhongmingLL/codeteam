@@ -1,10 +1,10 @@
 ---
-name: codeteam-review
-description: Review a codeteam change for risk-matched evidence, scope, and truth-source accuracy.
+name: superagentteam-review
+description: Review a SuperAgentTeam change for risk-matched evidence, scope, and truth-source accuracy.
 triggers: ["review request", "PR review", "before merge"]
 ---
 
-# codeteam review
+# superagentteam review
 
 - Read the feature doc, `docs/SOP.md`, and the matching reuse card before judging the diff.
 - Every finding states severity and stance: approve, or block with a reason.

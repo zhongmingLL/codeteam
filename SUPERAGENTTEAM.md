@@ -33,10 +33,10 @@ spelling until the F019.2–F019.4 migration lands, then become `superagentteam*
 ## Current stage
 
 As of 2026-11-16: F018 A2A runtime v1 design is accepted (Phase A contract closed at
-`86310de24`). F019 SuperAgentTeam rename runs before F018 R1-0: F019.1 docs/branding,
-then F019.2 packages/scope, F019.3 env/data/CLI/tools, then F018 R1-0. Repository/branch
-rename (F019.4) is last. Refresh this block (and the frontmatter `updated`) at each F019
-phase; do not let it drift like the old W0a entry did.
+`86310de24`). F019.1 docs/branding, F019.2 packages/scope, and F019.3
+env/data/CLI/tool/skill compatibility are complete. F018 R1-0 remains paused by the
+operator; F019.4 repository/branch rename is last. Refresh this block (and the
+frontmatter `updated`) at each F019 phase; do not let it drift like the old W0a entry did.
 
 ## Development rule
 

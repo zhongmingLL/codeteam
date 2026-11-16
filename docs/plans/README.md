@@ -11,7 +11,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 
 > 上游：`architecture/0001`–`0003`、`plans/0001-runtime-hardening.md`。
 > 本目录把 W0–W8 拆成可执行、可评审、可验收的计划。每个 W 都必须有 evidence，不以“代码写完”作为完成。
-> F019 起平台显示名为 SuperAgentTeam；F019.2 已把包/scope 切到 `@superagentteam/*`。`codeteam-work`、`CODETEAM_*`、`codeteam` CLI 仍是 F019.3–F019.4 前的入口，按阶段落地后切换。
+> F019 起平台显示名为 SuperAgentTeam；F019.2 已切包/scope，F019.3 已切 env/data/CLI/tool/skill 名并保留 `codeteam*` alias。仓库名和 `codeteam-work` 分支留到 F019.4。
 
 ## 执行顺序
 

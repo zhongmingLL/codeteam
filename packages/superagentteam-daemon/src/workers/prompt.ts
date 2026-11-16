@@ -1,9 +1,9 @@
 import type { AgentProfile, AgentSession, Handoff, Message, Task } from "../control/stores/types.ts";
 
 const ROLE_GUIDANCE: Record<string, string> = {
-	coder: `You are the coder for one codeteam task. Work only in the assigned worktree. Make the smallest change that satisfies the task, run the relevant checks, and report exactly what changed and what you verified. Do not claim completion without command output.`,
-	reviewer: `You are an independent reviewer for one codeteam task. Read the source message and the actual change evidence; do not trust the author's summary. State a clear stance (approve or changes requested) with severity for each finding. Do not modify the reviewed worktree.`,
-	verifier: `You are the verifier for one codeteam task. Independently run the acceptance checks in the evidence worktree, record exact commands and outputs, and state whether the result is verified or still unproven.`,
+	coder: `You are the coder for one SuperAgentTeam task. Work only in the assigned worktree. Make the smallest change that satisfies the task, run the relevant checks, and report exactly what changed and what you verified. Do not claim completion without command output.`,
+	reviewer: `You are an independent reviewer for one SuperAgentTeam task. Read the source message and the actual change evidence; do not trust the author's summary. State a clear stance (approve or changes requested) with severity for each finding. Do not modify the reviewed worktree.`,
+	verifier: `You are the verifier for one SuperAgentTeam task. Independently run the acceptance checks in the evidence worktree, record exact commands and outputs, and state whether the result is verified or still unproven.`,
 };
 
 export interface WorkerPromptInput {
@@ -20,18 +20,18 @@ export function buildWorkerSystemPrompt(role: string): string {
 	const guidance = ROLE_GUIDANCE[role] ?? ROLE_GUIDANCE.reviewer;
 	const a2aGuidance =
 		role === "coder" || role === "architect"
-			? "Use codeteam_handoff_create when you need another role to take responsibility; use codeteam_a2a_send for discussion."
-			: "When this run is assigned a handoff, call codeteam_handoff_claim before the work and codeteam_handoff_complete with evidence; use codeteam_a2a_send for discussion.";
+			? "Use superagentteam_handoff_create when you need another role to take responsibility; use superagentteam_a2a_send for discussion."
+			: "When this run is assigned a handoff, call superagentteam_handoff_claim before the work and superagentteam_handoff_complete with evidence; use superagentteam_a2a_send for discussion.";
 	return [
-		"## codeteam worker contract",
+		"## SuperAgentTeam worker contract",
 		guidance,
 		"",
-		"- Tool policy is enforced by the codeteam worker extension. A blocked tool is final; do not try to bypass it with another tool.",
+		"- Tool policy is enforced by the SuperAgentTeam worker extension. A blocked tool is final; do not try to bypass it with another tool.",
 		"- If the control plane is unavailable, mutating tools are denied while read-only tools may continue.",
 		`- ${a2aGuidance} Text @ is a visible marker, not a route.`,
-		"- A2A targets are AgentProfile ids. If you are assigned a handoff, call codeteam_handoff_claim before doing the work.",
-		"- Use codeteam_thread_context to read a bounded window of the current thread; it never accepts a thread id.",
-		"- codeteam_handoff_complete records a candidate only. Server-owned evidence decides the verified terminal; never claim that you verified it yourself.",
+		"- A2A targets are AgentProfile ids. If you are assigned a handoff, call superagentteam_handoff_claim before doing the work.",
+		"- Use superagentteam_thread_context to read a bounded window of the current thread; it never accepts a thread id.",
+		"- superagentteam_handoff_complete records a candidate only. Server-owned evidence decides the verified terminal; never claim that you verified it yourself.",
 		"- Return a concise final response. Include evidence (commands, paths, SHAs) when relevant.",
 	].join("\n");
 }

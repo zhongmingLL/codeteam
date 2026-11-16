@@ -5,6 +5,7 @@ import { HandoffTerminalResolver } from "./a2a/terminal.ts";
 import { type ControlStore, openControlStore } from "./control/store.ts";
 import { DispatchService } from "./dispatch/service.ts";
 import type { DispatchDrainResult } from "./dispatch/types.ts";
+import { envValue } from "./env.ts";
 import { WorkerRuntime } from "./workers/runtime.ts";
 
 export interface DaemonControlPlaneOptions {
@@ -200,7 +201,7 @@ export class DaemonControlPlane {
 }
 
 export function resolvePiCliPath(): string {
-	const configured = process.env.CODETEAM_PI_CLI;
+	const configured = envValue(process.env, "PI_CLI");
 	if (configured && configured.trim() !== "") return configured;
 	const here = dirname(fileURLToPath(import.meta.url));
 	return join(here, "..", "..", "coding-agent", "dist", "cli.js");

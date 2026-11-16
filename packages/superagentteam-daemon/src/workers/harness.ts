@@ -185,10 +185,10 @@ export class WorkerHarness {
 			env: {
 				...(this.options.env ?? process.env),
 				PI_CODING_AGENT_DIR: this.options.workerAgentDir,
-				CODETEAM_WORKER_ID: workerId,
-				CODETEAM_CONTROL_SOCKET: this.options.controlSocketPath,
-				CODETEAM_TOKEN_FILE: tokenFile,
-				CODETEAM_HEARTBEAT_MS: String(this.registry.config.heartbeatIntervalMs),
+				SUPERAGENTTEAM_WORKER_ID: workerId,
+				SUPERAGENTTEAM_CONTROL_SOCKET: this.options.controlSocketPath,
+				SUPERAGENTTEAM_TOKEN_FILE: tokenFile,
+				SUPERAGENTTEAM_HEARTBEAT_MS: String(this.registry.config.heartbeatIntervalMs),
 			},
 			args,
 		});
@@ -308,7 +308,7 @@ export class WorkerHarness {
 			"--append-system-prompt",
 			buildWorkerSystemPrompt(session.role),
 			"--name",
-			`codeteam ${workerId}`,
+			`superagentteam ${workerId}`,
 		];
 		if (this.options.offline !== false) args.push("--offline");
 		if (sessionFile && !forceFresh) {
@@ -381,5 +381,5 @@ export function resolveWorkerExtensionPath(): string {
 	if (existsSync(js)) return js;
 	const ts = join(dir, "worker-extension.ts");
 	if (existsSync(ts)) return ts;
-	throw new ControlError("not_found", "codeteam worker extension not found");
+	throw new ControlError("not_found", "SuperAgentTeam worker extension not found");
 }

@@ -14,11 +14,18 @@ import type {
 	Message,
 	QueueEntry,
 } from "../control/stores/types.ts";
+import { envValue } from "../env.ts";
 import { assertHandoffDirection } from "../policy/handoffs.ts";
 import type { RunPrincipal } from "./principal.ts";
 
 export {
+	A2A_ALL_TOOL_NAMES,
+	A2A_ALL_TOOL_SPECS,
+	A2A_LEGACY_TOOL_NAMES,
+	A2A_LEGACY_TOOL_PREFIX,
+	A2A_LEGACY_TOOL_SPECS,
 	A2A_TOOL_NAMES,
+	A2A_TOOL_PREFIX,
 	A2A_TOOL_SPECS,
 	type A2AToolName,
 	type A2AToolSpec,
@@ -29,7 +36,7 @@ const A2A_MESSAGE_KINDS = new Set(["question", "answer", "proposal", "finding", 
 export const DEFAULT_MAX_A2A_DEPTH = 32;
 
 function configuredMaxA2ADepth(): number {
-	const configured = Number(process.env.CODETEAM_A2A_MAX_DEPTH ?? String(DEFAULT_MAX_A2A_DEPTH));
+	const configured = Number(envValue(process.env, "A2A_MAX_DEPTH") ?? String(DEFAULT_MAX_A2A_DEPTH));
 	return Number.isSafeInteger(configured) && configured > 0 ? configured : DEFAULT_MAX_A2A_DEPTH;
 }
 
@@ -240,11 +247,11 @@ export class A2AToolHandlers {
 	}
 
 	send(input: A2ASendInput): A2ASendResult {
-		const raw = assertObject(input, "codeteam_a2a_send input");
-		assertAllowedKeys(raw, ["kind", "targets", "bodyMd", "replyTo", "requestId"], "codeteam_a2a_send");
+		const raw = assertObject(input, "superagentteam_a2a_send input");
+		assertAllowedKeys(raw, ["kind", "targets", "bodyMd", "replyTo", "requestId"], "superagentteam_a2a_send");
 		const kind = nonEmptyString(raw.kind, "kind");
 		if (!A2A_MESSAGE_KINDS.has(kind)) {
-			throw new ControlError("invalid_input", `codeteam_a2a_send kind ${kind} is not a discussion kind`);
+			throw new ControlError("invalid_input", `superagentteam_a2a_send kind ${kind} is not a discussion kind`);
 		}
 		const bodyMd = nonEmptyString(raw.bodyMd, "bodyMd");
 		const targets = this.deliverableTargets(uniqueTargets(raw.targets));
@@ -316,18 +323,21 @@ export class A2AToolHandlers {
 		if (existing.intentHash !== intentHash) {
 			throw new ControlError(
 				"conflict",
-				`codeteam_a2a_send requestId ${existing.requestId} was used by another intent`,
+				`superagentteam_a2a_send requestId ${existing.requestId} was used by another intent`,
 			);
 		}
 		const message = this.store.messages.get(existing.messageId);
 		if (!message) {
-			throw new ControlError("conflict", `codeteam_a2a_send requestId ${existing.requestId} has no visible message`);
+			throw new ControlError(
+				"conflict",
+				`superagentteam_a2a_send requestId ${existing.requestId} has no visible message`,
+			);
 		}
 		return { message, queueEntry: this.store.queue.get(`queue:${message.id}`) };
 	}
 
 	createHandoff(input: HandoffCreateInput): HandoffCreateResult {
-		const raw = assertObject(input, "codeteam_handoff_create input");
+		const raw = assertObject(input, "superagentteam_handoff_create input");
 		assertAllowedKeys(
 			raw,
 			[
@@ -349,18 +359,24 @@ export class A2AToolHandlers {
 				"resolveMode",
 				"bodyMd",
 			],
-			"codeteam_handoff_create",
+			"superagentteam_handoff_create",
 		);
 		const kind = nonEmptyString(raw.kind, "kind") as HandoffKind;
 		if (!HANDOFF_KINDS.has(kind))
-			throw new ControlError("invalid_input", `codeteam_handoff_create kind ${kind} is invalid`);
+			throw new ControlError("invalid_input", `superagentteam_handoff_create kind ${kind} is invalid`);
 		const actionFamily = nonEmptyString(raw.actionFamily, "actionFamily") as HandoffActionFamily;
 		if (!ACTION_FAMILIES.has(actionFamily)) {
-			throw new ControlError("invalid_input", `codeteam_handoff_create actionFamily ${actionFamily} is invalid`);
+			throw new ControlError(
+				"invalid_input",
+				`superagentteam_handoff_create actionFamily ${actionFamily} is invalid`,
+			);
 		}
 		const successorSlot = nonEmptyString(raw.successorSlot, "successorSlot") as HandoffSuccessorSlot;
 		if (!SUCCESSOR_SLOTS.has(successorSlot)) {
-			throw new ControlError("invalid_input", `codeteam_handoff_create successorSlot ${successorSlot} is invalid`);
+			throw new ControlError(
+				"invalid_input",
+				`superagentteam_handoff_create successorSlot ${successorSlot} is invalid`,
+			);
 		}
 		const targets = this.deliverableTargets(uniqueTargets(raw.targets));
 		const roles = new Set(targets.map((target) => target.session.role));
@@ -373,7 +389,7 @@ export class A2AToolHandlers {
 			raw.mode === undefined ? (targets.length === 1 ? "single" : "parallel") : nonEmptyString(raw.mode, "mode")
 		) as HandoffMode;
 		if (mode !== "single" && mode !== "parallel") {
-			throw new ControlError("invalid_input", `codeteam_handoff_create mode ${mode} is invalid`);
+			throw new ControlError("invalid_input", `superagentteam_handoff_create mode ${mode} is invalid`);
 		}
 		if (mode === "single" && targets.length !== 1) {
 			throw new ControlError("invalid_input", "single handoff requires exactly one target");

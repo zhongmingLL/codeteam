@@ -7,6 +7,7 @@ import {
 } from "../auth/operator.ts";
 import { readBootLedger } from "../boot-ledger.ts";
 import { ControlError } from "../control/errors.ts";
+import { envValue } from "../env.ts";
 import { resolveInstallation } from "../installation.ts";
 import { resolveDaemonPaths } from "../paths.ts";
 import { readStateFile } from "../state.ts";
@@ -187,7 +188,7 @@ export class StopOperationService {
 					`failed to signal target process set: ${error instanceof Error ? error.message : String(error)}`,
 				);
 			}
-			const graceMs = options.graceMs ?? Number(process.env.CODETEAM_STOP_GRACE_MS ?? 15_000);
+			const graceMs = options.graceMs ?? Number(envValue(process.env, "STOP_GRACE_MS") ?? 15_000);
 			const pollMs = options.pollMs ?? 50;
 			const deadline = this.clock().getTime() + graceMs;
 			while (liveTargets.some((pid) => this.processProvider.isAlive(pid))) {

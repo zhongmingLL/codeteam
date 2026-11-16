@@ -1,5 +1,6 @@
 import type { ControlStore } from "../control/store.ts";
 import type { WorkerCapacitySnapshot } from "../control/stores/types.ts";
+import { envValue } from "../env.ts";
 
 export type CapacitySlotStatus = "available" | "busy" | "draining" | "stale" | "offline";
 
@@ -39,7 +40,7 @@ export class LocalCapacityProvider implements CapacityProvider {
 
 	constructor(store: ControlStore, options: LocalCapacityProviderOptions = {}) {
 		this.store = store;
-		const configured = options.maxConcurrentRuns ?? Number(process.env.CODETEAM_LOCAL_MAX_CONCURRENT_RUNS ?? "4");
+		const configured = options.maxConcurrentRuns ?? Number(envValue(process.env, "LOCAL_MAX_CONCURRENT_RUNS") ?? "4");
 		this.maxConcurrentRuns = Number.isSafeInteger(configured) && configured > 0 ? configured : 4;
 	}
 

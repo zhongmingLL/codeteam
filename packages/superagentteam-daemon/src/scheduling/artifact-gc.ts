@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import type { Artifact } from "../control/stores/types.ts";
+import { envValue } from "../env.ts";
 
 export interface ArtifactGcOptions {
 	readonly rootDir: string;
@@ -57,11 +58,11 @@ export class ArtifactGCService {
 		this.rootDir = resolve(options.rootDir);
 		this.logRetentionMs = positiveInteger(
 			options.logRetentionMs ??
-				Number(process.env.CODETEAM_ARTIFACT_LOG_RETENTION_MS ?? String(7 * 24 * 60 * 60 * 1000)),
+				Number(envValue(process.env, "ARTIFACT_LOG_RETENTION_MS") ?? String(7 * 24 * 60 * 60 * 1000)),
 			"logRetentionMs",
 		);
 		this.orphanTtlMs = positiveInteger(
-			options.orphanTtlMs ?? Number(process.env.CODETEAM_ARTIFACT_ORPHAN_TTL_MS ?? String(24 * 60 * 60 * 1000)),
+			options.orphanTtlMs ?? Number(envValue(process.env, "ARTIFACT_ORPHAN_TTL_MS") ?? String(24 * 60 * 60 * 1000)),
 			"orphanTtlMs",
 		);
 	}

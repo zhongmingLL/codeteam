@@ -3,6 +3,7 @@ export {
 	type LoadCuratedCatalogOptions,
 	loadCuratedCatalog,
 	type ResolvedCatalog,
+	resolveCuratedSkill,
 } from "./catalog.ts";
 export {
 	type CatalogDiagnostic,

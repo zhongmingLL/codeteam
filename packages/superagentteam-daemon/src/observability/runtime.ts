@@ -104,7 +104,7 @@ export function createObservabilityRuntime(options: ObservabilityRuntimeOptions)
 	const status: TelemetryComponentStatus =
 		traceReason === undefined && logReason === undefined && otlpStatus.status !== "degraded" ? "ready" : "degraded";
 	const reason = traceReason ?? logReason ?? otlpStatus.reason;
-	const up = metrics.gauge("codeteam_telemetry_up", {});
+	const up = metrics.gauge("superagentteam_telemetry_up", {});
 	up.set(status === "ready" ? 1 : 0);
 
 	const readiness = (): TelemetryReadiness => {
@@ -153,7 +153,7 @@ export function disabledObservabilityRuntime(reason = "telemetry_disabled"): Obs
 	const traces = new LocalTraceStore({ disabledReason: reason, now });
 	const tracer = new Tracer({ store: traces, redactor, now });
 	const metrics = new MetricsRegistry();
-	metrics.gauge("codeteam_telemetry_up", {}).set(0);
+	metrics.gauge("superagentteam_telemetry_up", {}).set(0);
 	return {
 		status: "disabled",
 		reason,

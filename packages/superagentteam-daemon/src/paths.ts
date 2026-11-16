@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { resolveDataDir } from "./env.ts";
 import { DaemonError } from "./errors.ts";
 
 export interface DaemonPaths {
@@ -10,9 +11,9 @@ export interface DaemonPaths {
 }
 
 export function resolveDaemonPaths(dataDir?: string): DaemonPaths {
-	const resolved = dataDir ?? process.env.CODETEAM_DATA_DIR;
+	const resolved = resolveDataDir(dataDir);
 	if (!resolved || resolved.trim() === "") {
-		throw new DaemonError("data_dir_missing", "CODETEAM_DATA_DIR is required");
+		throw new DaemonError("data_dir_missing", "SUPERAGENTTEAM_DATA_DIR is required");
 	}
 	mkdirSync(resolved, { recursive: true, mode: 0o700 });
 	chmodSync(resolved, 0o700);

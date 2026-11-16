@@ -302,7 +302,7 @@ function validateMeasurement(
 	if (packet.evidencePacket.sampleTraceRefs.length > sampleTraceLimit) {
 		throw new ControlError(
 			"invalid_input",
-			`sampleTraceRefs exceeds CODETEAM_EVAL_SAMPLE_TRACE_LIMIT (${sampleTraceLimit})`,
+			`sampleTraceRefs exceeds SUPERAGENTTEAM_EVAL_SAMPLE_TRACE_LIMIT (${sampleTraceLimit})`,
 		);
 	}
 	if (measurement.status !== "ok" && packet.verdict !== "keep_observe") {

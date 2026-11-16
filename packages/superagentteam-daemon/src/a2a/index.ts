@@ -14,7 +14,13 @@ export {
 	type HandoffTerminalResolverOptions,
 } from "./terminal.ts";
 export {
+	A2A_ALL_TOOL_NAMES,
+	A2A_ALL_TOOL_SPECS,
+	A2A_LEGACY_TOOL_NAMES,
+	A2A_LEGACY_TOOL_PREFIX,
+	A2A_LEGACY_TOOL_SPECS,
 	A2A_TOOL_NAMES,
+	A2A_TOOL_PREFIX,
 	A2A_TOOL_SPECS,
 	type A2AHandlersOptions,
 	type A2ASendInput,

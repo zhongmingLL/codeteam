@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { envValue } from "../env.ts";
 
 export interface SecretFinding {
 	readonly pattern: string;
@@ -174,7 +175,7 @@ export type PathDecision =
 
 export function defaultMemoryDenyPrefixes(): string[] {
 	const home = homedir();
-	const configured = (process.env.CODETEAM_MEMORY_DENY_PREFIXES ?? "")
+	const configured = (envValue(process.env, "MEMORY_DENY_PREFIXES") ?? "")
 		.split(delimiter)
 		.map((entry) => entry.trim())
 		.filter((entry) => entry !== "");
@@ -185,6 +186,7 @@ export function defaultMemoryDenyPrefixes(): string[] {
 			join(home, ".gnupg"),
 			join(home, ".config"),
 			join(home, ".cat-cafe"),
+			join(home, ".superagentteam", "auth"),
 			join(home, ".codeteam", "auth"),
 			"/etc",
 			"/proc",

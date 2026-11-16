@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { Type } from "typebox";
-import { A2A_TOOL_SPECS } from "../a2a/tool-surface.ts";
+import { A2A_ALL_TOOL_SPECS } from "../a2a/tool-surface.ts";
+import { aliasLegacyEnv, envValue } from "../env.ts";
 
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const REQUEST_TIMEOUT_MS = 2_000;
@@ -201,19 +202,20 @@ function readToken(path: string): string | null {
 }
 
 export default function codeteamWorkerExtension(pi: ExtensionAPI): void {
-	const socketPath = process.env.CODETEAM_CONTROL_SOCKET ?? "";
-	const workerId = process.env.CODETEAM_WORKER_ID ?? "";
-	const tokenFile = process.env.CODETEAM_TOKEN_FILE ?? "";
-	const heartbeatMs = Number(process.env.CODETEAM_HEARTBEAT_MS ?? "10000");
+	aliasLegacyEnv();
+	const socketPath = envValue(process.env, "CONTROL_SOCKET") ?? "";
+	const workerId = envValue(process.env, "WORKER_ID") ?? "";
+	const tokenFile = envValue(process.env, "TOKEN_FILE") ?? "";
+	const heartbeatMs = Number(envValue(process.env, "HEARTBEAT_MS") ?? "10000");
 	if (socketPath === "" || workerId === "" || tokenFile === "") {
-		process.stderr.write("codeteam worker extension: missing control socket, worker id, or token file\n");
+		process.stderr.write("SuperAgentTeam worker extension: missing control socket, worker id, or token file\n");
 		return;
 	}
 	const client = new ControlClient(socketPath, workerId, tokenFile);
 	const beat = () => {
 		void client.heartbeat().catch((error) => {
 			process.stderr.write(
-				`codeteam worker heartbeat failed: ${error instanceof Error ? error.message : String(error)}\n`,
+				`SuperAgentTeam worker heartbeat failed: ${error instanceof Error ? error.message : String(error)}\n`,
 			);
 		});
 	};
@@ -235,13 +237,13 @@ export default function codeteamWorkerExtension(pi: ExtensionAPI): void {
 		return { block: true, reason: `${code}: ${reason}` };
 	});
 
-	for (const spec of A2A_TOOL_SPECS) {
+	for (const spec of A2A_ALL_TOOL_SPECS) {
 		pi.registerTool({
 			name: spec.name,
 			label: `A2A ${spec.name}`,
 			description: spec.description,
 			promptGuidelines: [
-				"Use codeteam_a2a_send for discussion; use codeteam_handoff_create for responsibility transfer.",
+				"Use superagentteam_a2a_send for discussion; use superagentteam_handoff_create for responsibility transfer.",
 				"Targets are AgentProfile ids, not display names. Text @ does not route.",
 			],
 			parameters: Type.Unsafe(spec.inputSchema),

@@ -2,6 +2,7 @@ import { ControlError } from "../control/errors.ts";
 import { DeploymentObservationService } from "../deployment-wait/observation.ts";
 import { DeploymentWaitService } from "../deployment-wait/service.ts";
 import type { DeploymentWaitPredicate } from "../deployment-wait/types.ts";
+import { envValue } from "../env.ts";
 import { flag, option, options, type ParsedArgs, requireOption } from "./args.ts";
 import { type CliContext, requireOperator } from "./context.ts";
 import { writeJson, writeLine } from "./output.ts";
@@ -21,8 +22,8 @@ export function runDeploymentCommand(args: ParsedArgs, context: CliContext): num
 function waitService(context: CliContext, args: ParsedArgs): DeploymentWaitService {
 	const observer = new DeploymentObservationService({
 		dataDir: context.dataDir,
-		installationRoot: option(args, "installation-root") ?? process.env.CODETEAM_INSTALLATION_ROOT,
-		deploymentId: option(args, "deployment-id") ?? process.env.CODETEAM_DEPLOYMENT_ID,
+		installationRoot: option(args, "installation-root") ?? envValue(process.env, "INSTALLATION_ROOT"),
+		deploymentId: option(args, "deployment-id") ?? envValue(process.env, "DEPLOYMENT_ID"),
 	});
 	return new DeploymentWaitService(context.store, { observer });
 }

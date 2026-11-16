@@ -107,7 +107,7 @@ export class A2ARequestStore {
 		if (existing.intentHash !== intentHash) {
 			throw new ControlError(
 				"conflict",
-				`codeteam_a2a_send requestId ${existing.requestId} was used by another intent`,
+				`superagentteam_a2a_send requestId ${existing.requestId} was used by another intent`,
 			);
 		}
 		return existing;

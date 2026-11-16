@@ -29,7 +29,7 @@ interface Series {
 	count?: number;
 }
 
-const METRIC_NAME = /^codeteam_[a-z][a-z0-9_]{0,63}$/;
+const METRIC_NAME = /^superagentteam_[a-z][a-z0-9_]{0,63}$/;
 const DEFAULT_BUCKETS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
 const MAX_LABEL_VALUE_LENGTH = 128;
 const DEFAULT_MAX_SERIES = 5000;
@@ -120,7 +120,7 @@ export class MetricsRegistry {
 		const lines: string[] = [];
 		for (const [name, list] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
 			const kind = this.kinds.get(name) ?? "gauge";
-			lines.push(`# HELP ${name} codeteam local metric`);
+			lines.push(`# HELP ${name} SuperAgentTeam local metric`);
 			lines.push(`# TYPE ${name} ${kind}`);
 			for (const series of list.sort((a, b) => labelKey(a.labels).localeCompare(labelKey(b.labels)))) {
 				if (kind === "histogram") {

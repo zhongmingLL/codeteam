@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
+import { envValue } from "../env.ts";
 import { resolveInstallation } from "../installation.ts";
 import type { EvidenceSourceRef } from "./contract.ts";
 import { type MemoryDatabase, resolveMemoryMaxFileBytes } from "./database.ts";
@@ -75,7 +76,7 @@ interface ExistingEvidence {
 
 function controlDbPath(options: MemoryIndexOptions): string | null {
 	if (options.controlDbPath && options.controlDbPath.trim() !== "") return options.controlDbPath;
-	const dataDir = options.dataDir ?? process.env.CODETEAM_DATA_DIR;
+	const dataDir = options.dataDir ?? envValue(process.env, "DATA_DIR");
 	return dataDir && dataDir.trim() !== "" ? join(dataDir, "control.db") : null;
 }
 
@@ -103,7 +104,8 @@ export class MemoryIndexer {
 			throw new MemoryError("invalid_input", `memory index root is not a directory: ${root}`);
 		}
 		const installation = resolveInstallation(root);
-		const workspaceId = this.options.workspaceId ?? process.env.CODETEAM_WORKSPACE_ID ?? installation.installationId;
+		const workspaceId =
+			this.options.workspaceId ?? envValue(process.env, "WORKSPACE_ID") ?? installation.installationId;
 		const collectionId = this.options.collectionId ?? `project:${workspaceId}`;
 		const maxFileBytes = resolveMemoryMaxFileBytes(this.options.maxFileBytes);
 		const startedAt = now();

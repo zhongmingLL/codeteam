@@ -7,7 +7,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
 created: 2026-11-04
-updated: 2026-11-11
+updated: 2026-11-16
 source_plan: "docs/plans/0020-f018-thread-first-runtime.md"
 source_architecture: "docs/architecture/0005-thread-first-runtime.md"
 source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery frozen; 2026-11-14 BBBA: mentionPatterns body match / multi_mention callback child / completed dedupe accepted risk / allFailed derived"
@@ -22,6 +22,11 @@ supersedes_phase_a_of: codeteam/F017
 >
 > 架构基线：`docs/architecture/0005-thread-first-runtime.md`；
 > A2A runtime 链路：`docs/architecture/0007-a2a-runtime-chain.md`。
+
+> F019.3 naming re-anchor (2026-11-16): runtime tool IDs are `superagentteam_*`
+> with `codeteam_*` aliases; `.superagentteam/` is the new config root with
+> `.codeteam/` dual-read. No F018 runtime/DDL/state-machine semantics changed;
+> the F019.3 non-author review re-anchors the F018 verdicts on this delta.
 
 ## Why
 
@@ -46,11 +51,11 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
    response 采用 durable streaming（processing R + `response_drafts` + `responsePending`）；
    `executionKind=ordinary|routing_guard`，没有 conversation/code。
 3. Session 是 thread×agent 的持久身份；一个 active session；无 taskId。
-4. Agent 身份是 config-as-code：`.codeteam/agent-catalog.json` →
+4. Agent 身份是 config-as-code：`.superagentteam/agent-catalog.json`（旧 `.codeteam/` dual-read）→
    `AgentConfig`（含 `mentionPatterns`）→ `AgentRegistry`；`AgentState` 是运行时状态。
-5. A2A v1 工具面：`codeteam_post_message` / `codeteam_cross_post_message`（单 successor）
-   / `codeteam_multi_mention`（唯一多 target fan-out，2-3 agents；terminal 后 callback child）/
-   `codeteam_thread_context`。
+5. A2A v1 工具面：`superagentteam_post_message` / `superagentteam_cross_post_message`（单 successor）
+   / `superagentteam_multi_mention`（唯一多 target fan-out，2-3 agents；terminal 后 callback child）/
+   `superagentteam_thread_context`。`codeteam_*` 是 F019.5 前的兼容 alias。
 6. Queue 单账本：thread + sourceRecordId + attempt + targets；target attempt 台账
    append-only；retry 不新建 queue entry、不重新 admission；无 task 依赖。
    ordinary A2A retry 复用 Clowder route recovery，不是 cloud delivery 的
@@ -84,7 +89,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - [ ] `multi_mention` 2-3 agent fan-out + status/timeout/aggregate + callback child E4；
       `allFailed` 派生；callback depth/anti-cascade；
       post/cross >1 same-thread target → `use_multi_mention`。
-- [ ] `.codeteam/agent-catalog.json` + accounts 加载/校验；AgentRegistry/AgentState；
+- [ ] `.superagentteam/agent-catalog.json` + accounts 加载/校验（旧 `.codeteam/` dual-read）；AgentRegistry/AgentState；
       disabled agent typed reject；defaultModel 属于 account.models。
 - [ ] A2A targets 用 agentId；消息展示用 displayName。
 - [ ] operator 不是 QueueTarget；agent 正文行首 `@operator` 只写 message

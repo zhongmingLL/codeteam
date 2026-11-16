@@ -1,17 +1,19 @@
 version: 1
 skills:
-  - skillId: codeteam-verify
-    path: skills/codeteam-verify
+  - skillId: superagentteam-verify
+    path: skills/superagentteam-verify
+    aliases: [codeteam-verify]
     sourceKind: repo-local
     category: delivery
     not_for:
       - docs-only changes with no behavior impact
       - unrelated bug fixing
     output: "verification commands and their observed results"
-    next: codeteam-review
+    next: superagentteam-review
     sop_step: quality-gate
-  - skillId: codeteam-review
-    path: skills/codeteam-review
+  - skillId: superagentteam-review
+    path: skills/superagentteam-review
+    aliases: [codeteam-review]
     sourceKind: repo-local
     category: review
     not_for:

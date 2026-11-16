@@ -16,6 +16,7 @@ export interface ResolvedCatalog {
 	manifestPath: string;
 	skills: CuratedSkill[];
 	skillPaths: string[];
+	aliases: Record<string, string>;
 	diagnostics: CatalogDiagnostic[];
 }
 
@@ -320,6 +321,7 @@ export function loadCuratedCatalog(options: LoadCuratedCatalogOptions): Resolved
 			manifestPath,
 			skills: [],
 			skillPaths: [],
+			aliases: {},
 			diagnostics: [
 				{
 					severity: "error",
@@ -337,6 +339,7 @@ export function loadCuratedCatalog(options: LoadCuratedCatalogOptions): Resolved
 			manifestPath,
 			skills: [],
 			skillPaths: [],
+			aliases: {},
 			diagnostics: [
 				{
 					severity: "error",
@@ -357,9 +360,26 @@ export function loadCuratedCatalog(options: LoadCuratedCatalogOptions): Resolved
 		if (skill) skills.push(skill);
 	}
 
+	const aliases: Record<string, string> = {};
 	const loadedIds = new Set(skills.map((skill) => skill.skillId));
 	for (const skill of skills) {
-		if (skill.next !== null && !loadedIds.has(skill.next)) {
+		for (const alias of skill.aliases) {
+			if (loadedIds.has(alias) || aliases[alias] !== undefined) {
+				diagnostics.push({
+					severity: "error",
+					code: "alias_conflict",
+					skillId: skill.skillId,
+					message: `skill "${skill.skillId}" alias "${alias}" conflicts with another skill or alias`,
+				});
+				continue;
+			}
+			aliases[alias] = skill.skillId;
+		}
+	}
+
+	const knownIds = new Set([...loadedIds, ...Object.keys(aliases)]);
+	for (const skill of skills) {
+		if (skill.next !== null && !knownIds.has(skill.next)) {
 			diagnostics.push({
 				severity: "warning",
 				code: "dangling_next",
@@ -374,6 +394,12 @@ export function loadCuratedCatalog(options: LoadCuratedCatalogOptions): Resolved
 		manifestPath,
 		skills,
 		skillPaths: skills.map((skill) => skill.dirPath),
+		aliases,
 		diagnostics,
 	};
+}
+
+export function resolveCuratedSkill(catalog: ResolvedCatalog, idOrAlias: string): CuratedSkill | undefined {
+	const id = catalog.aliases[idOrAlias] ?? idOrAlias;
+	return catalog.skills.find((skill) => skill.skillId === id);
 }

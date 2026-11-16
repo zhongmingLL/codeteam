@@ -142,7 +142,7 @@ export function writeEvalArtifacts(options: {
 	const maxBytes = options.maxBytes ?? 5 * 1024 * 1024;
 	const plannedBytes = files.reduce((sum, file) => sum + Buffer.byteLength(file.content, "utf8"), 0);
 	if (plannedBytes > maxBytes) {
-		throw new ControlError("invalid_input", `eval bundle exceeds CODETEAM_EVAL_BUNDLE_MAX_BYTES (${maxBytes})`);
+		throw new ControlError("invalid_input", `eval bundle exceeds SUPERAGENTTEAM_EVAL_BUNDLE_MAX_BYTES (${maxBytes})`);
 	}
 	const refs: EvalArtifactRef[] = [];
 	let totalBytes = 0;
