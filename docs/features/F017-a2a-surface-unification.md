@@ -2,17 +2,22 @@
 feature_ids: [codeteam/F017]
 related_features: [codeteam/F015, codeteam/F016]
 title: "F017: A2A surface unification — post_message / cross_post_message"
-status: spec
+status: phase-a-archive
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
 created: 2026-10-31
-updated: 2026-10-31
-source_plan: "docs/plans/0019-f017-a2a-surface-unification.md"
+updated: 2026-11-04
 source_decision: "operator decision 2026-10-31, coordination decision:a2a-surface-unification"
 ---
 
 # F017: A2A surface unification — post_message / cross_post_message
+
+> **2026-11-04 operator D1=A：Phase A 归档。** F017 的 full A2A/custody 与
+> task-first 坐标不再作为当前实现目标；A2A runtime v1 由 F018 拥有
+> （`docs/architecture/0005-thread-first-runtime.md`、
+> `docs/features/F018-thread-first-runtime.md`）。本文保留为 Phase A 历史输入、
+> A2A 调研与风险清单，不再进 Phase B/C。
 
 > F017 是独立的 A2A 模型面重构，不修改 F016a，也不把 F016b/F016c 拉进来。
 > 目标态是 **两个模型入口**：`codeteam_post_message` 和
@@ -109,6 +114,7 @@ Phase A 结束后由 operator 确认 contract；Phase B/C 的精确 AC 在 plan 
   不能把它当最终实现契约。
 - Clowder AI 参考实现只读：`post_message`、`cross_post_message`、
   action successor、queue ledger、thread access、custody events。
-- 详细拆解见 `docs/plans/0019-f017-a2a-surface-unification.md`。
+- F017 的 contract/plan 与 ADR-0001/0002 已按 operator 2026-11-04 决定移除；
+  本文只保留 feature 级历史输入与风险清单。
 
 [宪宪/deepseek-flash🐾]

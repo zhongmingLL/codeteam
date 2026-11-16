@@ -17,6 +17,15 @@
 - Prefer `packages/codeteam-*`, extensions, MCP servers, and SDK adapters. Keep the pi kernel read-only unless a reproducible failure is recorded in `KERNEL_GAPS.md`.
 - Treat any upstream file change as a downstream divergence; record it in `UPSTREAM.md` and keep the diff minimal.
 - Use isolated development and test data only. Never point experiments at production user data.
+- **Task-first legacy is frozen, not a reference implementation.** Do not import,
+  copy, or use `dispatch/`, `scheduling/`, `review/`, `merge/`, `gates/`, `sop/`,
+  `managed-work/`, `deployment-wait/`, `custody/`, task-scope auth, task-bound
+  worker/prompt/policy, `cli/task.ts`, `a2a_send`/`handoff_*`, or legacy control
+  stores as the F018 A2A runtime baseline. New v1 code must not read/write legacy
+  tables or register retired tools. Legacy code lives under
+  `packages/codeteam-daemon/src/legacy/task-first/`; legacy docs/index under
+  `docs/legacy/task-first/`. Use `docs/architecture/0005-thread-first-runtime.md`,
+  `0007-a2a-runtime-chain.md`, and `docs/architecture/0006-task-first-legacy.md`.
 
 ## Reuse and reference implementation
 

@@ -1,14 +1,18 @@
 ---
 title: "codeteam × pi 运行时接入"
 doc_kind: architecture
-status: draft-for-review
+status: reference
 created: 2026-10-21
-updated: 2026-10-24
+updated: 2026-11-14
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 audience: [architect, implementer, reviewer]
 ---
 
 # codeteam × pi 运行时接入
+
+> **pi reference：** 本文是 pi 包/API/RPC/extension 的事实参考；codeteam runtime
+> contract 在 `0005`/`0010`。pi 版本与行为以 `UPSTREAM.md`、`KERNEL_GAPS.md` 和
+> 实测为准；不要用本文替代 0010 的 runtime 契约。
 
 > 基线注记（2026-10-26）：本文的 pi 包/API/RPC 事实最初按 v1.3.0 讨论；当前基线改为 v1.4.0（`4a080252f06caf63a525d7873c5d94d3c23887e0`）。W0a spike 时以 v1.4.0 代码重新对码，行号与行为可能漂移；v1.4.0 的变化集中在 durable/chord/telemetry/model catalog，未见直接破坏 SDK/extension 的声明，但必须用 L0/session spike 实测。若 L0/session 行为不成立，回退 v1.3.0 并把差异写入 `KERNEL_GAPS.md`。
 

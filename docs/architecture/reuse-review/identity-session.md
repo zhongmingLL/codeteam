@@ -14,6 +14,10 @@ template: ../0004-reuse-architecture-review-plan.md
 
 # identity-session 架构复用检视
 
+> **2026-11-11 更新**：F018 v1 的 session 架构已按 Clowder 五层重新全局梳理；
+> 本卡中 task-first 的 `AgentSession` 扩展（taskId/stageId/role）不代表 F018 v1。
+> 当前分析见 `docs/architecture/0012-clowder-session-architecture.md`。
+
 ## 1. 总结
 
 ### 1.1 clowder feature 范围

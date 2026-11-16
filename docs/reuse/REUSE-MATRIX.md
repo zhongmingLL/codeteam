@@ -57,7 +57,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 | `identity-session` | Agent identity、session、context continuity、thread access | F032, F088, F136, F171, F183, F211, F231, F262, F291, F296, F299, F320, F322 | W0/W1/W7 | **R0/R1** | AgentProfile/AgentSession/L0；P0 只取身份/session/role，F231/F296 个人 lane 不在卡内 |
 | `approval-index` | operator approval aggregation / producer registry | F246 | W4/W7 | **R0/R1** | approval decide operator-only；routine merge 按 `DP-MERGE-1=D` 走 merge-owner capability；双锚 |
 | `harness-eval` | harness contract、review verdict、eval/repair | F192, F266, F267, F278, F313 | W3/W6 | **R1** | P0 只取 verdict envelope/finding/lifecycle；F266/F267/F278 R2，F311 不进 |
-| `callback-auth` | invocation credential / agent-key / callback principal | F174, F178 | W2 | **R1** | per-run token / 零 secret |
+| `callback-auth` | invocation credential / agent-key / callback principal | F174, F178 | W2 | **R1** | per-invocation tool capability / 零 secret |
 | `managed-work` | admission / attempt identity | F275 | W1/W5 | **R1** | 映射 Task/Run identity；不新建 work surface；F073 主题归属在此，SOP 契约本体见 `sop-bulletin` slice |
 | `plugin` | plugin/package inventory、resource activation、skill surface | F202, F247, F285, F290, F292 | W0/W4 | **R1** | P0 只取 skill surface；package admission/grants/marketplace P1-defer |
 | `runtime-deployment` | daemon lifecycle / readiness / deployment identity | F300, F323 | W0/W5 | **R1** | codeteam daemon 的启停/readiness 证据 |
