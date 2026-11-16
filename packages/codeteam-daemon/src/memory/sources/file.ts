@@ -11,7 +11,7 @@ import type {
 import { sha256Hex } from "../hash.ts";
 import { evaluateMemoryPath, isAllowedEvidenceFile } from "../redaction.ts";
 
-const ROOT_EVIDENCE_FILES = ["AGENTS.md", "CODETEAM.md", "README.md", "UPSTREAM.md", "KERNEL_GAPS.md"];
+const ROOT_EVIDENCE_FILES = ["AGENTS.md", "AGENTTEAM.md", "CODETEAM.md", "README.md", "UPSTREAM.md", "KERNEL_GAPS.md"];
 const SKIPPED_DIRS = new Set([
 	"node_modules",
 	"dist",

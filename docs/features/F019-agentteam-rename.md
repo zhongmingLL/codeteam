@@ -1,8 +1,8 @@
 ---
-feature_ids: [codeteam/F019]
+feature_ids: [agentteam/F019]
 related_features: [codeteam/F018]
 title: "F019: AgentTeam rename (platform / team / SOP)"
-status: spec
+status: in_progress
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)

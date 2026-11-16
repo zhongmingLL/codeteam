@@ -6,6 +6,7 @@ import { type MemoryDatabase, openMemoryDatabase } from "../src/memory/database.
 import { MemoryError } from "../src/memory/errors.ts";
 import { MemoryIndexer } from "../src/memory/indexer.ts";
 import { memoryLockPath } from "../src/memory/lock.ts";
+import { listRepoEvidenceFiles } from "../src/memory/sources/file.ts";
 
 const dirs: string[] = [];
 let memory: MemoryDatabase | null = null;
@@ -173,5 +174,14 @@ describe("memory indexer", () => {
 		writeFileSync(memoryLockPath(memory.path), JSON.stringify({ pid: 999999, startedAt: Date.now(), host: "test" }));
 		const summary = new MemoryIndexer(memory, { ...options, mode: "full" }).run();
 		expect(summary.status).toBe("degraded");
+	});
+
+	it("includes both the AgentTeam entry and the codeteam moved stub", () => {
+		const root = fixtureRoot();
+		write(root, "AGENTTEAM.md", "# AgentTeam\n");
+		write(root, "CODETEAM.md", "# codeteam (moved)\n");
+		const files = listRepoEvidenceFiles(root);
+		expect(files).toContain("AGENTTEAM.md");
+		expect(files).toContain("CODETEAM.md");
 	});
 });

@@ -1,16 +1,17 @@
 ---
-title: "codeteam 执行计划索引"
+title: "AgentTeam 执行计划索引"
 doc_kind: index
 status: reviewed
 created: 2026-10-21
-updated: 2026-11-04
+updated: 2026-11-16
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 ---
 
-# codeteam 执行计划索引
+# AgentTeam 执行计划索引
 
 > 上游：`architecture/0001`–`0003`、`plans/0001-runtime-hardening.md`。
 > 本目录把 W0–W8 拆成可执行、可评审、可验收的计划。每个 W 都必须有 evidence，不以“代码写完”作为完成。
+> F019 起平台显示名为 AgentTeam；计划中的 `codeteam-work`、`@codeteam/*`、`codeteam` CLI 是迁移前入口，按各阶段落地后再切换。
 
 ## 执行顺序
 

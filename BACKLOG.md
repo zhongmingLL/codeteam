@@ -9,7 +9,7 @@ created: 2026-10-25
 > **Rules**: Index of all project Features (idea/spec/in-progress/review/done); status is current truth.
 > Details in `docs/features/Fxxx-*.md`.
 > New feature: allocate the next `Fxxx`, create `docs/features/Fxxx-*.md`, and add a BACKLOG row before implementation.
-> Done features keep their row (status done); do not remove them at close. See `AGENTS.md` for the codeteam override of the generic feat-lifecycle removal step.
+> Done features keep their row (status done); do not remove them at close. See `AGENTS.md` for the project override of the generic feat-lifecycle removal step.
 
 | ID | Name | Status | Owner | Link |
 |----|------|--------|-------|------|
@@ -31,7 +31,11 @@ created: 2026-10-25
 | F016 | W7a headless surface + A2A ingress E2E | in_progress (F016a done; F016b next) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
 | F017 | A2A surface unification（post/cross-post + full A2A custody） | phase-a-archive (historical input; F018 owns A2A runtime v1) | 宪宪 | [F017](docs/features/F017-a2a-surface-unification.md) |
 | F018 | A2A runtime v1（AgentConfig config-as-code；Thread/InvocationRecord/TurnExecution；post/cross/multi_mention/thread_context；纯 A2A；code delivery 冻结） | spec (Phase A design accepted; R1 next) | 宪宪 | [F018](docs/features/F018-thread-first-runtime.md) |
-| F019 | AgentTeam rename（platform/team/SOP 分层；`@agentteam/*`；env/data/CLI/tool aliases；repo/branch last） | spec (before F018 R1-0) | 宪宪 | [F019](docs/features/F019-agentteam-rename.md) |
+| F019 | AgentTeam rename（platform/team/SOP 分层；`@agentteam/*`；env/data/CLI/tool aliases；repo/branch last） | in_progress (F019.1 docs/brand) | 宪宪 | [F019](docs/features/F019-agentteam-rename.md) |
+
+> Naming (F019): new and active docs use `agentteam/Fxxx`; F001–F018 retain
+> `codeteam/Fxxx` for history. Repository/branch/package/env/data/CLI/tool names
+> remain `codeteam` until F019.2–F019.4.
 
 > F016 是 W7a umbrella：F016a = A2A ingress/tool E2E，F016b = wait scheduler，
 > F016c = headless API/Hub 兼容。Console M0 是 W7b，独立立项。
