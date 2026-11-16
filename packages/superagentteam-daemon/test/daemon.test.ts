@@ -19,7 +19,7 @@ describe("codeteam daemon lifecycle", () => {
 	let running: DaemonHandle[];
 
 	beforeEach(() => {
-		root = mkdtempSync(join(tmpdir(), "codeteam-daemon-"));
+		root = mkdtempSync(join(tmpdir(), "superagentteam-daemon-"));
 		dataDir = join(root, "data");
 		installationRoot = join(root, "install");
 		mkdirSync(installationRoot);

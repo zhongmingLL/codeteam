@@ -12,15 +12,15 @@ const DOC_PATTERNS = [
 	/^CLAUDE\.md$/,
 ];
 
-const CODETEAM_PATTERN = /^packages\/codeteam-[^/]+\//;
+const SUPERAGENTTEAM_PATTERN = /^packages\/superagentteam-[^/]+\//;
 
 export function classify(paths) {
 	const files = paths.map((path) => path.trim()).filter(Boolean);
 	if (files.length === 0) return "upstream";
 	const isDoc = (file) => DOC_PATTERNS.some((pattern) => pattern.test(file));
-	const isCodeteam = (file) => CODETEAM_PATTERN.test(file);
+	const isSuperAgentTeam = (file) => SUPERAGENTTEAM_PATTERN.test(file);
 	if (files.every(isDoc)) return "docs";
-	if (files.every((file) => isDoc(file) || isCodeteam(file))) return "codeteam";
+	if (files.every((file) => isDoc(file) || isSuperAgentTeam(file))) return "superagentteam";
 	return "upstream";
 }
 

@@ -9,7 +9,7 @@ import YAML from "yaml";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..");
 const sourcePath = resolve(repoRoot, "sop-definitions/development.yaml");
-const outputPath = resolve(repoRoot, "packages/codeteam-daemon/src/control/sop-definition.generated.ts");
+const outputPath = resolve(repoRoot, "packages/superagentteam-daemon/src/control/sop-definition.generated.ts");
 const checkOnly = process.argv.includes("--check");
 
 const VALID_SEVERITIES = new Set(["blocker", "warn", "info"]);

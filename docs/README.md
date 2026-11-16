@@ -20,7 +20,7 @@ F019.2–F019.4 前仍沿用旧拼写。
 
 - 平台/产品显示名：**SuperAgentTeam**；`codeteam` 仅保留为历史/兼容名。
 - 新/活跃文档的 feature namespace 用 `superagentteam/Fxxx`；F001–F018 历史文档保留 `codeteam/Fxxx`。
-- 仓库名、`codeteam-work` 分支、`@codeteam/*` 包、`CODETEAM_*` env、`~/.codeteam` 数据、`codeteam` CLI 与 `codeteam_*` 工具名在 F019.2–F019.4 前仍是当前入口，落地后切换为 `superagentteam*`；不要提前硬切。
+- F019.2 已把包/scope 切到 `@superagentteam/*` / `packages/superagentteam-*`；仓库名、`codeteam-work` 分支、`CODETEAM_*` env、`~/.codeteam` 数据、`codeteam` CLI 与 `codeteam_*` 工具名在 F019.3–F019.4 前仍是当前入口，落地后切换；不要提前硬切。
 - 入口：[`SUPERAGENTTEAM.md`](../SUPERAGENTTEAM.md)；旧 [`CODETEAM.md`](../CODETEAM.md) 是 `status: moved` stub。
 
 ## 架构文档怎么读

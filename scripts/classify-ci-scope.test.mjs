@@ -6,17 +6,17 @@ test("docs-only changes use the docs lane", () => {
 	assert.equal(classify(["docs/features/F002.md", "BACKLOG.md", "README.md"]), "docs");
 });
 
-test("codeteam package changes use the codeteam lane", () => {
+test("SuperAgentTeam package changes use the SuperAgentTeam lane", () => {
 	assert.equal(
-		classify(["packages/codeteam-pi-adapter/src/index.ts", "docs/reports/r.md"]),
-		"codeteam",
+		classify(["packages/superagentteam-pi-adapter/src/index.ts", "docs/reports/r.md"]),
+		"superagentteam",
 	);
 });
 
-test("mixed codeteam package changes stay in the codeteam lane", () => {
+test("mixed SuperAgentTeam package changes stay in the SuperAgentTeam lane", () => {
 	assert.equal(
-		classify(["packages/codeteam-daemon/test/daemon.test.ts", "packages/codeteam-skills/package.json"]),
-		"codeteam",
+		classify(["packages/superagentteam-daemon/test/daemon.test.ts", "packages/superagentteam-skills/package.json"]),
+		"superagentteam",
 	);
 });
 

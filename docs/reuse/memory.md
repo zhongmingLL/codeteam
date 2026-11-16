@@ -67,9 +67,9 @@ updated: 2026-10-29
 
 ## W6a 实现落点（2026-10-29，review pending）
 
-- **契约**：`packages/codeteam-daemon/src/memory/contract.ts` 冻结
+- **契约**：`packages/superagentteam-daemon/src/memory/contract.ts` 冻结
   `EvidenceSourceRef` / `EvidenceItem` / `EvidenceHit` / `Coverage` /
-  `RetrievalTrigger`；W6b/W6c 从 `packages/codeteam-daemon/src/index.ts` import。
+  `RetrievalTrigger`；W6b/W6c 从 `packages/superagentteam-daemon/src/index.ts` import。
 - **存储/索引**：`memory/database.ts`（独立 `CODETEAM_MEMORY_DB`、禁 ATTACH）、
   `memory/indexer.ts`（单写者 lock、full/incremental、FTS/passages）、
   `memory/lock.ts`。

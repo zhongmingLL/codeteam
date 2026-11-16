@@ -85,7 +85,7 @@ F019 是独立 feature，不混入 F018；F018 R1-0 在 F019 完成前暂停。
   或迁移；当前无真实用户数据，但仍要保留回滚。
 - **分支保护**：`codeteam-work` 改名会影响 CI/protection/PR；放最后。
 - **文档 churn**：3200+ `codeteam` 引用；只改当前 canonical，历史/legacy 保留。
-- **F018 返工**：R1-0 必须等 F019.1–F019.3 完成；否则 `@codeteam/shared` 会再改。
+- **F018 返工**：R1-0 必须等 F019.1–F019.3 完成；否则 `@superagentteam/shared` 会再改。
 
 ## 阶段
 

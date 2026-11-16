@@ -35,7 +35,7 @@ describe("curated skill catalog", () => {
 	});
 
 	function newRoot(): string {
-		root = mkdtempSync(join(tmpdir(), "codeteam-skills-"));
+		root = mkdtempSync(join(tmpdir(), "superagentteam-skills-"));
 		return root;
 	}
 
@@ -139,7 +139,7 @@ describe("curated skill catalog", () => {
 
 	it("rejects a skill file that contains a secret", () => {
 		const catalogRoot = newRoot();
-		writeSkill(catalogRoot, "skills/alpha", "alpha", "Alpha skill.", "token " + FAKE_AWS_KEY);
+		writeSkill(catalogRoot, "skills/alpha", "alpha", "Alpha skill.", `token ${FAKE_AWS_KEY}`);
 		writeManifest(catalogRoot, [entry("alpha", "skills/alpha")]);
 
 		const catalog = loadCuratedCatalog({ catalogRoot });

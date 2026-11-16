@@ -1,10 +1,10 @@
-# @codeteam/skills
+# @superagentteam/skills
 
-Curated skill catalog for codeteam. The manifest lists only routing metadata; the skill
+Curated skill catalog for SuperAgentTeam. The manifest lists only routing metadata; the skill
 `name`, `description`, and `triggers` come from each `SKILL.md` frontmatter.
 
 ```ts
-import { loadCuratedCatalog } from "@codeteam/skills";
+import { loadCuratedCatalog } from "@superagentteam/skills";
 
 const catalog = loadCuratedCatalog({ catalogRoot });
 const skillPaths = catalog.skillPaths; // pass to the adapter as curatedSkillPaths

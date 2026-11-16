@@ -118,7 +118,7 @@ async function waitFor<T>(check: () => T | null | undefined | false, timeoutMs =
 }
 
 function setupDirs() {
-	const root = mkdtempSync(join(tmpdir(), "codeteam-daemon-a2a-"));
+	const root = mkdtempSync(join(tmpdir(), "superagentteam-daemon-a2a-"));
 	dirs.push(root);
 	const dataDir = join(root, "data");
 	const installationRoot = join(root, "install");

@@ -12,7 +12,7 @@ canonical: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/00
 # Task-first legacy index
 
 > 这是 task-first code 与 docs 的统一 legacy 边界。旧代码在
-> `packages/codeteam-daemon/src/legacy/task-first/`；旧文档在
+> `packages/superagentteam-daemon/src/legacy/task-first/`；旧文档在
 > `docs/legacy/task-first/`。两者都不是 F018 实现基线。
 >
 > 新开发只读 `0005`/`0007` + 分册 + `0020`/`0021`。
@@ -29,7 +29,7 @@ canonical: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/00
 
 ## 2. 代码边界
 
-目标：`packages/codeteam-daemon/src/legacy/task-first/`
+目标：`packages/superagentteam-daemon/src/legacy/task-first/`
 
 | 目录 | 内容 |
 |---|---|
@@ -81,7 +81,7 @@ canonical: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/00
 1. 代码和文档同批移动；旧路径 stub 只做 re-export/link，不承载新逻辑。
 2. `check-legacy-boundary` 禁止新 v1 code import legacy path/barrel；旧代码只 import
    legacy 或 compatibility barrel。
-3. `@codeteam/shared` 不吸收 legacy 类型；新契约从 `0007`/`0011`/`0016`/`0017`
+3. `@superagentteam/shared` 不吸收 legacy 类型；新契约从 `0007`/`0011`/`0016`/`0017`
    重新定义。
 4. R5 再归档/删除；R1-0 只移动 + stub，不删除历史。
 5. 任何从 legacy 复活的能力必须另立 feature，从 A2A runtime 出发。

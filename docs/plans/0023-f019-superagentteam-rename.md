@@ -91,6 +91,10 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 - tools：注册 `superagentteam_*`；保留 `codeteam_*` alias；模型面文档用新名。
 - 工具名映射表：`codeteam_post_message` → `superagentteam_post_message` 等；
   `codeteam_*` 在弃用窗口内仍可调用。
+- 同批更新 F018 active 契约文档（`0005`/`0007`/`0013`）的工具名/显示名，并对
+  五轮 exact-HEAD verdict 做一次 re-anchor，避免代码改名后契约文档成为第二真相源。
+- skills：`superagentteam-verify` / `superagentteam-review` 新 skill ID + 旧
+  `codeteam-*` alias/next 映射；worker prompt 的 `codeteam_*` 工具名同批切换。
 
 **测试**
 

@@ -60,7 +60,7 @@ function verification(overrides: Partial<Verification> = {}): Verification {
 	};
 }
 
-describe("codeteam point gate evaluators", () => {
+describe("SuperAgentTeam point gate evaluators", () => {
 	it("review gate requires exact HEAD/base, non-owner approval, and closed P1/P2", () => {
 		const finding = {
 			id: "finding-1",
@@ -181,7 +181,7 @@ describe("codeteam point gate evaluators", () => {
 		});
 		expect(machine.status).toBe("pass");
 		const criticalRisk = classifyRisk({
-			changedFiles: [{ path: "packages/codeteam-daemon/src/auth/operator.ts", additions: 1, deletions: 0 }],
+			changedFiles: [{ path: "packages/superagentteam-daemon/src/auth/operator.ts", additions: 1, deletions: 0 }],
 		});
 		const human = evaluateDesignGate({
 			taskId: "task-1",
