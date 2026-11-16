@@ -22,7 +22,9 @@
   `managed-work/`, `deployment-wait/`, `custody/`, task-scope auth, task-bound
   worker/prompt/policy, `cli/task.ts`, `a2a_send`/`handoff_*`, or legacy control
   stores as the F018 A2A runtime baseline. New v1 code must not read/write legacy
-  tables or register retired tools. Use `docs/architecture/0005-thread-first-runtime.md`,
+  tables or register retired tools. Legacy code lives under
+  `packages/codeteam-daemon/src/legacy/task-first/`; legacy docs/index under
+  `docs/legacy/task-first/`. Use `docs/architecture/0005-thread-first-runtime.md`,
   `0007-a2a-runtime-chain.md`, and `docs/architecture/0006-task-first-legacy.md`.
 
 ## Reuse and reference implementation

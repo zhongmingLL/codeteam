@@ -68,6 +68,8 @@ updated: 2026-11-14
 | [`plans/0015-w6c-observability-trajectory.md`](plans/0015-w6c-observability-trajectory.md) | W6c observability/trajectory 实施计划与 AC 映射 |
 | [`plans/0018-f016a-a2a-ingress-e2e.md`](plans/0018-f016a-a2a-ingress-e2e.md) | F016a：8 类 ingress × scenario real RPC E2E、P0 工具面、withdraw/parallel/loop guard |
 | [`plans/0020-f018-thread-first-runtime.md`](plans/0020-f018-thread-first-runtime.md) | F018：A2A runtime v1 R0-R5、AgentConfig/Registry、schema/migration、same/cross-thread post、multi_mention fan-out、验收与回滚 |
+| [`plans/0021-f018-r1-execution.md`](plans/0021-f018-r1-execution.md) | F018 R1 执行计划：greenfield baseline、Clowder-style shared/domains、legacy code/docs move、R1-0 + R1-a–d、R2–R5 门禁 |
+| [`plans/0022-codeteam-web-surface.md`](plans/0022-codeteam-web-surface.md) | W7b web surface 目录设计：Next/React、domains、shared DTO、API/WS 边界 |
 | [`reuse/REUSE-MATRIX.md`](reuse/REUSE-MATRIX.md) | clowder 323 篇 feature 的复用矩阵：以 35 个 ownership cell 为主分类、R0/R1/R2/N1/N2、P0/P1-active/P1-defer/Drop |
 | [`plans/0006-clowder-reuse-plan.md`](plans/0006-clowder-reuse-plan.md) | feature 复用盘点执行计划：Batch 0 cell 盘点、Batch 1 P0 10 cells + `sop-bulletin` slice、Batch 2 P1-active 10 cells、Batch 3 P1-defer + Drop |
 | [`reuse/README.md`](reuse/README.md) | P0 复用决策卡索引（10 张 cell 卡 + `sop-bulletin` slice，2026-10-24 operator 已签） |
@@ -75,6 +77,7 @@ updated: 2026-11-14
 | [`architecture/0004-reuse-architecture-review-plan.md`](architecture/0004-reuse-architecture-review-plan.md) | `[historical]` 复用架构梳理计划：结果以 `reuse/` 和 0005/0007 为准 |
 | [`architecture/0005-thread-first-runtime.md`](architecture/0005-thread-first-runtime.md) | **方向/范围（accepted）**：thread-first、纯 A2A 四工具、无 Task/custody/code delivery；详细机制看 0007 |
 | [`architecture/0006-task-first-legacy.md`](architecture/0006-task-first-legacy.md) | `[legacy-reference]` Task-first legacy inventory：识别旧模块/表/工具，防止误导新开发 |
+| [`legacy/task-first/INDEX.md`](legacy/task-first/INDEX.md) | `[legacy]` Task-first code/docs 统一边界：旧代码路径、旧文档移动规则、canonical 替代映射 |
 | [`architecture/0007-a2a-runtime-chain.md`](architecture/0007-a2a-runtime-chain.md) | A2A runtime v1 全链路：InvocationQueue/QueueProcessor/InvocationRecord/InvocationTracker/routeParallel/TurnExecution/InvocationRegistry/terminal+recovery，Clowder 对齐 + v1 轻量化 |
 | [`architecture/0008-agent-config.md`](architecture/0008-agent-config.md) | AgentConfig v1：config-as-code AgentCatalog/AgentConfig/AgentRegistry/AgentState、AccountConfig、roleId workflow key、迁移与校验 |
 | [`architecture/0009-thread-model.md`](architecture/0009-thread-model.md) | Thread v1：projectPath 必填、active/deleted、lastActiveAt、titleSource、空 thread、迁移 preflight |
