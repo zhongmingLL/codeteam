@@ -1,6 +1,7 @@
 import { chmodSync, closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { envValue, resolveDataDir } from "../env.ts";
 import { ControlError } from "./errors.ts";
 import { CONTROL_MIGRATIONS, CONTROL_TABLE_NAMES, type ControlMigration } from "./migrations/index.ts";
 
@@ -31,9 +32,9 @@ interface SchemaMigrationRow {
 }
 
 export function resolveControlDataDir(dataDir?: string): string {
-	const resolved = dataDir ?? process.env.CODETEAM_DATA_DIR;
+	const resolved = resolveDataDir(dataDir);
 	if (!resolved || resolved.trim() === "") {
-		throw new ControlError("data_dir_missing", "CODETEAM_DATA_DIR is required");
+		throw new ControlError("data_dir_missing", "SUPERAGENTTEAM_DATA_DIR is required");
 	}
 	try {
 		mkdirSync(resolved, { recursive: true, mode: 0o700 });
@@ -47,11 +48,14 @@ export function resolveControlDataDir(dataDir?: string): string {
 }
 
 export function resolveControlBusyTimeoutMs(value?: number): number {
-	const raw = value ?? process.env.CODETEAM_SQLITE_BUSY_TIMEOUT_MS;
+	const raw = value ?? envValue(process.env, "SQLITE_BUSY_TIMEOUT_MS");
 	if (raw === undefined || raw === "") return DEFAULT_CONTROL_BUSY_TIMEOUT_MS;
 	const parsed = typeof raw === "number" ? raw : Number(raw);
 	if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-		throw new ControlError("invalid_busy_timeout", "CODETEAM_SQLITE_BUSY_TIMEOUT_MS must be a positive integer");
+		throw new ControlError(
+			"invalid_busy_timeout",
+			"SUPERAGENTTEAM_SQLITE_BUSY_TIMEOUT_MS must be a positive integer",
+		);
 	}
 	return parsed;
 }

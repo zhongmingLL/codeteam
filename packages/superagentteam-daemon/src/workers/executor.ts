@@ -189,7 +189,7 @@ export class RpcAgentExecutor implements AgentExecutor {
 		const metrics = this.observability?.metrics;
 		if (!metrics) return;
 		metrics
-			.counter("codeteam_run_executions_total", {
+			.counter("superagentteam_run_executions_total", {
 				role: run.role,
 				provider: run.provider,
 				model: run.model,
@@ -197,7 +197,7 @@ export class RpcAgentExecutor implements AgentExecutor {
 			})
 			.add();
 		metrics
-			.histogram("codeteam_run_execution_duration_ms", {
+			.histogram("superagentteam_run_execution_duration_ms", {
 				role: run.role,
 				provider: run.provider,
 				model: run.model,

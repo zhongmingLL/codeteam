@@ -1,5 +1,6 @@
 import { isAbsolute, join } from "node:path";
 import { ControlError } from "../control/errors.ts";
+import { envValue } from "../env.ts";
 
 export interface EvalConfig {
 	readonly domainsDir: string;
@@ -45,34 +46,38 @@ function booleanFlag(value: string | undefined, label: string, fallback: boolean
 
 export function resolveEvalConfig(options: ResolveEvalConfigOptions): EvalConfig {
 	const env = options.env ?? process.env;
-	const domainsDir = env.CODETEAM_EVAL_DOMAINS_DIR?.trim() || "evals/domains";
+	const domainsDir = envValue(env, "EVAL_DOMAINS_DIR")?.trim() || "evals/domains";
 	if (isAbsolute(domainsDir) === false && domainsDir.split(/[\\/]+/).includes("..")) {
-		throw new ControlError("invalid_input", "CODETEAM_EVAL_DOMAINS_DIR must not traverse");
+		throw new ControlError("invalid_input", "SUPERAGENTTEAM_EVAL_DOMAINS_DIR must not traverse");
 	}
-	const bundlesDir = env.CODETEAM_EVAL_BUNDLES_DIR?.trim() || join(options.dataDir, "evals", "bundles");
+	const bundlesDir = envValue(env, "EVAL_BUNDLES_DIR")?.trim() || join(options.dataDir, "evals", "bundles");
 	if (isAbsolute(bundlesDir) === false && bundlesDir.split(/[\\/]+/).includes("..")) {
-		throw new ControlError("invalid_input", "CODETEAM_EVAL_BUNDLES_DIR must not traverse");
+		throw new ControlError("invalid_input", "SUPERAGENTTEAM_EVAL_BUNDLES_DIR must not traverse");
 	}
 	return {
 		domainsDir,
 		bundlesDir,
-		enabled: booleanFlag(env.CODETEAM_EVAL_ENABLED, "CODETEAM_EVAL_ENABLED", false),
+		enabled: booleanFlag(envValue(env, "EVAL_ENABLED"), "SUPERAGENTTEAM_EVAL_ENABLED", false),
 		bundleMaxBytes: positiveInteger(
-			env.CODETEAM_EVAL_BUNDLE_MAX_BYTES,
-			"CODETEAM_EVAL_BUNDLE_MAX_BYTES",
+			envValue(env, "EVAL_BUNDLE_MAX_BYTES"),
+			"SUPERAGENTTEAM_EVAL_BUNDLE_MAX_BYTES",
 			5 * 1024 * 1024,
 		),
-		sampleTraceLimit: positiveInteger(env.CODETEAM_EVAL_SAMPLE_TRACE_LIMIT, "CODETEAM_EVAL_SAMPLE_TRACE_LIMIT", 20),
+		sampleTraceLimit: positiveInteger(
+			envValue(env, "EVAL_SAMPLE_TRACE_LIMIT"),
+			"SUPERAGENTTEAM_EVAL_SAMPLE_TRACE_LIMIT",
+			20,
+		),
 		acknowledgeHoursDefault: positiveInteger(
-			env.CODETEAM_EVAL_ACK_HOURS_DEFAULT,
-			"CODETEAM_EVAL_ACK_HOURS_DEFAULT",
+			envValue(env, "EVAL_ACK_HOURS_DEFAULT"),
+			"SUPERAGENTTEAM_EVAL_ACK_HOURS_DEFAULT",
 			24,
 		),
 		reevalWithinHoursDefault: positiveInteger(
-			env.CODETEAM_EVAL_REEVAL_HOURS_DEFAULT,
-			"CODETEAM_EVAL_REEVAL_HOURS_DEFAULT",
+			envValue(env, "EVAL_REEVAL_HOURS_DEFAULT"),
+			"SUPERAGENTTEAM_EVAL_REEVAL_HOURS_DEFAULT",
 			72,
 		),
-		retentionDays: nonNegativeInteger(env.CODETEAM_EVAL_RETENTION_DAYS, "CODETEAM_EVAL_RETENTION_DAYS", 0),
+		retentionDays: nonNegativeInteger(envValue(env, "EVAL_RETENTION_DAYS"), "SUPERAGENTTEAM_EVAL_RETENTION_DAYS", 0),
 	};
 }

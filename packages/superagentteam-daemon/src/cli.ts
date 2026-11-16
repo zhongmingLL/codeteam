@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { runCli } from "./cli/index.ts";
 import { ControlError } from "./control/errors.ts";
+import { aliasLegacyEnv } from "./env.ts";
 import { MemoryError } from "./memory/errors.ts";
 
 async function main(): Promise<number> {
+	aliasLegacyEnv();
 	try {
 		return await runCli(process.argv.slice(2));
 	} catch (error) {

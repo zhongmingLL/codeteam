@@ -1,5 +1,6 @@
 import { type BootRecord, readBootLedger } from "../boot-ledger.ts";
 import { ControlError } from "../control/errors.ts";
+import { envValue } from "../env.ts";
 import { DaemonError } from "../errors.ts";
 import { isProcessAlive } from "../fence.ts";
 import { resolveInstallation } from "../installation.ts";
@@ -33,7 +34,7 @@ export class DeploymentObservationService implements DeploymentObserver {
 		if (state?.installationId) {
 			return deploymentSubjectRef(
 				state.installationId,
-				state.deploymentId ?? this.deploymentId ?? process.env.CODETEAM_DEPLOYMENT_ID ?? "local",
+				state.deploymentId ?? this.deploymentId ?? envValue(process.env, "DEPLOYMENT_ID") ?? "local",
 			);
 		}
 		if (!this.installationRoot) {
@@ -45,7 +46,7 @@ export class DeploymentObservationService implements DeploymentObserver {
 		const installation = resolveInstallation(this.installationRoot);
 		return deploymentSubjectRef(
 			installation.installationId,
-			this.deploymentId ?? process.env.CODETEAM_DEPLOYMENT_ID ?? "local",
+			this.deploymentId ?? envValue(process.env, "DEPLOYMENT_ID") ?? "local",
 		);
 	}
 
@@ -76,7 +77,7 @@ export class DeploymentObservationService implements DeploymentObserver {
 					.map((service) => service.trim())
 					.filter((service) => service !== "")
 			: [...state.services];
-		const deploymentId = state.deploymentId ?? this.deploymentId ?? process.env.CODETEAM_DEPLOYMENT_ID ?? "local";
+		const deploymentId = state.deploymentId ?? this.deploymentId ?? envValue(process.env, "DEPLOYMENT_ID") ?? "local";
 		return {
 			v: 1,
 			subjectRef: deploymentSubjectRef(state.installationId, deploymentId),

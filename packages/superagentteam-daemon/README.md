@@ -1,6 +1,6 @@
 # @superagentteam/daemon
 
-Minimal daemon lifecycle for SuperAgentTeam: `CODETEAM_DATA_DIR` state, an append-only boot ledger, a
+Minimal daemon lifecycle for SuperAgentTeam: `SUPERAGENTTEAM_DATA_DIR` state (legacy `CODETEAM_DATA_DIR` fallback), an append-only boot ledger, a
 single-writer fence, loopback `/health`, and `requested → ready → stopping → stopped/failed`.
 
 ```ts
@@ -31,13 +31,13 @@ transactional `dispatchBacklog` and `cutoverQueueEntry` services.
 ```ts
 import { openControlDatabase } from "@superagentteam/daemon";
 
-const control = openControlDatabase({ dataDir: process.env.CODETEAM_DATA_DIR });
+const control = openControlDatabase({ dataDir: process.env.SUPERAGENTTEAM_DATA_DIR });
 console.log(control.schemaVersion);
 control.close();
 ```
 
 Migration heads are contiguous and checked against `schema_migrations`; a failed migration rolls
-back atomically, and a database with an unknown/ahead version fails closed. `CODETEAM_SQLITE_BUSY_TIMEOUT_MS`
+back atomically, and a database with an unknown/ahead version fails closed. `SUPERAGENTTEAM_SQLITE_BUSY_TIMEOUT_MS`
 overrides the default busy timeout.
 
 WAL and `-shm` files are created by SQLite with the process umask; their confidentiality relies on

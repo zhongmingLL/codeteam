@@ -4,7 +4,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveRunPrincipal } from "../a2a/principal.ts";
-import { A2A_ACTION_BY_TOOL, A2A_TOOL_NAMES, type A2AToolName } from "../a2a/tool-surface.ts";
+import { A2A_ACTION_BY_TOOL, A2A_ALL_TOOL_NAMES, type A2AToolName } from "../a2a/tool-surface.ts";
 import { type A2ASendInput, A2AToolHandlers, type HandoffCreateInput, type ThreadContextInput } from "../a2a/tools.ts";
 import { resolveInvocationToken } from "../auth/resolver.ts";
 import { ControlError } from "../control/errors.ts";
@@ -198,7 +198,7 @@ export class WorkerControlServer {
 		}
 		if (request.type === "a2a_call") {
 			const toolName = required(request.toolName, "toolName");
-			if (!(A2A_TOOL_NAMES as readonly string[]).includes(toolName)) {
+			if (!(A2A_ALL_TOOL_NAMES as readonly string[]).includes(toolName)) {
 				throw new ControlError("invalid_input", `unknown A2A tool ${toolName}`);
 			}
 			const input = objectInput(request.input);
@@ -317,10 +317,10 @@ function requiredInputString(input: Record<string, unknown>, field: string): str
 }
 
 export function defaultSocketPath(dataDir: string): string {
-	if (process.platform === "win32") return `\\\\.\\pipe\\codeteam-worker-control-${process.pid}`;
+	if (process.platform === "win32") return `\\\\.\\pipe\\superagentteam-worker-control-${process.pid}`;
 	const preferred = join(dataDir, "wc.sock");
 	if (Buffer.byteLength(preferred, "utf8") <= 100) return preferred;
 	const hash = createHash("sha256").update(dataDir).digest("hex").slice(0, 16);
 	const user = typeof process.getuid === "function" ? String(process.getuid()) : "user";
-	return join(tmpdir(), `codeteam-wc-${user}`, `wc-${hash}.sock`);
+	return join(tmpdir(), `superagentteam-wc-${user}`, `wc-${hash}.sock`);
 }

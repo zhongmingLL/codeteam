@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { operatorCredentialPaths, signOperatorPayload } from "../auth/operator.ts";
 import { ControlError } from "../control/errors.ts";
+import { envValue } from "../env.ts";
 import { authorizationPayload, StopOperationService } from "../lifecycle/index.ts";
 import { resolveDaemonPaths } from "../paths.ts";
 import { readStateFile } from "../state.ts";
@@ -11,8 +12,9 @@ import { writeJson, writeLine } from "./output.ts";
 function daemonService(context: CliContext, args: ParsedArgs): StopOperationService {
 	return new StopOperationService({
 		dataDir: context.dataDir,
-		deploymentId: option(args, "deployment-id") ?? process.env.CODETEAM_DEPLOYMENT_ID ?? "local",
-		installationRoot: option(args, "installation-root") ?? process.env.CODETEAM_INSTALLATION_ROOT ?? process.cwd(),
+		deploymentId: option(args, "deployment-id") ?? envValue(process.env, "DEPLOYMENT_ID") ?? "local",
+		installationRoot:
+			option(args, "installation-root") ?? envValue(process.env, "INSTALLATION_ROOT") ?? process.cwd(),
 	});
 }
 
@@ -36,7 +38,7 @@ export async function runDaemonCommand(args: ParsedArgs, context: CliContext): P
 		const daemonPaths = resolveDaemonPaths(context.dataDir);
 		const state = readStateFile(daemonPaths.stateFile);
 		if (!state) throw new ControlError("not_found", "daemon state is not available");
-		const deploymentId = option(args, "deployment-id") ?? process.env.CODETEAM_DEPLOYMENT_ID ?? "local";
+		const deploymentId = option(args, "deployment-id") ?? envValue(process.env, "DEPLOYMENT_ID") ?? "local";
 		const opId = `lifecycle_${randomUUID()}`;
 		const keyFingerprint = operatorCredentialPaths(context.dataDir).fingerprint;
 		const authorization = {

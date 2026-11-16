@@ -1,9 +1,9 @@
 ---
-title: "codeteam A2A runtime chain v1 — Clowder-aligned"
+title: "SuperAgentTeam A2A runtime chain v1 — Clowder-aligned"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-14
+updated: 2026-11-16
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06"
@@ -11,7 +11,11 @@ operator_direction: "直接复用 Clowder A2A runtime 骨架；v1 轻量化；MC
 related_features: [codeteam/F018, codeteam/F017]
 ---
 
-# codeteam A2A runtime chain v1
+# SuperAgentTeam A2A runtime chain v1
+
+> Naming (F019.3): current product name is SuperAgentTeam; `codeteam` below is the
+> historical/legacy name. Runtime tool IDs use `superagentteam_*` with `codeteam_*`
+> aliases; package paths are `packages/superagentteam-*`.
 
 > **V1 target contract：** 本文是 F018 v1 的实现基线；方向/范围见 `0005`，
 > operator 体验见 `0014`，terminal/settlement 深挖见 `0016`，draft store 见 `0017`。

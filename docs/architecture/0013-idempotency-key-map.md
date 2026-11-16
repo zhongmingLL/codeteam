@@ -1,9 +1,9 @@
 ---
-title: "codeteam Idempotency Key Map — A2A v1 and adjacent domains"
+title: "SuperAgentTeam Idempotency Key Map — A2A v1 and adjacent domains"
 doc_kind: architecture
 status: accepted
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-16
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-11: DP-F018A2A-1=A+ (piExtToolCallId)"
@@ -11,7 +11,11 @@ related_features: [codeteam/F018, codeteam/F017]
 related: [0007-a2a-runtime-chain.md, 0011-identity-contract.md, decision-packets/2026-11-11-dp-f018-a2a-tools.md]
 ---
 
-# codeteam Idempotency Key Map
+# SuperAgentTeam Idempotency Key Map
+
+> Naming (F019.3): current product name is SuperAgentTeam; `codeteam` below is the
+> historical/legacy name. Runtime tool IDs use `superagentteam_*` with `codeteam_*`
+> aliases; package paths are `packages/superagentteam-*`.
 
 > 目的：把 codeteam 里所有“看起来像幂等 key”的名字按层拆开，说明哪些是真重复、
 > 哪些是实体 ID / 内部 receipt / payload fingerprint，再与 Clowder 对照，给出

@@ -10,7 +10,13 @@ function hexId(seed: string, length: number): string {
 	return createHash("sha256").update(seed).digest("hex").slice(0, length);
 }
 
-function span(traceSeed: string, spanSeed: string, invocationId: string, storedAt: number, name = "codeteam.run") {
+function span(
+	traceSeed: string,
+	spanSeed: string,
+	invocationId: string,
+	storedAt: number,
+	name = "superagentteam.run",
+) {
 	return {
 		traceId: hexId(traceSeed, 32),
 		spanId: hexId(spanSeed, 16),
@@ -81,7 +87,7 @@ describe("W6c local trace ring", () => {
 		store.add({
 			traceId: "c".repeat(32),
 			spanId: "d".repeat(16),
-			name: "codeteam.test",
+			name: "superagentteam.test",
 			kind: "internal",
 			startTimeMs: now,
 			endTimeMs: now + 1,
@@ -124,7 +130,7 @@ describe("W6c tracer", () => {
 		const store = new LocalTraceStore({ now: () => now, hmacId: (id) => redactor.hmacId(id) });
 		const tracer = new Tracer({ store, redactor, now: () => now });
 		const runSpan = tracer.startSpan({
-			name: "codeteam.run",
+			name: "superagentteam.run",
 			attributes: {
 				"invocation.id": "run-1",
 				"profile.id": "profile:coder",
@@ -162,7 +168,7 @@ describe("W6c tracer", () => {
 	it("does not throw when a span is ended twice", () => {
 		const store = new LocalTraceStore({ now: () => 1_000, hmacId: (id) => redactor.hmacId(id) });
 		const tracer = new Tracer({ store, redactor, now: () => 1_000 });
-		const span = tracer.startSpan({ name: "codeteam.test" });
+		const span = tracer.startSpan({ name: "superagentteam.test" });
 		span.end();
 		expect(() => span.end()).toThrowError("span_already_ended");
 	});

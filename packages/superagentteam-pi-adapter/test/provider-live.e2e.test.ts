@@ -6,13 +6,14 @@ import { SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent
 import { describe, expect, it } from "vitest";
 import { compileL0, createAgentSessionWithL0 } from "../src/index.ts";
 
-const liveBaseUrl = process.env.CODETEAM_LIVE_BASE_URL;
-const liveModel = process.env.CODETEAM_LIVE_MODEL;
-const liveApiKey = process.env.CODETEAM_LIVE_API_KEY;
-const liveApi = process.env.CODETEAM_LIVE_API ?? "anthropic-messages";
-const liveProviderId =
-	process.env.CODETEAM_LIVE_PROVIDER_ID ?? (liveApi === "anthropic-messages" ? "anthropic" : "openrouter");
-const liveEnabled = process.env.CODETEAM_LIVE_PROVIDER === "1" && Boolean(liveBaseUrl && liveModel && liveApiKey);
+const liveEnv = (suffix: string) =>
+	process.env[`SUPERAGENTTEAM_LIVE_${suffix}`] ?? process.env[`CODETEAM_LIVE_${suffix}`];
+const liveBaseUrl = liveEnv("BASE_URL");
+const liveModel = liveEnv("MODEL");
+const liveApiKey = liveEnv("API_KEY");
+const liveApi = liveEnv("API") ?? "anthropic-messages";
+const liveProviderId = liveEnv("PROVIDER_ID") ?? (liveApi === "anthropic-messages" ? "anthropic" : "openrouter");
+const liveEnabled = liveEnv("PROVIDER") === "1" && Boolean(liveBaseUrl && liveModel && liveApiKey);
 
 describe.skipIf(!liveEnabled)("live provider end-to-end", () => {
 	it("gets a real model reply while sending L0 over the wire", async () => {

@@ -14,6 +14,7 @@ export interface CuratedSkillEntry {
 	output: string;
 	next: string | null;
 	sopStep: string;
+	aliases: string[];
 }
 
 export type CatalogDiagnosticCode =
@@ -28,7 +29,8 @@ export type CatalogDiagnosticCode =
 	| "name_mismatch"
 	| "secret_detected"
 	| "skill_too_large"
-	| "dangling_next";
+	| "dangling_next"
+	| "alias_conflict";
 
 export interface CatalogDiagnostic {
 	severity: "error" | "warning";
@@ -43,7 +45,17 @@ export interface ParsedManifest {
 	diagnostics: CatalogDiagnostic[];
 }
 
-const ENTRY_KEYS = new Set(["skillId", "path", "sourceKind", "category", "not_for", "output", "next", "sop_step"]);
+const ENTRY_KEYS = new Set([
+	"skillId",
+	"path",
+	"sourceKind",
+	"category",
+	"not_for",
+	"output",
+	"next",
+	"sop_step",
+	"aliases",
+]);
 
 const REQUIRED_STRING_KEYS = ["skillId", "path", "sourceKind", "category", "output", "sop_step"] as const;
 
@@ -180,6 +192,27 @@ export function parseManifest(raw: string): ParsedManifest {
 			continue;
 		}
 
+		const rawAliases = rawEntry.aliases ?? [];
+		if (!Array.isArray(rawAliases) || !rawAliases.every(nonEmptyString)) {
+			diagnostics.push({
+				severity: "error",
+				code: "manifest_invalid",
+				skillId,
+				message: `skill "${skillId}" must declare aliases as a string array`,
+			});
+			continue;
+		}
+		const aliases = rawAliases as string[];
+		if (new Set(aliases).size !== aliases.length || aliases.includes(skillId)) {
+			diagnostics.push({
+				severity: "error",
+				code: "alias_conflict",
+				skillId,
+				message: `skill "${skillId}" has a duplicate or self-referencing alias`,
+			});
+			continue;
+		}
+
 		const pathDiagnostic = structuralPathDiagnostic(skillId, path);
 		if (pathDiagnostic) {
 			diagnostics.push(pathDiagnostic);
@@ -206,6 +239,7 @@ export function parseManifest(raw: string): ParsedManifest {
 			output: rawEntry.output as string,
 			next: next as string | null,
 			sopStep: rawEntry.sop_step as string,
+			aliases,
 		});
 	}
 

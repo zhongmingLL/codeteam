@@ -4,6 +4,7 @@ import { join, resolve, sep } from "node:path";
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
 import type { WorktreeLease } from "../control/stores/types.ts";
+import { envValue } from "../env.ts";
 
 export interface DiskFreeProbe {
 	availableBytes(path: string): number;
@@ -109,26 +110,27 @@ export class WorktreePoolService {
 		this.store = store;
 		this.rootDir = resolve(options.rootDir);
 		this.maxLeases =
-			options.maxLeases ?? positiveInteger(Number(process.env.CODETEAM_WORKTREE_POOL_MAX ?? "4"), "maxLeases");
+			options.maxLeases ?? positiveInteger(Number(envValue(process.env, "WORKTREE_POOL_MAX") ?? "4"), "maxLeases");
 		this.minFreeBytes = positiveInteger(
-			options.minFreeBytes ?? Number(process.env.CODETEAM_WORKTREE_MIN_FREE_BYTES ?? String(1024 * 1024 * 1024)),
+			options.minFreeBytes ?? Number(envValue(process.env, "WORKTREE_MIN_FREE_BYTES") ?? String(1024 * 1024 * 1024)),
 			"minFreeBytes",
 		);
 		this.leaseTtlMs = positiveInteger(
-			options.leaseTtlMs ?? Number(process.env.CODETEAM_WORKTREE_LEASE_TTL_MS ?? String(8 * 60 * 60 * 1000)),
+			options.leaseTtlMs ?? Number(envValue(process.env, "WORKTREE_LEASE_TTL_MS") ?? String(8 * 60 * 60 * 1000)),
 			"leaseTtlMs",
 		);
 		this.reclaimGraceMs = positiveInteger(
 			options.reclaimGraceMs ??
-				Number(process.env.CODETEAM_WORKTREE_RECLAIM_GRACE_MS ?? String(48 * 60 * 60 * 1000)),
+				Number(envValue(process.env, "WORKTREE_RECLAIM_GRACE_MS") ?? String(48 * 60 * 60 * 1000)),
 			"reclaimGraceMs",
 		);
 		this.releasedTtlMs = positiveInteger(
-			options.releasedTtlMs ?? Number(process.env.CODETEAM_WORKTREE_RELEASED_TTL_MS ?? String(24 * 60 * 60 * 1000)),
+			options.releasedTtlMs ??
+				Number(envValue(process.env, "WORKTREE_RELEASED_TTL_MS") ?? String(24 * 60 * 60 * 1000)),
 			"releasedTtlMs",
 		);
 		this.orphanTtlMs = positiveInteger(
-			options.orphanTtlMs ?? Number(process.env.CODETEAM_WORKTREE_ORPHAN_TTL_MS ?? String(24 * 60 * 60 * 1000)),
+			options.orphanTtlMs ?? Number(envValue(process.env, "WORKTREE_ORPHAN_TTL_MS") ?? String(24 * 60 * 60 * 1000)),
 			"orphanTtlMs",
 		);
 		this.diskFree = options.diskFree ?? new StatfsDiskFreeProbe();

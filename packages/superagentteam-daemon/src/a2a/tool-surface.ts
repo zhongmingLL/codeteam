@@ -6,9 +6,19 @@
  * daemon control plane into the pi process.
  */
 
-export const A2A_TOOL_PREFIX = "codeteam_";
+export const A2A_TOOL_PREFIX = "superagentteam_";
+export const A2A_LEGACY_TOOL_PREFIX = "codeteam_";
 
 export const A2A_TOOL_NAMES = [
+	"superagentteam_a2a_send",
+	"superagentteam_handoff_create",
+	"superagentteam_handoff_claim",
+	"superagentteam_handoff_complete",
+	"superagentteam_handoff_withdraw",
+	"superagentteam_thread_context",
+] as const;
+
+export const A2A_LEGACY_TOOL_NAMES = [
 	"codeteam_a2a_send",
 	"codeteam_handoff_create",
 	"codeteam_handoff_claim",
@@ -17,7 +27,9 @@ export const A2A_TOOL_NAMES = [
 	"codeteam_thread_context",
 ] as const;
 
-export type A2AToolName = (typeof A2A_TOOL_NAMES)[number];
+export const A2A_ALL_TOOL_NAMES = [...A2A_TOOL_NAMES, ...A2A_LEGACY_TOOL_NAMES] as const;
+
+export type A2AToolName = (typeof A2A_TOOL_NAMES)[number] | (typeof A2A_LEGACY_TOOL_NAMES)[number];
 
 export type A2AAction =
 	| "a2a_send"
@@ -28,6 +40,12 @@ export type A2AAction =
 	| "thread_context";
 
 export const A2A_ACTION_BY_TOOL: Record<A2AToolName, A2AAction> = {
+	superagentteam_a2a_send: "a2a_send",
+	superagentteam_handoff_create: "handoff_create",
+	superagentteam_handoff_claim: "handoff_claim",
+	superagentteam_handoff_complete: "handoff_complete",
+	superagentteam_handoff_withdraw: "handoff_withdraw",
+	superagentteam_thread_context: "thread_context",
 	codeteam_a2a_send: "a2a_send",
 	codeteam_handoff_create: "handoff_create",
 	codeteam_handoff_claim: "handoff_claim",
@@ -44,7 +62,7 @@ export interface A2AToolSpec {
 
 export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 	{
-		name: "codeteam_a2a_send",
+		name: "superagentteam_a2a_send",
 		description:
 			"Send an agent discussion message and wake the typed targets. Does not change custody. targets are profile ids; text @ does not route.",
 		inputSchema: {
@@ -68,7 +86,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "codeteam_handoff_create",
+		name: "superagentteam_handoff_create",
 		description:
 			"Create a typed responsibility handoff, visible message shell, and one pending-wake queue entry. targets are profile ids; text @ does not route.",
 		inputSchema: {
@@ -108,7 +126,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "codeteam_handoff_claim",
+		name: "superagentteam_handoff_claim",
 		description: "Claim a handoff as an exact holder run; non-holders receive safe_wait.",
 		inputSchema: {
 			type: "object",
@@ -118,7 +136,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "codeteam_handoff_complete",
+		name: "superagentteam_handoff_complete",
 		description:
 			"Record a completion candidate for the calling holder run; verified commit remains a separate server-owned step.",
 		inputSchema: {
@@ -133,7 +151,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "codeteam_handoff_withdraw",
+		name: "superagentteam_handoff_withdraw",
 		description: "Withdraw a handoff as its author.",
 		inputSchema: {
 			type: "object",
@@ -146,7 +164,7 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 		},
 	},
 	{
-		name: "codeteam_thread_context",
+		name: "superagentteam_thread_context",
 		description:
 			"Read a bounded window of the caller's thread. The thread is always derived from the caller principal; no thread id is accepted. Use anchorMessageId for a window around one message, or cursor for older pages.",
 		inputSchema: {
@@ -166,3 +184,10 @@ export const A2A_TOOL_SPECS: readonly A2AToolSpec[] = [
 export function describeA2ATools(): readonly A2AToolSpec[] {
 	return A2A_TOOL_SPECS;
 }
+
+export const A2A_LEGACY_TOOL_SPECS: readonly A2AToolSpec[] = A2A_TOOL_SPECS.map((spec) => ({
+	...spec,
+	name: spec.name.replace(A2A_TOOL_PREFIX, A2A_LEGACY_TOOL_PREFIX) as A2AToolName,
+}));
+
+export const A2A_ALL_TOOL_SPECS: readonly A2AToolSpec[] = [...A2A_TOOL_SPECS, ...A2A_LEGACY_TOOL_SPECS];

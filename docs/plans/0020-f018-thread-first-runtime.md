@@ -3,7 +3,7 @@ title: "F018 — A2A runtime v1 实施计划（R0-R5）"
 doc_kind: plan
 status: draft
 created: 2026-11-04
-updated: 2026-11-12
+updated: 2026-11-16
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
@@ -31,7 +31,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - `threads`：`created_by`、`project_path`（必填）、`title_source`、
   `last_active_at`、`deleted_at`。
 - `thread_participants`。
-- `.codeteam/agent-catalog.json` + `.codeteam/accounts.json`：AgentConfig /
+- `.superagentteam/agent-catalog.json` + `.superagentteam/accounts.json`（旧 `.codeteam/` dual-read）：AgentConfig /
   AccountConfig 加载、校验、AgentRegistry；`mentionPatterns` 建 pattern→agentId
   索引并校验跨 agent 唯一；AgentState 运行时状态。
 - `agent_sessions`：thread×agent 单 active；`agent_id` 目标列；`task_id`/
@@ -127,10 +127,10 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 
 ## R3 — Cross-thread A2A
 
-- `codeteam_post_message` / `codeteam_cross_post_message`：单 successor（0 或 1 agent
+- `superagentteam_post_message` / `superagentteam_cross_post_message`：单 successor（0 或 1 agent
   target）；同 thread 多 target → `use_multi_mention`；cross-thread 多 target 拆多次
   cross-post。
-- `codeteam_multi_mention`：完整 Clowder orchestrator；2-3 targets、one message +
+- `superagentteam_multi_mention`：完整 Clowder orchestrator；2-3 targets、one message +
   one queue entry + one parent + N children；`multi_mention_requests/responses/callbacks` 记录
   status/timeout/aggregate；terminal 后写 aggregate system message，并为
   `callbackTo` 创建 `multi_mention_callbacks` + callback queue/parent/child；

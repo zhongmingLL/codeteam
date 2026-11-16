@@ -105,7 +105,8 @@ function runAuthInit(argv: readonly string[]): number {
 }
 
 function writeUsage(): void {
-	writeLine("usage: codeteam <command> [options]");
+	writeLine("usage: superagentteam <command> [options]");
+	writeLine("codeteam is a compatibility alias for superagentteam.");
 	writeLine("commands:");
 	writeLine("  auth init [--data-dir <path>] [--rotate]");
 	writeLine("  backlog <create|list|show|approve|dispatch|done|depend>");

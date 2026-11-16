@@ -1,16 +1,20 @@
 ---
-title: "codeteam AgentConfig v1 — config-as-code identity"
+title: "SuperAgentTeam AgentConfig v1 — config-as-code identity"
 doc_kind: architecture
 status: draft-for-review
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-16
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_decisions: "2026-11-04: installation-level .codeteam/agent-catalog.json; flat AgentConfig; enabled/defaultModel/AccountConfig; role removed"
 related_features: [codeteam/F018, codeteam/F017]
 ---
 
-# codeteam AgentConfig v1
+# SuperAgentTeam AgentConfig v1
+
+> F019.3 naming: the installation root is now `.superagentteam/`; legacy
+> `.codeteam/` is read as a fallback. Tool IDs use `superagentteam_*` with
+> `codeteam_*` aliases.
 
 > **config-as-code，不是 DB profile。** AgentCatalog 是安装级根文件；
 > AgentConfig 是解析后的 agent 视图；AgentRegistry 是内存注册表；
@@ -18,7 +22,7 @@ related_features: [codeteam/F018, codeteam/F017]
 
 ## 0. 决策
 
-- **installation-level**：`.codeteam/agent-catalog.json`；agent 是团队成员，跨 project 复用。
+- **installation-level**：`.superagentteam/agent-catalog.json`（旧 `.codeteam/` dual-read）；agent 是团队成员，跨 project 复用。
 - **v1 扁平 AgentConfig**：每个 agent 一个独立身份/模型；不引入 Breed/Variant 两层。
 - `role` 不进入 AgentConfig；旧 `roles` 表是 legacy。
 - `clowderCatId` / `toolPolicyProfile` v1 不保留。
@@ -117,8 +121,8 @@ reject `agent_disabled`，不能静默降级为隐式路由。
 
 ## 2. 文件与加载
 
-- `.codeteam/agent-catalog.json`：安装级 AgentCatalog，source of truth。
-- `.codeteam/accounts.json`：安装级 AccountConfig 列表；`apiKeyRef` 只存 env/secret ref。
+- `.superagentteam/agent-catalog.json`：安装级 AgentCatalog，source of truth。
+- `.superagentteam/accounts.json`：安装级 AccountConfig 列表；`apiKeyRef` 只存 env/secret ref。
 - 加载：读取 JSON → schema 校验 → 解析 `AgentConfig[]` → 注入 `AgentRegistry`。
 - 写入：临时文件 + 校验 + 原子 rename（与 Clowder catalog 写入一致）。
 - 不在 AgentCatalog 里放 `api_key` / token / 任何 secret。
@@ -186,6 +190,6 @@ reject `agent_disabled`，不能静默降级为隐式路由。
 
 - 0005 的 Thread/Invocation/Session 统一使用 `agentId` 引用本模型；不再使用 `profileId`。
 - Invocation/Session 不再有 `role`；workflow 分组只用 `roleId`。
-- F018 R1 负责 `.codeteam/agent-catalog.json` + accounts 的加载/校验/Registry；R2 起 A2A runtime 只从 AgentRegistry 取 agent。
+- F018 R1 负责 `.superagentteam/agent-catalog.json` + accounts 的加载/校验/Registry（旧 `.codeteam/` dual-read）；R2 起 A2A runtime 只从 AgentRegistry 取 agent。
 
 [宪宪/deepseek-flash🐾]

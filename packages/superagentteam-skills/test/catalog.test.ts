@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadCuratedCatalog } from "../src/index.ts";
+import { loadCuratedCatalog, resolveCuratedSkill } from "../src/index.ts";
 
 const packageRoot = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
@@ -43,11 +43,16 @@ describe("curated skill catalog", () => {
 		const catalog = loadCuratedCatalog({ catalogRoot: packageRoot });
 
 		expect(catalog.diagnostics).toEqual([]);
-		expect(catalog.skills.map((skill) => skill.skillId)).toEqual(["codeteam-verify", "codeteam-review"]);
+		expect(catalog.skills.map((skill) => skill.skillId)).toEqual(["superagentteam-verify", "superagentteam-review"]);
 		expect(catalog.skillPaths).toHaveLength(2);
 		expect(catalog.skills[0]?.description).toContain("verification");
 		expect(catalog.skills[0]?.triggers).toEqual(["before claiming done", "after code changes", "before PR"]);
-		expect(catalog.skills[0]?.next).toBe("codeteam-review");
+		expect(catalog.skills[0]?.next).toBe("superagentteam-review");
+		expect(catalog.aliases).toEqual({
+			"codeteam-verify": "superagentteam-verify",
+			"codeteam-review": "superagentteam-review",
+		});
+		expect(resolveCuratedSkill(catalog, "codeteam-verify")?.skillId).toBe("superagentteam-verify");
 		expect(catalog.skillPaths[0]).toBe(catalog.skills[0]?.dirPath);
 	});
 

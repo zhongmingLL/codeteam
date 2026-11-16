@@ -1,3 +1,4 @@
+import { envValue } from "../env.ts";
 import type { SpanExporter, TraceSpanDTO } from "./contracts.ts";
 
 export interface OtlpConfig {
@@ -9,11 +10,11 @@ export interface OtlpConfig {
 }
 
 export function resolveOtlpConfig(env: NodeJS.ProcessEnv = process.env): OtlpConfig {
-	const enabled = ["1", "true", "yes", "on"].includes((env.CODETEAM_OTLP_ENABLED ?? "").toLowerCase());
-	const endpoint = env.CODETEAM_OTLP_ENDPOINT?.trim();
-	const timeoutMs = parsePositiveInteger(env.CODETEAM_OTLP_TIMEOUT_MS, 2000);
-	const maxPending = parsePositiveInteger(env.CODETEAM_OTLP_MAX_PENDING, 1000);
-	const serviceName = env.CODETEAM_OTLP_SERVICE_NAME?.trim() || "superagentteam-daemon";
+	const enabled = ["1", "true", "yes", "on"].includes((envValue(env, "OTLP_ENABLED") ?? "").toLowerCase());
+	const endpoint = envValue(env, "OTLP_ENDPOINT")?.trim();
+	const timeoutMs = parsePositiveInteger(envValue(env, "OTLP_TIMEOUT_MS"), 2000);
+	const maxPending = parsePositiveInteger(envValue(env, "OTLP_MAX_PENDING"), 1000);
+	const serviceName = envValue(env, "OTLP_SERVICE_NAME")?.trim() || "superagentteam-daemon";
 	if (enabled && !endpoint) throw new Error("otlp_endpoint_missing");
 	return { enabled, endpoint, timeoutMs, maxPending, serviceName };
 }

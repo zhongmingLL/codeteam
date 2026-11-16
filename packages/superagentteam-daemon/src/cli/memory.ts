@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { envValue, resolveDataDir } from "../env.ts";
 import type { Coverage, EvidenceKind, RetrievalTrigger } from "../memory/contract.ts";
 import { type MemoryDatabase, openMemoryDatabase, resolveMemoryDatabasePath } from "../memory/database.ts";
 import { buildSessionDigest } from "../memory/digest.ts";
@@ -29,9 +30,9 @@ const EVIDENCE_KINDS: readonly EvidenceKind[] = [
 ];
 
 function dataDir(args: ParsedArgs): string {
-	const value = option(args, "data-dir") ?? process.env.CODETEAM_DATA_DIR;
+	const value = option(args, "data-dir") ?? envValue(process.env, "DATA_DIR");
 	if (!value || value.trim() === "") {
-		throw new MemoryError("memory_unavailable", "CODETEAM_DATA_DIR or --data-dir is required");
+		return resolveDataDir();
 	}
 	return value;
 }

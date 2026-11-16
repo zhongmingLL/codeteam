@@ -1,3 +1,4 @@
+import { envValue } from "../env.ts";
 import type { StopHealthExpectation, StopHealthResult } from "./types.ts";
 
 export interface StopHealthProbe {
@@ -9,7 +10,7 @@ export const DEFAULT_HEALTH_TIMEOUT_MS = 2_000;
 export class HttpStopHealthProbe implements StopHealthProbe {
 	private readonly timeoutMs: number;
 
-	constructor(timeoutMs = Number(process.env.CODETEAM_HEALTH_TIMEOUT_MS ?? DEFAULT_HEALTH_TIMEOUT_MS)) {
+	constructor(timeoutMs = Number(envValue(process.env, "HEALTH_TIMEOUT_MS") ?? DEFAULT_HEALTH_TIMEOUT_MS)) {
 		this.timeoutMs = Number.isSafeInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_HEALTH_TIMEOUT_MS;
 	}
 

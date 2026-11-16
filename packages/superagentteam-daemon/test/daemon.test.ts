@@ -44,15 +44,26 @@ describe("codeteam daemon lifecycle", () => {
 		return daemon;
 	}
 
-	it("fails closed when CODETEAM_DATA_DIR is not provided", async () => {
-		const previous = process.env.CODETEAM_DATA_DIR;
+	it("uses the default ~/.superagentteam data dir when no data env is provided", async () => {
+		const previousHome = process.env.HOME;
+		const previousNew = process.env.SUPERAGENTTEAM_DATA_DIR;
+		const previousOld = process.env.CODETEAM_DATA_DIR;
+		const home = join(root, "home");
+		mkdirSync(home);
+		process.env.HOME = home;
+		delete process.env.SUPERAGENTTEAM_DATA_DIR;
 		delete process.env.CODETEAM_DATA_DIR;
 		try {
-			await expect(startDaemon({ installationRoot, runningRevision: "rev-1" })).rejects.toMatchObject({
-				code: "data_dir_missing",
-			});
+			const daemon = await startDaemon({ installationRoot, runningRevision: "rev-1" });
+			running.push(daemon);
+			expect(existsSync(join(home, ".superagentteam", "control.db"))).toBe(true);
 		} finally {
-			if (previous !== undefined) process.env.CODETEAM_DATA_DIR = previous;
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+			if (previousNew === undefined) delete process.env.SUPERAGENTTEAM_DATA_DIR;
+			else process.env.SUPERAGENTTEAM_DATA_DIR = previousNew;
+			if (previousOld === undefined) delete process.env.CODETEAM_DATA_DIR;
+			else process.env.CODETEAM_DATA_DIR = previousOld;
 		}
 	});
 

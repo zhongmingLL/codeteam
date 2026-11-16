@@ -1,10 +1,10 @@
 ---
-name: codeteam-verify
+name: superagentteam-verify
 description: Run SuperAgentTeam's verification ladder before claiming a change is done.
 triggers: ["before claiming done", "after code changes", "before PR"]
 ---
 
-# codeteam verify
+# superagentteam verify
 
 Run from the active worktree and report observed exit codes, not intent.
 

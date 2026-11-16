@@ -23,7 +23,7 @@ afterEach(async () => {
 const dto: TraceSpanDTO = {
 	traceId: "a".repeat(32),
 	spanId: "b".repeat(16),
-	name: "codeteam.run",
+	name: "superagentteam.run",
 	kind: "internal",
 	startTimeMs: 1_700_000_000_000,
 	endTimeMs: 1_700_000_000_010,
@@ -87,7 +87,7 @@ describe("W6c OTLP exporter", () => {
 			}>;
 		};
 		const span = payload.resourceSpans[0]!.scopeSpans[0]!.spans[0]!;
-		expect(span.name).toBe("codeteam.run");
+		expect(span.name).toBe("superagentteam.run");
 		expect(span.traceId).toBe(dto.traceId);
 		expect(span.status).toMatchObject({ code: 1 });
 		const serialized = JSON.stringify(payload);
@@ -158,7 +158,7 @@ describe("W6c OTLP exporter", () => {
 		const redactor = createRedactor({ salt: "otlp-test-salt" });
 		const store = new LocalTraceStore({ hmacId: (id) => redactor.hmacId(id) });
 		const tracer = new Tracer({ store, redactor, exporter });
-		const span = tracer.startSpan({ name: "codeteam.test", attributes: { prompt: "raw prompt" } });
+		const span = tracer.startSpan({ name: "superagentteam.test", attributes: { prompt: "raw prompt" } });
 		span.end();
 		await exporter.flush();
 		expect(body).not.toContain("raw prompt");
@@ -174,7 +174,7 @@ describe("W6c OTLP exporter", () => {
 				env: { CODETEAM_OTLP_ENABLED: "1", CODETEAM_OTLP_ENDPOINT: "http://127.0.0.1:1" },
 			});
 			const exportSpy = vi.spyOn(telemetry.otlp!, "export");
-			telemetry.tracer.startSpan({ name: "codeteam.runtime.test", attributes: { role: "coder" } }).end();
+			telemetry.tracer.startSpan({ name: "superagentteam.runtime.test", attributes: { role: "coder" } }).end();
 			expect(exportSpy).toHaveBeenCalledTimes(1);
 			expect(telemetry.readiness().otlp.status).toBe("enabled");
 			telemetry.logs?.close();
@@ -196,7 +196,7 @@ describe("W6c OTLP exporter", () => {
 				dataDir: base.dataDir,
 				env: { CODETEAM_OTLP_ENABLED: "1", CODETEAM_OTLP_ENDPOINT: "http://127.0.0.1:4318" },
 			});
-			telemetry.tracer.startSpan({ name: "codeteam.runtime.fetch", attributes: { role: "coder" } }).end();
+			telemetry.tracer.startSpan({ name: "superagentteam.runtime.fetch", attributes: { role: "coder" } }).end();
 			await telemetry.otlp?.shutdown?.();
 			expect(fetchStub).toHaveBeenCalledTimes(1);
 			const [url] = fetchStub.mock.calls[0]!;

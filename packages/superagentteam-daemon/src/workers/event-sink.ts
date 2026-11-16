@@ -185,7 +185,7 @@ export class WorkerEventSink {
 			this.toolSpans.set(toolCallId, span);
 		}
 		observability?.metrics
-			.counter("codeteam_tool_calls_total", {
+			.counter("superagentteam_tool_calls_total", {
 				"tool.category": classification.category,
 				"tool.name": classification.toolName,
 				status: "started",
@@ -209,7 +209,7 @@ export class WorkerEventSink {
 			if (toolCallId) this.toolSpans.delete(toolCallId);
 		}
 		this.options.observability?.metrics
-			.counter("codeteam_tool_calls_total", {
+			.counter("superagentteam_tool_calls_total", {
 				"tool.category": classification.category,
 				"tool.name": classification.toolName,
 				status: isError ? "error" : "ok",

@@ -92,7 +92,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-a2a-send",
 				token: minted.token,
-				toolName: "codeteam_a2a_send",
+				toolName: "superagentteam_a2a_send",
 				input: {
 					kind: "question",
 					targets: ["profile:reviewer"],
@@ -113,7 +113,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-a2a-send",
 				token: minted.token,
-				toolName: "codeteam_a2a_send",
+				toolName: "superagentteam_a2a_send",
 				input: {
 					kind: "question",
 					targets: ["profile:reviewer"],
@@ -123,6 +123,38 @@ describe("A2A control socket", () => {
 			});
 			expect(replay.ok).toBe(true);
 			expect((replay.result as { message: { id: string } }).message.id).toBe(result.message.id);
+		} finally {
+			socket.destroy();
+		}
+	});
+
+	it("accepts the legacy codeteam_a2a_send alias through the same handler", async () => {
+		fixture = createW5BFixture();
+		const socketPath = await fixture.runtime.start();
+		const run = createBoundRun(fixture, {
+			runId: "run-a2a-legacy",
+			workerId: "worker-a2a-legacy",
+			profileId: "profile:coder",
+			sessionId: "session-coder",
+		});
+		const minted = mintInvocationCredential(fixture.store, { runId: run.id });
+		const { socket, request } = await connectControl(socketPath);
+		try {
+			const response = await request({
+				type: "a2a_call",
+				workerId: "worker-a2a-legacy",
+				token: minted.token,
+				toolName: "codeteam_a2a_send",
+				input: {
+					kind: "question",
+					targets: ["profile:reviewer"],
+					bodyMd: "Legacy alias request.",
+					requestId: "req-legacy-a2a",
+				},
+			});
+			expect(response.ok).toBe(true);
+			const result = response.result as { message: { id: string; bodyMd: string } };
+			expect(result.message.bodyMd).toContain("Legacy alias request.");
 		} finally {
 			socket.destroy();
 		}
@@ -176,7 +208,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-other",
 				token: minted.token,
-				toolName: "codeteam_a2a_send",
+				toolName: "superagentteam_a2a_send",
 				input: { kind: "question", targets: ["profile:reviewer"], bodyMd: "x" },
 			});
 			expect(wrongWorker).toMatchObject({ ok: false, error: { code: "forbidden" } });
@@ -203,7 +235,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-a2a-restricted",
 				token: restricted.token,
-				toolName: "codeteam_a2a_send",
+				toolName: "superagentteam_a2a_send",
 				input: { kind: "question", targets: ["profile:reviewer"], bodyMd: "x" },
 			});
 			expect(allowlist).toMatchObject({ ok: false, error: { code: "forbidden" } });
@@ -238,7 +270,7 @@ describe("A2A control socket", () => {
 				type: "a2a_call",
 				workerId: "worker-empty-policy",
 				token: minted.token,
-				toolName: "codeteam_a2a_send",
+				toolName: "superagentteam_a2a_send",
 				input: { kind: "question", targets: ["profile:reviewer"], bodyMd: "must not send" },
 			});
 			expect(a2a).toMatchObject({ ok: false, error: { code: "forbidden" } });

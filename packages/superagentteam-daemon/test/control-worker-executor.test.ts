@@ -33,8 +33,10 @@ describe("W5b RPC executor", () => {
 		const run = fixture.store.runs.get(drain.runs[0]!.id)!;
 		const traces = observability!.traces.query({ invocationId: run.id });
 		expect(traces.availability).toBe("available");
-		expect(traces.spans.map((span) => span.name)).toEqual(expect.arrayContaining(["codeteam.run", "codeteam.tool"]));
-		expect(observability!.metrics.renderPrometheus()).toContain("codeteam_run_executions_total");
+		expect(traces.spans.map((span) => span.name)).toEqual(
+			expect.arrayContaining(["superagentteam.run", "superagentteam.tool"]),
+		);
+		expect(observability!.metrics.renderPrometheus()).toContain("superagentteam_run_executions_total");
 		expect(fixture.store.toolUsage.report({ days: 0 }).summary.totalCalls).toBeGreaterThan(0);
 		await observability!.close();
 	});

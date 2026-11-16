@@ -1,9 +1,9 @@
 ---
-title: "codeteam A2A runtime v1 — thread-first architecture"
+title: "SuperAgentTeam A2A runtime v1 — thread-first architecture"
 doc_kind: architecture
 status: accepted
 created: 2026-11-03
-updated: 2026-11-14
+updated: 2026-11-16
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_direction: "2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery setup frozen/deprecated"
@@ -13,7 +13,7 @@ supersedes_phase_a_of: codeteam/F017
 related_features: [codeteam/F018, codeteam/F017]
 ---
 
-# codeteam A2A runtime v1
+# SuperAgentTeam A2A runtime v1
 
 > **定位：direction/scope，不是详细机制契约。** 本文回答“为什么 thread-first、
 > v1 做什么/不做什么”；数据模型、事务、状态机和验收细节以
@@ -41,9 +41,13 @@ related_features: [codeteam/F018, codeteam/F017]
    **没有 conversation/code 两种 invocation**。
 3. **Session 是 thread × agent 的持久执行身份**：一个 active session；
    `taskId` 不进入 session identity。
-4. **A2A v1 模型面有四个工具**：`codeteam_post_message` /
-   `codeteam_cross_post_message` / `codeteam_multi_mention` /
-   `codeteam_thread_context`。
+4. **A2A v1 模型面有四个工具**：`superagentteam_post_message` /
+   `superagentteam_cross_post_message` / `superagentteam_multi_mention` /
+   `superagentteam_thread_context`。
+
+> Tool IDs are `superagentteam_*`; `codeteam_*` remains a compatibility alias until
+> F019.5. The retired `codeteam_a2a_send` / `codeteam_handoff_*` names below are
+> historical and are not registered by v1.
 5. **Queue 单账本**：thread + source message + targets；不造第二队列。
 6. **Auth 以 thread/turnExecution 为锚**：token 绑 `turnExecutionId`；没有 Task 坐标。
 7. **v1 只记录 invocation usage**：不引入 ThreadGoal/tokenBudget/
@@ -102,7 +106,7 @@ User
 - A2A 消息面是 `post_message` / `cross_post_message` / `thread_context`；
   action lease / custody 是更高层能力，不在纯消息 runtime 里。
 
-### 1.2 codeteam 现状与 v1 差异
+### 1.2 SuperAgentTeam 现状与 v1 差异
 
 | 维度 | 当前 codeteam | A2A runtime v1 |
 |---|---|---|
@@ -142,7 +146,7 @@ User
 Agent 身份是 config-as-code，完整模型见
 `docs/architecture/0008-agent-config.md`：
 
-- `.codeteam/agent-catalog.json` → `AgentConfig` → `AgentRegistry` 内存注册表；
+- `.superagentteam/agent-catalog.json`（旧 `.codeteam/` dual-read）→ `AgentConfig` → `AgentRegistry` 内存注册表；
 - `AgentConfig.id` 用于 A2A `targets` 和 Thread participants；
   `mentionPatterns` 用于 operator 用户消息显式 `@` 路由；
   `displayName` 用于消息展示；
@@ -397,10 +401,10 @@ thread message / A2A tool
 
 | 工具 | 作用 | 必填 | 不变量 |
 |---|---|---|---|
-| `codeteam_post_message` | 同 thread 写消息；可唤醒 agents | `targets`, `bodyMd` | targets 是 `{kind:"agent", id}`；可为空 = message-only write，不唤醒；`@operator` 只写 `mentionsUser` |
-| `codeteam_cross_post_message` | 跨 thread 发言并唤醒 agents | `threadId`, `targets`, `bodyMd` | source/target thread 同 user；target thread active/not deleted/有 projectPath；写 `extra.crossPost`；depth/loop guard；targets 同上 |
-| `codeteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent，聚合结果并 callback | `targets` (2-3 agents), `question`, `context?`, `callbackTo`, `timeoutMinutes?` | one source message + one queue entry + one InvocationRecord + N TurnExecutions；terminal 后 one aggregate system message + one callback queue/parent/child；status/timeout/aggregate |
-| `codeteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
+| `superagentteam_post_message` | 同 thread 写消息；可唤醒 agents | `targets`, `bodyMd` | targets 是 `{kind:"agent", id}`；可为空 = message-only write，不唤醒；`@operator` 只写 `mentionsUser` |
+| `superagentteam_cross_post_message` | 跨 thread 发言并唤醒 agents | `threadId`, `targets`, `bodyMd` | source/target thread 同 user；target thread active/not deleted/有 projectPath；写 `extra.crossPost`；depth/loop guard；targets 同上 |
+| `superagentteam_multi_mention` | 同一问题 fan-out 给 2-3 个 agent，聚合结果并 callback | `targets` (2-3 agents), `question`, `context?`, `callbackTo`, `timeoutMinutes?` | one source message + one queue entry + one InvocationRecord + N TurnExecutions；terminal 后 one aggregate system message + one callback queue/parent/child；status/timeout/aggregate |
+| `superagentteam_thread_context` | 读当前/指定 thread 的有界上下文 | 无 / `threadId` | 只读；不能跨 user |
 
 约束：
 

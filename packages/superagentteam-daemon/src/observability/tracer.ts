@@ -65,7 +65,7 @@ export class Tracer {
 
 	startSpan(input: StartSpanInput): SpanHandle {
 		return new SpanHandleImpl({
-			name: sanitizeSpanName(input.name) ?? "codeteam.span",
+			name: sanitizeSpanName(input.name) ?? "superagentteam.span",
 			kind: input.kind ?? "internal",
 			parent: input.parent,
 			attributes: input.attributes ?? {},
@@ -79,7 +79,7 @@ export class Tracer {
 
 	startRunSpan(run: Run): SpanHandle {
 		return this.startSpan({
-			name: "codeteam.run",
+			name: "superagentteam.run",
 			attributes: {
 				"invocation.id": run.id,
 				"task.id": run.taskId,
@@ -103,7 +103,7 @@ export class Tracer {
 		if (input.toolCallId) attributes["tool.call.id"] = input.toolCallId;
 		if (input.inputKeys && input.inputKeys.length > 0) attributes["tool.input.keys"] = input.inputKeys.join(",");
 		return this.startSpan({
-			name: "codeteam.tool",
+			name: "superagentteam.tool",
 			attributes,
 			parent: parent ?? undefined,
 		});

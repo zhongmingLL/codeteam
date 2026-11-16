@@ -1,6 +1,7 @@
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { envValue, resolveDataDir } from "../env.ts";
 import { MemoryError } from "./errors.ts";
 
 export const MEMORY_DATABASE_FILE = "memory.db";
@@ -149,11 +150,11 @@ const MEMORY_SCHEMA_STATEMENTS: readonly string[] = [
 ];
 
 export function resolveMemoryDatabasePath(options: { path?: string; dataDir?: string } = {}): string {
-	const explicit = options.path ?? process.env.CODETEAM_MEMORY_DB;
+	const explicit = options.path ?? envValue(process.env, "MEMORY_DB");
 	if (explicit && explicit.trim() !== "") return explicit;
-	const dataDir = options.dataDir ?? process.env.CODETEAM_DATA_DIR;
+	const dataDir = resolveDataDir(options.dataDir);
 	if (!dataDir || dataDir.trim() === "") {
-		throw new MemoryError("memory_unavailable", "CODETEAM_MEMORY_DB or CODETEAM_DATA_DIR is required", {
+		throw new MemoryError("memory_unavailable", "SUPERAGENTTEAM_MEMORY_DB or SUPERAGENTTEAM_DATA_DIR is required", {
 			details: { reason: "memory_db_path_missing" },
 		});
 	}
@@ -161,21 +162,21 @@ export function resolveMemoryDatabasePath(options: { path?: string; dataDir?: st
 }
 
 export function resolveMemoryBusyTimeoutMs(value?: number): number {
-	const raw = value ?? process.env.CODETEAM_SQLITE_BUSY_TIMEOUT_MS;
+	const raw = value ?? envValue(process.env, "SQLITE_BUSY_TIMEOUT_MS");
 	if (raw === undefined || raw === "") return DEFAULT_MEMORY_BUSY_TIMEOUT_MS;
 	const parsed = typeof raw === "number" ? raw : Number(raw);
 	if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-		throw new MemoryError("invalid_input", "CODETEAM_SQLITE_BUSY_TIMEOUT_MS must be a positive integer");
+		throw new MemoryError("invalid_input", "SUPERAGENTTEAM_SQLITE_BUSY_TIMEOUT_MS must be a positive integer");
 	}
 	return parsed;
 }
 
 export function resolveMemoryMaxFileBytes(value?: number): number {
-	const raw = value ?? process.env.CODETEAM_MEMORY_MAX_FILE_BYTES;
+	const raw = value ?? envValue(process.env, "MEMORY_MAX_FILE_BYTES");
 	if (raw === undefined || raw === "") return DEFAULT_MEMORY_MAX_FILE_BYTES;
 	const parsed = typeof raw === "number" ? raw : Number(raw);
 	if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-		throw new MemoryError("invalid_input", "CODETEAM_MEMORY_MAX_FILE_BYTES must be a positive integer");
+		throw new MemoryError("invalid_input", "SUPERAGENTTEAM_MEMORY_MAX_FILE_BYTES must be a positive integer");
 	}
 	return parsed;
 }

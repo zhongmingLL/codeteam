@@ -1,5 +1,6 @@
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
+import { A2A_LEGACY_TOOL_PREFIX, A2A_TOOL_PREFIX } from "./tool-surface.ts";
 
 const INTENT_PATTERNS: readonly RegExp[] = [
 	/^\s*@[A-Za-z0-9._:-]+/m,
@@ -9,7 +10,7 @@ const INTENT_PATTERNS: readonly RegExp[] = [
 ];
 
 export const A2A_SCHEMA_CORRECTION =
-	"A2A routing requires a typed tool call. Use codeteam_a2a_send for discussion; use codeteam_handoff_create for responsibility transfer. Body @ mentions do not route.";
+	"A2A routing requires a typed tool call. Use superagentteam_a2a_send for discussion; use superagentteam_handoff_create for responsibility transfer. Body @ mentions do not route.";
 
 export interface ObserveTerminalInput {
 	readonly runId: string;
@@ -29,7 +30,13 @@ export function hasUnroutedA2AIntent(bodyMd: string): boolean {
 }
 
 export function hasA2AToolCall(toolCalls: readonly string[]): boolean {
-	return toolCalls.some((name) => name === "codeteam_a2a_send" || name.startsWith("codeteam_handoff_"));
+	return toolCalls.some(
+		(name) =>
+			name === `${A2A_TOOL_PREFIX}a2a_send` ||
+			name === `${A2A_LEGACY_TOOL_PREFIX}a2a_send` ||
+			name.startsWith(`${A2A_TOOL_PREFIX}handoff_`) ||
+			name.startsWith(`${A2A_LEGACY_TOOL_PREFIX}handoff_`),
+	);
 }
 
 export function observeMissingA2AToolCall(

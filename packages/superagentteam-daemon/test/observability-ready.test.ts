@@ -58,7 +58,7 @@ describe("W6c daemon readiness and metrics", () => {
 		const metrics = await fetch(endpoint(daemon, "/metrics"));
 		expect(metrics.status).toBe(200);
 		expect(metrics.headers.get("content-type")).toContain("text/plain");
-		expect(await metrics.text()).toContain("codeteam_telemetry_up 1");
+		expect(await metrics.text()).toContain("superagentteam_telemetry_up 1");
 
 		const health = await fetch(daemon.healthUrl);
 		expect(health.status).toBe(200);
