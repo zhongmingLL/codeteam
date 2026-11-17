@@ -31,7 +31,7 @@ created: 2026-10-25
 | F016 | W7a headless surface + A2A ingress E2E | in_progress (F016a done; F016b next) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
 | F017 | A2A surface unification（post/cross-post + full A2A custody） | phase-a-archive (historical input; F018 owns A2A runtime v1) | 宪宪 | [F017](docs/features/F017-a2a-surface-unification.md) |
 | F018 | A2A runtime v1（AgentConfig config-as-code；Thread/InvocationRecord/TurnExecution；post/cross/multi_mention/thread_context；纯 A2A；code delivery 冻结） | spec (Phase A design accepted; R1 next) | 宪宪 | [F018](docs/features/F018-thread-first-runtime.md) |
-| F019 | SuperAgentTeam rename（platform/team/SOP 分层；`@superagentteam/*`；env/data/CLI/tool aliases；repo/branch last） | in_progress (F019.4 repo renamed; branch pending) | 宪宪 | [F019](docs/features/F019-superagentteam-rename.md) |
+| F019 | SuperAgentTeam rename（platform/team/SOP 分层；`@superagentteam/*`；env/data/CLI/tool aliases；repo/branch last） | in_progress (F019.4 repo done; branch deferred; F019.5 alias cleanup pending) | 宪宪 | [F019](docs/features/F019-superagentteam-rename.md) |
 
 > Naming (F019): new and active docs use `superagentteam/Fxxx`; F001–F018 retain
 > `codeteam/Fxxx` for history. Package/env/data/CLI/tool names use `superagentteam*`

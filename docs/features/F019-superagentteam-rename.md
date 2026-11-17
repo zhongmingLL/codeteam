@@ -55,7 +55,7 @@ F019 是独立 feature，不混入 F018；F018 R1-0 在 F019 完成前暂停。
   CLI help、当前 canonical docs 的显示名与 feature namespace。
 - 包：`packages/codeteam-*` → `packages/superagentteam-*`；`@codeteam/*` →
   `@superagentteam/*`；import/build/tsconfig/package-lock 同步。
-- 运行时标识：env/data/config 新名 + 旧名双读；新写入走新名。数据迁移语义：旧根原地读，不自动复制；显式迁移是服务停止期间的手动目录改名。
+- 运行时标识：env/data/config 新名 + 旧名双读；无历史根时新写入创建新根，存在旧根时写随旧根，直至显式迁移。数据迁移语义：旧根原地读，不自动复制；显式迁移是服务停止期间的手动目录改名。
 - CLI/工具：`superagentteam` + `codeteam` wrapper；`superagentteam_*` + `codeteam_*` alias。
 - 仓库/分支：repo rename 已完成（`zhongmingLL/superagentteam`，旧 URL 301）；`superagentteam-work` 分支名和 CI/protection rename 由 operator 决定是否继续。
 - 历史/legacy：只加边界/索引，不重写历史文档；`docs/legacy/task-first/` 保持原名。
