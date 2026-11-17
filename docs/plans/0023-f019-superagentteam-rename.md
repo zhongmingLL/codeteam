@@ -84,7 +84,7 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 
 **交付**
 
-- env：新 `SUPERAGENTTEAM_*`；旧 `CODETEAM_*` 读 fallback；新写入走新名。
+- env：新 `SUPERAGENTTEAM_*`；旧 `CODETEAM_*` 读 fallback；无历史根时新写入创建新根，存在旧根时写随旧根，直至显式迁移。
 - 数据/配置：新 `~/.superagentteam`、`.superagentteam/`；旧 `.codeteam` dual-read/迁移
   fixture；无真实用户数据，但仍保留回滚。迁移语义：旧根原地读，不自动复制；显式迁移
   是服务停止期间的手动目录改名。
@@ -100,7 +100,7 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 **测试**
 
 - env fallback：只设 `CODETEAM_DATA_DIR` 仍能启动；只设 `SUPERAGENTTEAM_DATA_DIR` 走新路径。
-- 数据 dual-read：旧 `.codeteam` fixture 可读；新写入 `.superagentteam`。
+- 数据 dual-read：旧 `.codeteam` fixture 可读；无历史根时新写入 `.superagentteam`；存在旧根时写随旧根，直至显式迁移。
 - CLI：`superagentteam --help`、`codeteam --help` wrapper。
 - tool registry：新旧名称都可调用；旧 alias 只做转发，不产生第二套语义。
 

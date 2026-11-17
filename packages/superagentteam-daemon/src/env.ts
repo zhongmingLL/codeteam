@@ -44,7 +44,8 @@ export function legacyDataDir(env: NodeJS.ProcessEnv = process.env): string {
 /**
  * Data root precedence: explicit flag > SUPERAGENTTEAM_DATA_DIR > legacy
  * CODETEAM_DATA_DIR > existing ~/.superagentteam > existing ~/.codeteam >
- * new ~/.superagentteam (new writes use the new root).
+ * new ~/.superagentteam (fresh installs create the new root; an existing legacy
+ * root keeps writes until an explicit migration).
  */
 export function resolveDataDir(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
 	if (explicit !== undefined && explicit.trim() !== "") return explicit;
