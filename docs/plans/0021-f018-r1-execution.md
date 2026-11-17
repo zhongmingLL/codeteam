@@ -15,14 +15,14 @@ source_review: "docs/architecture/0018-v1-global-design-review.md"
 # F018 — R1 execution plan
 
 > 设计基线：`86310de24`（PR #86）。operator 2026-11-14 选择路径 A：
-> 先修 `supply-chain` → merge #86 到 `codeteam-work` → 从 `codeteam-work`
+> 先修 `supply-chain` → merge #86 到 `superagentteam-work` → 从 `superagentteam-work`
 > 开 R1。本环境无真实用户数据，R1 走 greenfield baseline；本文拆 R1 的可执行工作、
 > legacy move 和后续阶段门禁；
 > 设计契约仍以 `0005`/`0007` + 分册为准，本文不新增契约。
 >
 > **F019 前置**：SuperAgentTeam rename 是独立 F019，排在 R1-0 前。F019.1–F019.3
-> 已完成；F019.4 repo rename 已完成（旧 URL 301），branch rename 待 operator。
-> F018 R1-0 仍按 operator 指示暂停，不自动开始；本文其余旧名在 R1-0 恢复前统一回写。
+> 已完成；F019.4 repo + default branch rename 已完成（旧 repo URL 301；新 branch
+> `superagentteam-work`）。F018 R1-0 仍按 operator 指示暂停，不自动开始；本文其余旧名在 R1-0 恢复前统一回写。
 
 ## 0. 执行顺序
 
@@ -52,7 +52,7 @@ R1 走 greenfield baseline：新库只建 F018 schema，不迁移 legacy 数据�
 
 ### 1.1 supply-chain fix（独立 PR）
 
-- 分支：`fix/supply-chain-node-forge`，target `codeteam-work`。
+- 分支：`fix/supply-chain-node-forge`，target `superagentteam-work`。
 - 现状：`package-lock.json` 中 `node-forge` 是 `1.4.2`，父依赖是
   `@earendil-works/gondolin@0.12.0`（`node-forge: ^1.3.3`）。
 - 修复目标：锁到 `node-forge@1.4.3`（当前 latest，advisory 范围为
@@ -60,22 +60,22 @@ R1 走 greenfield baseline：新库只建 F018 schema，不迁移 legacy 数据�
   掩盖。
 - 验证：`node scripts/npm-audit.mjs`、`NODE_ENV=development npm run build:offline`、
   受影响包测试；确认没有引入新的 audit advisory。
-- review：非作者 review；merge 到 `codeteam-work` 后再动 #86。
+- review：非作者 review；merge 到 `superagentteam-work` 后再动 #86。
 
 ### 1.2 merge PR #86
 
 - 设计契约锚点是 `86310de24`；后续 plan commit（含本文）不改契约。合并前用
-  `codeteam-work` 更新分支（strict base policy），重跑
+  `superagentteam-work` 更新分支（strict base policy），重跑
   `changes` / `mcp-conformance` / `build-check-test` / `supply-chain`。
 - 设计契约（`docs/architecture/`）不再改；本文是 plan，不是契约变更。
-- merge 后再从 `codeteam-work` 开 R1 worktree。
+- merge 后再从 `superagentteam-work` 开 R1 worktree。
 
 ### 1.3 R1 worktree
 
 ```text
 git fetch origin
 git worktree add /home/ming/agent/codeteam-f018-r1 \
-  -b feat/f018-r1-schema origin/codeteam-work
+  -b feat/f018-r1-schema origin/superagentteam-work
 ```
 
 - 安装：`NODE_ENV=development npm install --ignore-scripts`。
@@ -325,12 +325,12 @@ runtime 暂不读新表。
 - `NODE_ENV=development npm run build:offline` 通过。
 - 受影响测试 + 新 schema migration up/down 通过。
 - v1 runtime 不读不写 legacy 表；旧 shim 仍可回滚；无行为变化。
-- 非作者 review 覆盖 R1 exact HEAD；merge 到 `codeteam-work`。
+- 非作者 review 覆盖 R1 exact HEAD；merge 到 `superagentteam-work`。
 
 ## 4. R1 PR 策略
 
 - 分支：`feat/f018-r1-0-legacy-move` / `-a-schema` / `-b-invocation-queue` /
-  `-c-auth-draft-session` / `-d-greenfield-gate`，全部 target `codeteam-work`，短生命周期。
+  `-c-auth-draft-session` / `-d-greenfield-gate`，全部 target `superagentteam-work`，短生命周期。
 - 每个 PR 自带 tests + evidence；schema PR 额外带 migration；不把多个切片塞进一个超大 PR。
 - R1-0 先合；R1-a 再合；R1-b/c 基于 R1-a；R1-d 最后。
 - 代码 review 走非作者 fresh-context；R1 schema/auth 面找砚砚，验收/文档找墨墨，
@@ -383,8 +383,8 @@ runtime 暂不读新表。
 
 1. 完成 F019.0–F019.3：SuperAgentTeam 命名/包/env/data/CLI/tools alias；见 `0023`。
 2. 开 `fix/supply-chain-node-forge`，node-forge 1.4.3 + audit/build 验证，单独 PR。
-3. supply-chain 绿后更新 #86、merge 到 `codeteam-work`。
-4. 从 `codeteam-work` 开 R1-0 worktree；建 `legacy/task-first/`，`git mv` 纯 legacy
+3. supply-chain 绿后更新 #86、merge 到 `superagentteam-work`。
+4. 从 `superagentteam-work` 开 R1-0 worktree；建 `legacy/task-first/`，`git mv` 纯 legacy
    目录/stores 和 `control/stores/types.ts` 定义，旧路径留 shim/barrel；建
    `packages/codeteam-shared/src/types/` 骨架；落 `check-legacy-boundary` + baseline allowlist。
 5. R1-0 第一个 checkpoint：guard 能拦住新 legacy import/retired tool；旧代码仍可回滚。
@@ -401,6 +401,6 @@ runtime 暂不读新表。
   E15 标记为有数据部署另行 migration plan。
 - auth/draft/session/queue store 级测试通过；无 task-scope token 新写。
 - 非作者 review 覆盖 R1 exact HEAD；无 P0/P1 未处置。
-- R2 可以从 `codeteam-work` 直接开，不需要再补 R1 schema。
+- R2 可以从 `superagentteam-work` 直接开，不需要再补 R1 schema。
 
 [宪宪/deepseek-flash🐾]

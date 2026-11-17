@@ -11,7 +11,7 @@ SuperAgentTeam (`zhongmingLL/superagentteam`) is a downstream mirror of the pi m
 | Tag | `v1.4.0` |
 | Commit | `4a080252f06caf63a525d7873c5d94d3c23887e0` |
 | Release baseline branch | `main` |
-| Development branch | `codeteam-work` |
+| Development branch | `superagentteam-work` |
 | GitHub visibility | public |
 
 The previous baseline was `v1.3.0` (`71023aec1546d6d677a65669c5665c0927ce0dd0`). It remains the fallback if the W0a L0/session spike fails on `v1.4.0`; a fallback must be recorded in `KERNEL_GAPS.md` with evidence, not silently switched.
@@ -19,8 +19,8 @@ The previous baseline was `v1.3.0` (`71023aec1546d6d677a65669c5665c0927ce0dd0`).
 ## Branch model
 
 - `main`: pinned pi release baseline. Protected; changes arrive through PRs only.
-- `codeteam-work`: default development branch for SuperAgentTeam work; the branch name
-  is retained after the F019.4 repo rename.
+- `superagentteam-work`: default development branch for SuperAgentTeam work, renamed
+  from `codeteam-work` in F019.4.
 - `feature/*`: short-lived task branches, one per worktree/task.
 
 ## Sync with upstream
@@ -38,7 +38,7 @@ git merge --no-ff vX.Y.Z
 # run the baseline checks, update UPSTREAM.md, then open a PR into main
 ```
 
-Do not merge upstream directly into `codeteam-work` without first updating `main`; the release baseline is the version lock.
+Do not merge upstream directly into `superagentteam-work` without first updating `main`; the release baseline is the version lock.
 
 ## Kernel policy
 
@@ -67,7 +67,7 @@ These checks prove the upstream build and tests. They do **not** prove the W0a a
 - `package.json`: root `build` / `build:offline` now also build `packages/superagentteam-pi-adapter` and `packages/superagentteam-skills` after the pi coding-agent package; root `tsconfig.json` maps `@superagentteam/*` to package sources for type-checking. Reason: SuperAgentTeam-specific runtime adapters and the curated skill catalog live under `packages/superagentteam-*` and must participate in the normal build and type graph.
 - F019.2 package rename: `@codeteam/*` / `packages/codeteam-*` -> `@superagentteam/*` / `packages/superagentteam-*`; updated root build scripts, tsconfig paths, CI scope classifier, risk path patterns, and `package-lock.json`. Reason: F019 SuperAgentTeam rename; no upstream pi package is affected.
 - F019.3 compatibility: new `SUPERAGENTTEAM_*` env names with `CODETEAM_*` fallback, `~/.superagentteam` with `~/.codeteam` dual-read, `superagentteam` CLI bin + `codeteam` wrapper, `superagentteam_*` tool IDs and `superagentteam-*` skill IDs with `codeteam_*` / `codeteam-*` aliases. Reason: F019 SuperAgentTeam rename; no upstream pi package is affected.
-- F019.4 repository rename: `zhongmingLL/codeteam` -> `zhongmingLL/superagentteam` on 2026-11-17; old URLs 301-redirect; default branch, CI triggers, branch protection, and required checks remain on `codeteam-work` unchanged. The branch rename to `superagentteam-work` is deferred by the operator's repo-only choice. Reason: F019 SuperAgentTeam rename; no upstream pi package is affected.
+- F019.4 repo/branch rename: `zhongmingLL/codeteam` -> `zhongmingLL/superagentteam` and `codeteam-work` -> `superagentteam-work` on 2026-11-17. Old repo URLs 301-redirect; branch names do not. Branch protection and required checks followed the branch rename and were verified. Reason: F019 SuperAgentTeam rename; no upstream pi package is affected.
 
 ## W0a verification status (2026-10-27)
 

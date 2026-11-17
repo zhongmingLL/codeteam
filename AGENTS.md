@@ -7,9 +7,8 @@
   (`CODETEAM.md` is a `status: moved` stub), `docs/README.md`, `docs/plans/README.md`,
   and `docs/features/F001-architecture-v1.md`.
 - `main` is the pi release baseline. The repository is `zhongmingLL/superagentteam`;
-  `codeteam-work` remains the default development branch until the branch rename is
-  scheduled. Feature branches are short-lived and target `codeteam-work` for now;
-  releasing to `main` is a separate PR.
+  `superagentteam-work` is the default development branch. Feature branches are
+  short-lived and target `superagentteam-work`; releasing to `main` is a separate PR.
 - Never force-push, rewrite `main`, or merge without the applicable review and verification evidence.
 - `BACKLOG.md` is the full feature index: allocate the next `Fxxx`, create
   `docs/features/Fxxx-*.md`, and add the BACKLOG row before implementation; at
@@ -22,8 +21,8 @@
 - New and active docs use `superagentteam/Fxxx`; F001–F018 keep `codeteam/Fxxx` for history.
 - F019.2 packages and F019.3 env/data/CLI/tool/skill names now default to
   `superagentteam*`; `codeteam*` remains a compatibility alias through F019.5.
-  F019.4 renamed the repository to `zhongmingLL/superagentteam`; the `codeteam-work`
-  branch name remains until the branch rename is scheduled.
+  F019.4 renamed the repository to `zhongmingLL/superagentteam` and the default branch
+  to `superagentteam-work`.
 
 ## Scope and boundaries
 
@@ -91,4 +90,4 @@
 - Stage explicit paths. Do not use `git add -A` or `git add .`.
 - Do not commit unless the task authorizes it. Do not bypass hooks.
 - Every review finding must state severity and stance.
-- Docs changes may go direct to `codeteam-work` when reversible and branch protection permits. Once W0a protection is active, use a short-lived PR unless the operator explicitly authorizes a direct docs push. Code changes need risk-matched verification and non-author review.
+- Docs changes may go direct to `superagentteam-work` when reversible and branch protection permits. Once W0a protection is active, use a short-lived PR unless the operator explicitly authorizes a direct docs push. Code changes need risk-matched verification and non-author review.

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, codeteam-work, superagentteam-work]
+    branches: [main, superagentteam-work]
   pull_request:
-    branches: [main, codeteam-work, superagentteam-work]
+    branches: [main, superagentteam-work]
 
 permissions:
   contents: read

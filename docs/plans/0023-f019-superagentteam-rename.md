@@ -25,7 +25,7 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 2. F019.2 包/目录/scope/import/build
 3. F019.3 env/data/config + CLI/tools alias
 4. F018 R1-0（使用 superagentteam 命名）
-5. F019.4 repo rename done；branch/CI/protection rename 待 operator
+5. F019.4 repo + default branch rename done；CI/protection verified
 6. F019.5 alias 清理/R5 归档
 ```
 
@@ -110,21 +110,21 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 
 **交付**
 
-- GitHub repo `zhongmingLL/codeteam` → `zhongmingLL/superagentteam`（2026-11-17 已完成；
-  旧 URL 301）；`codeteam-work` → `superagentteam-work` 由 operator 的 repo-only 选择
-  暂缓，branch/CI/protection 不改。
-- 已更新 remotes；`codeteam-work` 分支、CI workflows、branch protection、required checks
-  保持原样；PR 链接/badges/docs 由本次 docs PR 更新。
-- 旧分支/链接保留只读或 redirect 说明。
+- GitHub repo `zhongmingLL/codeteam` → `zhongmingLL/superagentteam`，以及 default branch
+  `codeteam-work` → `superagentteam-work`（2026-11-17 已完成）。旧 repo URL 301；
+  branch 名不 redirect。
+- remotes、CI triggers、branch protection、required checks 已跟随/更新并验证；PR
+  链接/badges/docs 已更新；旧 `codeteam-work` 触发已移除。
+- 旧 branch refs 需要更新；旧 repo 链接由 GitHub redirect 保留。
 
 **测试**
 
-- `gh api` 检查 `codeteam-work` 的 protection/required checks；CI 在新 repo 的
-  `codeteam-work` 跑通；
-- PR/issue/README 链接可解析；旧 URL 301 redirect 已验证。
+- `gh api` 检查 `superagentteam-work` 的 protection/required checks（3 checks、strict、
+  reviews=0、enforce_admins）；CI 在新 default branch 跑通；
+- PR/issue/README 链接可解析；旧 repo URL 301 redirect 已验证，旧 branch 名不再解析。
 
-**出口**：新 repo 正常、旧链接 redirect、branch/protection 不变；branch rename 待
-operator 排期。
+**出口**：新 repo/branch 正常；旧 repo URL redirect；protection/required checks 跟随；
+旧 branch refs 已更新。
 
 **注意**：这是 operator/ops 操作；不自行 force-push 或改 protection 绕过 review。
 
@@ -141,8 +141,8 @@ operator 排期。
 - F019.2/F019.3 必须有兼容测试；F019.4 由 operator/ops 验证 protection。
 - Review：砚砚（packages/auth/security）、墨墨（docs/UX/naming）、烁烁
   （runtime/CLI）；非作者 review 覆盖 exact HEAD。
-- 分支：`feat/f019-superagentteam-rename` target `codeteam-work`（branch rename
-  待 operator 排期）；短生命周期；显式 `git add <paths>`。
+- 分支：`feat/f019-superagentteam-rename` target `superagentteam-work`；短生命周期；
+  显式 `git add <paths>`。
 
 ## 8. 风险与回滚
 
@@ -151,7 +151,7 @@ operator 排期。
 | 工具名硬切破坏模型 prompt | 保留 `codeteam_*` alias；新名只在文档/新调用 |
 | 数据路径断裂 | 双读 + fixture + 回滚；当前无真实用户数据但仍测试 |
 | 包 rename 导致 import/build 大面积断 | 分阶段 codemod + build/ts-imports；兼容 re-export |
-| 分支 protection/CI 断 | F019.4 最后做；operator/ops；不绕过保护 |
+| 分支 protection/CI 断 | F019.4 已完成；protection/required checks 跟随并验证 |
 | 历史文档被误改 | 只改当前 canonical；legacy/historical 加边界，不批量替换 |
 | F018 R1 返工 | R1-0 等 F019.1–F019.3；0021 目标名先冻结 |
 
@@ -162,6 +162,6 @@ operator 排期。
 3. F019.2 包/目录/scope；build/import 绿。
 4. F019.3 env/data/CLI/tools alias；兼容测试绿。
 5. 回写 `0021` 目标名为 `@superagentteam/*`；解除 R1-0 暂停。
-6. F019.4 repo rename 已完成；branch rename 待 operator 排期。
+6. F019.4 repo + default branch rename 已完成；protection/required checks 已验证。
 
 [宪宪/deepseek-flash🐾]
