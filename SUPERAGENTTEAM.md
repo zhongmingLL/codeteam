@@ -11,8 +11,8 @@ SuperAgentTeam is a repo-native, headless-first, durable A2A team runtime built 
 downstream baseline. Thread, invocation, queue, turn, worker, and credential are the shared
 runtime; team profiles and SOPs compose on top. `codeteam` is the historical/legacy name.
 The repository is now `zhongmingLL/superagentteam`; package/env/data/CLI/tool/skill names
-use `superagentteam*` with `codeteam*` compatibility aliases through F019.5. The
-`codeteam-work` branch name remains until the branch rename is scheduled.
+use `superagentteam*` with `codeteam*` compatibility aliases through F019.5. The default
+branch is now `superagentteam-work`; old `codeteam-work` refs are not redirected.
 
 ## Truth sources
 
@@ -29,15 +29,16 @@ use `superagentteam*` with `codeteam*` compatibility aliases through F019.5. The
 
 - Repository: `zhongmingLL/superagentteam` (renamed 2026-11-17; old URLs redirect).
 - `main`: pinned pi release baseline (`v1.4.0`).
-- `codeteam-work`: default development branch. The branch rename to
-  `superagentteam-work` is deferred by the operator's repo-only rename choice.
+- `superagentteam-work`: default development branch. The old `codeteam-work` branch
+  name no longer resolves; update remote refs/tracking if you still have them.
 
 ## Current stage
 
 As of 2026-11-17: F018 A2A runtime v1 design is accepted (Phase A contract closed at
 `86310de24`). F019.1 docs/branding, F019.2 packages/scope, and F019.3
 env/data/CLI/tool/skill compatibility are complete. F019.4 repository rename to
-`zhongmingLL/superagentteam` is complete (old URLs 301); the branch rename is deferred.
+`zhongmingLL/superagentteam` and default-branch rename to `superagentteam-work` are
+complete (old repo URLs 301; protection/required checks carried over).
 F018 R1-0 remains paused by the operator; F019.5 alias cleanup is later. Refresh this
 block (and the frontmatter `updated`) at each F019 phase; do not let it drift like the
 old W0a entry did.

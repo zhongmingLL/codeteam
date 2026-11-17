@@ -55,7 +55,7 @@ function sopInput(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-	const dataDir = mkdtempSync(join(tmpdir(), "codeteam-work-"));
+	const dataDir = mkdtempSync(join(tmpdir(), "superagentteam-work-"));
 	dirs.push(dataDir);
 	now = NOW;
 	store = openControlStore({ dataDir, clock: () => now });

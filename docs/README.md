@@ -9,8 +9,8 @@ updated: 2026-11-17
 # SuperAgentTeam 文档
 
 这里是 SuperAgentTeam 项目的架构与计划文档入口。2026-10-26 从 `clowder-ai/codeteam/` 迁入本仓 `docs/`。
-`codeteam` 是历史/别名项目名。仓库已改名为 `zhongmingLL/superagentteam`；
-`codeteam-work` 分支和旧 `codeteam*` alias 仍在迁移窗口内。
+`codeteam` 是历史/别名项目名。仓库已改名为 `zhongmingLL/superagentteam`，
+默认分支为 `superagentteam-work`；旧 `codeteam*` alias 仍在迁移窗口内。
 
 **本目录是 SuperAgentTeam 项目的文档真相源。** 讨论历史和评审记录仍可在 clowder-ai thread 中追溯；README/0001 里出现的“已落地/已证明”是讨论时点声明，开工前需要重新对码基线。
 
@@ -20,7 +20,7 @@ updated: 2026-11-17
 
 - 平台/产品显示名：**SuperAgentTeam**；`codeteam` 仅保留为历史/兼容名。
 - 新/活跃文档的 feature namespace 用 `superagentteam/Fxxx`；F001–F018 历史文档保留 `codeteam/Fxxx`。
-- F019.2 已把包/scope 切到 `@superagentteam/*` / `packages/superagentteam-*`；F019.3 已把 env/data/CLI/tool/skill 名切到 `SUPERAGENTTEAM_*` / `~/.superagentteam` / `superagentteam` / `superagentteam_*` / `superagentteam-*`，旧 `CODETEAM_*` / `codeteam_*` / `codeteam-*` 保留 fallback/alias 到 F019.5。F019.4 已完成 repo 改名（旧 URL 301）；`codeteam-work` 分支名保留，branch rename 待排期。
+- F019.2 已把包/scope 切到 `@superagentteam/*` / `packages/superagentteam-*`；F019.3 已把 env/data/CLI/tool/skill 名切到 `SUPERAGENTTEAM_*` / `~/.superagentteam` / `superagentteam` / `superagentteam_*` / `superagentteam-*`，旧 `CODETEAM_*` / `codeteam_*` / `codeteam-*` 保留 fallback/alias 到 F019.5。F019.4 已完成 repo 改名和 default branch rename（旧 repo URL 301；branch 名不 redirect）；`superagentteam-work` 是当前默认分支。
 - 入口：[`SUPERAGENTTEAM.md`](../SUPERAGENTTEAM.md)；旧 [`CODETEAM.md`](../CODETEAM.md) 是 `status: moved` stub。
 
 ## 架构文档怎么读
