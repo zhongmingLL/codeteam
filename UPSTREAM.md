@@ -1,12 +1,13 @@
 # Upstream baseline
 
-codeteam is a downstream mirror of the pi monorepo. It is **not** a GitHub-native fork (`isFork=false`); the upstream relationship is maintained through a Git remote.
+SuperAgentTeam (`zhongmingLL/superagentteam`) is a downstream mirror of the pi monorepo. It is **not** a GitHub-native fork (`isFork=false`); the upstream relationship is maintained through a Git remote.
 
 ## Pin
 
 | Item | Value |
 |---|---|
 | Upstream | `https://github.com/earendil-works/pi` |
+| Repository | `zhongmingLL/superagentteam` |
 | Tag | `v1.4.0` |
 | Commit | `4a080252f06caf63a525d7873c5d94d3c23887e0` |
 | Release baseline branch | `main` |
@@ -18,7 +19,8 @@ The previous baseline was `v1.3.0` (`71023aec1546d6d677a65669c5665c0927ce0dd0`).
 ## Branch model
 
 - `main`: pinned pi release baseline. Protected; changes arrive through PRs only.
-- `codeteam-work`: default development branch for codeteam work.
+- `codeteam-work`: default development branch for SuperAgentTeam work; the branch name
+  is retained after the F019.4 repo rename.
 - `feature/*`: short-lived task branches, one per worktree/task.
 
 ## Sync with upstream
@@ -54,7 +56,7 @@ These checks prove the upstream build and tests. They do **not** prove the W0a a
 
 ## Downstream divergences
 
-- Root `AGENTS.md`: codeteam project instructions. The pi `v1.4.0` `AGENTS.md` is preserved at `docs/upstream/pi-development-rules.md` and applies to pi package work. Reason: F302 treats an existing root `AGENTS.md` as the canonical project guide and skips generation; keeping pi rules at root would leave codeteam-specific agent instructions unmaterialized.
+- Root `AGENTS.md`: SuperAgentTeam project instructions. The pi `v1.4.0` `AGENTS.md` is preserved at `docs/upstream/pi-development-rules.md` and applies to pi package work. Reason: F302 treats an existing root `AGENTS.md` as the canonical project guide and skips generation; keeping pi rules at root would leave project-specific agent instructions unmaterialized.
 - `README.md`: added a SuperAgentTeam banner pointing to `SUPERAGENTTEAM.md`; the upstream Pi README body is unchanged. Reason: F019.1 requires the repository landing page to show the platform name without rewriting upstream documentation; the banner is the only downstream edit.
 - `.gitignore`: narrowed the upstream `plans/` rule to `/plans/` so `docs/plans/` is versioned as the project plan truth source; added local agent/tool state directories (`.cat-cafe/`, `.codex/`, `.gemini/`, `.kimi-code/`; `.claude/` was already ignored). Reason: a clean clone must contain the W0–W8 plans, while local agent state must never be committed.
 - `.github/workflows/ci.yml`: added `codeteam-work` push/PR triggers, read-only workflow permissions, a blocking supply-chain job, and a pinned-catalog hydrate step before `build:offline`/tests. The empty `codeteam-package-tests` job was deferred to Phase 1; after `@superagentteam/pi-adapter` landed, root `npm test --workspaces` was verified to run its tests inside `build-check-test` (3 files / 10 tests in CI), so no duplicate job was added. Reason: W0a required checks must cover the development branch without duplicating the full upstream test job or relying on a live model-catalog fetch. On 2026-10-28 the same job was made scope-aware: a `changes` job classifies the PR diff, docs-only runs a whitespace check, SuperAgentTeam package changes build/check and test only the SuperAgentTeam workspaces (lane renamed to `superagentteam` in F019.2), and any upstream/root/tooling/rename/unknown change fails closed to the full suite. Reason: full pi tests on every docs PR made the required check 5-16 minutes long without adding coverage.
@@ -65,6 +67,7 @@ These checks prove the upstream build and tests. They do **not** prove the W0a a
 - `package.json`: root `build` / `build:offline` now also build `packages/superagentteam-pi-adapter` and `packages/superagentteam-skills` after the pi coding-agent package; root `tsconfig.json` maps `@superagentteam/*` to package sources for type-checking. Reason: SuperAgentTeam-specific runtime adapters and the curated skill catalog live under `packages/superagentteam-*` and must participate in the normal build and type graph.
 - F019.2 package rename: `@codeteam/*` / `packages/codeteam-*` -> `@superagentteam/*` / `packages/superagentteam-*`; updated root build scripts, tsconfig paths, CI scope classifier, risk path patterns, and `package-lock.json`. Reason: F019 SuperAgentTeam rename; no upstream pi package is affected.
 - F019.3 compatibility: new `SUPERAGENTTEAM_*` env names with `CODETEAM_*` fallback, `~/.superagentteam` with `~/.codeteam` dual-read, `superagentteam` CLI bin + `codeteam` wrapper, `superagentteam_*` tool IDs and `superagentteam-*` skill IDs with `codeteam_*` / `codeteam-*` aliases. Reason: F019 SuperAgentTeam rename; no upstream pi package is affected.
+- F019.4 repository rename: `zhongmingLL/codeteam` -> `zhongmingLL/superagentteam` on 2026-11-17; old URLs 301-redirect; default branch, CI triggers, branch protection, and required checks remain on `codeteam-work` unchanged. The branch rename to `superagentteam-work` is deferred by the operator's repo-only choice. Reason: F019 SuperAgentTeam rename; no upstream pi package is affected.
 
 ## W0a verification status (2026-10-27)
 

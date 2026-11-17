@@ -2,16 +2,17 @@
 title: "SuperAgentTeam"
 doc_kind: note
 status: active
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 
 # SuperAgentTeam
 
 SuperAgentTeam is a repo-native, headless-first, durable A2A team runtime built on a pinned pi
 downstream baseline. Thread, invocation, queue, turn, worker, and credential are the shared
-runtime; team profiles and SOPs compose on top. `codeteam` is the historical/legacy name:
-the repository, branch, npm scope, env vars, data paths, CLI, and tool names keep the old
-spelling until the F019.2–F019.4 migration lands, then become `superagentteam*`.
+runtime; team profiles and SOPs compose on top. `codeteam` is the historical/legacy name.
+The repository is now `zhongmingLL/superagentteam`; package/env/data/CLI/tool/skill names
+use `superagentteam*` with `codeteam*` compatibility aliases through F019.5. The
+`codeteam-work` branch name remains until the branch rename is scheduled.
 
 ## Truth sources
 
@@ -26,17 +27,27 @@ spelling until the F019.2–F019.4 migration lands, then become `superagentteam*
 
 ## Branch model
 
+- Repository: `zhongmingLL/superagentteam` (renamed 2026-11-17; old URLs redirect).
 - `main`: pinned pi release baseline (`v1.4.0`).
-- `codeteam-work`: default development branch until the F019.4 repo/branch rename;
-  target `codeteam-work` for now. F019.4 renames it to `superagentteam-work`.
+- `codeteam-work`: default development branch. The branch rename to
+  `superagentteam-work` is deferred by the operator's repo-only rename choice.
 
 ## Current stage
 
-As of 2026-11-16: F018 A2A runtime v1 design is accepted (Phase A contract closed at
+As of 2026-11-17: F018 A2A runtime v1 design is accepted (Phase A contract closed at
 `86310de24`). F019.1 docs/branding, F019.2 packages/scope, and F019.3
-env/data/CLI/tool/skill compatibility are complete. F018 R1-0 remains paused by the
-operator; F019.4 repository/branch rename is last. Refresh this block (and the
-frontmatter `updated`) at each F019 phase; do not let it drift like the old W0a entry did.
+env/data/CLI/tool/skill compatibility are complete. F019.4 repository rename to
+`zhongmingLL/superagentteam` is complete (old URLs 301); the branch rename is deferred.
+F018 R1-0 remains paused by the operator; F019.5 alias cleanup is later. Refresh this
+block (and the frontmatter `updated`) at each F019 phase; do not let it drift like the
+old W0a entry did.
+
+## Data migration
+
+Existing `~/.codeteam` data is read in place; there is no automatic copy. An explicit
+migration is a manual directory rename to `~/.superagentteam` performed while the service
+is not running. Until then, writes remain under the old root; the new root is not created
+early.
 
 ## Development rule
 
