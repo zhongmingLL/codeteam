@@ -21,8 +21,8 @@ source_review: "docs/architecture/0018-v1-global-design-review.md"
 > 设计契约仍以 `0005`/`0007` + 分册为准，本文不新增契约。
 >
 > **F019 前置**：SuperAgentTeam rename 是独立 F019，排在 R1-0 前。F019.1–F019.3
-> 已完成；F018 R1-0 仍按 operator 指示暂停，不自动开始。F019.4 仓库/分支改名由
-> operator/ops 最后执行；本文其余旧名在 R1-0 恢复前统一回写。
+> 已完成；F019.4 repo rename 已完成（旧 URL 301），branch rename 待 operator。
+> F018 R1-0 仍按 operator 指示暂停，不自动开始；本文其余旧名在 R1-0 恢复前统一回写。
 
 ## 0. 执行顺序
 

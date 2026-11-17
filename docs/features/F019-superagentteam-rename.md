@@ -7,7 +7,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
 created: 2026-11-16
-updated: 2026-11-16
+updated: 2026-11-17
 source_plan: "docs/plans/0023-f019-superagentteam-rename.md"
 source_decision: "operator 2026-11-16: rename as independent F019 before F018 R1-0; SuperAgentTeam is the generic A2A team runtime, codeteam was one code team/SOP"
 ---
@@ -45,7 +45,7 @@ F019 是独立 feature，不混入 F018；F018 R1-0 在 F019 完成前暂停。
 | 数据/配置 | `~/.superagentteam` / `.superagentteam/`；旧 `.codeteam` dual-read |
 | CLI | `superagentteam`；`codeteam` 保留 wrapper |
 | 模型工具 | `superagentteam_*`；`codeteam_*` 保留 alias |
-| 仓库/分支 | `zhongmingLL/superagentteam`、`superagentteam-work`；最后迁移 |
+| 仓库/分支 | 仓库 `zhongmingLL/superagentteam` 已改名；`codeteam-work` 分支保留，`superagentteam-work` 待 operator 排期 |
 | feature namespace | 新/活跃文档用 `superagentteam/Fxxx`；历史/legacy 保留 `codeteam/Fxxx` |
 | code team | “code team” / team profile 名，不再占用平台 namespace |
 
@@ -55,9 +55,9 @@ F019 是独立 feature，不混入 F018；F018 R1-0 在 F019 完成前暂停。
   CLI help、当前 canonical docs 的显示名与 feature namespace。
 - 包：`packages/codeteam-*` → `packages/superagentteam-*`；`@codeteam/*` →
   `@superagentteam/*`；import/build/tsconfig/package-lock 同步。
-- 运行时标识：env/data/config 新名 + 旧名双读；新写入走新名。
+- 运行时标识：env/data/config 新名 + 旧名双读；新写入走新名。数据迁移语义：旧根原地读，不自动复制；显式迁移是服务停止期间的手动目录改名。
 - CLI/工具：`superagentteam` + `codeteam` wrapper；`superagentteam_*` + `codeteam_*` alias。
-- 仓库/分支：repo rename、`superagentteam-work`、CI/protection；最后做。
+- 仓库/分支：repo rename 已完成（`zhongmingLL/superagentteam`，旧 URL 301）；`superagentteam-work` 分支名和 CI/protection rename 由 operator 决定是否继续。
 - 历史/legacy：只加边界/索引，不重写历史文档；`docs/legacy/task-first/` 保持原名。
 
 ## 非目标
@@ -75,7 +75,8 @@ F019 是独立 feature，不混入 F018；F018 R1-0 在 F019 完成前暂停。
 - `~/.superagentteam` 新数据根；旧 `.codeteam` dual-read/迁移测试通过；无数据丢失。
 - 工具注册同时有 `superagentteam_*` 与 `codeteam_*` alias；模型面文档使用新名。
 - 当前 canonical docs 的显示名/namespace 更新；历史/legacy 文档不被重写。
-- repo/branch rename 后 CI、branch protection、PR 链接可查；GitHub redirect 生效。
+- repo rename 后 CI、branch protection、PR 链接可查；GitHub redirect 生效；branch
+  rename 若执行再检查对应 protection。
 - `check:doc-index`、build、受影响测试通过；非作者 review 覆盖 exact HEAD。
 
 ## 风险
@@ -95,7 +96,7 @@ F019 是独立 feature，不混入 F018；F018 R1-0 在 F019 完成前暂停。
 | F019.1 | 文档/品牌、feature namespace、AGENTS/README | 当前 canonical 用 SuperAgentTeam；历史保留 |
 | F019.2 | 包/目录/scope/import/build/lock | `@superagentteam/*` 构建通过 |
 | F019.3 | env/data/config 双读 + CLI/tools alias | 兼容测试通过；旧入口可用 |
-| F019.4 | repo/branch/CI/protection | operator/ops 执行；redirect 可查 |
+| F019.4 | repo rename 完成；branch/CI/protection rename 待 operator | 旧 URL 301；branch/protection 未动 |
 | F019.5 | 清理旧 alias、R5 归档 | 弃用窗口结束 |
 
 ## 依赖与顺序
@@ -105,7 +106,7 @@ F018 design accepted (86310de24)
   → F019.0–F019.3
   → F018 R1-0 (superagentteam naming)
   → F018 R1-a–d
-  → F019.4 repo/branch rename（可与 R1 并行但最后）
+  → F019.4 repo rename done；branch rename 待 operator
 ```
 
 [宪宪/deepseek-flash🐾]

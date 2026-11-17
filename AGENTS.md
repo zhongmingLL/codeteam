@@ -6,9 +6,10 @@
 - `docs/` is the project documentation source of truth. Start with `SUPERAGENTTEAM.md`
   (`CODETEAM.md` is a `status: moved` stub), `docs/README.md`, `docs/plans/README.md`,
   and `docs/features/F001-architecture-v1.md`.
-- `main` is the pi release baseline. `codeteam-work` is the default development branch
-  until the F019.4 repo/branch rename. Feature branches are short-lived and target
-  `codeteam-work` for now; releasing to `main` is a separate PR.
+- `main` is the pi release baseline. The repository is `zhongmingLL/superagentteam`;
+  `codeteam-work` remains the default development branch until the branch rename is
+  scheduled. Feature branches are short-lived and target `codeteam-work` for now;
+  releasing to `main` is a separate PR.
 - Never force-push, rewrite `main`, or merge without the applicable review and verification evidence.
 - `BACKLOG.md` is the full feature index: allocate the next `Fxxx`, create
   `docs/features/Fxxx-*.md`, and add the BACKLOG row before implementation; at
@@ -21,7 +22,8 @@
 - New and active docs use `superagentteam/Fxxx`; F001–F018 keep `codeteam/Fxxx` for history.
 - F019.2 packages and F019.3 env/data/CLI/tool/skill names now default to
   `superagentteam*`; `codeteam*` remains a compatibility alias through F019.5.
-  Repository and branch names stay `codeteam` until F019.4.
+  F019.4 renamed the repository to `zhongmingLL/superagentteam`; the `codeteam-work`
+  branch name remains until the branch rename is scheduled.
 
 ## Scope and boundaries
 

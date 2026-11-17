@@ -8,10 +8,10 @@
   <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
 </p>
 
-> **SuperAgentTeam**: this repository is the downstream pi baseline for the SuperAgentTeam
-> platform. Start with [SUPERAGENTTEAM.md](SUPERAGENTTEAM.md). The legacy `codeteam`
-> repository/branch/package/env/data/CLI/tool names remain until the
-> F019.2–F019.4 migration.
+> **SuperAgentTeam**: this repository (`zhongmingLL/superagentteam`) is the downstream pi
+> baseline for the SuperAgentTeam platform. Start with [SUPERAGENTTEAM.md](SUPERAGENTTEAM.md).
+> The legacy `codeteam` branch/package/env/data/CLI/tool aliases remain through the
+> F019 migration window.
 
 > New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
