@@ -1,23 +1,36 @@
 #!/usr/bin/env node
-// R1-0 legacy boundary guard (F018). Fails when code outside the allowed
-// baseline imports task-first legacy code, when retired A2A tool names or
-// legacy tables are referenced from v1 runtime paths, or when the baseline
-// allowlist itself drifts (entries that no longer offend must be removed).
+// F018 R1-0 legacy boundary guard.
 //
-// Rules (plan 0021 §2.5):
-//   1. Non-legacy files under packages/superagentteam-daemon/src must not
-//      import `legacy/task-first/` (directly) or the old-path compatibility
-//      shims, unless the file is listed in LEGACY_IMPORT_ALLOWLIST below.
-//   2. v1 runtime paths (`src/domains/`) must not import legacy or shims at
-//      all (no allowlist entries allowed there), must not reference retired
-//      tool names, and must not reference frozen legacy tables.
-//   3. The allowlist must stay exact: stale entries are an error so the list
-//      only ever shrinks.
+// Rules (plan 0021 §2.5, INDEX docs/legacy/task-first/INDEX.md):
+//   1. Files under packages/superagentteam-daemon/src outside `legacy/` and
+//      outside the shim files themselves must not import task-first legacy
+//      code — directly (`legacy/task-first/`), through an old-path shim
+//      (top-level legacy dirs, `a2a/<legacy-file>.ts`, the
+//      `control/stores/types.ts` deprecated barrel, `control/read-models.ts`,
+//      or the `control/migrations/` barrel) — unless listed in
+//      scripts/legacy-boundary-allowlist.json.
+//   2. `packages/superagentteam-shared/src` (the v1 type home) has ZERO
+//      tolerance: any legacy import fails, no allowlist possible.
+//   3. v1 runtime paths (`src/domains/`) additionally must not reference
+//      retired tool names or frozen legacy tables, and cannot be allowlisted.
+//   4. Stale allowlist entries are an error so the list only ever shrinks.
+//
+// Allowlist discipline: entries live in
+// scripts/legacy-boundary-allowlist.json (file -> {owner, why}) and MUST
+// come with an owner + removal stage. The guard cannot mechanically stop an
+// author from adding an entry and an import in the same commit — additions
+// are visible as diffs to that JSON file and reviewers must reject them.
+// Machine-enforced parts: unlisted imports fail, stale entries fail, shared
+// package and src/domains/ can never be allowlisted.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const DAEMON_SRC = join(process.cwd(), "packages/superagentteam-daemon/src");
+const ROOT = process.cwd();
+const DAEMON_SRC = join(ROOT, "packages/superagentteam-daemon/src");
+const SHARED_SRC = join(ROOT, "packages/superagentteam-shared/src");
+const ALLOWLIST_PATH = join(ROOT, "scripts/legacy-boundary-allowlist.json");
+
 const V1_DIRS = ["domains"];
 const LEGACY_TOP_DIRS = [
   "dispatch",
@@ -29,7 +42,22 @@ const LEGACY_TOP_DIRS = [
   "managed-work",
   "deployment-wait",
   "custody",
-  "a2a",
+];
+const LEGACY_A2A_FILES = [
+  "index",
+  "tools",
+  "tool-surface",
+  "principal",
+  "observation",
+  "terminal",
+  "requests",
+];
+// Old-path shims that are not top-level dirs. Value is the shim path relative
+// to daemon src; consumers are detected via dir-relative specifiers.
+const LEGACY_SHIM_PATHS = [
+  "control/stores/types.ts",
+  "control/read-models.ts",
+  "control/migrations",
 ];
 const RETIRED_TOOL_NAMES = [
   "a2a_send",
@@ -47,35 +75,6 @@ const LEGACY_TABLES = [
   "merges",
 ];
 
-// Baseline allowlist: active files that still import legacy (directly or via
-// shims) at R1-0. Each entry names the owner and the removal stage. Entries
-// may only be removed, never added; adding a new legacy import to a file not
-// listed here fails the guard.
-const LEGACY_IMPORT_ALLOWLIST = new Map(
-  [
-    ["index.ts", { owner: "R1-a", why: "package barrel; prunes legacy exports in R1-a" }],
-    ["daemon-runtime.ts", { owner: "R1-a", why: "wires legacy DispatchService until v1 runtime lands" }],
-    ["control/store.ts", { owner: "R1-b", why: "aggregates legacy stores until domain stores replace them" }],
-    ["control/index.ts", { owner: "R1-b", why: "re-exports legacy control surface" }],
-    ["control/database.ts", { owner: "R1-a", why: "applies legacy task-first migrations until the v1 migration harness (infrastructure/db) replaces it" }],
-    ["control/read-models.ts", { owner: "R5", why: "compatibility shim" }],
-    ["control/stores/types.ts", { owner: "R5", why: "deprecated legacy type barrel" }],
-    ["cli/budget.ts", { owner: "R2", why: "legacy CLI; thread-budget replaces in later round" }],
-    ["cli/deployment.ts", { owner: "R5", why: "legacy deployment-wait CLI" }],
-    ["cli/gate.ts", { owner: "R5", why: "legacy gate CLI" }],
-    ["cli/merge.ts", { owner: "R5", why: "legacy merge CLI" }],
-    ["cli/schedule.ts", { owner: "R5", why: "legacy schedule CLI" }],
-    ["cli/sop.ts", { owner: "R5", why: "legacy sop CLI" }],
-    ["cli/thread.ts", { owner: "R1-a", why: "task-bound thread CLI; v1 thread CLI replaces it" }],
-    ["workers/control.ts", { owner: "R2", why: "serves legacy a2a tool calls until v1 surface lands" }],
-    ["workers/tool-policy.ts", { owner: "R2", why: "legacy A2A role tool policy" }],
-    ["workers/worker-extension.ts", { owner: "R2", why: "registers legacy A2A tool specs" }],
-    ["workers/executor.ts", { owner: "R2", why: "task-bound executor branches" }],
-    ["workers/runtime.ts", { owner: "R2", why: "task-bound runtime branches" }],
-    ["eval/report.ts", { owner: "R5", why: "reads legacy review model-family" }],
-  ].map(([k, v]) => [k, v]),
-);
-
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -86,51 +85,66 @@ function walk(dir, out = []) {
 }
 
 function isShim(rel, src) {
-  // Shims live at the old top-level paths and only re-export legacy.
   if (rel === "control/migrations/index.ts") {
+    return /^\/\/ Legacy compatibility shim/.test(src);
+  }
+  if (rel === "control/stores/types.ts") {
+    return src.includes("@deprecated Legacy task-first types");
+  }
+  if (rel === "control/read-models.ts") {
+    return /^\/\/ Legacy compatibility shim/.test(src);
+  }
+  if (LEGACY_A2A_FILES.some((f) => rel === `a2a/${f}.ts`)) {
     return /^\/\/ Legacy compatibility shim/.test(src);
   }
   if (!LEGACY_TOP_DIRS.some((d) => rel === d || rel.startsWith(`${d}/`))) return false;
   return /^\/\/ Legacy compatibility shim/.test(src);
 }
 
+// Compute the import specifiers a file at `rel` would use to reach each
+// legacy shim path, and detect them in the source.
+function importsLegacyShims(rel, src) {
+  const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+  for (const shim of LEGACY_SHIM_PATHS) {
+    let spec = relative(dir, shim).replaceAll("\\", "/");
+    if (!spec.startsWith(".")) spec = `./${spec}`;
+    const base = spec.replace(/\.ts$/, "");
+    if (src.includes(`from "${base}"`) || src.includes(`from "${spec}"`) || src.includes(`from "${base}/`)) return true;
+  }
+  return false;
+}
+
 function importsLegacy(rel, src) {
   const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-  // Importing the legacy control/migrations barrel from anywhere inside
-  // control/ uses a dir-relative specifier (./migrations/, ../migrations/).
-  if (dir.startsWith("control") && !dir.startsWith("control/stores/types")) {
-    const relSpec = relative(dir, "control/migrations").replaceAll("\\\\", "/");
-    if (relSpec && src.includes(`from "./${relSpec}/`)) return true;
-  }
   const up = (rel.match(/\//g) || []).length;
   const prefixes = [];
-  for (let i = 0; i <= up; i++) {
-    prefixes.push("../".repeat(i));
-  }
-  prefixes.push(`./`);
-  const legacyA2aFiles = [
-    "index",
-    "tools",
-    "tool-surface",
-    "principal",
-    "observation",
-    "terminal",
-    "requests",
-  ];
+  for (let i = 0; i <= up; i++) prefixes.push("../".repeat(i));
+  prefixes.push("./");
+
+  if (prefixes.some((pre) => src.includes(`from "${pre}legacy/task-first/`))) return true;
+  if (importsLegacyShims(rel, src)) return true;
+
   return prefixes.some((pre) => {
-    if (src.includes(`from "${pre}legacy/task-first/`)) return true;
-    if (src.includes(`from "${pre}control/migrations/`)) return true;
     if (src.includes(`from "${pre}a2a/`)) {
-      // a2a/ is also a future v1 dir name; only the legacy implementation
-      // files below count as legacy imports from active code.
-      return legacyA2aFiles.some((f) => src.includes(`from "${pre}a2a/${f}.ts"`));
+      return LEGACY_A2A_FILES.some((f) => src.includes(`from "${pre}a2a/${f}.ts"`));
     }
     return LEGACY_TOP_DIRS.some((d) => d !== "a2a" && src.includes(`from "${pre}${d}/`));
   });
 }
 
+const rawAllowlist = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
+const allowlist = new Map(Object.entries(rawAllowlist));
 const errors = [];
 const offenders = new Set();
+const sharedFiles = walk(SHARED_SRC);
+
+for (const file of sharedFiles) {
+  const rel = relative(SHARED_SRC, file).replaceAll("\\", "/");
+  const src = readFileSync(file, "utf8");
+  if (/(from\s+")[^"]*legacy\/task-first\//.test(src) || /(from\s+")[^"]*superagentteam-daemon/.test(src)) {
+    errors.push(`shared/${rel}: v1 type home must not reference daemon legacy`);
+  }
+}
 
 for (const file of walk(DAEMON_SRC)) {
   const rel = relative(DAEMON_SRC, file).replaceAll("\\", "/");
@@ -142,11 +156,13 @@ for (const file of walk(DAEMON_SRC)) {
 
   if (importsLegacy(rel, src)) {
     offenders.add(rel);
-    const entry = LEGACY_IMPORT_ALLOWLIST.get(rel);
+    const entry = allowlist.get(rel);
     if (inV1) {
       errors.push(`${rel}: v1 runtime path imports legacy code — not allowlistable`);
     } else if (!entry) {
       errors.push(`${rel}: imports task-first legacy outside the baseline allowlist`);
+    } else if (allowlist.get(rel) && V1_DIRS.length && rel.startsWith(`${V1_DIRS[0]}/`)) {
+      errors.push(`${rel}: v1 path cannot be allowlisted`);
     }
   }
 
@@ -162,7 +178,7 @@ for (const file of walk(DAEMON_SRC)) {
   }
 }
 
-for (const [rel] of LEGACY_IMPORT_ALLOWLIST) {
+for (const [rel] of allowlist) {
   if (!offenders.has(rel)) {
     errors.push(`allowlist stale: ${rel} no longer imports legacy — remove the entry`);
   }
@@ -171,6 +187,8 @@ for (const [rel] of LEGACY_IMPORT_ALLOWLIST) {
 if (errors.length > 0) {
   console.error(`check-legacy-boundary: ${errors.length} violation(s)`);
   for (const e of errors) console.error(`  - ${e}`);
+  console.error(`offenders without allowlist entries can be reviewed via:`);
+  console.error(`  rg -l "control/stores/types|legacy/task-first" packages/superagentteam-daemon/src | grep -v legacy`);
   process.exit(1);
 }
 console.log("check-legacy-boundary: OK (boundary held)");

@@ -5,6 +5,8 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
+			"@superagentteam/shared": ["./packages/superagentteam-shared/src/index.ts"],
+			"@superagentteam/shared/types": ["./packages/superagentteam-shared/src/types/index.ts"],
 			"@earendil-works/chord": ["./packages/chord/src/index.ts"],
 			"@earendil-works/chord/context": ["./packages/chord/src/context/index.ts"],
 			"@earendil-works/chord/delta": ["./packages/chord/src/delta/index.ts"],
