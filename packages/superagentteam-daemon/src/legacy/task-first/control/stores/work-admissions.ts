@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { ControlError } from "../../../../control/errors.ts";
-import type { ControlTransaction } from "../../../../control/transaction.ts";
 import { type Clock, changesOf, mapStoreError, nonEmpty } from "../../../../control/stores/helpers.ts";
+import type { ControlTransaction } from "../../../../control/transaction.ts";
 import type { ManagedWorkRunPreflight, WorkAdmission, WorkAttempt, WorkRunBinding, WorkTaskBinding } from "./types.ts";
 
 interface WorkAdmissionRow {

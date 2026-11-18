@@ -1,6 +1,12 @@
 import { ControlError } from "../../../control/errors.ts";
 import type { ControlStore } from "../../../control/store.ts";
-import type { CreateWaitInput, TerminateWaitInput, Wait, WaitKind, WaitTermination } from "../../../control/stores/types.ts";
+import type {
+	CreateWaitInput,
+	TerminateWaitInput,
+	Wait,
+	WaitKind,
+	WaitTermination,
+} from "../../../control/stores/types.ts";
 
 const WAIT_KINDS = new Set<WaitKind>(["timer", "event", "managed_command"]);
 const WAIT_SOURCE_REF = /^[a-z][a-z0-9_-]*:.+$/;

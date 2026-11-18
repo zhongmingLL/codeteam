@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { ControlError } from "../../../../control/errors.ts";
-import type { ControlTransaction } from "../../../../control/transaction.ts";
 import { type Clock, changesOf, mapStoreError, newId, nonEmpty } from "../../../../control/stores/helpers.ts";
+import type { ControlTransaction } from "../../../../control/transaction.ts";
 import type {
 	Budget,
 	BudgetCharge,

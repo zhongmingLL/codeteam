@@ -1,7 +1,6 @@
 import { ControlError } from "../../../control/errors.ts";
 import { DEVELOPMENT_SOP_DEFINITION, DEVELOPMENT_SOP_STAGE_IDS } from "../../../control/sop-definition.generated.ts";
 import type { ControlStore } from "../../../control/store.ts";
-import { validateSubjectRevision } from "../control/stores/sop-check-evidence.ts";
 import type {
 	BacklogItem,
 	Message,
@@ -12,6 +11,7 @@ import type {
 	UpsertWorkflowSopInput,
 	WorkflowSopView,
 } from "../../../control/stores/types.ts";
+import { validateSubjectRevision } from "../control/stores/sop-check-evidence.ts";
 
 export const SOP_CATALOG = DEVELOPMENT_SOP_DEFINITION;
 export const SOP_STAGE_IDS = DEVELOPMENT_SOP_STAGE_IDS;

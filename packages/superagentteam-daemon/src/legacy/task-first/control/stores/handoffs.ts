@@ -1,6 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
 import { ControlError } from "../../../../control/errors.ts";
-import type { ControlTransaction } from "../../../../control/transaction.ts";
 import type { AuditStore } from "../../../../control/stores/audit.ts";
 import {
 	type Clock,
@@ -12,6 +11,7 @@ import {
 	parseJsonArray,
 	parseJsonObject,
 } from "../../../../control/stores/helpers.ts";
+import type { ControlTransaction } from "../../../../control/transaction.ts";
 import type {
 	ClaimHandoffInput,
 	CreateHandoffInput,

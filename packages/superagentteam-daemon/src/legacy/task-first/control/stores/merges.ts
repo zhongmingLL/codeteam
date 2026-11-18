@@ -1,8 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import { ControlError } from "../../../../control/errors.ts";
-import type { ControlTransaction } from "../../../../control/transaction.ts";
 import type { AuditStore } from "../../../../control/stores/audit.ts";
 import { type Clock, mapStoreError, newId, nonEmpty } from "../../../../control/stores/helpers.ts";
+import type { ControlTransaction } from "../../../../control/transaction.ts";
 import type { CreateMergeInput, Merge, MergeStatus } from "./types.ts";
 
 export const MERGE_SERVICE_ACTOR = "service:merge-owner";

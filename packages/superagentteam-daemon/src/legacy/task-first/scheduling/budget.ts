@@ -1,7 +1,7 @@
 import { ControlError } from "../../../control/errors.ts";
 import type { ControlStore } from "../../../control/store.ts";
-import { budgetLimitsHit } from "../control/stores/budgets.ts";
 import type { Budget, BudgetCharge, BudgetLimitKind, Run } from "../../../control/stores/types.ts";
+import { budgetLimitsHit } from "../control/stores/budgets.ts";
 
 export interface BudgetStatus {
 	readonly budget: Budget | null;
