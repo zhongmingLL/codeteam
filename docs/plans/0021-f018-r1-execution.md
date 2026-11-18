@@ -4,7 +4,7 @@ doc_kind: plan
 status: draft-for-review
 created: 2026-11-14
 updated: 2026-11-18
-owner: "宪宪 (Ragdoll/DeepSeek Flash)"
+owner: "砚砚 (GLM 5.3 Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
 source_architecture: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/0007-a2a-runtime-chain.md"
@@ -22,6 +22,10 @@ source_review: "docs/architecture/0018-v1-global-design-review.md"
 > F019.5 naming re-anchor (2026-11-18): package paths use `packages/superagentteam-*`
 > and `@superagentteam/*`; config/data paths use `.superagentteam/` and
 > `SUPERAGENTTEAM_*`. The legacy aliases are removed.
+>
+> F018 handoff (2026-11-18): operator handed F018 development ownership to 砚砚.
+> This plan remains the R1 execution source; R1-0 start still requires the operator
+> to lift the 2026-11-16 pause explicitly.
 > 设计契约仍以 `0005`/`0007` + 分册为准，本文不新增契约。
 >
 > **F019 前置**：SuperAgentTeam rename 是独立 F019，排在 R1-0 前。F019.1–F019.3

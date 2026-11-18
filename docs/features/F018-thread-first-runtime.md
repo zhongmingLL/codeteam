@@ -3,14 +3,14 @@ feature_ids: [codeteam/F018]
 related_features: [codeteam/F017, codeteam/F016]
 title: "F018: A2A runtime v1"
 status: spec
-owner: "宪宪 (Ragdoll/DeepSeek Flash)"
+owner: "砚砚 (GLM 5.3 Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
 created: 2026-11-04
 updated: 2026-11-18
 source_plan: "docs/plans/0020-f018-thread-first-runtime.md"
 source_architecture: "docs/architecture/0005-thread-first-runtime.md"
-source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery frozen; 2026-11-14 BBBA: mentionPatterns body match / multi_mention callback child / completed dedupe accepted risk / allFailed derived"
+source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery frozen; 2026-11-14 BBBA: mentionPatterns body match / multi_mention callback child / completed dedupe accepted risk / allFailed derived; 2026-11-18: F018 development ownership handed to 砚砚"
 supersedes_phase_a_of: codeteam/F017
 ---
 
@@ -141,6 +141,68 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 - **P1 范围失控**：不要在 A2A runtime 里偷偷恢复 Task/worktree/review/merge/
   custody。
 - **P2 旧 feature 回归**：F016b/F016c 的 API 不能假设 task-first。
+
+## Handoff（2026-11-18）
+
+> operator 2026-11-18：`@宪宪 后续F018的开发工作你交接给砚砚`。F018 开发主责（owner）
+> 从宪宪转给砚砚。这是责任交接，不自动等于解冻：2026-11-16 的“F019 完成后先别急着
+> 开始 F018”仍以 operator 明确解除为准；砚砚启动 R1-0 前确认。
+
+### 接手坐标
+
+- 当前基线：`superagentteam-work` @ `bc1d71512`（F019.5 已 merge，alias 已清理）。
+- F018 状态：`spec`；Phase A 设计已 accepted（`86310de24`）。三猫 verdict：烁烁 approve；
+  砚砚 5 轮 exact-HEAD approve；墨墨 changes_requested → 对 `61e4790fd` / `86310de24` approve。
+- 契约锚点：`86310de24`。F019.5 只做命名 re-anchor，未改 F018 语义；R1 期间若改
+  `docs/architecture/` 契约，需重新锚 verdict；只加产品代码不改契约则原 verdict 继续有效。
+- Legacy：task-first 冻结，清单见 `0006`；不得把 `dispatch/`、`scheduling/`、`review/`、
+  `merge/`、`gates/`、`sop/`、`managed-work/`、`deployment-wait/`、`custody/`、
+  task-bound worker/auth 当作 F018 baseline。
+
+### 必读顺序
+
+1. `docs/architecture/0005-thread-first-runtime.md`：方向、范围、E1-E22。
+2. `docs/architecture/0007-a2a-runtime-chain.md`：机制、DDL、状态机。
+3. 分册 `0008` / `0009` / `0010` / `0011` / `0013` / `0016` / `0017`。
+4. `docs/architecture/0018-v1-global-design-review.md` + `decision-packets/2026-11-14-*`。
+5. `docs/plans/0021-f018-r1-execution.md`：R1-0 / R1-a–d 执行顺序。
+6. `docs/architecture/0006-task-first-legacy.md`：冻结清单。
+
+### R1 执行顺序
+
+- **R1-0**：legacy 物理隔离 + `@superagentteam/shared` 骨架 + daemon `domains` + boundary guard。
+- **R1-a**：migration harness + AgentCatalog/thread/message/read state。
+- **R1-b**：InvocationRecord/TurnExecution/invocation_attempts + queue/admission。
+- **R1-c**：credential/auth + response_drafts + session/worker。
+- **R1-d**：greenfield gate + E13/E14 + review/merge。
+
+### 必须守住的不变量
+
+- Thread 是聚合根；InvocationRecord parent + TurnExecution child；attempt append-only；无 taskId。
+- Phase A 批量 reservation（QueueProcessor 单事务）→ Phase B per-target dispatch；禁止二次 `ensureActive`。
+- T1/T2/T3/T4 owner 分离；生产代码不得引入 `settleAgentTurn`。
+- durable stream：processing R + `response_drafts`；delta 不写 messages。
+- operator 用户消息正文 `@` 按 `mentionPatterns` 解析；A2A tool body / agent final response 不解析。
+- E13：`a2a_send` / `handoff_*` 不注册；F019.5 后 `codeteam_*` alias 也不再注册。
+- v1 不读不写 tasks/handoffs/custody/reviews/merges；legacy 表只读至 R5。
+
+### 开放问题 / 风险
+
+- R1-0 启动授权：operator 11-16 pause 是否解除，需明确确认。
+- `thread_context` per-agent visibility 语义（0018 R-05），R2 前确认。
+- `routing_guard` v1 不创建，只保留 enum/表对齐。
+- completed 跨 tool-call 重试去重 accepted risk（DP-F018IDEM-1=B）。
+- R-01 `queue_admissions.thread_id` 收紧；R-02 无 attempt 的 ordinary TurnExecution 负例；
+  R-03 `response_missing` 无 R 行策略；R-04 `multi_mention` reaper 测试；R-06
+  `mentionPatterns` 改名流程。
+- 独立 infra todo：Publish Model Catalog / PR Gate workflow，不属 F018。
+
+### 接手后的下一步
+
+1. 向 operator 确认 R1-0 是否解冻。
+2. 解冻后从 `superagentteam-work` 开隔离 worktree，按 `0021` 的 R1-0 做 legacy 隔离和 guard；先红后绿。
+3. 代码 review 走非作者 fresh-context；Phase A docs verdict 只在契约未改时继续有效。
+4. 更新 F018/BACKLOG 状态与 evidence；不改历史 F017/F019 归档。
 
 ## 状态
 
