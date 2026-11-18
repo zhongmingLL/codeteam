@@ -302,9 +302,7 @@ describe("F016a A2A parallel/custody real RPC E2E", () => {
 		store.runs.terminal(authorRun.id, { status: "completed" });
 		await daemon.controlPlane!.drainNow(1);
 		expect(
-			store.runs
-				.list({ taskId: dispatched.task.id })
-				.filter((run) => run.recipientProfileId === "profile:reviewer"),
+			store.runs.list({ taskId: dispatched.task.id }).filter((run) => run.recipientProfileId === "profile:reviewer"),
 		).toHaveLength(0);
 		expect(store.handoffs.get(handoff.id)?.status).toBe("withdrawn");
 	}, 90_000);

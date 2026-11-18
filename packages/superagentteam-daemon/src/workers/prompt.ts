@@ -1,3 +1,8 @@
+// TASK-BOUND LEGACY (F018 R1-0 boundary marker): this shared module still
+// contains task-first branches. It is NOT split in R1-0; the task-bound parts
+// move to src/legacy/task-first/ in later rounds (see docs/legacy/task-first/INDEX.md).
+// Do not add new task-first behavior here.
+
 import type { AgentProfile, AgentSession, Handoff, Message, Task } from "../control/stores/types.ts";
 
 const ROLE_GUIDANCE: Record<string, string> = {

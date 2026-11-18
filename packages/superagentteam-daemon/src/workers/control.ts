@@ -1,3 +1,7 @@
+// TASK-BOUND LEGACY (F018 R1-0 boundary marker): serves legacy a2a_send/handoff_*
+// tool calls and task reads until the v1 surface lands (R2). In the boundary
+// guard baseline allowlist (scripts/legacy-boundary-allowlist.json).
+
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";

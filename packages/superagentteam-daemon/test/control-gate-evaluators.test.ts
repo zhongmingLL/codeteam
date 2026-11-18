@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Approval, Merge, Review, SopCheckEvidence, Verification } from "../src/control/stores/types.ts";
-import { evaluateCompletionGate } from "../src/gates/completion.ts";
-import { evaluateDesignGate } from "../src/gates/design.ts";
-import { evaluateReviewGate } from "../src/gates/review.ts";
-import { classifyRisk } from "../src/gates/risk.ts";
-import { evaluateVerifyGate } from "../src/gates/verify.ts";
-import { evaluateWorktreeGate } from "../src/gates/worktree.ts";
+import { evaluateCompletionGate } from "../src/legacy/task-first/gates/completion.ts";
+import { evaluateDesignGate } from "../src/legacy/task-first/gates/design.ts";
+import { evaluateReviewGate } from "../src/legacy/task-first/gates/review.ts";
+import { classifyRisk } from "../src/legacy/task-first/gates/risk.ts";
+import { evaluateVerifyGate } from "../src/legacy/task-first/gates/verify.ts";
+import { evaluateWorktreeGate } from "../src/legacy/task-first/gates/worktree.ts";
 
 const HEAD = "a".repeat(40);
 const BASE = "b".repeat(40);

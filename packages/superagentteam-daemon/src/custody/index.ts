@@ -1,7 +1,3 @@
-export {
-	type BlockedOnResolve,
-	type CustodyBlocked,
-	type CustodyProjection,
-	projectCustody,
-} from "./projection.ts";
-export { type ArmWaitInput, WaitContractService } from "./waits.ts";
+// Legacy compatibility shim (R1-0). Real code: src/legacy/task-first/custody/index.ts
+// Removal: R5. Do not add new logic here.
+export * from "../legacy/task-first/custody/index.ts";

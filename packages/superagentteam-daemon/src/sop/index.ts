@@ -1,2 +1,3 @@
-export type { ResolveBacklogInput, SopViewOptions } from "./service.ts";
-export { SOP_CATALOG, SOP_STAGE_IDS, SopService } from "./service.ts";
+// Legacy compatibility shim (R1-0). Real code: src/legacy/task-first/sop/index.ts
+// Removal: R5. Do not add new logic here.
+export * from "../legacy/task-first/sop/index.ts";

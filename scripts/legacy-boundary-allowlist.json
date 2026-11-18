@@ -1,0 +1,222 @@
+{
+  "auth/mint.ts": {
+    "owner": "R1-c",
+    "why": "credential/auth rebuild (F018 invocation scope)"
+  },
+  "auth/resolver.ts": {
+    "owner": "R1-c",
+    "why": "credential/auth rebuild (F018 invocation scope)"
+  },
+  "auth/revoke.ts": {
+    "owner": "R1-c",
+    "why": "credential/auth rebuild (F018 invocation scope)"
+  },
+  "cli/approval.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/backlog.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/budget.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/deployment.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/gate.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/merge.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/profile.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/schedule.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/session.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/sop.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "cli/thread.ts": {
+    "owner": "R5",
+    "why": "task-first CLI surface"
+  },
+  "control/database.ts": {
+    "owner": "R5",
+    "why": "applies frozen task-first migrations for legacy runtime; v1 harness is infrastructure/db (R1-a)"
+  },
+  "control/index.ts": {
+    "owner": "R1-b",
+    "why": "aggregates/re-exports legacy control surface until domain stores replace it"
+  },
+  "control/recovery.ts": {
+    "owner": "R5",
+    "why": "task-first recovery sweep"
+  },
+  "control/store.ts": {
+    "owner": "R1-b",
+    "why": "aggregates/re-exports legacy control surface until domain stores replace it"
+  },
+  "control/stores/audit.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/evals.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/forge-deliveries.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/invocation-credentials.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/messages.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/profiles.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/queue.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/roles.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/sessions.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/thread-events.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/threads.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/workers.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/workflow-sops.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "control/stores/worktree-leases.ts": {
+    "owner": "R1-b",
+    "why": "active store replaced by domain stores; barrel import dies with it"
+  },
+  "daemon-runtime.ts": {
+    "owner": "R2",
+    "why": "wires legacy DispatchService until v1 runtime"
+  },
+  "eval/artifacts.ts": {
+    "owner": "R5",
+    "why": "eval reads task-first models"
+  },
+  "eval/episodes.ts": {
+    "owner": "R5",
+    "why": "eval reads task-first models"
+  },
+  "eval/lifecycle.ts": {
+    "owner": "R5",
+    "why": "eval reads task-first models"
+  },
+  "eval/publish.ts": {
+    "owner": "R5",
+    "why": "eval reads task-first models"
+  },
+  "eval/registry.ts": {
+    "owner": "R5",
+    "why": "eval reads task-first models"
+  },
+  "eval/report.ts": {
+    "owner": "R5",
+    "why": "eval reads task-first models"
+  },
+  "index.ts": {
+    "owner": "R1-a",
+    "why": "package barrel; prunes legacy exports as v1 lands"
+  },
+  "observability/contracts.ts": {
+    "owner": "R5",
+    "why": "task-first telemetry contracts"
+  },
+  "observability/tracer.ts": {
+    "owner": "R5",
+    "why": "task-first telemetry contracts"
+  },
+  "observability/trajectory.ts": {
+    "owner": "R5",
+    "why": "task-first telemetry contracts"
+  },
+  "policy/handoffs.ts": {
+    "owner": "R2",
+    "why": "task-bound policy branches split in v1"
+  },
+  "workers/control.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/event-sink.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/executor.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/failure-policy.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/harness.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/prompt.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/registry.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/runtime.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/tool-policy.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "workers/worker-extension.ts": {
+    "owner": "R2",
+    "why": "task-bound worker branches; v1 surface rebuild"
+  },
+  "auth/liveness.ts": {
+    "owner": "R5",
+    "why": "task-first consumer"
+  }
+}

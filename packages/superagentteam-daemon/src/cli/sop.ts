@@ -1,6 +1,9 @@
 import { ControlError } from "../control/errors.ts";
-import { SOP_CHECK_EVIDENCE_KIND, SOP_CHECK_NAME_VALUES } from "../control/stores/sop-check-evidence.ts";
 import type { SopCheckName, SopChecks, SopStage } from "../control/stores/types.ts";
+import {
+	SOP_CHECK_EVIDENCE_KIND,
+	SOP_CHECK_NAME_VALUES,
+} from "../legacy/task-first/control/stores/sop-check-evidence.ts";
 import { SOP_CATALOG, SOP_STAGE_IDS, SopService } from "../sop/service.ts";
 import { numberOption, option, options, type ParsedArgs, requireOption } from "./args.ts";
 import { type CliContext, requireOperator } from "./context.ts";

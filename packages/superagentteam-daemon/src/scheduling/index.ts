@@ -1,9 +1,3 @@
-export * from "./artifact-gc.ts";
-export * from "./budget.ts";
-export * from "./capacity.ts";
-export * from "./dependencies.ts";
-export * from "./priority.ts";
-export * from "./provisioning.ts";
-export * from "./readiness.ts";
-export * from "./schedule.ts";
-export * from "./worktree-pool.ts";
+// Legacy compatibility shim (R1-0). Real code: src/legacy/task-first/scheduling/index.ts
+// Removal: R5. Do not add new logic here.
+export * from "../legacy/task-first/scheduling/index.ts";
