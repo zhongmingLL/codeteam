@@ -1,9 +1,9 @@
 ---
 title: "F019 — SuperAgentTeam rename execution plan"
 doc_kind: plan
-status: reviewed
+status: completed
 created: 2026-11-16
-updated: 2026-11-17
+updated: 2026-11-18
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F019
@@ -16,6 +16,9 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 
 > F019 把平台名从 `codeteam` 迁到 **SuperAgentTeam**，并把 code team 降为 team profile，
 > 不把 code 语义带进通用 A2A runtime。R1-0 在 F019.1–F019.3 完成前暂停。
+>
+> **2026-11-18：F019.5 已完成。** 下面 F019.3 的 alias/dual-read 描述是迁移期
+> 历史记录，不再代表当前行为；当前状态以第 6 节和 F019 feature 为准。
 
 ## 0. 执行顺序
 
@@ -130,10 +133,13 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 
 ## 6. F019.5 — alias 清理
 
-- 弃用窗口结束后删除 `@codeteam/*` re-export、`CODETEAM_*` fallback、
-  `codeteam` CLI wrapper、`codeteam_*` tool alias。
-- 历史/legacy 文档保留原样；R5 归档。
-- 记录 alias 使用量/最后调用时间，确认无消费者再删。
+- 2026-11-18 完成清理：删除 `CODETEAM_*` fallback/镜像、`~/.codeteam` dual-read、
+  `codeteam` CLI bin、`codeteam_*` tool alias、`codeteam-*` skill alias。
+- 审计证据：真实 home 无 `~/.codeteam` / `~/.superagentteam`；无 `CODETEAM_*` env；
+  无 `codeteam` CLI；无 daemon 进程；无 shell/systemd/cron 消费者；仓库无
+  `@codeteam/*` re-export 包；旧名消费者只剩兼容代码/测试/迁移文档。
+- 历史/legacy 文档保留原样；R5 归档。内部域分隔常量（installation hash、signed
+  payload 前缀）和旧 auth deny prefix 保留，不构成兼容 alias。
 
 ## 7. 验证与 review
 
@@ -148,8 +154,8 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 
 | 风险 | 处置 |
 |---|---|
-| 工具名硬切破坏模型 prompt | 保留 `codeteam_*` alias；新名只在文档/新调用 |
-| 数据路径断裂 | 双读 + fixture + 回滚；当前无真实用户数据但仍测试 |
+| 工具名硬切破坏模型 prompt | F019.5 审计确认无活跃消费者后移除 alias；反例测试覆盖旧名拒绝 |
+| 数据路径断裂 | 审计确认无运行数据后移除 dual-read；文档要求旧根手动迁移 |
 | 包 rename 导致 import/build 大面积断 | 分阶段 codemod + build/ts-imports；兼容 re-export |
 | 分支 protection/CI 断 | F019.4 已完成；protection/required checks 跟随并验证 |
 | 历史文档被误改 | 只改当前 canonical；legacy/historical 加边界，不批量替换 |
@@ -163,5 +169,6 @@ source_decision: "operator 2026-11-16: independent F019 before F018 R1-0"
 4. F019.3 env/data/CLI/tools alias；兼容测试绿。
 5. 回写 `0021` 目标名为 `@superagentteam/*`；解除 R1-0 暂停。
 6. F019.4 repo + default branch rename 已完成；protection/required checks 已验证。
+7. F019.5 alias 清理已完成；旧名反例测试、build、doc-index 通过。
 
 [宪宪/deepseek-flash🐾]

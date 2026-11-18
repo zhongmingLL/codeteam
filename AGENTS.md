@@ -17,12 +17,12 @@
 
 ## Naming migration (F019)
 
-- Product/display name: **SuperAgentTeam**. `codeteam` is the legacy/alias name.
+- Product/display name: **SuperAgentTeam**. `codeteam` is the historical/legacy name only.
 - New and active docs use `superagentteam/Fxxx`; F001–F018 keep `codeteam/Fxxx` for history.
 - F019.2 packages and F019.3 env/data/CLI/tool/skill names now default to
-  `superagentteam*`; `codeteam*` remains a compatibility alias through F019.5.
-  F019.4 renamed the repository to `zhongmingLL/superagentteam` and the default branch
-  to `superagentteam-work`.
+  `superagentteam*`; F019.5 removed the `codeteam*` compatibility aliases.
+  F019.4 renamed the repository to `zhongmingLL/superagentteam` and the default
+  branch to `superagentteam-work`.
 
 ## Scope and boundaries
 

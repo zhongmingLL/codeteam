@@ -34,7 +34,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam control migration matrix", () => {
+describe("SuperAgentTeam control migration matrix", () => {
 	it("builds every control table from an empty database", () => {
 		const dataDir = tempDir();
 		const store = openControlStore({ dataDir });

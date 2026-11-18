@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { Type } from "typebox";
 import { A2A_ALL_TOOL_SPECS } from "../a2a/tool-surface.ts";
-import { aliasLegacyEnv, envValue } from "../env.ts";
+import { envValue } from "../env.ts";
 
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const REQUEST_TIMEOUT_MS = 2_000;
@@ -201,8 +201,7 @@ function readToken(path: string): string | null {
 	}
 }
 
-export default function codeteamWorkerExtension(pi: ExtensionAPI): void {
-	aliasLegacyEnv();
+export default function superagentteamWorkerExtension(pi: ExtensionAPI): void {
 	const socketPath = envValue(process.env, "CONTROL_SOCKET") ?? "";
 	const workerId = envValue(process.env, "WORKER_ID") ?? "";
 	const tokenFile = envValue(process.env, "TOKEN_FILE") ?? "";

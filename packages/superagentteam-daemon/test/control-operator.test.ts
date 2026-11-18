@@ -42,7 +42,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam operator credentials", () => {
+describe("SuperAgentTeam operator credentials", () => {
 	it("initializes 0600 key files under a 0700 directory and is idempotent", () => {
 		const first = initOperatorCredential({ dataDir });
 		expect(first.fingerprint).toMatch(/^[0-9a-f]{16}$/);

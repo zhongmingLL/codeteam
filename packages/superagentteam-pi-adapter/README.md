@@ -22,7 +22,7 @@ system hashes, and cross-process JSONL resume with continued prompting.
 
 `test/provider-live.e2e.test.ts` makes a real vendor call and is skipped unless
 `SUPERAGENTTEAM_LIVE_PROVIDER=1` and `SUPERAGENTTEAM_LIVE_BASE_URL`, `SUPERAGENTTEAM_LIVE_MODEL`,
-`SUPERAGENTTEAM_LIVE_API_KEY` are set (legacy `CODETEAM_LIVE_*` is also accepted). `SUPERAGENTTEAM_LIVE_API` selects `anthropic-messages` (default) or
+`SUPERAGENTTEAM_LIVE_API_KEY` are set. `SUPERAGENTTEAM_LIVE_API` selects `anthropic-messages` (default) or
 `openai-completions`; `SUPERAGENTTEAM_LIVE_PROVIDER_ID` selects the auth key id. The key is written only to
 a temp `auth.json` and is never committed.
 

@@ -79,7 +79,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam work / SOP / artifact stores", () => {
+describe("SuperAgentTeam work / SOP / artifact stores", () => {
 	it("creates and lists backlog items, including system admission restrictions", () => {
 		const item = createBacklog();
 		expect(store.backlog.get(item.id)).toMatchObject({ status: "open", tags: ["feature:F004"] });

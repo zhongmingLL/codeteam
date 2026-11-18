@@ -410,7 +410,7 @@ export class DispatchService {
 		if (!task.worktree) {
 			throw new ControlError(
 				"dispatch_not_ready",
-				`task ${task.id} has no worktree; run codeteam task prepare ${task.id} before draining`,
+				`task ${task.id} has no worktree; run superagentteam task prepare ${task.id} before draining`,
 			);
 		}
 		if (sourceKind !== "backlog_dispatch") return;
@@ -424,7 +424,7 @@ export class DispatchService {
 			if (sessions.length === 0) {
 				throw new ControlError(
 					"dispatch_not_ready",
-					`target ${targetProfileId} has no active session for task ${taskId}; run codeteam task prepare ${taskId}`,
+					`target ${targetProfileId} has no active session for task ${taskId}; run superagentteam task prepare ${taskId}`,
 				);
 			}
 			if (sessions.length > 1) {

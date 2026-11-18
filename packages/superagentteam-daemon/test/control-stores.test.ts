@@ -56,7 +56,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam control stores", () => {
+describe("SuperAgentTeam control stores", () => {
 	it("seeds built-in roles and configurable eval/compress profiles idempotently", () => {
 		expect(store.roles.list().map((role) => role.id)).toEqual(
 			expect.arrayContaining(["architect", "coder", "reviewer", "verifier", "eval", "compress"]),

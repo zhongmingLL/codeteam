@@ -3,21 +3,20 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-describe("CLI naming compatibility", () => {
-	it("prints the SuperAgentTeam usage and the codeteam alias", () => {
+describe("CLI naming", () => {
+	it("prints only the SuperAgentTeam usage", () => {
 		const cli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 		const text = execFileSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
 		expect(text).toContain("usage: superagentteam <command>");
-		expect(text).toContain("codeteam is a compatibility alias");
+		expect(text).not.toContain("codeteam");
 	});
 
-	it("keeps both executable names on the same CLI entry", () => {
+	it("installs only the superagentteam executable", () => {
 		const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
 			bin?: Record<string, string>;
 		};
 		expect(pkg.bin).toEqual({
 			superagentteam: "./dist/cli.js",
-			codeteam: "./dist/cli.js",
 		});
 	});
 });

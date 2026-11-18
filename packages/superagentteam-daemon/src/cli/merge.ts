@@ -52,7 +52,7 @@ export function runMergeCommand(args: ParsedArgs, context: CliContext): number {
 		return result.receipt.status === "succeeded" ? 0 : 1;
 	}
 	if (subcommand === "record") return recordMerge(args, context);
-	throw new ControlError("invalid_input", "usage: codeteam merge <plan|execute|record>");
+	throw new ControlError("invalid_input", "usage: superagentteam merge <plan|execute|record>");
 }
 
 function recordMerge(args: ParsedArgs, context: CliContext): number {

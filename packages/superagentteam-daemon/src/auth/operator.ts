@@ -60,7 +60,7 @@ export function operatorCredentialPaths(dataDir: string): OperatorCredentialPath
 	const privateKeyPath = join(dir, "operator.key");
 	const publicKeyPath = join(dir, "operator.pub");
 	if (!existsSync(privateKeyPath) || !existsSync(publicKeyPath)) {
-		throw new ControlError("not_found", "operator credential is not initialized; run `codeteam auth init`");
+		throw new ControlError("not_found", "operator credential is not initialized; run `superagentteam auth init`");
 	}
 	return {
 		privateKeyPath,

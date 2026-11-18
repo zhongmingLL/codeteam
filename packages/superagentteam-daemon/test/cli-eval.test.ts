@@ -22,7 +22,7 @@ let escalatedCaseId: string;
 function rawCli(args: readonly string[]) {
 	return spawnSync(process.execPath, [CLI, "--data-dir", dataDir, ...args], {
 		encoding: "utf8",
-		env: { ...process.env, CODETEAM_DATA_DIR: dataDir },
+		env: { ...process.env, SUPERAGENTTEAM_DATA_DIR: dataDir },
 	});
 }
 

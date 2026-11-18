@@ -121,7 +121,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam SOP service", () => {
+describe("SuperAgentTeam SOP service", () => {
 	it("projects verified checks only when the current revision matches the evidence", () => {
 		createBacklog();
 		store.sops.upsert(sopInput());

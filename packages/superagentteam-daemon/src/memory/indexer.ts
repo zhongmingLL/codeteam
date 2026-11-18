@@ -139,7 +139,7 @@ export class MemoryIndexer {
 					 ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id,
 						display_name = excluded.display_name, root = excluded.root, status = 'active'`,
 				)
-				.run(collectionId, workspaceId, basename(root) || "codeteam", root);
+				.run(collectionId, workspaceId, basename(root) || "superagentteam", root);
 
 			const configuredControlPath = controlDbPath(this.options);
 			controlReader = configuredControlPath ? ControlEvidenceReader.open({ path: configuredControlPath }) : null;

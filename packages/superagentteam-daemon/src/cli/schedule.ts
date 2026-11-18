@@ -6,7 +6,7 @@ import { type CliContext, requireOperator } from "./context.ts";
 import { writeJson, writeLine, writeTable } from "./output.ts";
 
 function usage(): never {
-	throw new ControlError("invalid_input", "usage: codeteam schedule <add|list|show|pause|resume|tick> ...");
+	throw new ControlError("invalid_input", "usage: superagentteam schedule <add|list|show|pause|resume|tick> ...");
 }
 
 export function runScheduleCommand(args: ParsedArgs, context: CliContext): number {
@@ -76,7 +76,7 @@ function listSchedules(args: ParsedArgs, context: CliContext): number {
 
 function showSchedule(args: ParsedArgs, context: CliContext): number {
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam schedule show <id>");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam schedule show <id>");
 	const spec = context.store.schedules.get(id);
 	if (!spec) throw new ControlError("not_found", `schedule spec ${id} not found`);
 	const runs = context.store.schedules.listRuns(id, numberOption(args, "limit") ?? 50);
@@ -96,7 +96,7 @@ function showSchedule(args: ParsedArgs, context: CliContext): number {
 function changeScheduleStatus(args: ParsedArgs, context: CliContext, subcommand: "pause" | "resume"): number {
 	const operator = requireOperator(context);
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", `usage: codeteam schedule ${subcommand} <id>`);
+	if (!id) throw new ControlError("invalid_input", `usage: superagentteam schedule ${subcommand} <id>`);
 	const service = new ProactiveScheduleService(context.store);
 	const spec =
 		subcommand === "pause" ? service.pause(id, `user:${operator.id}`) : service.resume(id, `user:${operator.id}`);

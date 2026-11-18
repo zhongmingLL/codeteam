@@ -46,7 +46,7 @@ rl.on("line", (line) => {
 	}
 	if (hangOnPrompt) return;
 	const finishPrompt = () => {
-		const tokenHash = hashToken(process.env.SUPERAGENTTEAM_TOKEN_FILE ?? process.env.CODETEAM_TOKEN_FILE);
+		const tokenHash = hashToken(process.env.SUPERAGENTTEAM_TOKEN_FILE);
 		emit({
 			type: "tool_execution_start",
 			toolCallId: `fake-tool-${promptCount}`,

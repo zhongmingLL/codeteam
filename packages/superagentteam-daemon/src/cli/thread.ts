@@ -33,7 +33,7 @@ export async function runThreadCommand(args: ParsedArgs, context: CliContext): P
 	if (subcommand === "show") return showThread(args, context);
 	if (subcommand === "post") return postThread(args, context);
 	if (subcommand === "tail") return tailThread(args, context);
-	throw new ControlError("invalid_input", "usage: codeteam thread <list|show|post|tail>");
+	throw new ControlError("invalid_input", "usage: superagentteam thread <list|show|post|tail>");
 }
 
 function listThreads(args: ParsedArgs, context: CliContext): number {
@@ -60,7 +60,7 @@ function listThreads(args: ParsedArgs, context: CliContext): number {
 
 function showThread(args: ParsedArgs, context: CliContext): number {
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam thread show <threadId>");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam thread show <threadId>");
 	const thread = context.store.threads.get(id);
 	if (!thread) throw new ControlError("not_found", `thread ${id} not found`);
 	const messages = context.store.messages.listThread(id, { limit: numberOption(args, "messages") ?? 50 });
@@ -82,7 +82,8 @@ function showThread(args: ParsedArgs, context: CliContext): number {
 function postThread(args: ParsedArgs, context: CliContext): number {
 	const operator = requireOperator(context);
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam thread post <threadId> <body> [--to <profile>]");
+	if (!id)
+		throw new ControlError("invalid_input", "usage: superagentteam thread post <threadId> <body> [--to <profile>]");
 	const body = args.positionals[2] ?? option(args, "body");
 	if (body === undefined || body.trim() === "") throw new ControlError("invalid_input", "message body is required");
 	const kind = (option(args, "kind") ?? "chat") as MessageKind;
@@ -94,7 +95,7 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 		if (!taskId) {
 			throw new ControlError(
 				"invalid_input",
-				"thread post --to requires --task <taskId>; run codeteam task list --thread <threadId>",
+				"thread post --to requires --task <taskId>; run superagentteam task list --thread <threadId>",
 			);
 		}
 		boundTask = context.store.tasks.get(taskId);
@@ -105,7 +106,7 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 		if (!boundTask.worktree) {
 			throw new ControlError(
 				"invalid_state",
-				`task ${taskId} has no worktree; run codeteam task prepare ${taskId} --profile <profile>`,
+				`task ${taskId} has no worktree; run superagentteam task prepare ${taskId} --profile <profile>`,
 			);
 		}
 		for (const target of targets) {
@@ -117,7 +118,7 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 			if (sessions.length !== 1) {
 				throw new ControlError(
 					"invalid_state",
-					`target ${target} has ${sessions.length} active sessions for task ${taskId}; run codeteam task prepare ${taskId} --profile ${target}`,
+					`target ${target} has ${sessions.length} active sessions for task ${taskId}; run superagentteam task prepare ${taskId} --profile ${target}`,
 				);
 			}
 		}
@@ -192,7 +193,10 @@ function resolveLineMentions(context: CliContext, body: string): string[] {
 async function tailThread(args: ParsedArgs, context: CliContext): Promise<number> {
 	const id = args.positionals[1];
 	if (!id)
-		throw new ControlError("invalid_input", "usage: codeteam thread tail <threadId> [--after-seq N] [--follow]");
+		throw new ControlError(
+			"invalid_input",
+			"usage: superagentteam thread tail <threadId> [--after-seq N] [--follow]",
+		);
 	if (!context.store.threads.get(id)) throw new ControlError("not_found", `thread ${id} not found`);
 	const follow = flag(args, "follow");
 	const intervalMs = Math.max(numberOption(args, "interval-ms") ?? 500, 50);
@@ -279,7 +283,7 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 		if (!taskId) {
 			throw new ControlError(
 				"invalid_input",
-				"usage: codeteam task prepare <taskId> --profile <profile> [--profile ...] [--role <role>] [--worktree <path>]",
+				"usage: superagentteam task prepare <taskId> --profile <profile> [--profile ...] [--role <role>] [--worktree <path>]",
 			);
 		}
 		const profileIds = options(args, "profile");
@@ -307,7 +311,7 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 	}
 	if (subcommand === "readiness") {
 		const taskId = args.positionals[1];
-		if (!taskId) throw new ControlError("invalid_input", "usage: codeteam task readiness <taskId>");
+		if (!taskId) throw new ControlError("invalid_input", "usage: superagentteam task readiness <taskId>");
 		const service = new TaskReadinessService(context.store, {
 			worktree: new WorktreePoolService(context.store, { rootDir: join(context.dataDir, "worktrees") }),
 		});
@@ -334,7 +338,8 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 	}
 	if (subcommand === "status") {
 		const taskId = args.positionals[1];
-		if (!taskId) throw new ControlError("invalid_input", "usage: codeteam task status <taskId> --status <status>");
+		if (!taskId)
+			throw new ControlError("invalid_input", "usage: superagentteam task status <taskId> --status <status>");
 		const status = requireOption(args, "status") as "todo" | "doing" | "blocked" | "done";
 		if (!["todo", "doing", "blocked", "done"].includes(status)) {
 			throw new ControlError("invalid_input", "unknown task status");
@@ -344,7 +349,7 @@ export function runTaskCommand(args: ParsedArgs, context: CliContext): number {
 		else writeLine(`updated task ${task.id} status=${task.status}`);
 		return 0;
 	}
-	throw new ControlError("invalid_input", "usage: codeteam task <create|prepare|list|status|readiness>");
+	throw new ControlError("invalid_input", "usage: superagentteam task <create|prepare|list|status|readiness>");
 }
 
 function budgetNumber(args: ParsedArgs, name: string): number | undefined {

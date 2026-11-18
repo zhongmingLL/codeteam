@@ -111,7 +111,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam run / task / credential stores", () => {
+describe("SuperAgentTeam run / task / credential stores", () => {
 	it("creates work and tracking tasks with CAS status/disposition", () => {
 		const { backlog, thread, task } = baseWork();
 		expect(task).toMatchObject({ kind: "work", status: "todo", backlogItemId: backlog.id, threadId: thread.id });

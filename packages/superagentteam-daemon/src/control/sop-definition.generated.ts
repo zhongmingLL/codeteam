@@ -16,7 +16,7 @@ export const DEVELOPMENT_SOP_DEFINITION = {
   "id": "development",
   "domain": "engineering",
   "label": "Development SOP",
-  "description": "codeteam development lane catalog for WorkflowSop. Stage ids are bulletin-board lanes, not a mandatory serial pipeline. Risk decides which lanes and gates are used; only completion and evidence-backed checks have write gates.",
+  "description": "SuperAgentTeam development lane catalog for WorkflowSop. Stage ids are bulletin-board lanes, not a mandatory serial pipeline. Risk decides which lanes and gates are used; only completion and evidence-backed checks have write gates.",
   "checks": [
     {
       "name": "remoteMainSynced",
@@ -169,7 +169,7 @@ export const DEVELOPMENT_SOP_DEFINITION = {
           },
           "predicate": {
             "type": "manual_only",
-            "reason": "codeteam has no convention-graph CLI in v1; use grep/tsc/tests as the explicit consumer census."
+            "reason": "SuperAgentTeam has no convention-graph CLI in v1; use grep/tsc/tests as the explicit consumer census."
           }
         }
       ]

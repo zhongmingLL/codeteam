@@ -1,7 +1,7 @@
 /**
  * Frozen W6b eval contract, aligned with the approved architecture reuse review
  * (`docs/architecture/reuse-review/harness-eval.md`). Clowder wire names are
- * mapped to codeteam identities (evalCat -> evalAgentProfileId, catId ->
+ * mapped to SuperAgentTeam identities (evalCat -> evalAgentProfileId, catId ->
  * profileId), but the envelope/lifecycle semantics stay the same.
  */
 

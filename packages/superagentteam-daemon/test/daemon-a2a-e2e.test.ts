@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type DaemonHandle, openControlStore, startDaemon } from "../src/index.ts";
 import { startMockAnthropic, textResponse, toolCallResponse } from "./helpers/mock-anthropic.ts";
 
-const CODETEAM_CLI_PATH = join(import.meta.dirname, "..", "dist", "cli.js");
+const SUPERAGENTTEAM_CLI_PATH = join(import.meta.dirname, "..", "dist", "cli.js");
 const PI_CLI_PATH = join(import.meta.dirname, "..", "..", "coding-agent", "dist", "cli.js");
 const daemons: DaemonHandle[] = [];
 const dirs: string[] = [];
@@ -127,9 +127,9 @@ function setupDirs() {
 }
 
 function cli(dataDir: string, args: readonly string[]) {
-	return spawnSync(process.execPath, [CODETEAM_CLI_PATH, "--data-dir", dataDir, ...args, "--json"], {
+	return spawnSync(process.execPath, [SUPERAGENTTEAM_CLI_PATH, "--data-dir", dataDir, ...args, "--json"], {
 		encoding: "utf8",
-		env: { ...process.env, CODETEAM_DATA_DIR: dataDir },
+		env: { ...process.env, SUPERAGENTTEAM_DATA_DIR: dataDir },
 	});
 }
 

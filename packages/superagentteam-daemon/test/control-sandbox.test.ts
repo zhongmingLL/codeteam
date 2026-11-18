@@ -46,7 +46,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam sandbox profile", () => {
+describe("SuperAgentTeam sandbox profile", () => {
 	it("builds a bwrap profile that mounts only the worktree and system roots", () => {
 		const argv = buildSandboxArgv(coder, execution(["ls", "src"], worktree));
 		expect(argv[0]).toMatch(/bwrap$/);
@@ -83,7 +83,7 @@ function hasBind(argv: readonly string[], flag: string, path: string): boolean {
 	return false;
 }
 
-describe.skipIf(!hasBwrap)("codeteam sandbox execution", () => {
+describe.skipIf(!hasBwrap)("SuperAgentTeam sandbox execution", () => {
 	it("runs allowlisted commands inside bwrap", async () => {
 		const result = await runCommand(coder, { argv: ["ls", "src"] }, { sandbox: true });
 		expect(result.exitCode).toBe(0);

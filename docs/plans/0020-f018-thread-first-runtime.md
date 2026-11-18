@@ -31,7 +31,7 @@ source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; 2026-11-12 DP-C=
 - `threads`：`created_by`、`project_path`（必填）、`title_source`、
   `last_active_at`、`deleted_at`。
 - `thread_participants`。
-- `.superagentteam/agent-catalog.json` + `.superagentteam/accounts.json`（旧 `.codeteam/` dual-read）：AgentConfig /
+- `.superagentteam/agent-catalog.json` + `.superagentteam/accounts.json`：AgentConfig /
   AccountConfig 加载、校验、AgentRegistry；`mentionPatterns` 建 pattern→agentId
   索引并校验跨 agent 唯一；AgentState 运行时状态。
 - `agent_sessions`：thread×agent 单 active；`agent_id` 目标列；`task_id`/

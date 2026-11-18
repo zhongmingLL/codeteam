@@ -12,7 +12,7 @@ let dataDir: string;
 function cli(args: readonly string[], expectStatus = 0): string {
 	const result = spawnSync(process.execPath, [CLI, "--data-dir", dataDir, ...args], {
 		encoding: "utf8",
-		env: { ...process.env, CODETEAM_DATA_DIR: dataDir },
+		env: { ...process.env, SUPERAGENTTEAM_DATA_DIR: dataDir },
 	});
 	if (result.status !== expectStatus) {
 		throw new Error(
@@ -73,7 +73,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam W4 CLI dogfood", () => {
+describe("SuperAgentTeam W4 CLI dogfood", () => {
 	it("runs backlog -> thread -> agent reply -> approval -> merge -> SOP completion without Web", () => {
 		cli(["auth", "init"]);
 		cli(["profile", "seed"]);

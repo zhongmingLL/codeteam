@@ -3,7 +3,7 @@ title: "codeteam Thread model v1 — minimal A2A thread"
 doc_kind: architecture
 status: draft-for-review
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-18
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_decisions: "2026-11-05: projectPath required; active/deleted only; no ThreadGoal/tokenBudget in v1; empty thread allowed"
@@ -110,7 +110,7 @@ interface Thread {
 迁移前置：
 
 - 扫描所有旧 thread；列出 `projectPath` 或 `createdBy` 无法确定的 thread，交 operator 补齐。
-- 有 `CODETEAM_DATA_DIR/control.db` 的安装必须执行迁移；当前 workspace 没有找到本地 control.db，但不能假设所有安装为空。
+- 有 `SUPERAGENTTEAM_DATA_DIR/control.db` 的安装必须执行迁移；当前 workspace 没有找到本地 control.db，但不能假设所有安装为空。
 - `archived` thread 映射为 soft-deleted；如果用户需要保留可见，必须先在旧系统恢复为 active 再迁移。
 
 ## 5. 明确不做

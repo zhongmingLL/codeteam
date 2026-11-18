@@ -32,7 +32,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam command executor", () => {
+describe("SuperAgentTeam command executor", () => {
 	it("runs an allowlisted command in the policy cwd", async () => {
 		const result = await runCommand(policy, { argv: ["ls", "src"] });
 		expect(result.exitCode).toBe(0);

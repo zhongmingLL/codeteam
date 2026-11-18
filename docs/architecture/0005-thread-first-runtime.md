@@ -3,7 +3,7 @@ title: "SuperAgentTeam A2A runtime v1 — thread-first architecture"
 doc_kind: architecture
 status: accepted
 created: 2026-11-03
-updated: 2026-11-17
+updated: 2026-11-18
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_direction: "2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery setup frozen/deprecated"
@@ -45,10 +45,10 @@ related_features: [codeteam/F018, codeteam/F017]
    `superagentteam_cross_post_message` / `superagentteam_multi_mention` /
    `superagentteam_thread_context`。
 
-> Tool IDs are `superagentteam_*`; `codeteam_*` remains a compatibility alias until
-> F019.5. The `a2a_send` / `handoff_*` family is retired by the F018 v1 target but
-> remains registered as both `superagentteam_*` and legacy `codeteam_*` spellings
-> until R2 removes the family. E13 must assert both prefixes.
+> Tool IDs are `superagentteam_*`; F019.5 removed the `codeteam_*` compatibility
+> aliases. The `a2a_send` / `handoff_*` family is retired by the F018 v1 target but
+> remains registered under `superagentteam_*` until R2 removes the family. E13
+> asserts the canonical prefix only.
 5. **Queue 单账本**：thread + source message + targets；不造第二队列。
 6. **Auth 以 thread/turnExecution 为锚**：token 绑 `turnExecutionId`；没有 Task 坐标。
 7. **v1 只记录 invocation usage**：不引入 ThreadGoal/tokenBudget/
@@ -147,7 +147,7 @@ User
 Agent 身份是 config-as-code，完整模型见
 `docs/architecture/0008-agent-config.md`：
 
-- `.superagentteam/agent-catalog.json`（旧 `.codeteam/` dual-read）→ `AgentConfig` → `AgentRegistry` 内存注册表；
+- `.superagentteam/agent-catalog.json` → `AgentConfig` → `AgentRegistry` 内存注册表；
 - `AgentConfig.id` 用于 A2A `targets` 和 Thread participants；
   `mentionPatterns` 用于 operator 用户消息显式 `@` 路由；
   `displayName` 用于消息展示；
@@ -506,7 +506,7 @@ reviewer 指出的 `(thread_id, agent_id)` 索引时序冲突。
 | E10 | `piExtToolCallId` replay/conflict | 同 intent replay；不同 intent `pi_ext_tool_call_conflict` | 负例 E2E |
 | E11 | `replyTo` 跨 thread / 不存在 | typed reject，不静默丢弃 | 负例 E2E |
 | E12 | observation 工具名 / mention 解析 | 识别 4 个新工具；agent final response 的 text-@ 负例不误报 `missing_a2a_tool_call`；operator 正文 @ 正例；未命中 pattern 的 @ 不误报/不拒绝；命中 disabled 负例 | observation 单测 |
-| E13 | 旧 A2A 工具 | `a2a_send`/`handoff_*` 族在 R2 后完全不存在 | registry 断言：同时检查 `superagentteam_*` 与 `codeteam_*` 两个前缀 |
+| E13 | 旧 A2A 工具 | `a2a_send`/`handoff_*` 族在 R2 后完全不存在 | registry 断言：只检查 `superagentteam_*` 前缀；`codeteam_*` 不注册 |
 | E14 | 旧 code delivery 表 | v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges | DB 访问断言 |
 | E15 | session 迁移 | 有 running invocation 的 session 不迁移；等 terminal 后处理；sealing/sealed 留 legacy | migration 测试 |
 | E16 | thread access | 同 user 可见；participants 只做路由；跨 user 拒绝 | auth/ACL 测试 |

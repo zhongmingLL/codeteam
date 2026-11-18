@@ -37,12 +37,12 @@ export function runGateCommand(args: ParsedArgs, context: CliContext): number {
 		}
 		return 0;
 	}
-	if (subcommand !== "check") throw new ControlError("invalid_input", "usage: codeteam gate <check|telemetry>");
+	if (subcommand !== "check") throw new ControlError("invalid_input", "usage: superagentteam gate <check|telemetry>");
 	const gate = args.positionals[1];
 	if (!gate)
 		throw new ControlError(
 			"invalid_input",
-			"usage: codeteam gate check <worktree|design|review|verify|risk|completion|merge>",
+			"usage: superagentteam gate check <worktree|design|review|verify|risk|completion|merge>",
 		);
 	const service = new GateService(context.store);
 	if (gate === "risk") {

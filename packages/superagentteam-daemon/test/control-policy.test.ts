@@ -56,7 +56,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam tool policy", () => {
+describe("SuperAgentTeam tool policy", () => {
 	it("allows allowlisted commands and returns a minimal environment", () => {
 		const execution = evaluateCommand(policy, {
 			argv: ["ls", "src"],

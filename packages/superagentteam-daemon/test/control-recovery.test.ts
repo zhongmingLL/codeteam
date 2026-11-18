@@ -141,7 +141,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam control plane recovery", () => {
+describe("SuperAgentTeam control plane recovery", () => {
 	it("interrupts running runs and terminalizes their credentials", () => {
 		const base = baseRun();
 		const credential = store.credentials.create({

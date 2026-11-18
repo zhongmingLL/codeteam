@@ -7,7 +7,7 @@ import { writeJson, writeLine } from "./output.ts";
 function usage(): never {
 	throw new ControlError(
 		"invalid_input",
-		"usage: codeteam budget <set|show> <taskId> [--tokens N] [--cost N] [--wall-time-ms N]",
+		"usage: superagentteam budget <set|show> <taskId> [--tokens N] [--cost N] [--wall-time-ms N]",
 	);
 }
 

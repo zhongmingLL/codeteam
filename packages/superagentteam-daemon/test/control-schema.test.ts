@@ -143,7 +143,7 @@ function seedHandoff(db: DatabaseSync): void {
 	);
 }
 
-describe("codeteam control schema", () => {
+describe("SuperAgentTeam control schema", () => {
 	const dirs: string[] = [];
 
 	afterEach(() => {

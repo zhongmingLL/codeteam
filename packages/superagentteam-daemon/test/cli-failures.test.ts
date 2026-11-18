@@ -15,7 +15,7 @@ let taskId: string;
 function cli(args: readonly string[]): string {
 	const result = spawnSync(process.execPath, [CLI, "--data-dir", dataDir, ...args], {
 		encoding: "utf8",
-		env: { ...process.env, CODETEAM_DATA_DIR: dataDir },
+		env: { ...process.env, SUPERAGENTTEAM_DATA_DIR: dataDir },
 	});
 	if (result.status !== 0) {
 		throw new Error(`cli ${args.join(" ")} failed: ${result.stderr}`);
@@ -34,7 +34,7 @@ function cliJson<T>(args: readonly string[]): T {
 function cliFailure(args: readonly string[]): { code: string; message: string } {
 	const result = spawnSync(process.execPath, [CLI, "--data-dir", dataDir, ...args], {
 		encoding: "utf8",
-		env: { ...process.env, CODETEAM_DATA_DIR: dataDir },
+		env: { ...process.env, SUPERAGENTTEAM_DATA_DIR: dataDir },
 	});
 	if (result.status === 0) throw new Error(`cli ${args.join(" ")} unexpectedly succeeded`);
 	const line = result.stderr

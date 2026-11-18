@@ -49,7 +49,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam commit wrapper and handoff direction", () => {
+describe("SuperAgentTeam commit wrapper and handoff direction", () => {
 	it("commits paths through the wrapper and records the head chain in audit", async () => {
 		writeFileSync(join(worktree, "src", "b.ts"), "export const b = 2;\n");
 		const result = await commitWithAudit(store, policy, {

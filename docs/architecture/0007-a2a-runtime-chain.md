@@ -3,7 +3,7 @@ title: "SuperAgentTeam A2A runtime chain v1 — Clowder-aligned"
 doc_kind: architecture
 status: accepted
 created: 2026-11-06
-updated: 2026-11-16
+updated: 2026-11-18
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 operator_signoff: "confirmed 2026-11-06"
@@ -13,9 +13,9 @@ related_features: [codeteam/F018, codeteam/F017]
 
 # SuperAgentTeam A2A runtime chain v1
 
-> Naming (F019.3): current product name is SuperAgentTeam; `codeteam` below is the
-> historical/legacy name. Runtime tool IDs use `superagentteam_*` with `codeteam_*`
-> aliases; package paths are `packages/superagentteam-*`.
+> Naming (F019.5): current product name is SuperAgentTeam; `codeteam` below is the
+> historical/legacy name. Runtime tool IDs use `superagentteam_*`; package paths are
+> `packages/superagentteam-*`.
 
 > **V1 target contract：** 本文是 F018 v1 的实现基线；方向/范围见 `0005`，
 > operator 体验见 `0014`，terminal/settlement 深挖见 `0016`，draft store 见 `0017`。
@@ -2167,7 +2167,7 @@ worker-extension.ts
 ```
 
 - token = `ct1.<credentialId>.<secret>`；只存 hash+salt；token 本体只经
-  `CODETEAM_TOKEN_FILE` 交给 pi extension；文件 0600，extension 每次 tool call 重读。
+  `SUPERAGENTTEAM_TOKEN_FILE` 交给 pi extension；文件 0600，extension 每次 tool call 重读。
 - **codeteam 的“client”是 pi extension，不是 MCP client**：`registerTool.execute(toolCallId, params, signal)`
   已经拿到 `toolCallId`；extension 应从它派生 `piExtToolCallId` 并注入 control envelope，
   不要求模型在 tool input 里生成 UUID。`wreq-N` 是 connection-local 请求序号，重试会变，
@@ -3528,7 +3528,7 @@ CREATE TABLE invocation_credentials (
 - `disposition='replaced'` 时 `replaced_by_turn_execution_id` 必填；用于 retry/preempt。
 - active credential `expires_at = NULL`；terminal tombstone 才设 GC deadline。
 - `a2a_requests` 标 legacy，v1 不写；piExtToolCallId claim 在 credential 上。
-- token 只存 hash+salt；token 本体只经 `CODETEAM_TOKEN_FILE` 交给 pi extension。
+- token 只存 hash+salt；token 本体只经 `SUPERAGENTTEAM_TOKEN_FILE` 交给 pi extension。
 
 ### 4.5 `agent_read_state`
 
