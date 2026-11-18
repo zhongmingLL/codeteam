@@ -38,7 +38,8 @@ As of 2026-11-18: F018 A2A runtime v1 design is accepted (Phase A contract close
 `86310de24`). F019.1 docs/branding, F019.2 packages/scope, F019.3
 env/data/CLI/tool/skill compatibility, F019.4 repository/branch rename, and F019.5
 alias cleanup are complete. F019 is closed; `codeteam*` remains only in historical
-docs and legacy data. F018 R1-0 remains paused by the operator.
+docs and legacy data. F018 development ownership was handed to 砚砚 on 2026-11-18;
+F018 R1-0 start still awaits the operator's explicit unpause.
 
 ## Data migration
 
