@@ -66,7 +66,7 @@ describe("agent-side approval request", () => {
 				"profile:eval",
 				"--json",
 			],
-			{ encoding: "utf8", env: { ...process.env, CODETEAM_DATA_DIR: dataDir } },
+			{ encoding: "utf8", env: { ...process.env, SUPERAGENTTEAM_DATA_DIR: dataDir } },
 		);
 		expect(result.status).toBe(0);
 		const approval = JSON.parse(result.stdout.trim()) as { requestedBy: string; kind: string; resolution: string };

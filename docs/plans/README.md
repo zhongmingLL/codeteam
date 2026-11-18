@@ -3,7 +3,7 @@ title: "SuperAgentTeam 执行计划索引"
 doc_kind: index
 status: reviewed
 created: 2026-10-21
-updated: 2026-11-17
+updated: 2026-11-18
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 ---
 
@@ -11,7 +11,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 
 > 上游：`architecture/0001`–`0003`、`plans/0001-runtime-hardening.md`。
 > 本目录把 W0–W8 拆成可执行、可评审、可验收的计划。每个 W 都必须有 evidence，不以“代码写完”作为完成。
-> F019 起平台显示名为 SuperAgentTeam；F019.2 已切包/scope，F019.3 已切 env/data/CLI/tool/skill 名并保留 `codeteam*` alias，F019.4 已完成 repo + default branch 改名；当前默认分支 `superagentteam-work`。
+> F019 起平台显示名为 SuperAgentTeam；F019.2 已切包/scope，F019.3 已切 env/data/CLI/tool/skill 名，F019.4 已完成 repo + default branch 改名，F019.5 已移除 `codeteam*` alias；当前默认分支 `superagentteam-work`。
 
 ## 执行顺序
 

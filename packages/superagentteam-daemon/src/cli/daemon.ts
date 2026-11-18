@@ -60,5 +60,5 @@ export async function runDaemonCommand(args: ParsedArgs, context: CliContext): P
 		else writeLine(`lifecycle ${record.opId} state=${record.state}`);
 		return 0;
 	}
-	throw new ControlError("invalid_input", "usage: codeteam daemon <status|stop>");
+	throw new ControlError("invalid_input", "usage: superagentteam daemon <status|stop>");
 }

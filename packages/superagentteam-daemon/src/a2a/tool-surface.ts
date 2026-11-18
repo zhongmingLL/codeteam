@@ -7,7 +7,6 @@
  */
 
 export const A2A_TOOL_PREFIX = "superagentteam_";
-export const A2A_LEGACY_TOOL_PREFIX = "codeteam_";
 
 export const A2A_TOOL_NAMES = [
 	"superagentteam_a2a_send",
@@ -18,18 +17,9 @@ export const A2A_TOOL_NAMES = [
 	"superagentteam_thread_context",
 ] as const;
 
-export const A2A_LEGACY_TOOL_NAMES = [
-	"codeteam_a2a_send",
-	"codeteam_handoff_create",
-	"codeteam_handoff_claim",
-	"codeteam_handoff_complete",
-	"codeteam_handoff_withdraw",
-	"codeteam_thread_context",
-] as const;
+export const A2A_ALL_TOOL_NAMES = A2A_TOOL_NAMES;
 
-export const A2A_ALL_TOOL_NAMES = [...A2A_TOOL_NAMES, ...A2A_LEGACY_TOOL_NAMES] as const;
-
-export type A2AToolName = (typeof A2A_TOOL_NAMES)[number] | (typeof A2A_LEGACY_TOOL_NAMES)[number];
+export type A2AToolName = (typeof A2A_TOOL_NAMES)[number];
 
 export type A2AAction =
 	| "a2a_send"
@@ -46,12 +36,6 @@ export const A2A_ACTION_BY_TOOL: Record<A2AToolName, A2AAction> = {
 	superagentteam_handoff_complete: "handoff_complete",
 	superagentteam_handoff_withdraw: "handoff_withdraw",
 	superagentteam_thread_context: "thread_context",
-	codeteam_a2a_send: "a2a_send",
-	codeteam_handoff_create: "handoff_create",
-	codeteam_handoff_claim: "handoff_claim",
-	codeteam_handoff_complete: "handoff_complete",
-	codeteam_handoff_withdraw: "handoff_withdraw",
-	codeteam_thread_context: "thread_context",
 };
 
 export interface A2AToolSpec {
@@ -185,9 +169,4 @@ export function describeA2ATools(): readonly A2AToolSpec[] {
 	return A2A_TOOL_SPECS;
 }
 
-export const A2A_LEGACY_TOOL_SPECS: readonly A2AToolSpec[] = A2A_TOOL_SPECS.map((spec) => ({
-	...spec,
-	name: spec.name.replace(A2A_TOOL_PREFIX, A2A_LEGACY_TOOL_PREFIX) as A2AToolName,
-}));
-
-export const A2A_ALL_TOOL_SPECS: readonly A2AToolSpec[] = [...A2A_TOOL_SPECS, ...A2A_LEGACY_TOOL_SPECS];
+export const A2A_ALL_TOOL_SPECS: readonly A2AToolSpec[] = A2A_TOOL_SPECS;

@@ -1,6 +1,6 @@
 # @superagentteam/daemon
 
-Minimal daemon lifecycle for SuperAgentTeam: `SUPERAGENTTEAM_DATA_DIR` state (legacy `CODETEAM_DATA_DIR` fallback), an append-only boot ledger, a
+Minimal daemon lifecycle for SuperAgentTeam: `SUPERAGENTTEAM_DATA_DIR` state, an append-only boot ledger, a
 single-writer fence, loopback `/health`, and `requested → ready → stopping → stopped/failed`.
 
 ```ts

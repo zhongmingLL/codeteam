@@ -121,7 +121,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam console M0 read models", () => {
+describe("SuperAgentTeam console M0 read models", () => {
 	it("summarizes threads with message, task, and queue counts", () => {
 		const context = base();
 		store.messages.append({

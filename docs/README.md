@@ -3,14 +3,14 @@ title: "SuperAgentTeam 文档索引"
 doc_kind: index
 status: active
 created: 2026-10-21
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # SuperAgentTeam 文档
 
 这里是 SuperAgentTeam 项目的架构与计划文档入口。2026-10-26 从 `clowder-ai/codeteam/` 迁入本仓 `docs/`。
-`codeteam` 是历史/别名项目名。仓库已改名为 `zhongmingLL/superagentteam`，
-默认分支为 `superagentteam-work`；旧 `codeteam*` alias 仍在迁移窗口内。
+`codeteam` 是历史项目名。仓库已改名为 `zhongmingLL/superagentteam`，
+默认分支为 `superagentteam-work`；旧 `codeteam*` alias 已在 F019.5 移除。
 
 **本目录是 SuperAgentTeam 项目的文档真相源。** 讨论历史和评审记录仍可在 clowder-ai thread 中追溯；README/0001 里出现的“已落地/已证明”是讨论时点声明，开工前需要重新对码基线。
 
@@ -18,9 +18,9 @@ updated: 2026-11-17
 
 ## 命名迁移（F019）
 
-- 平台/产品显示名：**SuperAgentTeam**；`codeteam` 仅保留为历史/兼容名。
+- 平台/产品显示名：**SuperAgentTeam**；`codeteam` 仅保留为历史名。
 - 新/活跃文档的 feature namespace 用 `superagentteam/Fxxx`；F001–F018 历史文档保留 `codeteam/Fxxx`。
-- F019.2 已把包/scope 切到 `@superagentteam/*` / `packages/superagentteam-*`；F019.3 已把 env/data/CLI/tool/skill 名切到 `SUPERAGENTTEAM_*` / `~/.superagentteam` / `superagentteam` / `superagentteam_*` / `superagentteam-*`，旧 `CODETEAM_*` / `codeteam_*` / `codeteam-*` 保留 fallback/alias 到 F019.5。F019.4 已完成 repo 改名和 default branch rename（旧 repo URL 301；branch 名不 redirect）；`superagentteam-work` 是当前默认分支。
+- F019.2 已把包/scope 切到 `@superagentteam/*` / `packages/superagentteam-*`；F019.3 已把 env/data/CLI/tool/skill 名切到 `SUPERAGENTTEAM_*` / `~/.superagentteam` / `superagentteam` / `superagentteam_*` / `superagentteam-*`；F019.5 已移除旧 `CODETEAM_*` / `codeteam_*` / `codeteam-*` fallback/alias。F019.4 已完成 repo 改名和 default branch rename（旧 repo URL 301；branch 名不 redirect）；`superagentteam-work` 是当前默认分支。
 - 入口：[`SUPERAGENTTEAM.md`](../SUPERAGENTTEAM.md)；旧 [`CODETEAM.md`](../CODETEAM.md) 是 `status: moved` stub。
 
 ## 架构文档怎么读
@@ -135,7 +135,7 @@ updated: 2026-11-17
 - **身份与 review**：`AgentProfile` 是稳定身份（对应 clowder catId + CatConfig），`AgentSession` 是执行身份；`Role` 是动态 registry（内置 architect/coder/reviewer/verifier，前端可加 writer 等），不是 TS 闭集。同一 profile 换 session 不算独立 review；独立 review 默认跨 model family。
 - **A2A 路由**：已拍板 tool-call-first（`a2a_send` 讨论 / `handoff_create` 控制），文本 `@` 只作可见标记、不作路由权威；见 `plans/0005-plan-review-resolutions.md` §10 D5。
 - **调度（A2A 灵魂链）**：复用 `A2A ingress → InvocationQueue/QueueLedgerAdmission → QueueProcessor → AgentRouter → routeSerial/routeParallel → invokeSingleCat → AgentMessage/response/terminal`；codeteam 只把 `invokeSingleCat` 换成 `invokeSingleAgent → pi kernel`。queue 多 recipient 恒 parallel，chain serial 由“每跳独立 source + 单 recipient”结构保证；F139 schedule 触发后仍生成 Queue Entry。不建第二执行队列或 cron poller。
-- **存储**：v1 用 SQLite 控制面 + 进程内缓存 + `CODETEAM_DATA_DIR` 文件；不引入 Redis 作为第二真相。daemon 数据/凭据/部署 ledger 固定在仓外目录。
+- **存储**：v1 用 SQLite 控制面 + 进程内缓存 + `SUPERAGENTTEAM_DATA_DIR` 文件；不引入 Redis 作为第二真相。daemon 数据/凭据/部署 ledger 固定在仓外目录。
 - **Task 系统**：复用 clowder `TaskItem` 底座（kind/subjectKey/title/why/owner/status/relatedFeatureId/dispatchGate/probe/entrustedWork）；codeteam 只加 backlog/repo/worktree/risk/lane/budget；`goal`→`why`，`featureId`→`relatedFeatureId`。
 - **SOP**：已拍板全面复用 clowder SOP；作用域为 feature/backlog 级 `WorkflowSop`，猫保留推进权，只锁高风险 gate；见 `plans/0005-plan-review-resolutions.md` §11 D6。
 - **执行层**：`Task`/`Run`/`Handoff`/`Artifact` 是 clowder 执行原语的代码交付扩展，不是第二套真相；不另造 queue/custody/message/SOP。见 `architecture/0001 §4.4`。

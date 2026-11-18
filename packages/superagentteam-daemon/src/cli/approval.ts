@@ -28,7 +28,7 @@ export function runApprovalCommand(args: ParsedArgs, context: CliContext): numbe
 	if (subcommand === "show") return showApproval(args, context);
 	if (subcommand === "approve") return decideApproval(args, context, "accepted");
 	if (subcommand === "reject") return decideApproval(args, context, "rejected");
-	throw new ControlError("invalid_input", "usage: codeteam approval <request|list|show|approve|reject>");
+	throw new ControlError("invalid_input", "usage: superagentteam approval <request|list|show|approve|reject>");
 }
 
 function requestApproval(args: ParsedArgs, context: CliContext): number {
@@ -102,7 +102,7 @@ function listApprovals(args: ParsedArgs, context: CliContext): number {
 
 function showApproval(args: ParsedArgs, context: CliContext): number {
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam approval show <id>");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam approval show <id>");
 	const approval = context.store.approvals.get(id);
 	if (!approval) throw new ControlError("not_found", `approval ${id} not found`);
 	if (context.json) writeJson(approval);
@@ -123,7 +123,7 @@ function decideApproval(args: ParsedArgs, context: CliContext, resolution: "acce
 	if (!id)
 		throw new ControlError(
 			"invalid_input",
-			`usage: codeteam approval ${resolution === "accepted" ? "approve" : "reject"} <id>`,
+			`usage: superagentteam approval ${resolution === "accepted" ? "approve" : "reject"} <id>`,
 		);
 	const approval = context.store.approvals.decide(id, {
 		resolution,

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { appendBootRecord, nextBootSequence } from "./boot-ledger.ts";
 import { DaemonControlPlane, type DaemonControlPlaneOptions } from "./daemon-runtime.ts";
-import { aliasLegacyEnv, envValue } from "./env.ts";
+import { envValue } from "./env.ts";
 import { DaemonError } from "./errors.ts";
 import { acquireFence, releaseFence } from "./fence.ts";
 import { resolveInstallation } from "./installation.ts";
@@ -74,7 +74,6 @@ export interface DaemonHandle {
 }
 
 export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHandle> {
-	aliasLegacyEnv();
 	const paths = resolveDaemonPaths(options.dataDir);
 	const installation = resolveInstallation(options.installationRoot);
 	const deploymentId = validateDeploymentId(options.deploymentId);

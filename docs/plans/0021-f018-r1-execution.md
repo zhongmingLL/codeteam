@@ -3,7 +3,7 @@ title: "F018 — R1 execution plan (greenfield schema + legacy move)"
 doc_kind: plan
 status: draft-for-review
 created: 2026-11-14
-updated: 2026-11-16
+updated: 2026-11-18
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 feature: F018
@@ -18,6 +18,10 @@ source_review: "docs/architecture/0018-v1-global-design-review.md"
 > 先修 `supply-chain` → merge #86 到 `superagentteam-work` → 从 `superagentteam-work`
 > 开 R1。本环境无真实用户数据，R1 走 greenfield baseline；本文拆 R1 的可执行工作、
 > legacy move 和后续阶段门禁；
+>
+> F019.5 naming re-anchor (2026-11-18): package paths use `packages/superagentteam-*`
+> and `@superagentteam/*`; config/data paths use `.superagentteam/` and
+> `SUPERAGENTTEAM_*`. The legacy aliases are removed.
 > 设计契约仍以 `0005`/`0007` + 分册为准，本文不新增契约。
 >
 > **F019 前置**：SuperAgentTeam rename 是独立 F019，排在 R1-0 前。F019.1–F019.3
@@ -81,7 +85,7 @@ git worktree add /home/ming/agent/codeteam-f018-r1 \
 - 安装：`NODE_ENV=development npm install --ignore-scripts`。
 - 基线：`NODE_ENV=development npm run build:offline`；定向测试先跑受影响包。
 - 数据：只使用隔离 dev/test 数据目录；不指向生产用户数据。
-- 本环境无真实用户数据：R1 使用新的 `CODETEAM_DATA_DIR`/空库，不迁移旧库；
+- 本环境无真实用户数据：R1 使用新的 `SUPERAGENTTEAM_DATA_DIR`/空库，不迁移旧库；
   旧 dev DB 仅作为本地参考，不进入测试/CI。
 - 契约文档在 R1 期间冻结；需要改契约时先单独 review，不在代码 PR 里顺手改。
 
@@ -92,12 +96,12 @@ git worktree add /home/ming/agent/codeteam-f018-r1 \
 
 ```text
 packages/
-├── codeteam-shared/                 # @codeteam/shared：跨 surface 契约
+├── superagentteam-shared/           # @superagentteam/shared：跨 surface 契约
 │   └── src/
 │       ├── types/                   # Thread/StoredMessage/Invocation/Turn/Queue/...
 │       ├── utils/                   # 纯函数；Node-only 依赖走子路径
 │       └── index.ts
-└── codeteam-daemon/
+└── superagentteam-daemon/
     └── src/
         ├── domains/
         │   ├── thread/{services,stores,ports}
@@ -113,10 +117,10 @@ packages/
         └── daemon.ts / daemon-runtime.ts / index.ts
 ```
 
-- 新契约只放 `@codeteam/shared`；daemon domains 只 import shared，不 import legacy。
-- 旧代码/旧类型/旧 migrations 全部进 `packages/codeteam-daemon/src/legacy/task-first/`。
+- 新契约只放 `@superagentteam/shared`；daemon domains 只 import shared，不 import legacy。
+- 旧代码/旧类型/旧 migrations 全部进 `packages/superagentteam-daemon/src/legacy/task-first/`。
 - 旧文档进 `docs/legacy/task-first/`；旧路径留 stub。
-- 未来 web：`packages/codeteam-web`，见 `docs/plans/0022-codeteam-web-surface.md`。
+- 未来 web：`packages/superagentteam-web`，见 `docs/plans/0022-codeteam-web-surface.md`。
 - `f018` 只作 feature/branch 名，不作源码目录名。
 
 ## 2. Task-first legacy 处置
@@ -126,14 +130,14 @@ packages/
 
 ### 2.1 代码
 
-目标目录：`packages/codeteam-daemon/src/legacy/task-first/`。
+目标目录：`packages/superagentteam-daemon/src/legacy/task-first/`。
 
 | 类别 | 处置 |
 |---|---|
 | `dispatch/`、`scheduling/`、`review/`、`merge/`、`gates/`、`sop/`、`managed-work/`、`deployment-wait/`、`custody/` | 物理 `git mv` 到 `legacy/task-first/`；旧路径留 compatibility shim；不扩展、不重构 |
 | `a2a_send` / `handoff_*` handlers | 移到 `legacy/task-first/a2a/`；v1 不注册、不保留 alias；`thread_context` 保留在 active path |
 | legacy control stores（tasks/runs/handoffs/custody/budgets/reviews/merges/worktree-leases/schedules/waits/inbox/backlog/workflow-sops/sop-check-evidence 等） | 按依赖顺序移到 `legacy/task-first/control/stores/` |
-| `control/stores/types.ts` 的全部 legacy 定义（Role/Profile/Session/Worker/Thread/Message/Queue/Task/Run/Handoff/...） | 原样移到 `legacy/task-first/control/stores/types.ts`；`control/stores/types.ts` 只留 `@deprecated` compatibility barrel，供旧代码 import；新契约在 `packages/codeteam-shared/src/types/` 重新定义 |
+| `control/stores/types.ts` 的全部 legacy 定义（Role/Profile/Session/Worker/Thread/Message/Queue/Task/Run/Handoff/...） | 原样移到 `legacy/task-first/control/stores/types.ts`；`control/stores/types.ts` 只留 `@deprecated` compatibility barrel，供旧代码 import；新契约在 `packages/superagentteam-shared/src/types/` 重新定义 |
 | `workers/`、`auth/` | 共享目录不整体移动；`workers/executor.ts`/`prompt.ts`/`tool-policy.ts`/`harness.ts` 的 task-bound 分支、`auth/mint.ts` 的 task-scope 分支加 boundary 标记，R1/R2 再拆 |
 | `cli/task.ts`、task read models | 移到 `legacy/task-first/cli/`；旧 CLI 入口留 shim；v1 不依赖 |
 
@@ -143,7 +147,7 @@ packages/
 - 文件不删除；R5 再归档/删除。
 
 **类型双代际**：legacy types 与 F018 types **不互相继承、不互相 alias**。
-旧代码只从 compatibility barrel 取 legacy；新 v1 只从 `@codeteam/shared/types` 取 F018。
+旧代码只从 compatibility barrel 取 legacy；新 v1 只从 `@superagentteam/shared/types` 取 F018。
 两套允许同名（`Thread`/`AgentSession`/`QueueEntry` 等），但 import 路径不同；
 任何文件不得同时依赖两套。R5 删除 legacy barrel/types。
 
@@ -151,14 +155,14 @@ packages/
 
 本环境**没有真实用户数据**，R1 走 greenfield baseline：
 
-- 新 `CODETEAM_DATA_DIR` / 空库只建 F018 schema；legacy 表不进入新 baseline。
+- 新 `SUPERAGENTTEAM_DATA_DIR` / 空库只建 F018 schema；legacy 表不进入新 baseline。
 - 不做 legacy data preflight/up/down；旧 dev DB 只作本地参考，不迁移、不进 CI。
 - legacy 列/表定义保留在历史 migration/文档里；v1 runtime 不读不写、不 dual-write。
 - 如果未来出现有数据的部署，另立 migration plan；E15 在那个环境实现。
 
 ### 2.3 文档
 
-代码和文档使用同一边界：`packages/codeteam-daemon/src/legacy/task-first/` ↔
+代码和文档使用同一边界：`packages/superagentteam-daemon/src/legacy/task-first/` ↔
 `docs/legacy/task-first/`。
 
 - 建 `docs/legacy/task-first/INDEX.md`：代码↔文档映射、旧 feature/plan 清单、
@@ -192,7 +196,7 @@ packages/
    `legacy-frozen`，F018 A2A runtime 不得 import/read/copy；实现只以
    `0005`/`0007`/分册为准，legacy 清单见 `0006`。R1-0 负责把这条规则变成
    代码标记和 CI guard。
-2. **物理移动**：建 `packages/codeteam-daemon/src/legacy/task-first/` + `README.md`；按 `git mv` 移纯
+2. **物理移动**：建 `packages/superagentteam-daemon/src/legacy/task-first/` + `README.md`；按 `git mv` 移纯
    legacy 目录和 stores；旧路径留 re-export shim；更新 import/`index.ts` 导出。
 3. **共享模块标记**：`workers/`、`auth/`、`control/stores/types.ts` 不整体移动，
    只给 task-bound 分支加 boundary 注释，避免拆坏 active 代码。
@@ -215,14 +219,14 @@ runtime 暂不读新表。
 
 **交付**
 
-- `AGENTS.md` legacy rule；`packages/codeteam-daemon/src/legacy/task-first/README.md`。
-- 纯 legacy 目录/stores 物理移到 `packages/codeteam-daemon/src/legacy/task-first/`；旧路径 compatibility
+- `AGENTS.md` legacy rule；`packages/superagentteam-daemon/src/legacy/task-first/README.md`。
+- 纯 legacy 目录/stores 物理移到 `packages/superagentteam-daemon/src/legacy/task-first/`；旧路径 compatibility
   shim；共享模块的 task-bound 分支 boundary 注释。
 - `control/stores/types.ts` 的全部定义移到 `legacy/task-first/control/stores/types.ts`；
   `control/stores/types.ts` 变 `@deprecated` compatibility barrel；建
-  `packages/codeteam-shared/src/types/` 骨架和双代际 import 规则。
+  `packages/superagentteam-shared/src/types/` 骨架和双代际 import 规则。
 - 建 `docs/legacy/task-first/INDEX.md` 和旧路径 stub；移动纯 task-first 文档。
-- 建 `packages/codeteam-shared/package.json`；`@codeteam/daemon` 加 workspace
+- 建 `packages/superagentteam-shared/package.json`；`@superagentteam/daemon` 加 workspace
   dependency；根 `build`/tsconfig 接线。
 - `scripts/check-legacy-boundary.mjs` + CI/`check` 接线；baseline allowlist。
 - E13/E14 的早期断言：retired tools 不进 v1 registry；v1 entrypoints 不 import
@@ -230,10 +234,10 @@ runtime 暂不读新表。
 
 **测试**
 
-- `npm --prefix packages/codeteam-daemon run build` + 该包测试通过；旧 CLI/daemon
+- `npm --prefix packages/superagentteam-daemon run build` + 该包测试通过；旧 CLI/daemon
   入口经 shim 仍可编译；无行为变化。
-- `npm --prefix packages/codeteam-shared run build` 通过；daemon 能 import
-  `@codeteam/shared/types`。
+- `npm --prefix packages/superagentteam-shared run build` 通过；daemon 能 import
+  `@superagentteam/shared/types`。
 - guard 对当前 baseline 通过；故意新增一个 legacy import / retired tool 时 fail。
 - 旧代码经 compatibility barrel 仍编译；新 v1 code import legacy barrel/types 时 fail。
 - allowlist 文件、owner、移除阶段可读；不允许通配整目录。
@@ -246,11 +250,11 @@ runtime 暂不读新表。
 **交付**
 
 - schema version 表 + migration runner + up/down 测试 + 空库/new baseline fixture。
-- **F018 types 重新定义**（`packages/codeteam-shared/src/types/`，不从 legacy 继承）：
+- **F018 types 重新定义**（`packages/superagentteam-shared/src/types/`，不从 legacy 继承）：
   `Thread`/`ThreadParticipant`、
   `StoredMessage`/`MessageLifecycle`、`AgentSession`/`AgentReadState`、`AgentConfig`
   相关类型；按 `0007`/`0011`/`0016`/`0017` 写，不 alias 旧 `Thread`/`Message`。
-- `.codeteam/agent-catalog.json` / `.codeteam/accounts.json` 加载与校验；
+- `.superagentteam/agent-catalog.json` / `.superagentteam/accounts.json` 加载与校验；
   `AgentConfig`（含 `mentionPatterns`）、`AccountConfig`、`AgentRegistry`
   `mentionIndex`（跨 agent 唯一，碰撞 fail closed）。
 - `threads`（created_by/project_path/title_source/last_active_at/deleted_at）、
@@ -262,7 +266,7 @@ runtime 暂不读新表。
 - 空库 → new baseline 的 migration up/down；legacy 数据不参与。
 - catalog 加载、pattern 唯一性/disabled/registry 缺、defaultModel 属于 account.models。
 - thread owner/projectPath、message 映射/validation；新 baseline 不含 legacy 列。
-- F018 types 与 legacy types 无 import 交叉；新 store 只依赖 `@codeteam/shared/types`。
+- F018 types 与 legacy types 无 import 交叉；新 store 只依赖 `@superagentteam/shared/types`。
 - `check:doc-index` 不因新增文档失败。
 
 **出口**：R1-a migration 可在空库上 up/down；新表可写但不被 runtime 读取。
@@ -272,7 +276,7 @@ runtime 暂不读新表。
 **交付**
 
 - `invocation_records`、`turn_executions`、`invocation_attempts` DDL + stores。
-- `packages/codeteam-shared/src/types/` 的 `InvocationRecord`/`InvocationAttempt`/`TurnExecution`/
+- `packages/superagentteam-shared/src/types/` 的 `InvocationRecord`/`InvocationAttempt`/`TurnExecution`/
   `QueueEntry`/`QueueAdmission`/`QueueTarget`/`QueueClaim` 按 0007/0011/0016 定义。
 - 身份契约：`invocationId`（parent）、`parentInvocationId`（child FK）、
   `turnExecutionId`、`attemptId`；`sourceRecordId`/`messageId` 分离。
@@ -296,7 +300,7 @@ runtime 暂不读新表。
 
 - `invocation_credentials` 重写：allowedTools、`toolCallClaims`、state/disposition；
   token scope 从 task 改 child TurnExecution/thread/agent/session。
-- `packages/codeteam-shared/src/types/` 的 `InvocationCredential`/`Worker`/`WorkerBinding`/
+- `packages/superagentteam-shared/src/types/` 的 `InvocationCredential`/`Worker`/`WorkerBinding`/
   `AgentSession`/`DraftRecord` 按 0007/0010/0016/0017 定义；不复用 legacy `Run`/`AgentProfile`。
 - `response_drafts` 单 `DraftRecord` + create/upsert/get/delete/orphan；Phase B 事务
   原子绑定 R/child/draft。
@@ -364,9 +368,9 @@ runtime 暂不读新表。
 |---|---|
 | `node-forge` supply-chain 阻塞 #86 | 路径 A：先独立 dependency PR；不用 admin override |
 | 上下文压缩后新 session 误用 legacy 代码 | R1-0：AGENTS.md 常驻规则 + 代码标记 + `check-legacy-boundary` CI guard；不靠记忆 |
-| greenfield reset 丢掉 dev 数据 | 本环境无真实用户数据；新 `CODETEAM_DATA_DIR`，旧 dev DB 不动；E15 留给有数据部署 |
+| greenfield reset 丢掉 dev 数据 | 本环境无真实用户数据；新 `SUPERAGENTTEAM_DATA_DIR`，旧 dev DB 不动；E15 留给有数据部署 |
 | legacy move 造成 import/构建 churn | R1-0 用 `git mv` + 旧路径 re-export shim；先跑 daemon build/tests；不删除 |
-| legacy/F018 类型双代际 import 漂移 | `control/stores/types.ts` 只作 deprecated barrel；新 v1 只 import `@codeteam/shared/types`；guard 禁止跨代际 import |
+| legacy/F018 类型双代际 import 漂移 | `control/stores/types.ts` 只作 deprecated barrel；新 v1 只 import `@superagentteam/shared/types`；guard 禁止跨代际 import |
 | auth scope 从 task 改 invocation | 跨 thread/user/agent 负例；token 只绑 child/thread/agent/session |
 | SQLite 单写者事务边界 | Phase A/Phase B、T1–T4 按契约拆；不合成一个大事务 |
 | worker/provider E2E 不稳定 | fake clock + mock provider + 真实 pi RPC 双层；失败重试有界 |
@@ -386,7 +390,7 @@ runtime 暂不读新表。
 3. supply-chain 绿后更新 #86、merge 到 `superagentteam-work`。
 4. 从 `superagentteam-work` 开 R1-0 worktree；建 `legacy/task-first/`，`git mv` 纯 legacy
    目录/stores 和 `control/stores/types.ts` 定义，旧路径留 shim/barrel；建
-   `packages/codeteam-shared/src/types/` 骨架；落 `check-legacy-boundary` + baseline allowlist。
+   `packages/superagentteam-shared/src/types/` 骨架；落 `check-legacy-boundary` + baseline allowlist。
 5. R1-0 第一个 checkpoint：guard 能拦住新 legacy import/retired tool；旧代码仍可回滚。
 6. R1-0 合后开 R1-a worktree；落 migration harness + catalog/thread/message。
 7. R1-a checkpoint：migration up/down + catalog/thread/message review；通过后进 R1-b。
@@ -396,7 +400,7 @@ runtime 暂不读新表。
 - R1-0/a/b/c/d 全部 merge；新 schema migration up/down 在空库上通过。
 - legacy boundary guard 在 CI 常驻；新 runtime import legacy 会 fail。
 - `control/stores/types.ts` 是 deprecated compatibility barrel；F018 code 只 import
-  `@codeteam/shared/types`，两代类型无交叉 import。
+  `@superagentteam/shared/types`，两代类型无交叉 import。
 - E13/E14 有可运行证据；v1 runtime 不读不写 legacy 表；旧 code path 停写；
   E15 标记为有数据部署另行 migration plan。
 - auth/draft/session/queue store 级测试通过；无 task-scope token 新写。

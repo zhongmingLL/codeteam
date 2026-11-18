@@ -5,8 +5,7 @@
 	"description": "SuperAgentTeam daemon state, boot ledger, readiness, and minimal lifecycle",
 	"type": "module",
 	"bin": {
-		"superagentteam": "./dist/cli.js",
-		"codeteam": "./dist/cli.js"
+		"superagentteam": "./dist/cli.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",

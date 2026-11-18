@@ -3,7 +3,7 @@ title: "codeteam Task-first legacy inventory"
 doc_kind: architecture
 status: legacy-inventory
 created: 2026-11-04
-updated: 2026-11-05
+updated: 2026-11-18
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_features: [codeteam/F017, codeteam/F018]
 ---
@@ -84,7 +84,7 @@ related_features: [codeteam/F017, codeteam/F018]
 | `codeteam_handoff_claim` | `retired` | 同上 |
 | `codeteam_handoff_complete` | `retired` | 同上 |
 | `codeteam_handoff_withdraw` | `retired` | 同上 |
-| `superagentteam_thread_context` (`codeteam_thread_context` alias) | active | v1 保留；只读 thread context |
+| `superagentteam_thread_context` | active | v1 保留；只读 thread context |
 
 ## 4. Feature
 
@@ -107,7 +107,7 @@ related_features: [codeteam/F017, codeteam/F018]
 |---|---|
 | R0 | 本文入库；F018 feature/plan 链接本文；不再对 legacy 模块加新功能 |
 | R1 | 停新 task dispatch；drain/seal 有 running invocation 的 session；旧表只读；不双写 |
-| R1 | 建 `.superagentteam/agent-catalog.json` + accounts（旧 `.codeteam/` dual-read）；AgentRegistry 取代 `agent_profiles`；旧 `roles`/profile 表只读 |
+| R1 | 建 `.superagentteam/agent-catalog.json` + accounts；AgentRegistry 取代 `agent_profiles`；旧 `roles`/profile 表只读 |
 | R2 | v1 worker registry 注册 A2A 四工具；旧 `a2a_send`/`handoff_*` 不注册 |
 | R5 | 旧 code delivery 代码归档/清理；历史数据保留只读 |
 | 未来 | code delivery 是否重设计或弃用另立 feature；必须从 A2A runtime 出发 |

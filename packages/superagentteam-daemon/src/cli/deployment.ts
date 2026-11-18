@@ -9,14 +9,17 @@ import { writeJson, writeLine } from "./output.ts";
 
 export function runDeploymentCommand(args: ParsedArgs, context: CliContext): number {
 	if (args.positionals[0] !== "wait") {
-		throw new ControlError("invalid_input", "usage: codeteam deployment wait <register|status|sweep|cancel> ...");
+		throw new ControlError(
+			"invalid_input",
+			"usage: superagentteam deployment wait <register|status|sweep|cancel> ...",
+		);
 	}
 	const action = args.positionals[1];
 	if (action === "register") return registerWait(args, context);
 	if (action === "status") return waitStatus(args, context);
 	if (action === "sweep") return sweepWaits(args, context);
 	if (action === "cancel") return cancelWait(args, context);
-	throw new ControlError("invalid_input", "usage: codeteam deployment wait <register|status|sweep|cancel> ...");
+	throw new ControlError("invalid_input", "usage: superagentteam deployment wait <register|status|sweep|cancel> ...");
 }
 
 function waitService(context: CliContext, args: ParsedArgs): DeploymentWaitService {
@@ -44,7 +47,7 @@ function registerWait(args: ParsedArgs, context: CliContext): number {
 	if (!taskId) {
 		throw new ControlError(
 			"invalid_input",
-			"usage: codeteam deployment wait register <taskId> (--revision <sha> | --new-boot) --to <profile> [--services daemon]",
+			"usage: superagentteam deployment wait register <taskId> (--revision <sha> | --new-boot) --to <profile> [--services daemon]",
 		);
 	}
 	const targets = options(args, "to");
@@ -71,7 +74,7 @@ function registerWait(args: ParsedArgs, context: CliContext): number {
 
 function waitStatus(args: ParsedArgs, context: CliContext): number {
 	const taskId = args.positionals[2];
-	if (!taskId) throw new ControlError("invalid_input", "usage: codeteam deployment wait status <taskId>");
+	if (!taskId) throw new ControlError("invalid_input", "usage: superagentteam deployment wait status <taskId>");
 	const projection = waitService(context, args).projection(taskId);
 	if (context.json) writeJson(projection);
 	else if (!projection.state) writeLine(`task ${taskId} has no deployment wait`);
@@ -100,7 +103,7 @@ function cancelWait(args: ParsedArgs, context: CliContext): number {
 	const operator = requireOperator(context);
 	const taskId = args.positionals[2];
 	if (!taskId) {
-		throw new ControlError("invalid_input", "usage: codeteam deployment wait cancel <taskId> --reason <text>");
+		throw new ControlError("invalid_input", "usage: superagentteam deployment wait cancel <taskId> --reason <text>");
 	}
 	const state = waitService(context, args).cancel({
 		taskId,

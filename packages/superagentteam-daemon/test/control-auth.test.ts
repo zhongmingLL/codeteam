@@ -120,7 +120,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam per-run invocation credentials", () => {
+describe("SuperAgentTeam per-run invocation credentials", () => {
 	it("mints an active credential, writes a 0600 token file, and resolves the binding", () => {
 		const run = baseRun();
 		const tokenDir = resolveInvocationTokenDir(dataDir);

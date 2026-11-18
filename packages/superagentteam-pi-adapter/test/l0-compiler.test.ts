@@ -17,13 +17,13 @@ describe("L0 compiler", () => {
 			role: "coder",
 			sections: [
 				{ id: "task", body: "Do the work.\r\n" },
-				{ id: "repo", body: "Use the codeteam repo.\r\n" },
+				{ id: "repo", body: "Use the SuperAgentTeam repo.\r\n" },
 			],
 		});
 		const second = compileL0({
 			role: "coder",
 			sections: [
-				{ id: "repo", body: "Use the codeteam repo.\n" },
+				{ id: "repo", body: "Use the SuperAgentTeam repo.\n" },
 				{ id: "task", body: "Do the work.\n" },
 			],
 		});

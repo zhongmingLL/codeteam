@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DaemonHandle, type openControlStore, startDaemon } from "../../src/index.ts";
 
-export const CODETEAM_CLI_PATH = join(import.meta.dirname, "..", "..", "dist", "cli.js");
+export const SUPERAGENTTEAM_CLI_PATH = join(import.meta.dirname, "..", "..", "dist", "cli.js");
 export const PI_CLI_PATH = join(import.meta.dirname, "..", "..", "..", "coding-agent", "dist", "cli.js");
 
 export type Store = ReturnType<typeof openControlStore>;
@@ -77,9 +77,9 @@ export function writeModels(agentDir: string, baseUrl: string, modelIds: string[
 }
 
 export function cli(dataDir: string, args: readonly string[]) {
-	return spawnSync(process.execPath, [CODETEAM_CLI_PATH, "--data-dir", dataDir, ...args, "--json"], {
+	return spawnSync(process.execPath, [SUPERAGENTTEAM_CLI_PATH, "--data-dir", dataDir, ...args, "--json"], {
 		encoding: "utf8",
-		env: { ...process.env, CODETEAM_DATA_DIR: dataDir },
+		env: { ...process.env, SUPERAGENTTEAM_DATA_DIR: dataDir },
 	});
 }
 

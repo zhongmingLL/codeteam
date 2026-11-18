@@ -9,7 +9,7 @@ export function runProfileCommand(args: ParsedArgs, context: CliContext): number
 	if (subcommand === "seed") return seedProfiles(args, context);
 	if (subcommand === "add") return addProfile(args, context);
 	if (subcommand === "list") return listProfiles(context);
-	throw new ControlError("invalid_input", "usage: codeteam profile <seed|add|list>");
+	throw new ControlError("invalid_input", "usage: superagentteam profile <seed|add|list>");
 }
 
 function seedProfiles(args: ParsedArgs, context: CliContext): number {

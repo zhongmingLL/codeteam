@@ -128,12 +128,12 @@ describe("A2A control socket", () => {
 		}
 	});
 
-	it("accepts the legacy codeteam_a2a_send alias through the same handler", async () => {
+	it("rejects the retired codeteam_a2a_send spelling", async () => {
 		fixture = createW5BFixture();
 		const socketPath = await fixture.runtime.start();
 		const run = createBoundRun(fixture, {
-			runId: "run-a2a-legacy",
-			workerId: "worker-a2a-legacy",
+			runId: "run-a2a-retired",
+			workerId: "worker-a2a-retired",
 			profileId: "profile:coder",
 			sessionId: "session-coder",
 		});
@@ -142,19 +142,17 @@ describe("A2A control socket", () => {
 		try {
 			const response = await request({
 				type: "a2a_call",
-				workerId: "worker-a2a-legacy",
+				workerId: "worker-a2a-retired",
 				token: minted.token,
 				toolName: "codeteam_a2a_send",
 				input: {
 					kind: "question",
 					targets: ["profile:reviewer"],
-					bodyMd: "Legacy alias request.",
-					requestId: "req-legacy-a2a",
+					bodyMd: "Retired alias request.",
+					requestId: "req-retired-a2a",
 				},
 			});
-			expect(response.ok).toBe(true);
-			const result = response.result as { message: { id: string; bodyMd: string } };
-			expect(result.message.bodyMd).toContain("Legacy alias request.");
+			expect(response).toMatchObject({ ok: false, error: { code: "invalid_input" } });
 		} finally {
 			socket.destroy();
 		}

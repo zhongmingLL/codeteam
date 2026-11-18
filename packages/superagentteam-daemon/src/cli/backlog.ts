@@ -37,7 +37,10 @@ export function runBacklogCommand(args: ParsedArgs, context: CliContext): number
 	if (subcommand === "dispatch") return dispatchBacklog(args, context);
 	if (subcommand === "done") return doneBacklog(args, context);
 	if (subcommand === "depend") return dependBacklog(args, context);
-	throw new ControlError("invalid_input", "usage: codeteam backlog <create|list|show|approve|dispatch|done|depend>");
+	throw new ControlError(
+		"invalid_input",
+		"usage: superagentteam backlog <create|list|show|approve|dispatch|done|depend>",
+	);
 }
 
 function createBacklog(args: ParsedArgs, context: CliContext): number {
@@ -92,7 +95,7 @@ function listBacklog(args: ParsedArgs, context: CliContext): number {
 
 function showBacklog(args: ParsedArgs, context: CliContext): number {
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam backlog show <id>");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam backlog show <id>");
 	const item = context.store.backlog.getView(id, numberOption(args, "audit-limit") ?? 100);
 	if (!item) throw new ControlError("not_found", `backlog item ${id} not found`);
 	const sop = context.store.sops.get(id);
@@ -118,7 +121,7 @@ function showBacklog(args: ParsedArgs, context: CliContext): number {
 function approveBacklog(args: ParsedArgs, context: CliContext): number {
 	const operator = requireOperator(context);
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam backlog approve <id>");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam backlog approve <id>");
 	const current = context.store.backlog.get(id);
 	if (!current) throw new ControlError("not_found", `backlog item ${id} not found`);
 	let item = current;
@@ -137,7 +140,7 @@ function approveBacklog(args: ParsedArgs, context: CliContext): number {
 function dispatchBacklog(args: ParsedArgs, context: CliContext): number {
 	const operator = requireOperator(context);
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam backlog dispatch <id> --to <profile>");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam backlog dispatch <id> --to <profile>");
 	const targets = options(args, "to");
 	if (targets.length === 0) throw new ControlError("invalid_input", "--to <profile> is required");
 	const current = context.store.backlog.get(id);
@@ -166,7 +169,7 @@ function dispatchBacklog(args: ParsedArgs, context: CliContext): number {
 		writeLine(
 			`message=${result.message.id} queue=${result.queueEntry.id} targets=${result.queueEntry.targets.join(",")}`,
 		);
-		writeLine(`next: codeteam task prepare ${result.task.id} --profile ${result.queueEntry.targets[0]}`);
+		writeLine(`next: superagentteam task prepare ${result.task.id} --profile ${result.queueEntry.targets[0]}`);
 	}
 	return 0;
 }
@@ -174,7 +177,7 @@ function dispatchBacklog(args: ParsedArgs, context: CliContext): number {
 function doneBacklog(args: ParsedArgs, context: CliContext): number {
 	const operator = requireOperator(context);
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam backlog done <id> [--reason <text>]");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam backlog done <id> [--reason <text>]");
 	const current = context.store.backlog.get(id);
 	if (!current) throw new ControlError("not_found", `backlog item ${id} not found`);
 	const reason = option(args, "reason");
@@ -195,7 +198,10 @@ function dependBacklog(args: ParsedArgs, context: CliContext): number {
 	const operator = requireOperator(context);
 	const id = args.positionals[1];
 	if (!id)
-		throw new ControlError("invalid_input", "usage: codeteam backlog depend <id> [--on <backlogId> ... | --clear]");
+		throw new ControlError(
+			"invalid_input",
+			"usage: superagentteam backlog depend <id> [--on <backlogId> ... | --clear]",
+		);
 	const clear = args.flags.has("clear");
 	const dependsOn = clear ? [] : options(args, "on");
 	if (!clear && dependsOn.length === 0) {

@@ -2,7 +2,6 @@ version: 1
 skills:
   - skillId: superagentteam-verify
     path: skills/superagentteam-verify
-    aliases: [codeteam-verify]
     sourceKind: repo-local
     category: delivery
     not_for:
@@ -13,7 +12,6 @@ skills:
     sop_step: quality-gate
   - skillId: superagentteam-review
     path: skills/superagentteam-review
-    aliases: [codeteam-review]
     sourceKind: repo-local
     category: review
     not_for:

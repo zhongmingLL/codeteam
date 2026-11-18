@@ -3,7 +3,7 @@ title: "codeteam memory schema（独立 memory.db）"
 doc_kind: schema-annex
 status: approved
 created: 2026-10-25
-updated: 2026-10-29
+updated: 2026-11-18
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 related_review: reuse-review/memory.md
 ---
@@ -13,15 +13,15 @@ related_review: reuse-review/memory.md
 `memory.db` 是**纯派生 evidence index**，不是 control-plane truth，不放进
 `0001 §12.2` 的 control store schema。
 
-- 物理位置：`CODETEAM_DATA_DIR/memory.db`（`CODETEAM_MEMORY_DB`）。
+- 物理位置：`SUPERAGENTTEAM_DATA_DIR/memory.db`（`SUPERAGENTTEAM_MEMORY_DB`）。
 - 锁域：独立 SQLite 文件；**禁止 ATTACH control DB 与 memory DB**；跨库一致性走
   应用层 join + `source_hash`/stale 标记。`openMemoryDatabase` 在打开和索引收口
   时检查 `PRAGMA database_list`，发现非 `main`/`temp` 连接即 fail closed。
 - WAL：`journal_mode=WAL`、`foreign_keys=ON`、busy timeout 引用
-  `CODETEAM_SQLITE_BUSY_TIMEOUT_MS`。
+  `SUPERAGENTTEAM_SQLITE_BUSY_TIMEOUT_MS`。
 - 备份：**不进 control DB 备份清单**；删除/rebuild 即恢复。stale 索引不得当 truth
   还原。
-- 写者：`codeteam memory index` 独立进程单写者；`memory.db.lock` 记录 PID +
+- 写者：`superagentteam memory index` 独立进程单写者；`memory.db.lock` 记录 PID +
   startedAt；daemon 事件循环不跑大扫描/FTS 重建。
 - 内容安全：path allowlist + 绝对前缀 hard deny + 内容级 secret 扫描
   （pattern/entropy）；命中 skip/redact + `index_errors`；`read`/`recall`/`digest`
@@ -154,7 +154,7 @@ CREATE INDEX idx_index_errors_run ON index_errors(run_id);
   discussion（`docs/**/*.md` + root `AGENTS.md`/`CODETEAM.md`/`README.md`/
   `UPSTREAM.md`/`KERNEL_GAPS.md`）。thread messages/run_events 仍需要新的 source
   connector（`source_kind='message'` + cursor 列），不得用 roots 伪装。
-- `source_kind='control'`：只读 `CODETEAM_DATA_DIR/control.db`，投影
+- `source_kind='control'`：只读 `SUPERAGENTTEAM_DATA_DIR/control.db`，投影
   `tasks/artifacts/reviews/verifications/merges`；`source_ref` 是
   `task:<id>`/`artifact:<id>`/`review:<id>`/`verification:<id>`/`merge:<id>`，
   `drill_down_json` 给 table+id。control truth 仍在 W1/W5 canonical tables；
@@ -164,7 +164,7 @@ CREATE INDEX idx_index_errors_run ON index_errors(run_id);
 - 单 source hash 未变 → skip；变更 → 删除旧 passages/vectors + 重写，再更新
   evidence/row。`full` 模式只 prune 本次成功扫描 scope 内未出现的 anchor；
   control DB 不可用时**不 prune** control evidence。
-- 单文件上限 `CODETEAM_MEMORY_MAX_FILE_BYTES`（默认 512 KiB）；超限 skip +
+- 单文件上限 `SUPERAGENTTEAM_MEMORY_MAX_FILE_BYTES`（默认 512 KiB）；超限 skip +
   `index_errors.kind='max_file_bytes'`。
 - 默认排除 `node_modules|dist|build|.git|target|*.lock|*.min.js|*.map` 以及
   `.env*|*.pem|*.key|*.p12|*.pfx|id_rsa*|credentials*|secrets*`。

@@ -1,6 +1,6 @@
 import { ControlError } from "../control/errors.ts";
 import type { ControlStore } from "../control/store.ts";
-import { A2A_LEGACY_TOOL_PREFIX, A2A_TOOL_PREFIX } from "./tool-surface.ts";
+import { A2A_TOOL_PREFIX } from "./tool-surface.ts";
 
 const INTENT_PATTERNS: readonly RegExp[] = [
 	/^\s*@[A-Za-z0-9._:-]+/m,
@@ -31,11 +31,7 @@ export function hasUnroutedA2AIntent(bodyMd: string): boolean {
 
 export function hasA2AToolCall(toolCalls: readonly string[]): boolean {
 	return toolCalls.some(
-		(name) =>
-			name === `${A2A_TOOL_PREFIX}a2a_send` ||
-			name === `${A2A_LEGACY_TOOL_PREFIX}a2a_send` ||
-			name.startsWith(`${A2A_TOOL_PREFIX}handoff_`) ||
-			name.startsWith(`${A2A_LEGACY_TOOL_PREFIX}handoff_`),
+		(name) => name === `${A2A_TOOL_PREFIX}a2a_send` || name.startsWith(`${A2A_TOOL_PREFIX}handoff_`),
 	);
 }
 

@@ -35,7 +35,7 @@ export function runSessionCommand(args: ParsedArgs, context: CliContext): number
 	}
 	if (subcommand === "show") {
 		const id = args.positionals[1];
-		if (!id) throw new ControlError("invalid_input", "usage: codeteam session show <sessionId>");
+		if (!id) throw new ControlError("invalid_input", "usage: superagentteam session show <sessionId>");
 		const session = context.store.sessions.get(id);
 		if (!session) throw new ControlError("not_found", `agent session ${id} not found`);
 		if (context.json) writeJson(session);
@@ -49,5 +49,5 @@ export function runSessionCommand(args: ParsedArgs, context: CliContext): number
 		}
 		return 0;
 	}
-	throw new ControlError("invalid_input", "usage: codeteam session <list|show>");
+	throw new ControlError("invalid_input", "usage: superagentteam session <list|show>");
 }

@@ -47,12 +47,12 @@ export function runSopCommand(args: ParsedArgs, context: CliContext): number {
 	if (subcommand === "show") return showSop(args, context);
 	if (subcommand === "update") return updateSop(args, context);
 	if (subcommand === "evidence") return recordEvidence(args, context);
-	throw new ControlError("invalid_input", "usage: codeteam sop <catalog|show|update|evidence>");
+	throw new ControlError("invalid_input", "usage: superagentteam sop <catalog|show|update|evidence>");
 }
 
 function showSop(args: ParsedArgs, context: CliContext): number {
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam sop show <backlogItemId>");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam sop show <backlogItemId>");
 	const headSha = option(args, "head-sha");
 	const baseSha = option(args, "base-sha");
 	const mergeSha = option(args, "merge-sha");
@@ -87,7 +87,7 @@ function updateSop(args: ParsedArgs, context: CliContext): number {
 	if (!id)
 		throw new ControlError(
 			"invalid_input",
-			"usage: codeteam sop update <backlogItemId> --stage <stage> --baton <profile|operator> --focus <text>",
+			"usage: superagentteam sop update <backlogItemId> --stage <stage> --baton <profile|operator> --focus <text>",
 		);
 	const backlog = context.store.backlog.get(id);
 	if (!backlog) throw new ControlError("not_found", `backlog item ${id} not found`);
@@ -133,7 +133,7 @@ function recordEvidence(args: ParsedArgs, context: CliContext): number {
 	if (!id)
 		throw new ControlError(
 			"invalid_input",
-			"usage: codeteam sop evidence <backlogItemId> <check> <evidenceRef> --subject-revision <sha>",
+			"usage: superagentteam sop evidence <backlogItemId> <check> <evidenceRef> --subject-revision <sha>",
 		);
 	if (!evidenceRef) throw new ControlError("invalid_input", "evidenceRef is required");
 	const subjectRevision = requireOption(args, "subject-revision");

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ControlError, createToolPolicy, runCommand } from "../src/index.ts";
 
-const repoRoot = process.env.CODETEAM_REAL_REPO;
+const repoRoot = process.env.SUPERAGENTTEAM_REAL_REPO;
 const hasBwrap = spawnSync("bwrap", ["--version"], { stdio: "ignore" }).status === 0;
 const enabled = Boolean(repoRoot) && existsSync(join(repoRoot ?? "", ".git")) && hasBwrap;
 

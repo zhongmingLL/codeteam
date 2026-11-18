@@ -30,13 +30,13 @@ describe("W6b eval config", () => {
 		const config = resolveEvalConfig({
 			dataDir: "/tmp/data",
 			env: {
-				CODETEAM_EVAL_DOMAINS_DIR: "/srv/evals/domains",
-				CODETEAM_EVAL_ENABLED: "1",
-				CODETEAM_EVAL_BUNDLE_MAX_BYTES: "1024",
-				CODETEAM_EVAL_SAMPLE_TRACE_LIMIT: "5",
-				CODETEAM_EVAL_ACK_HOURS_DEFAULT: "12",
-				CODETEAM_EVAL_REEVAL_HOURS_DEFAULT: "36",
-				CODETEAM_EVAL_RETENTION_DAYS: "7",
+				SUPERAGENTTEAM_EVAL_DOMAINS_DIR: "/srv/evals/domains",
+				SUPERAGENTTEAM_EVAL_ENABLED: "1",
+				SUPERAGENTTEAM_EVAL_BUNDLE_MAX_BYTES: "1024",
+				SUPERAGENTTEAM_EVAL_SAMPLE_TRACE_LIMIT: "5",
+				SUPERAGENTTEAM_EVAL_ACK_HOURS_DEFAULT: "12",
+				SUPERAGENTTEAM_EVAL_REEVAL_HOURS_DEFAULT: "36",
+				SUPERAGENTTEAM_EVAL_RETENTION_DAYS: "7",
 			},
 		});
 		expect(config).toMatchObject({
@@ -52,19 +52,19 @@ describe("W6b eval config", () => {
 
 	it("fails closed on traversal and invalid flags/numbers", () => {
 		expectCode(
-			() => resolveEvalConfig({ dataDir: "/tmp/data", env: { CODETEAM_EVAL_BUNDLES_DIR: "../escape" } }),
+			() => resolveEvalConfig({ dataDir: "/tmp/data", env: { SUPERAGENTTEAM_EVAL_BUNDLES_DIR: "../escape" } }),
 			"invalid_input",
 		);
 		expectCode(
-			() => resolveEvalConfig({ dataDir: "/tmp/data", env: { CODETEAM_EVAL_ENABLED: "maybe" } }),
+			() => resolveEvalConfig({ dataDir: "/tmp/data", env: { SUPERAGENTTEAM_EVAL_ENABLED: "maybe" } }),
 			"invalid_input",
 		);
 		expectCode(
-			() => resolveEvalConfig({ dataDir: "/tmp/data", env: { CODETEAM_EVAL_BUNDLE_MAX_BYTES: "0" } }),
+			() => resolveEvalConfig({ dataDir: "/tmp/data", env: { SUPERAGENTTEAM_EVAL_BUNDLE_MAX_BYTES: "0" } }),
 			"invalid_input",
 		);
 		expectCode(
-			() => resolveEvalConfig({ dataDir: "/tmp/data", env: { CODETEAM_EVAL_RETENTION_DAYS: "-1" } }),
+			() => resolveEvalConfig({ dataDir: "/tmp/data", env: { SUPERAGENTTEAM_EVAL_RETENTION_DAYS: "-1" } }),
 			"invalid_input",
 		);
 	});

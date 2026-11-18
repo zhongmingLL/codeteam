@@ -2,8 +2,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createW5BFixture, type W5BFixture } from "./helpers/w5b-fixture.ts";
 
-const liveEnabled = process.env.CODETEAM_LIVE_PROVIDER === "1" && Boolean(process.env.OPENROUTER_API_KEY);
-const liveModel = process.env.CODETEAM_LIVE_MODEL ?? "~deepseek/deepseek-flash-latest";
+const liveEnabled = process.env.SUPERAGENTTEAM_LIVE_PROVIDER === "1" && Boolean(process.env.OPENROUTER_API_KEY);
+const liveModel = process.env.SUPERAGENTTEAM_LIVE_MODEL ?? "~deepseek/deepseek-flash-latest";
 const REAL_CLI_PATH = join(import.meta.dirname, "..", "..", "coding-agent", "dist", "cli.js");
 
 let fixture: W5BFixture | null = null;

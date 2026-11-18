@@ -12,7 +12,7 @@ import { type CliContext, requireOperator } from "./context.ts";
 import { writeJson, writeLine, writeTable } from "./output.ts";
 
 function usage(): never {
-	throw new ControlError("invalid_input", "usage: codeteam eval <list|open|overdue|show|accept-sunset> ...");
+	throw new ControlError("invalid_input", "usage: superagentteam eval <list|open|overdue|show|accept-sunset> ...");
 }
 
 function parseStatus(value: string | undefined): EvalLifecycleStatus | undefined {
@@ -47,7 +47,7 @@ function listCases(args: ParsedArgs, context: CliContext, mode: "all" | "open" |
 
 function showCase(args: ParsedArgs, context: CliContext): number {
 	const id = args.positionals[1];
-	if (!id) throw new ControlError("invalid_input", "usage: codeteam eval show <caseId|verdictId>");
+	if (!id) throw new ControlError("invalid_input", "usage: superagentteam eval show <caseId|verdictId>");
 	let projection: ReturnType<typeof getEvalCase> | null = null;
 	try {
 		projection = getEvalCase(context.store, id);
@@ -110,7 +110,10 @@ function showCase(args: ParsedArgs, context: CliContext): number {
 function acceptSunsetCommand(args: ParsedArgs, context: CliContext): number {
 	const id = args.positionals[1];
 	if (!id) {
-		throw new ControlError("invalid_input", "usage: codeteam eval accept-sunset <caseId|verdictId> --reason <text>");
+		throw new ControlError(
+			"invalid_input",
+			"usage: superagentteam eval accept-sunset <caseId|verdictId> --reason <text>",
+		);
 	}
 	const operator = requireOperator(context);
 	const reason = requireOption(args, "reason");

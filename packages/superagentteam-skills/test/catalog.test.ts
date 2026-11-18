@@ -48,11 +48,9 @@ describe("curated skill catalog", () => {
 		expect(catalog.skills[0]?.description).toContain("verification");
 		expect(catalog.skills[0]?.triggers).toEqual(["before claiming done", "after code changes", "before PR"]);
 		expect(catalog.skills[0]?.next).toBe("superagentteam-review");
-		expect(catalog.aliases).toEqual({
-			"codeteam-verify": "superagentteam-verify",
-			"codeteam-review": "superagentteam-review",
-		});
-		expect(resolveCuratedSkill(catalog, "codeteam-verify")?.skillId).toBe("superagentteam-verify");
+		expect(catalog.aliases).toEqual({});
+		expect(resolveCuratedSkill(catalog, "codeteam-verify")).toBeUndefined();
+		expect(resolveCuratedSkill(catalog, "superagentteam-verify")?.skillId).toBe("superagentteam-verify");
 		expect(catalog.skillPaths[0]).toBe(catalog.skills[0]?.dirPath);
 	});
 

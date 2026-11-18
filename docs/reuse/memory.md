@@ -7,7 +7,7 @@ operator_signoff: "DP-MEM-1=A, DP-MEM-2=A, DP-MEM-3=A (2026-10-25)"
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 created: 2026-10-25
-updated: 2026-10-29
+updated: 2026-11-18
 ---
 
 # P1 复用卡：Memory / Evidence
@@ -41,7 +41,7 @@ updated: 2026-10-29
 ## codeteam mapping
 
 - v1 = **project file evidence index**：repo docs、architecture/feature/plan、artifact files 的只读摘要；thread messages/run_events 需 source connector，defer→W6+；不做个人记忆。
-- 存储：建议独立 `CODETEAM_MEMORY_DB`（默认 `CODETEAM_DATA_DIR/memory.db`），与控制面 SQLite 分离，避免 FTS/scan 大事务阻塞 handoff/approval。
+- 存储：建议独立 `SUPERAGENTTEAM_MEMORY_DB`（默认 `SUPERAGENTTEAM_DATA_DIR/memory.db`），与控制面 SQLite 分离，避免 FTS/scan 大事务阻塞 handoff/approval。
 - 读面：`memory_search` / `memory_read` 只读工具 + CLI；结果带 anchor/kind/status/provenance/drillDown/coverage；不把空结果说成“不存在”。
 - 写面：只有 index/rebuild，由 daemon/CLI 触发；不接受 agent 自写 memory，不恢复 reflection/proactive。
 - 隐私：workspace/project scope；不索引 secret、home、跨项目私有数据；person/relationship/diary 永不进入 codeteam evidence。
@@ -70,7 +70,7 @@ updated: 2026-10-29
 - **契约**：`packages/superagentteam-daemon/src/memory/contract.ts` 冻结
   `EvidenceSourceRef` / `EvidenceItem` / `EvidenceHit` / `Coverage` /
   `RetrievalTrigger`；W6b/W6c 从 `packages/superagentteam-daemon/src/index.ts` import。
-- **存储/索引**：`memory/database.ts`（独立 `CODETEAM_MEMORY_DB`、禁 ATTACH）、
+- **存储/索引**：`memory/database.ts`（独立 `SUPERAGENTTEAM_MEMORY_DB`、禁 ATTACH）、
   `memory/indexer.ts`（单写者 lock、full/incremental、FTS/passages）、
   `memory/lock.ts`。
 - **adapter**：`memory/sources/file.ts`（repo `docs/**/*.md` + root docs）、

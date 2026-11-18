@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { A2A_ALL_TOOL_NAMES, A2A_LEGACY_TOOL_NAMES, A2A_TOOL_NAMES } from "../a2a/tool-surface.ts";
+import { A2A_ALL_TOOL_NAMES, A2A_TOOL_NAMES } from "../a2a/tool-surface.ts";
 import { ControlError } from "../control/errors.ts";
 import type { Task } from "../control/stores/types.ts";
 import { assertReadablePath, assertWritablePath, createToolPolicy, evaluateCommand } from "../policy/index.ts";
@@ -10,7 +10,7 @@ export const READ_ONLY_TOOLS: readonly string[] = ["read", "grep", "find", "ls"]
 export const CODER_TOOLS: readonly string[] = [...READ_ONLY_TOOLS, "bash", "edit", "write"];
 
 function a2aTool(suffix: string): readonly string[] {
-	return [...A2A_TOOL_NAMES, ...A2A_LEGACY_TOOL_NAMES].filter((name) => name.endsWith(`_${suffix}`));
+	return A2A_TOOL_NAMES.filter((name) => name.endsWith(`_${suffix}`));
 }
 
 const A2A_SEND_TOOLS = a2aTool("a2a_send");

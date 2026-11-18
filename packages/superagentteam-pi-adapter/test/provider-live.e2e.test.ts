@@ -6,8 +6,7 @@ import { SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent
 import { describe, expect, it } from "vitest";
 import { compileL0, createAgentSessionWithL0 } from "../src/index.ts";
 
-const liveEnv = (suffix: string) =>
-	process.env[`SUPERAGENTTEAM_LIVE_${suffix}`] ?? process.env[`CODETEAM_LIVE_${suffix}`];
+const liveEnv = (suffix: string) => process.env[`SUPERAGENTTEAM_LIVE_${suffix}`];
 const liveBaseUrl = liveEnv("BASE_URL");
 const liveModel = liveEnv("MODEL");
 const liveApiKey = liveEnv("API_KEY");

@@ -145,7 +145,7 @@ export function runMemoryCommand(argv: readonly string[]): number {
 	const json = flag(args, "json");
 	const [subcommand] = args.positionals;
 	if (!subcommand || subcommand === "help") {
-		writeLine("usage: codeteam memory <index|status|recall|read|digest|trigger> [options]");
+		writeLine("usage: superagentteam memory <index|status|recall|read|digest|trigger> [options]");
 		return 0;
 	}
 	if (subcommand === "index") return runIndex(args, json);

@@ -38,7 +38,7 @@ const dto: TraceSpanDTO = {
 describe("W6c OTLP exporter", () => {
 	it("is disabled by default and requires an endpoint when enabled", () => {
 		expect(resolveOtlpConfig({})).toMatchObject({ enabled: false, timeoutMs: 2000 });
-		expect(() => resolveOtlpConfig({ CODETEAM_OTLP_ENABLED: "1" })).toThrowError("otlp_endpoint_missing");
+		expect(() => resolveOtlpConfig({ SUPERAGENTTEAM_OTLP_ENABLED: "1" })).toThrowError("otlp_endpoint_missing");
 	});
 
 	it("degrades readiness for an invalid OTLP config but keeps the local trace ring", () => {
@@ -46,7 +46,7 @@ describe("W6c OTLP exporter", () => {
 		try {
 			const runtime = createObservabilityRuntime({
 				dataDir,
-				env: { CODETEAM_OTLP_ENABLED: "1" },
+				env: { SUPERAGENTTEAM_OTLP_ENABLED: "1" },
 			});
 			const readiness = runtime.readiness();
 			expect(readiness.status).toBe("degraded");
@@ -76,7 +76,10 @@ describe("W6c OTLP exporter", () => {
 		const address = server.address();
 		const port = typeof address === "object" && address ? address.port : 0;
 		const exporter = new OtlpHttpExporter(
-			resolveOtlpConfig({ CODETEAM_OTLP_ENABLED: "1", CODETEAM_OTLP_ENDPOINT: `http://127.0.0.1:${port}` }),
+			resolveOtlpConfig({
+				SUPERAGENTTEAM_OTLP_ENABLED: "1",
+				SUPERAGENTTEAM_OTLP_ENDPOINT: `http://127.0.0.1:${port}`,
+			}),
 		);
 		exporter.export(dto);
 		await exporter.flush();
@@ -153,7 +156,10 @@ describe("W6c OTLP exporter", () => {
 		const address = server.address();
 		const port = typeof address === "object" && address ? address.port : 0;
 		const exporter = new OtlpHttpExporter(
-			resolveOtlpConfig({ CODETEAM_OTLP_ENABLED: "1", CODETEAM_OTLP_ENDPOINT: `http://127.0.0.1:${port}` }),
+			resolveOtlpConfig({
+				SUPERAGENTTEAM_OTLP_ENABLED: "1",
+				SUPERAGENTTEAM_OTLP_ENDPOINT: `http://127.0.0.1:${port}`,
+			}),
 		);
 		const redactor = createRedactor({ salt: "otlp-test-salt" });
 		const store = new LocalTraceStore({ hmacId: (id) => redactor.hmacId(id) });
@@ -171,7 +177,7 @@ describe("W6c OTLP exporter", () => {
 		try {
 			const telemetry = createObservabilityRuntime({
 				dataDir: base.dataDir,
-				env: { CODETEAM_OTLP_ENABLED: "1", CODETEAM_OTLP_ENDPOINT: "http://127.0.0.1:1" },
+				env: { SUPERAGENTTEAM_OTLP_ENABLED: "1", SUPERAGENTTEAM_OTLP_ENDPOINT: "http://127.0.0.1:1" },
 			});
 			const exportSpy = vi.spyOn(telemetry.otlp!, "export");
 			telemetry.tracer.startSpan({ name: "superagentteam.runtime.test", attributes: { role: "coder" } }).end();
@@ -194,7 +200,7 @@ describe("W6c OTLP exporter", () => {
 		try {
 			const telemetry = createObservabilityRuntime({
 				dataDir: base.dataDir,
-				env: { CODETEAM_OTLP_ENABLED: "1", CODETEAM_OTLP_ENDPOINT: "http://127.0.0.1:4318" },
+				env: { SUPERAGENTTEAM_OTLP_ENABLED: "1", SUPERAGENTTEAM_OTLP_ENDPOINT: "http://127.0.0.1:4318" },
 			});
 			telemetry.tracer.startSpan({ name: "superagentteam.runtime.fetch", attributes: { role: "coder" } }).end();
 			await telemetry.otlp?.shutdown?.();

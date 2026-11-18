@@ -178,7 +178,7 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("codeteam governance stores", () => {
+describe("SuperAgentTeam governance stores", () => {
 	it("runs a single handoff from pending to consumed with custody events", () => {
 		const base = baseRun();
 		const handoff = store.handoffs.create(handoffInput());

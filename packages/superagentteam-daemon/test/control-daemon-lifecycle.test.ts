@@ -92,8 +92,8 @@ function setup() {
 		updatedAt: "2026-10-28T00:00:00.000Z",
 	});
 	const processes = new FakeProcesses();
-	processes.identities.set(100, { pid: 100, startedAt: "100.0", command: "codeteam daemon" });
-	processes.identities.set(200, { pid: 200, startedAt: "200.0", command: "codeteam lifecycle" });
+	processes.identities.set(100, { pid: 100, startedAt: "100.0", command: "superagentteam daemon" });
+	processes.identities.set(200, { pid: 200, startedAt: "200.0", command: "superagentteam lifecycle" });
 	processes.alive.add(100);
 	processes.alive.add(200);
 	const signals = new FakeSignals(processes);
@@ -159,7 +159,7 @@ describe("W5d daemon lifecycle", () => {
 	it("fails closed when frozen identity changes before the signal", async () => {
 		const base = setup();
 		const requested = base.service.requestStop(authorization(base.dataDir, "halt"));
-		base.processes.identities.set(100, { pid: 100, startedAt: "different", command: "codeteam daemon" });
+		base.processes.identities.set(100, { pid: 100, startedAt: "different", command: "superagentteam daemon" });
 		await expect(base.service.executeStop(requested.opId, { graceMs: 10, pollMs: 1 })).rejects.toMatchObject({
 			code: "lifecycle_identity_mismatch",
 		});
@@ -198,13 +198,13 @@ describe("W5d daemon lifecycle", () => {
 			event: "started",
 			recordedAt: "2026-10-28T00:02:00.000Z",
 		});
-		base.processes.identities.set(300, { pid: 300, startedAt: "300.0", command: "codeteam daemon" });
+		base.processes.identities.set(300, { pid: 300, startedAt: "300.0", command: "superagentteam daemon" });
 		base.processes.alive.add(300);
 		const restarted = base.service.recordRestart(requested.opId, {
 			bootId: "boot-2",
 			processId: 300,
 			startedAt: "300.0",
-			command: "codeteam daemon",
+			command: "superagentteam daemon",
 			installationId: base.installation.installationId,
 		});
 		expect(restarted.state).toBe("restarted");

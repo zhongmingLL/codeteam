@@ -10,7 +10,7 @@ export type CreateAgentSessionWithL0Options = Omit<CreateAgentSessionOptions, "c
 	cwd: string;
 	agentDir: string;
 	compiledL0: CompiledL0;
-	/** Curated skill directories resolved from the codeteam allowlist. */
+	/** Curated skill directories resolved from the SuperAgentTeam allowlist. */
 	curatedSkillPaths?: string[];
 };
 
