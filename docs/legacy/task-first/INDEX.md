@@ -1,89 +1,67 @@
 ---
-title: "Task-first legacy index — code and docs boundary"
-doc_kind: index
-status: legacy-frozen
-created: 2026-11-16
-updated: 2026-11-16
-owner: "宪宪 (Ragdoll/DeepSeek Flash)"
-related_features: [codeteam/F017, codeteam/F018]
-canonical: "docs/architecture/0005-thread-first-runtime.md; docs/architecture/0007-a2a-runtime-chain.md"
+title: "Task-first legacy index"
+doc_kind: architecture
+status: legacy
+created: 2026-11-19
+related_features: [codeteam/F018]
 ---
 
-# Task-first legacy index
+# Task-first legacy (frozen)
 
-> 这是 task-first code 与 docs 的统一 legacy 边界。旧代码在
-> `packages/superagentteam-daemon/src/legacy/task-first/`；旧文档在
-> `docs/legacy/task-first/`。两者都不是 F018 实现基线。
->
-> 新开发只读 `0005`/`0007` + 分册 + `0020`/`0021`。
+Single source of truth for what is frozen: `docs/architecture/0006-task-first-legacy.md`.
+This index maps the physical relocation done in F018 R1-0.
 
-## 1. 状态标记
+## Code layout
 
-| 标记 | 含义 | 允许动作 |
+All task-first implementation lives under
+`packages/superagentteam-daemon/src/legacy/task-first/`. **Every** old path
+below keeps a re-export shim (directory shims for the top-level domains, a
+deprecated barrel for `control/stores/types.ts`, and an index barrel for
+`control/migrations/`) so existing imports keep compiling; shims carry no
+logic and are removed in R5.
+
+| Old path (shim remains) | New location | Removal |
 |---|---|---|
-| `legacy-frozen` | 旧代码冻结 | 只有阻挡 A2A runtime 的 bug 才修 |
-| `legacy-read-only` | 旧表/旧数据只读 | v1 runtime 不读不写、不双写 |
-| `retired` | 从运行面移除 | 不注册、不保留 alias |
-| `historical` | 历史文档/审计 | 只做追溯，不作实现依据 |
-| `moved` | 文档已物理移动 | 旧路径只留 stub |
+| `src/{dispatch,scheduling,review,merge,gates,sop,managed-work,deployment-wait,custody}/` | same name under `src/legacy/task-first/` | R5 |
+| `src/a2a/*` (task-bound impl incl. legacy handler class) | `src/legacy/task-first/a2a/` | R2/R3 (v1 surface rebuild) |
+| `src/control/stores/` — 15 task-bound stores + `types.ts` | `src/legacy/task-first/control/stores/` | R5 (types barrel at old path is `@deprecated`) |
+| `src/control/read-models.ts` | `src/legacy/task-first/control/read-models.ts` | R5 |
+| `src/control/migrations/` (task-first table DDL) | `src/legacy/task-first/control/migrations/` | R5; the F018 v1 migration harness lands in `src/infrastructure/db/migrations/` in R1-a |
 
-## 2. 代码边界
+Shared modules that are NOT moved in R1-0 (`workers/`, `auth/`, `policy/`,
+remaining `control/stores/`) carry `TASK-BOUND LEGACY` boundary markers on
+their task-bound files; they split in later rounds.
 
-目标：`packages/superagentteam-daemon/src/legacy/task-first/`
+## Enforcement
 
-| 目录 | 内容 |
-|---|---|
-| `a2a/` | 旧 `a2a_send` / `handoff_*` handlers、request dedupe、旧 principal/terminal |
-| `dispatch/`、`scheduling/` | task-first dispatch、provisioning、budget、worktree pool |
-| `review/`、`merge/`、`gates/`、`sop/` | code delivery review/merge/SOP gates |
-| `managed-work/`、`deployment-wait/`、`custody/` | managed work、deployment wait、custody/wait |
-| `cli/` | task-first CLI commands |
-| `control/migrations/` | 旧 001-016 migrations |
-| `control/stores/` | 旧 control-plane stores |
-| `control/stores/types.ts` | 旧类型总表 |
-| `policy/handoffs.ts`、`auth/merge-credential.ts`、`workers/control.ts` | task/merge/custody 专用路径 |
+`scripts/check-legacy-boundary.mjs` (wired into `npm run check` and the CI
+SuperAgentTeam lane):
 
-旧路径兼容：
-- `control/stores/types.ts` 只留 `@deprecated` re-export barrel。
-- `control/migrations/index.ts` 只留 legacy migration barrel。
-- 其他旧路径不保留目录 shim；旧代码 import 显式指向 `legacy/task-first/`。
+- non-allowlisted files under `src/` (outside `legacy/` and shims) must not
+  import `legacy/task-first/`, the old-path shims, or the
+  `control/migrations` barrel;
+- v1 runtime paths (`src/domains/`) can never be allowlisted and must not
+  reference retired tool names (`a2a_send`, `handoff_*`) or frozen tables
+  (`tasks`, `handoffs`, `custody_events`, `budgets`, `reviews`, `merges`);
+- the baseline allowlist is explicit (file → owner → removal stage) and must
+  not contain stale entries — it only shrinks.
 
-## 3. 文档边界
+## Docs layout
 
-目标：`docs/legacy/task-first/`
+Pure task-first feature docs moved **flat** into this directory (old paths
+keep `status: moved` stubs): `F006-w3-independent-review.md`,
+`F007-w4-sop-gates.md`, `F008-w5a-a2a-dispatch-custody.md`,
+`F010-w5c-scheduling-resources.md`, `F011-w5d-runtime-lifecycle-managed-work.md`.
 
-| 文档类别 | 处置 |
-|---|---|
-| 纯 task-first feature 文档（如 F006–F011、F015/F016a 的 code delivery 部分） | 物理移到 `docs/legacy/task-first/features/`；旧路径留 `status: moved` stub |
-| 纯 task-first plan 切片 | 物理移到 `docs/legacy/task-first/plans/`；旧路径留 stub |
-| 混合文档（F004/F005 的 thread/message/queue 核心、F016b/F016c、W0–W8 计划） | 留在原位，加 `legacy`/`historical` 边界；task-first 部分链到本索引 |
-| 参考文档（`0001`/`0002`/`0012`） | 留原位标 `[reference]` |
-| 历史审计（`0003`/`0004`/`0015`） | 留原位标 `[historical]` |
-| `0006-task-first-legacy.md` | legacy 入口，主体链接到本索引 |
+Mixed/still-referenced docs (F004/F005/F015/F016 families, W-numbered plans,
+`0001`-`0018` architecture docs) stay in place with `legacy-frozen` /
+`[historical]` notes per `0006`.
 
-## 4. 与 canonical 的映射
+## Rules
 
-| 旧域 | 当前 canonical |
-|---|---|
-| Task / Run / Stage / Handoff / Custody | `0005` 方向；F018 v1 不做 |
-| 旧 Queue / Run / Event | `0007` InvocationQueue / InvocationRecord / TurnExecution / InvocationAttempt |
-| 旧 `agent_profiles` / `roles` | `0008` AgentConfig / AgentRegistry |
-| 旧 thread shape | `0009` Thread |
-| 旧 session shape | `0010` AgentSession |
-| 旧 identity 名 | `0011` Identity contract |
-| 旧 idempotency | `0013` Idempotency key map |
-| 旧 run terminal / attempt | `0016` Turn terminal & settlement |
-| 旧 draft/response | `0017` ResponseDraftStore |
-| 旧 queue/run read models | `0007` QueueView / LiveInvocationView / MessageDispatchSummary |
-
-## 5. 迁移规则
-
-1. 代码和文档同批移动；旧路径 stub 只做 re-export/link，不承载新逻辑。
-2. `check-legacy-boundary` 禁止新 v1 code import legacy path/barrel；旧代码只 import
-   legacy 或 compatibility barrel。
-3. `@superagentteam/shared` 不吸收 legacy 类型；新契约从 `0007`/`0011`/`0016`/`0017`
-   重新定义。
-4. R5 再归档/删除；R1-0 只移动 + stub，不删除历史。
-5. 任何从 legacy 复活的能力必须另立 feature，从 A2A runtime 出发。
-
-[宪宪/deepseek-flash🐾]
+- New v1 code must not import anything from `legacy/task-first/`, the old
+  shims, or the `control/migrations` barrel.
+- Legacy type barrel `control/stores/types.ts` is `@deprecated`; v1 types
+  come from `@superagentteam/shared/types` only. No file may depend on both
+  generations.
+- Nothing is deleted before R5.

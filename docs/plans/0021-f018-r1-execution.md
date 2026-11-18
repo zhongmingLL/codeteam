@@ -341,7 +341,7 @@ runtime 暂不读新表。
   `-c-auth-draft-session` / `-d-greenfield-gate`，全部 target `superagentteam-work`，短生命周期。
 - 每个 PR 自带 tests + evidence；schema PR 额外带 migration；不把多个切片塞进一个超大 PR。
 - R1-0 先合；R1-a 再合；R1-b/c 基于 R1-a；R1-d 最后。
-- 代码 review 走非作者 fresh-context；R1 schema/auth 面找砚砚，验收/文档找墨墨，
+- 代码 review 走非作者 fresh-context；R1 schema/auth 面找宪宪（作者砚砚不能自审），验收/文档找墨墨，
   session/worker/queue 集成找烁烁。
 - 只有改动 `docs/architecture/` 契约文档时才需要重新锚设计 verdict；纯代码/计划
   变更不沿用本轮 docs verdict 代替代码 review。

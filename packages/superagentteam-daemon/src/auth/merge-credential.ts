@@ -1,3 +1,7 @@
+// TASK-BOUND LEGACY (F018 R1-0 boundary marker): task-first logic living in a
+// shared module. Do not extend; the task-bound parts move to
+// src/legacy/task-first/ in later rounds (see docs/legacy/task-first/INDEX.md).
+
 import type { KeyObject } from "node:crypto";
 import { ControlError } from "../control/errors.ts";
 import { signOperatorPayload, verifyOperatorSignature } from "./operator.ts";
