@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { SOP_CHECK_EVIDENCE_KIND, SOP_CHECK_NAME_VALUES } from "../src/control/stores/sop-check-evidence.ts";
+import { SOP_CHECK_EVIDENCE_KIND, SOP_CHECK_NAME_VALUES } from "../src/legacy/task-first/control/stores/sop-check-evidence.ts";
 import { SOP_CATALOG, SOP_STAGE_IDS } from "../src/index.ts";
 
 describe("SuperAgentTeam SOP catalog", () => {

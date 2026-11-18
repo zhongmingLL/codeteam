@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyRisk, parseGitNumstat } from "../src/gates/risk.ts";
-import { evaluateRiskConsistency } from "../src/gates/risk-consistency.ts";
+import { classifyRisk, parseGitNumstat } from "../src/legacy/task-first/gates/risk.ts";
+import { evaluateRiskConsistency } from "../src/legacy/task-first/gates/risk-consistency.ts";
 
 function file(path: string, additions = 1, deletions = 0) {
 	return { path, additions, deletions };
