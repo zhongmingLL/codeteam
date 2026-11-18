@@ -31,7 +31,10 @@ const DAEMON_SRC = join(ROOT, "packages/superagentteam-daemon/src");
 const SHARED_SRC = join(ROOT, "packages/superagentteam-shared/src");
 const ALLOWLIST_PATH = join(ROOT, "scripts/legacy-boundary-allowlist.json");
 
-const V1_DIRS = ["domains"];
+// v1 A2A entrypoints per plan 0021 §2.5. `a2a/` currently holds only legacy
+// shims (exempted by isShim before these checks); non-shim files placed in
+// these dirs get the strict v1 rules (no allowlist, no retired tools/tables).
+const V1_DIRS = ["domains", "a2a", "thread", "invocation", "queue"];
 const LEGACY_TOP_DIRS = [
   "dispatch",
   "scheduling",
@@ -133,6 +136,12 @@ function importsLegacy(rel, src) {
 }
 
 const rawAllowlist = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
+for (const [rel, entry] of Object.entries(rawAllowlist)) {
+  if (!entry || typeof entry.owner !== "string" || !entry.owner || typeof entry.why !== "string" || !entry.why) {
+    console.error(`check-legacy-boundary: allowlist entry ${rel} must have non-empty owner and why`);
+    process.exit(1);
+  }
+}
 const allowlist = new Map(Object.entries(rawAllowlist));
 const errors = [];
 const offenders = new Set();
@@ -141,7 +150,7 @@ const sharedFiles = walk(SHARED_SRC);
 for (const file of sharedFiles) {
   const rel = relative(SHARED_SRC, file).replaceAll("\\", "/");
   const src = readFileSync(file, "utf8");
-  if (/(from\s+")[^"]*legacy\/task-first\//.test(src) || /(from\s+")[^"]*superagentteam-daemon/.test(src)) {
+  if (/(from\s+")[^"]*legacy\/task-first\//.test(src) || /(from\s+")[^"]*superagentteam[\\/-]daemon/.test(src)) {
     errors.push(`shared/${rel}: v1 type home must not reference daemon legacy`);
   }
 }
