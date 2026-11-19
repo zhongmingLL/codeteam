@@ -3,6 +3,7 @@ import type { AgentConfig, QueueEntry, QueueTarget } from "@superagentteam/share
 import { runInTransaction } from "../../infrastructure/db/database.ts";
 import type { AgentRegistry } from "../agent/registry.ts";
 import type { InvocationCredentialStore } from "../auth/store.ts";
+import { type CollectorTargetView, collectTerminalDispositions } from "../invocation/collector.ts";
 import type { InvocationAttemptStore, InvocationRecordStore, TurnExecutionStore } from "../invocation/store.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { ResponseDraftStore } from "../response/store.ts";
@@ -682,6 +683,15 @@ export class QueueProcessor {
 			// §3.2 step 6 note: release whatever the claim still holds (targets
 			// that never reached retireTargets stay pending for the next drain).
 			this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, this.now());
+			// T3 parent aggregate (§3.9): re-read under the write lock (the
+			// dispatch loop above may have terminalized children) and apply.
+			// Failure keeps the parent non-terminal; recovery re-runs this
+			// idempotently.
+			try {
+				this.aggregateParent(entry, invocationId, userId);
+			} catch {
+				// T3 失败保留 parent 原状态（§3.9）。
+			}
 		}
 
 		if (dispatched.length === 0 && invalid.length > 0) {
@@ -698,5 +708,49 @@ export class QueueProcessor {
 			invalid: invalid.map((t) => t.agentId),
 			convergenceFailed: convergenceFailed.length > 0 ? convergenceFailed : undefined,
 		};
+	}
+
+	/**
+	 * T3 parent aggregate (§3.9): collector over per-target latest attempt +
+	 * canonical child + queue pending; writes parent status /
+	 * successfulAgentIds / terminalReason and deletes terminal queue entries.
+	 * Never writes child/credential/R.
+	 */
+	private aggregateParent(entry: QueueEntry, invocationId: string, _userId: string): void {
+		const parent = this.deps.records.get(invocationId);
+		if (!parent || (parent.status !== "queued" && parent.status !== "running")) return;
+		const liveEntry = this.deps.queue.get(entry.threadId, entry.queueEntryId);
+		const pendingKeys = new Set((liveEntry?.targets ?? []).map((target) => `agent:${target.id}`));
+		const views: CollectorTargetView[] = parent.targetAgentIds.map((agentId) => {
+			const latest = this.deps.attempts.getLatest(invocationId, agentId);
+			const child = latest?.turnExecutionId ? this.deps.turns.get(latest.turnExecutionId) : null;
+			return {
+				agentId,
+				latestAttempt: latest,
+				child,
+				retryablePending:
+					pendingKeys.has(`agent:${agentId}`) &&
+					(latest?.deliveryState === "failed" || latest?.deliveryState === "interrupted"),
+			};
+		});
+		const result = collectTerminalDispositions({ parent, targets: views });
+		if (result.parentStatus === "running" || result.parentStatus === "queued") {
+			if (result.successfulAgentIds.length > 0) {
+				this.deps.records.addSuccessfulAgents(invocationId, result.successfulAgentIds);
+			}
+			return;
+		}
+		this.deps.records.applyTerminalAggregate({
+			invocationId,
+			status: result.parentStatus,
+			successfulAgentIds: result.successfulAgentIds,
+			terminalReason: result.primaryTerminalError,
+			now: this.now(),
+		});
+		// §3.2: parent completed/canceled → delete the anchor entry;
+		// partial_failed/failed stay for retry/abandon/TTL.
+		if (result.parentStatus === "completed" || result.parentStatus === "canceled") {
+			this.deps.queue.deleteEntry(entry.threadId, entry.queueEntryId);
+		}
 	}
 }

@@ -144,6 +144,10 @@ function makeWorld() {
 		sessions,
 		drafts,
 		threads,
+		turns,
+		credentials,
+		readState,
+		messages,
 		onStreamEvent: (event) => streamEvents.push(event),
 		clock,
 	});
@@ -456,11 +460,13 @@ describe("RunAgentTurn (0010 §6.1.1 steps 2-8)", () => {
 		expect(prompt).toContain("please summarize");
 		expect(prompt).not.toContain("# Task");
 
-		// Draft finalized with the provider text; usage recorded.
+		// R2-c: the durable body committed into the R message; the draft is
+		// deleted by T2 after settlement.
 		const turnId = attempt.turnExecutionId;
 		expect(turnId).toBeTruthy();
-		const draft = w.drafts.getByTurn(turnId!);
-		expect(draft?.content).toBe("Summary: all good.");
+		expect(w.drafts.getByTurn(turnId!)).toBeNull();
+		const response = w.messages.get(attempt.responseMessageId!)!;
+		expect(response.content).toBe("Summary: all good.");
 
 		// First visible output counted the session 0→1.
 		const session = w.sessions.get(attempt.agentSessionId!)!;

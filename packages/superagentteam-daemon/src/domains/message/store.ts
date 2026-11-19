@@ -226,6 +226,14 @@ export class MessageStore {
 		);
 	}
 
+	/** T2 response commit: replace the R message body with the draft content. */
+	updateBody(id: string, content: string, now: number): boolean {
+		return (
+			this.db.prepare("UPDATE messages SET body_md = ?, updated_at = ? WHERE id = ?").run(content, now, id).changes >
+			0
+		);
+	}
+
 	updateLifecycle(id: string, lifecycle: MessageLifecycle, now: number): boolean {
 		return (
 			this.db
