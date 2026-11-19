@@ -263,18 +263,14 @@ describe("daemon A2A end-to-end", () => {
 					.some((entry) => entry.action === "dispatch_dead_lettered"),
 			).toBe(false);
 
-			const before = store.queue.pendingCount();
-			const negative = cli(dataDir, [
-				"thread",
-				"post",
-				dispatched.thread.id,
-				"missing task binding",
-				"--to",
-				"profile:coder",
-			]);
-			expect(negative.status).not.toBe(0);
-			expect(negative.stderr).toContain("--task");
-			expect(store.queue.pendingCount()).toBe(before);
+			// F018 R3-d: a thread-scoped post needs no task binding.
+			const noTask = cliJson<{
+				message: { id: string; taskId: string | null };
+				queue: { targets: string[] } | null;
+			}>(dataDir, ["thread", "post", dispatched.thread.id, "thread-scoped post", "--to", "profile:coder"]);
+			expect(noTask.message.taskId).toBeNull();
+			expect(noTask.queue?.targets).toEqual(["profile:coder"]);
+			expect(store.queue.pendingCount()).toBeGreaterThanOrEqual(1);
 			expect(daemon.health().status).toBe("ready");
 		} finally {
 			await mock.close();

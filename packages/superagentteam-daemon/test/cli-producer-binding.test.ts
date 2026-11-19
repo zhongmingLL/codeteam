@@ -74,7 +74,7 @@ afterEach(() => {
 });
 
 describe("CLI producer and provisioning entry", () => {
-	it("binds backlog dispatch and thread post to a task, and defers until task prepare", async () => {
+	it("binds backlog dispatch to a task and admits a thread-scoped post without --task", async () => {
 		const backlog = cliJson<{ id: string }>([
 			"backlog",
 			"create",
@@ -115,9 +115,13 @@ describe("CLI producer and provisioning entry", () => {
 					.some((entry) => entry.action === "dispatch_dead_lettered"),
 			).toBe(false);
 
-			const postWithoutTask = cli(["thread", "post", dispatched.thread.id, "please work", "--to", "profile:coder"]);
-			expect(postWithoutTask.status).not.toBe(0);
-			expect(postWithoutTask.stderr).toContain("--task");
+			const postWithoutTask = cliJson<{
+				message: { id: string; taskId: string | null };
+				queue: { targets: string[] } | null;
+			}>(["thread", "post", dispatched.thread.id, "please work", "--to", "profile:coder"]);
+			expect(postWithoutTask.message.taskId).toBeNull();
+			expect(postWithoutTask.queue?.targets).toEqual(["profile:coder"]);
+			expect(store.messages.get(postWithoutTask.message.id)?.taskId).toBeNull();
 
 			const prepared = cliJson<{
 				task: { id: string; worktree: string };

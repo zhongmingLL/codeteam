@@ -16,6 +16,10 @@ source_handover: "docs/reports/2026-11-19-f018-r2-closeout.md"
 > 契约源是 `0020 §R3`、`0007 §3.8`、`0005 §5`（E3–E21）与 `0013` 幂等映射。
 > 本文件只做执行切片，不复制契约；R2 已交付 same-thread runtime、T1–T4、
 > retry/recovery 与 `buildA2ARuntime` 组装根。
+>
+> **R3 执行结果**：R3-0/R3-a/R3-b/R3-c/R3-d 均已交付；
+> 交付坐标、出口证据与 R4/R5 遗留见
+> `docs/reports/2026-11-20-f018-r3-closeout.md`。
 
 ## 0. 结论先行
 
