@@ -124,17 +124,18 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		releaseSlot: (threadId, agentId, turnExecutionId) => {
 			tracker.complete(threadId, agentId, turnExecutionId);
 		},
-		isWorkerLive: (threadId, agentId) => {
-			// WorkerStore-based liveness: the latest binding for the session has
-			// a live (non-expired, online/starting) worker row. Unreadable →
-			// throw → defer (§3.10.2).
-			const session = sessions.getActive(threadId, agentId);
-			if (!session) return false;
-			const binding = bindingStore.getBySession(session.id);
-			if (!binding || binding.state !== "attached") return false;
-			const worker = workerStore.get(binding.workerId);
+		listStaleSlots: (now) => tracker.listStaleSlots(now),
+		isWorkerLive: (turnExecutionId) => {
+			// EXACT owner fence (§3.10.2): judge by the attempt's own worker
+			// binding — the session's CURRENT binding may belong to a newer
+			// worker and must not keep an old zombie alive. draining with a
+			// valid lease counts live (finalizing providers); unreadable →
+			// throw → defer.
+			const attempt = attempts.getByTurnExecutionId(turnExecutionId);
+			if (!attempt || !attempt.workerId) return false;
+			const worker = workerStore.get(attempt.workerId);
 			if (!worker) return false;
-			if (worker.state !== "online" && worker.state !== "starting") return false;
+			if (worker.state === "retired" || worker.state === "stale") return false;
 			return worker.leaseExpiresAt > clock();
 		},
 		processStartedAt: deps.processStartedAt ?? clock(),

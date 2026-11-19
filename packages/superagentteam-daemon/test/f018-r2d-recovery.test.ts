@@ -277,13 +277,98 @@ describe("startup reconciler + owner reaper (0007 §3.10)", () => {
 			.prepare("UPDATE invocation_records SET status = 'running', ended_at = NULL WHERE invocation_id = ?")
 			.run(invocationId);
 
+		// First sweep ARMS the provider finalization grace (no convergence).
+		const armed = await w.runtime.reaper.runOnce(w.now);
+		expect(armed.childrenInterrupted).toBe(0);
+		expect(armed.deferred).toBeGreaterThanOrEqual(1);
+		// Inside the grace window: still deferred.
+		w.advance(60_000);
+		const within = await w.runtime.reaper.runOnce(w.now);
+		expect(within.childrenInterrupted).toBe(0);
+		// Past the 5min grace: exact-owner absence converges.
+		w.advance(300_000);
 		const result = await w.runtime.reaper.runOnce(w.now);
 		expect(result.childrenInterrupted).toBeGreaterThanOrEqual(1);
 		const attempt = w.runtime.attempts.getLatest(invocationId, "a1")!;
-		expect(w.runtime.turns.get(attempt.turnExecutionId!)?.terminalReason).toBe("owner_reaped");
-		// Second sweep is a no-op (idempotent; in-flight guard).
+		expect(w.runtime.turns.get(attempt.turnExecutionId!)?.terminalReason).toBe("provider_exited_without_terminal");
+		// Further sweeps are no-ops (idempotent; in-flight guard).
 		const again = await w.runtime.reaper.runOnce(w.now);
 		expect(again.childrenInterrupted).toBe(0);
+	});
+});
+
+// ------------------------------------------------------------------
+// Round-1 P1 repro suite (宪宪)
+// ------------------------------------------------------------------
+describe("round-1 P1 repro (recovery edge shapes)", () => {
+	it("P1-1: a running turn WITHOUT an attempt row still converges (no permanent zombie)", async () => {
+		const w = makeWorld();
+		// Seed a bare running turn with no attempt.
+		w.runtime.records.create({
+			invocationId: "inv-z",
+			threadId: "t1",
+			userId: "u1",
+			sourceRecordId: "sz",
+			userMessageId: null,
+			targetAgentIds: ["a1"],
+			now: 10,
+		});
+		w.runtime.turns.createRunning({
+			turnExecutionId: "te-z",
+			parentInvocationId: "inv-z",
+			threadId: "t1",
+			userId: "u1",
+			agentId: "a1",
+			executionKind: "ordinary",
+			causal: { triggerMessageId: "mz" },
+			startedAt: 20,
+		});
+		const armed = await w.runtime.reaper.runOnce(w.now);
+		expect(armed.childrenInterrupted).toBe(0);
+		w.advance(400_000);
+		const result = await w.runtime.reaper.runOnce(w.now);
+		expect(result.childrenInterrupted).toBe(1);
+		expect(w.runtime.turns.get("te-z")?.status).toBe("interrupted");
+	});
+
+	it("P1-2: starting/queued attempts keep the parent NON-terminal through startup (§3.9 collector)", async () => {
+		const w = makeWorld();
+		// Parent with a1 = failed attempt, a2 = queued attempt (no child).
+		w.runtime.records.create({
+			invocationId: "inv-m",
+			threadId: "t1",
+			userId: "u1",
+			sourceRecordId: "sm",
+			userMessageId: null,
+			targetAgentIds: ["a1", "a2"],
+			now: 10,
+		});
+		w.runtime.records.markRunning("inv-m", 10);
+		for (const [agentId, state] of [
+			["a1", "failed"],
+			["a2", "queued"],
+		] as const) {
+			w.runtime.attempts.appendQueued({
+				attemptId: `att-m-${agentId}`,
+				parentInvocationId: "inv-m",
+				queueEntryId: "qm",
+				threadId: "t1",
+				targetAgentId: agentId,
+				attempt: 1,
+				now: 10,
+			});
+			if (state === "failed") {
+				w.db
+					.prepare(
+						"UPDATE invocation_attempts SET delivery_state = 'failed', terminal_reason = 'x', ended_at = 11 WHERE attempt_id = ?",
+					)
+					.run(`att-m-${agentId}`);
+			}
+		}
+		w.runtime.startup.recover(w.now);
+		// a2's queued attempt (no child, not retryablePending-marked at the store
+		// level here) keeps the parent running — NOT prematurely failed.
+		expect(w.runtime.records.get("inv-m")?.status).toBe("running");
 	});
 });
 

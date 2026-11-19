@@ -1,22 +1,32 @@
 import { runInTransaction } from "../../infrastructure/db/database.ts";
 import type { QueueLedgerStore } from "../queue/store.ts";
 import type { WorkerStore } from "../worker/store.ts";
+import { type AggregateDeps, aggregateParent, queueEntryIdFor } from "./aggregate.ts";
 import type { SettlementDeps } from "./settlement.ts";
 import { ResponseRecoveryService } from "./settlement.ts";
 import { InvocationRecordStore } from "./store.ts";
 
 // F018 R2-d recovery (0007 §3.10): the startup one-shot reconciler and the
 // single serialized runtime reaper share one convergence routine. Liveness is
-// evidence-based — a record that cannot be read defers instead of guessing.
+// evidence-based — a record that cannot be read defers instead of guessing;
+// a first non-live observation waits out the provider finalization grace.
 
 export interface RecoveryDeps extends SettlementDeps {
 	queue: QueueLedgerStore;
 	workers: WorkerStore;
 	/** tracker slot release (ownership-fenced complete). */
 	releaseSlot: (threadId: string, agentId: string, turnExecutionId: string) => void;
-	/** Live-worker evidence: agentId+sessionId → worker heartbeat still valid. */
-	isWorkerLive: (threadId: string, agentId: string, turnExecutionId: string) => boolean;
+	/** tracker stale-slot scan (§3.10.2 candidate set). */
+	listStaleSlots: (now: number) => Array<{ threadId: string; agentId: string; turnExecutionId: string }>;
+	/**
+	 * Exact-owner liveness (§3.10.2): judge by the ATTEMPT's worker binding +
+	 * turnExecutionId, never the session's current binding (a re-bound worker
+	 * must not keep an old zombie alive). Unreadable → throw → defer.
+	 */
+	isWorkerLive: (turnExecutionId: string) => boolean;
 	processStartedAt: number;
+	/** Provider finalization grace before owner_reaped (default 5min). */
+	graceMs?: number;
 }
 
 export interface RecoveryRunResult {
@@ -25,29 +35,36 @@ export interface RecoveryRunResult {
 	childrenInterrupted: number;
 	attemptsConverged: number;
 	parentsReaggregated: number;
+	staleSlotsReleased: number;
 	responseRecovered: ReturnType<ResponseRecoveryService["runOnce"]>;
 	deferred: number;
 }
 
 /**
  * The shared convergence chain (§3.10 order): child terminal → attempt
- * projection → response settlement → queue restore → parent aggregate →
- * credential terminalize → slot release. Idempotent at every step
- * (first-write-wins transitions, no-op settles).
+ * projection → credential → (T4 later) → shared §3.9 aggregate → slot
+ * release. Idempotent at every step.
  */
 export class RecoveryConverger {
 	private readonly deps: RecoveryDeps;
-	private readonly records: InvocationRecordStore;
 	private readonly t4: ResponseRecoveryService;
 
 	constructor(deps: RecoveryDeps) {
 		this.deps = deps;
-		// records/attempts/turns arrive via SettlementDeps shape
-		this.records = new InvocationRecordStore(deps.db);
 		this.t4 = new ResponseRecoveryService(deps);
 	}
 
-	/** Terminal-interrupt one running child (zombie) with its attempt projection. */
+	private aggregateDeps(): AggregateDeps {
+		return {
+			db: this.deps.db,
+			records: new AggregateRecords(this.deps.db),
+			attempts: this.deps.attempts,
+			turns: this.deps.turns,
+			queue: this.deps.queue,
+		};
+	}
+
+	/** Terminal-interrupt one running child (zombie) — attempt optional. */
 	convergeChild(turnExecutionId: string, terminalReason: string, endedAt: number): boolean {
 		const turn = this.deps.turns.get(turnExecutionId);
 		if (!turn || turn.status !== "running") return false;
@@ -65,9 +82,7 @@ export class RecoveryConverger {
 					terminalReason,
 					endedAt,
 				});
-				// Credential follows child truth.
 				this.deps.credentials.commitTerminal(turnExecutionId, "interrupted");
-				// §6.1.3 crash rows: ack only when the prompt was delivered.
 				if (attempt.promptDeliveredAt !== null && attempt.deliveryBoundarySeq !== null) {
 					this.deps.readState.ack(turn.threadId, turn.agentId, attempt.deliveryBoundarySeq, endedAt);
 				}
@@ -76,60 +91,35 @@ export class RecoveryConverger {
 		return true;
 	}
 
-	/** T4 sweep + parent re-aggregation for every parent owning a converged child. */
-	finalize(invocationIds: ReadonlySet<string>, now: number): number {
+	/** T4 sweep + the SHARED §3.9 aggregate for each affected parent. */
+	finalize(parents: ReadonlySet<string>, now: number): number {
 		const response = this.t4.runOnce();
 		let reaggregated = 0;
-		for (const invocationId of invocationIds) {
-			const parent = this.records.get(invocationId);
+		const aggregate = this.aggregateDeps();
+		for (const invocationId of parents) {
+			const parent = aggregate.records.get(invocationId);
 			if (!parent || (parent.status !== "queued" && parent.status !== "running")) continue;
-			const latest = parent.targetAgentIds.map((agentId) => this.deps.attempts.getLatest(invocationId, agentId));
-			const anyTerminal = latest.some((attempt) => attempt && attempt.deliveryState !== "appended");
-			if (!anyTerminal) continue;
-			reaggregated += 1;
-			void now;
-			// The T3 collector runs inside the next drain's aggregateParent; here
-			// we mark the parent eligible by leaving it non-terminal — the
-			// drain/reaper loop re-runs collectTerminalDispositions. For a
-			// startup pass, force one aggregate via applyTerminalAggregate when
-			// nothing remains running:
-			const stillRunning = latest.some((attempt) => attempt && attempt.deliveryState === "appended");
-			if (!stillRunning) {
-				const successful = latest
-					.filter((attempt) => attempt?.deliveryState === "handled")
-					.map((attempt) => attempt!.targetAgentId);
-				const failed = latest.some(
-					(attempt) => attempt && ["failed", "interrupted"].includes(attempt.deliveryState),
-				);
-				const canceledOnly =
-					!failed && latest.length > 0 && latest.every((attempt) => attempt?.deliveryState === "canceled");
-				if (successful.length > 0 || failed || canceledOnly) {
-					this.records.applyTerminalAggregate({
-						invocationId,
-						status:
-							successful.length === latest.length
-								? "completed"
-								: canceledOnly
-									? "canceled"
-									: successful.length > 0
-										? "partial_failed"
-										: "failed",
-						successfulAgentIds: successful,
-						terminalReason: failed ? "recovery_converged" : null,
-						now,
-					});
-				}
-			}
+			const entryId = queueEntryIdFor(aggregate, invocationId, parent.targetAgentIds);
+			if (!entryId) continue;
+			const outcome = aggregateParent(
+				aggregate,
+				{ threadId: parent.threadId, queueEntryId: entryId, invocationId },
+				now,
+			);
+			if (outcome !== "skipped") reaggregated += 1;
 		}
 		void response;
 		return reaggregated;
 	}
 }
 
+class AggregateRecords extends InvocationRecordStore {}
+
 /**
- * Startup one-shot (§3.10.1): restore expired claims, interrupt
- * pre-process running children (cutoff = processStartedAt + 1), converge
- * their attempts, run T4, re-aggregate affected parents.
+ * Startup one-shot (§3.10.1): restore expired claims, interrupt pre-process
+ * running children (cutoff = processStartedAt + 1), converge appended
+ * attempts + starting attempts without children, run T4, re-aggregate via
+ * the SHARED collector. Best-effort — never blocks startup.
  */
 export class TurnExecutionStartupReconciler {
 	private readonly deps: RecoveryDeps;
@@ -152,6 +142,7 @@ export class TurnExecutionStartupReconciler {
 			childrenInterrupted: 0,
 			attemptsConverged: 0,
 			parentsReaggregated: 0,
+			staleSlotsReleased: 0,
 			responseRecovered: { pendingScanned: 0, settled: 0, missing: 0, failures: 0 },
 			deferred: 0,
 		};
@@ -177,11 +168,18 @@ export class TurnExecutionStartupReconciler {
 						});
 						this.deps.credentials.commitTerminal(turn.turnExecutionId, "interrupted");
 						result.attemptsConverged += 1;
+					} else if (attempt.deliveryState === "starting") {
+						// §3.10.1: starting without a live child → prestart failed
+						// (starting→failed accepts any reason; queued stays for drain).
+						this.deps.attempts.markPrestartTerminal(attempt.attemptId, {
+							status: "failed",
+							terminalReason: "process_restart",
+							endedAt: now,
+						});
+						result.attemptsConverged += 1;
 					}
-					// §3.10.1: starting/queued attempts have no child — leave them
-					// to the next drain (bounded backoff), not terminalized here.
-					this.deps.releaseSlot(turn.threadId, turn.agentId, turn.turnExecutionId);
 				}
+				this.deps.releaseSlot(turn.threadId, turn.agentId, turn.turnExecutionId);
 				result.childrenInterrupted += 1;
 			}
 			result.responseRecovered = new ResponseRecoveryService(this.deps).runOnce();
@@ -197,13 +195,14 @@ export class TurnExecutionStartupReconciler {
 
 /**
  * The single runtime janitor (§3.10.2): restore expired claims → reap stale
- * workers → converge running children without live-worker evidence.
- * Evidence rules: unreadable liveness defers; a live worker keeps the child.
+ * workers → converge running children whose EXACT owner is absent past the
+ * provider finalization grace → T4 → shared aggregate → release stale slots.
  */
 export class InvocationOwnerReaper {
 	private readonly deps: RecoveryDeps;
 	private readonly converger: RecoveryConverger;
 	private inFlight = false;
+	private readonly firstDeadSeen = new Map<string, number>();
 
 	constructor(deps: RecoveryDeps) {
 		this.deps = deps;
@@ -217,6 +216,7 @@ export class InvocationOwnerReaper {
 			childrenInterrupted: 0,
 			attemptsConverged: 0,
 			parentsReaggregated: 0,
+			staleSlotsReleased: 0,
 			responseRecovered: { pendingScanned: 0, settled: 0, missing: 0, failures: 0 },
 			deferred: 0,
 		};
@@ -225,25 +225,55 @@ export class InvocationOwnerReaper {
 		try {
 			result.expiredClaimsRestored = this.deps.queue.restoreExpiredClaims(now);
 			result.workersReaped = this.deps.workers.reapExpired(now);
+			const graceMs = this.deps.graceMs ?? 300_000;
 			const parents = new Set<string>();
 			for (const turn of this.deps.turns.listRunning()) {
-				const attempt = this.deps.attempts.getByTurnExecutionId(turn.turnExecutionId);
-				if (!attempt) continue;
-				parents.add(attempt.parentInvocationId);
-				// Liveness evidence: a valid worker heartbeat keeps the child.
-				let live = false;
+				// P2: a per-turn failure must not abort the whole sweep.
 				try {
-					live = this.deps.isWorkerLive(turn.threadId, turn.agentId, turn.turnExecutionId);
+					const attempt = this.deps.attempts.getByTurnExecutionId(turn.turnExecutionId);
+					if (attempt) parents.add(attempt.parentInvocationId);
+					// Exact-owner liveness; unreadable evidence defers.
+					let live = false;
+					try {
+						live = this.deps.isWorkerLive(turn.turnExecutionId);
+					} catch {
+						result.deferred += 1;
+						continue;
+					}
+					if (live) {
+						this.firstDeadSeen.delete(turn.turnExecutionId);
+						continue;
+					}
+					// P1-4: provider finalization grace — the first non-live
+					// observation only ARMS the fence; convergence waits out
+					// the grace window so a draining/re-attaching worker or a
+					// finalizing provider is not prematurely reaped.
+					const seen = this.firstDeadSeen.get(turn.turnExecutionId);
+					if (seen === undefined) {
+						this.firstDeadSeen.set(turn.turnExecutionId, now);
+						result.deferred += 1;
+						continue;
+					}
+					if (now - seen < graceMs) {
+						result.deferred += 1;
+						continue;
+					}
+					this.firstDeadSeen.delete(turn.turnExecutionId);
+					const reason = "provider_exited_without_terminal";
+					if (this.converger.convergeChild(turn.turnExecutionId, reason, now)) {
+						result.childrenInterrupted += 1;
+						if (attempt) result.attemptsConverged += 1;
+						this.deps.releaseSlot(turn.threadId, turn.agentId, turn.turnExecutionId);
+					}
 				} catch {
 					result.deferred += 1;
-					continue;
 				}
-				if (live) continue;
-				if (this.converger.convergeChild(turn.turnExecutionId, "owner_reaped", now)) {
-					result.childrenInterrupted += 1;
-					result.attemptsConverged += 1;
-					this.deps.releaseSlot(turn.threadId, turn.agentId, turn.turnExecutionId);
-				}
+			}
+			// P2: tracker stale slots without a running turn get released.
+			for (const slot of this.deps.listStaleSlots(now)) {
+				if (this.deps.turns.get(slot.turnExecutionId)?.status === "running") continue;
+				this.deps.releaseSlot(slot.threadId, slot.agentId, slot.turnExecutionId);
+				result.staleSlotsReleased += 1;
 			}
 			result.responseRecovered = new ResponseRecoveryService(this.deps).runOnce();
 			result.parentsReaggregated = this.converger.finalize(parents, now);
