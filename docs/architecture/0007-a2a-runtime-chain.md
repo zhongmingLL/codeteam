@@ -2311,6 +2311,10 @@ targets: Array<{ kind: "agent"; id: string }>
   **1 source message + 1 queue entry + 1 parent + N child**；terminal 后另有
   **1 aggregate system message + 1 callback queue/parent/child**（DP-F018MM-1=B）。
   targets 为空时只有 1 条 message，没有 queue/parent。
+  这里的 parent/children 是 **claim 后的最终账本形态**：tool handler 的
+  `multi_mention.create` 在同一事务只写 request + source message + queue entry；
+  `QueueProcessor` claim 后创建 parent + N attempts/children，Phase B 再把
+  `dispatchRefs` 投影回 source message。两者不是同一事务。
 - `cross_post_message`：`threadId` 必须存在且不等于 caller thread；target thread 必须
   active、未 soft-deleted、有 `projectPath`，且与 source 同 user；message 写
   `extra.crossPost = { sourceThreadId, sourceTriggerMessageId }`，其中

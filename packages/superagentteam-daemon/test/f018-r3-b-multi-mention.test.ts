@@ -4,10 +4,11 @@ import { join } from "node:path";
 import type { AccountConfig, AgentCatalog, AgentConfig } from "@superagentteam/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildA2ARuntime, type A2ARuntime } from "../src/domains/a2a/runtime.ts";
-import { A2AToolError, type A2AToolContext } from "../src/domains/a2a/tool-service.ts";
+import { type A2ARuntime, buildA2ARuntime } from "../src/domains/a2a/runtime.ts";
+import { type A2AToolContext, A2AToolError } from "../src/domains/a2a/tool-service.ts";
 import { buildRegistry } from "../src/domains/agent/registry.ts";
 import { MultiMentionOrchestrator } from "../src/domains/multi-mention/orchestrator.ts";
+import { QUEUE_CAP_PER_KIND } from "../src/domains/queue/store.ts";
 import type { WorkerRpcConnection, WorkerSpawnPort } from "../src/domains/worker/pool.ts";
 import { F018Database } from "../src/infrastructure/db/database.ts";
 import type { RpcEvent } from "../src/workers/rpc-client.ts";
@@ -94,9 +95,7 @@ function happyScript(text: string): RpcEvent[] {
 	];
 }
 
-function makeWorld(
-	allowedTools: string[] = ["multi_mention", "post_message"],
-): {
+function makeWorld(allowedTools: string[] = ["multi_mention", "post_message"]): {
 	runtime: A2ARuntime;
 	spawn: MockSpawnPort;
 	fd: F018Database;
@@ -508,5 +507,137 @@ describe("F018 R3-b multi_mention create", () => {
 				.getByThread("t1", 50)
 				.some((message) => message.content.includes("multi_mention_callback_failed")),
 		).toBe(true);
+	});
+
+	it("expires a group without losing a completed child whose response is still processing", () => {
+		const w = makeWorld();
+		const request = w.runtime.multiMention.createRequest({
+			requestId: "mm-backfill",
+			threadId: "t1",
+			userId: "u1",
+			initiatorAgentId: "a1",
+			initiatorTurnExecutionId: "te-caller",
+			callbackToAgentId: "a1",
+			question: "backfill",
+			targetAgentIds: ["a2", "a3"],
+			timeoutMinutes: 3,
+			parentInvocationId: "inv-mm",
+			sourceRecordId: "src-mm",
+			now: 1000,
+		});
+		expect(request.outcome).toBe("created");
+		w.runtime.multiMention.setStatus("mm-backfill", "running", 1000);
+		w.runtime.records.create({
+			invocationId: "inv-mm",
+			threadId: "t1",
+			userId: "u1",
+			sourceRecordId: "src-mm",
+			userMessageId: null,
+			targetAgentIds: ["a2", "a3"],
+			now: 1000,
+		});
+		for (const agentId of ["a2", "a3"]) {
+			const session = w.runtime.sessions.ensureActive({
+				threadId: "t1",
+				agentId,
+				userId: "u1",
+				workingDirectory: "/p",
+				now: 1000,
+			});
+			const turnExecutionId = `te-${agentId}`;
+			const responseMessageId = `resp:${turnExecutionId}`;
+			w.runtime.turns.createRunning({
+				turnExecutionId,
+				parentInvocationId: "inv-mm",
+				threadId: "t1",
+				userId: "u1",
+				agentId,
+				executionKind: "ordinary",
+				causal: { triggerMessageId: "m-mm" },
+				startedAt: 1000,
+			});
+			w.runtime.turns.transitionTerminal(turnExecutionId, { status: "completed", endedAt: 1001 });
+			w.runtime.messages.append({
+				id: responseMessageId,
+				threadId: "t1",
+				from: { kind: "agent", agentId },
+				content: `${agentId} partial`,
+				lifecycle: {
+					kind: "response",
+					parentInvocationId: "inv-mm",
+					turnExecutionId,
+					target: { kind: "agent", id: agentId },
+					status: "processing",
+					startedAt: 1001,
+				},
+				now: 1001,
+			});
+			const attemptId = `att-${agentId}`;
+			w.runtime.attempts.appendQueued({
+				attemptId,
+				parentInvocationId: "inv-mm",
+				queueEntryId: "q-mm",
+				threadId: "t1",
+				targetAgentId: agentId,
+				attempt: 1,
+				now: 1000,
+			});
+			w.runtime.attempts.markStarting(attemptId, { agentSessionId: session.id, now: 1000 });
+			w.runtime.attempts.bindAppended(attemptId, {
+				turnExecutionId,
+				agentSessionId: session.id,
+				workerId: null,
+				provider: "pi",
+				model: "m1",
+				modelFamily: null,
+				responseMessageId,
+				now: 1000,
+			});
+		}
+		w.advance(3 * 60_000);
+		expect(w.runtime.multiMentionOrchestrator.settleExpired(w.now)).toBe(1);
+		const settled = w.runtime.multiMention.get("mm-backfill")!;
+		expect(settled.status).toBe("done");
+		const responses = w.runtime.multiMention.listResponses("mm-backfill");
+		expect(responses.every((response) => response.status === "received")).toBe(true);
+		expect(responses.every((response) => response.responseState === "pending")).toBe(true);
+		expect(w.runtime.multiMention.statusView("mm-backfill")?.allFailed).toBe(false);
+		expect(w.runtime.multiMention.markResponseTerminalByMessage("resp:te-a2")).toBe(true);
+		expect(w.runtime.multiMention.getResponse("mm-backfill", "a2")?.responseState).toBe("terminal");
+		expect(w.runtime.multiMention.getResponse("mm-backfill", "a3")?.responseState).toBe("pending");
+	});
+
+	it("rolls back create when the queue cap rejects admission", () => {
+		const w = makeWorld();
+		for (let index = 0; index < QUEUE_CAP_PER_KIND; index += 1) {
+			const enqueued = w.runtime.queue.enqueue(
+				{
+					threadId: "t1",
+					sourceRecordId: `src-cap-${index}`,
+					messageId: null,
+					owner: { kind: "system", service: "multi_mention" },
+					kind: "message_wake",
+					from: { kind: "system", service: "multi_mention" },
+					content: "fill",
+					targets: [{ kind: "agent", id: "a2" }],
+				},
+				1000 + index,
+			);
+			expect(enqueued.outcome).toBe("enqueued");
+		}
+		const requestsBefore = w.fd.db.prepare("SELECT COUNT(*) AS count FROM multi_mention_requests").get() as {
+			count: number;
+		};
+		const messagesBefore = w.runtime.messages.getByThread("t1", 100).length;
+		try {
+			w.runtime.multiMentionOrchestrator.create(ctx({ piExtToolCallId: "mm-queue-full" }), multiMentionInput());
+			throw new Error("expected error");
+		} catch (error) {
+			expectCode(error, "queue_full");
+		}
+		expect(
+			(w.fd.db.prepare("SELECT COUNT(*) AS count FROM multi_mention_requests").get() as { count: number }).count,
+		).toBe(requestsBefore.count);
+		expect(w.runtime.messages.getByThread("t1", 100)).toHaveLength(messagesBefore);
 	});
 });
