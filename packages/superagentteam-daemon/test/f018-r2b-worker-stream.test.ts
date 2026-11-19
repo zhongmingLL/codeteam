@@ -361,10 +361,11 @@ describe("ResponseEventSink (0007 §3.6.1)", () => {
 		sink.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " world" } });
 		sink.handle({
 			type: "tool_execution_start",
+			toolCallId: "tc-1",
 			toolName: "read_file",
 			args: { path: "/x" },
 		});
-		sink.handle({ type: "tool_execution_end", toolName: "read_file", result: { ok: true } });
+		sink.handle({ type: "tool_execution_end", toolCallId: "tc-1", toolName: "read_file", result: { ok: true } });
 		sink.handle({
 			type: "message_end",
 			message: {
@@ -377,12 +378,25 @@ describe("ResponseEventSink (0007 §3.6.1)", () => {
 		const summary = sink.summary();
 		expect(summary.content).toBe("Hello world FINAL");
 		expect(summary.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
-		expect(summary.toolEvents.map((event) => event.kind)).toEqual(["tool_call", "tool_result"]);
+		// 0017 §5.2: start/end merge into ONE record per toolCallId.
+		expect(summary.toolEvents).toHaveLength(1);
+		expect(summary.toolEvents[0]).toMatchObject({
+			toolCallId: "tc-1",
+			name: "read_file",
+			status: "completed",
+			result: { ok: true },
+		});
 		expect(firstVisible).toHaveLength(1);
 		const draft = w.drafts.getByTurn("te1");
 		expect(draft?.content).toBe("Hello world FINAL");
 		expect(events.some((event) => event.type === "text")).toBe(true);
 		expect(events.some((event) => event.type === "done")).toBe(true);
+		// Stream events carry toolId (pairing) and strictly increasing seq.
+		const toolCall = events.find((event) => event.type === "tool_call");
+		expect(toolCall && "toolId" in toolCall && toolCall.toolId).toBe("tc-1");
+		const seqs = events.map((event) => event.seq);
+		expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+		expect(new Set(seqs).size).toBe(seqs.length);
 	});
 
 	it("provider error message surfaces in the summary", () => {

@@ -61,21 +61,25 @@ export class RunAgentTurn implements DispatchTargetPort {
 			provider: prepared.provider,
 			model: prepared.model,
 		};
-		const handle = await this.deps.pool.ensure(poolKey, session);
-		this.deps.attempts.bindWorker(prepared.attemptId, handle.workerId);
-
-		// Bind the pi session identity on first spawn (resume continuity).
-		if (handle.piSessionId && handle.piSessionFile && session.piSessionId === null) {
-			runInTransaction(this.deps.db, () => {
-				this.deps.sessions.bindPiSession(session.id, {
-					piSessionId: handle.piSessionId,
-					piSessionFile: handle.piSessionFile,
-					now,
-				});
-			});
-		}
-
+		// P2-3 (review): ensure → bindPiSession live INSIDE the guarded region —
+		// a failure between acquiring the worker and the try block must not
+		// leak the worker (port contract: release before any throw).
+		let handle: Awaited<ReturnType<WorkerPool["ensure"]>> | null = null;
 		try {
+			handle = await this.deps.pool.ensure(poolKey, session);
+			this.deps.attempts.bindWorker(prepared.attemptId, handle.workerId);
+
+			// Bind the pi session identity on first spawn (resume continuity).
+			if (handle.piSessionId && handle.piSessionFile && session.piSessionId === null) {
+				runInTransaction(this.deps.db, () => {
+					this.deps.sessions.bindPiSession(session.id, {
+						piSessionId: handle!.piSessionId,
+						piSessionFile: handle!.piSessionFile,
+						now,
+					});
+				});
+			}
+
 			// Step 4: prompt (thread/participants/recent; no task scaffolding).
 			const thread = this.deps.threads.get(prepared.threadId);
 			if (!thread) throw new Error(`turn_thread_missing: ${prepared.threadId}`);
@@ -143,7 +147,9 @@ export class RunAgentTurn implements DispatchTargetPort {
 			// worker AFTER T2 R-settlement; until T2 lands, the draft already
 			// holds the full snapshot and the pi session file survives worker
 			// retirement, so this early release is safe and revisited in R2-c.
-			await this.deps.pool.release(handle, "turn-complete").catch(() => {});
+			if (handle) {
+				await this.deps.pool.release(handle, "turn-complete").catch(() => {});
+			}
 		}
 	}
 }

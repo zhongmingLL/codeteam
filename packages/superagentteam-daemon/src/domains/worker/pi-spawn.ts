@@ -23,8 +23,8 @@ export interface PiSpawnOptions {
 	clock?: () => number;
 }
 
-function freshPiSessionId(session: AgentSession): string {
-	return `sat-${session.id}-${Date.now().toString(36)}`;
+function freshPiSessionId(session: AgentSession, now: number): string {
+	return `sat-${session.id}-${now.toString(36)}`;
 }
 
 export class PiWorkerSpawnPort implements WorkerSpawnPort {
@@ -71,7 +71,7 @@ export class PiWorkerSpawnPort implements WorkerSpawnPort {
 		if (sessionFile) {
 			args.push("--session", sessionFile);
 		} else {
-			args.push("--session-id", freshPiSessionId(input.session));
+			args.push("--session-id", freshPiSessionId(input.session, input.now));
 		}
 		const connection = new RpcConnection({
 			cliPath: this.options.cliPath,

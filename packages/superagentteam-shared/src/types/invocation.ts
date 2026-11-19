@@ -169,14 +169,38 @@ export interface QueueAttemptProjection {
 	startedAt: number;
 }
 
-/** Ephemeral UI stream event (0007 §3.5); NOT persisted — durable truth is response_drafts. */
+/**
+ * Ephemeral UI stream event (0007 §3.6.1 / 0017 §8): NOT persisted — durable
+ * truth is response_drafts. `seq` is a per-turn in-memory monotonic transport
+ * counter: consumers dedupe on `seq > lastEventSeq` and trim reconnect
+ * baselines with it. `toolId` is the provider toolCallId — start/end pairs
+ * merge on it (0017 §5.2).
+ */
 export type AgentStreamEvent =
-	| { type: "text"; agentId: string; turnExecutionId: string; content: string; timestamp: number }
-	| { type: "thinking"; agentId: string; turnExecutionId: string; content: string; timestamp: number }
-	| { type: "tool_call"; agentId: string; turnExecutionId: string; name: string; args: unknown; timestamp: number }
-	| { type: "tool_result"; agentId: string; turnExecutionId: string; name: string; result: unknown; timestamp: number }
-	| { type: "error"; agentId: string; turnExecutionId: string; error: string; timestamp: number }
-	| { type: "done"; agentId: string; turnExecutionId: string; timestamp: number };
+	| { type: "text"; seq: number; agentId: string; turnExecutionId: string; content: string; timestamp: number }
+	| { type: "thinking"; seq: number; agentId: string; turnExecutionId: string; content: string; timestamp: number }
+	| {
+			type: "tool_call";
+			seq: number;
+			agentId: string;
+			turnExecutionId: string;
+			toolId: string;
+			name: string;
+			args: unknown;
+			timestamp: number;
+	  }
+	| {
+			type: "tool_result";
+			seq: number;
+			agentId: string;
+			turnExecutionId: string;
+			toolId: string;
+			name: string;
+			result: unknown;
+			timestamp: number;
+	  }
+	| { type: "error"; seq: number; agentId: string; turnExecutionId: string; error: string; timestamp: number }
+	| { type: "done"; seq: number; agentId: string; turnExecutionId: string; timestamp: number };
 
 export interface QueueTerminalProjection {
 	status: "terminal";

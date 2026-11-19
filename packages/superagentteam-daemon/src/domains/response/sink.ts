@@ -24,11 +24,15 @@ export interface ResponseEventSinkDeps {
 	clock?: () => number;
 }
 
-interface ToolEventRecord {
-	kind: "tool_call" | "tool_result";
+/** Merged per-toolCall record (0017 §5.2): start creates, end updates status/result. */
+export interface ToolEventRecord {
+	toolCallId: string;
 	name: string;
+	status: "running" | "completed";
 	at: number;
-	payload?: unknown;
+	endedAt?: number;
+	args?: unknown;
+	result?: unknown;
 }
 
 export interface ResponseSummary {
@@ -39,12 +43,18 @@ export interface ResponseSummary {
 	errorMessage: string | null;
 }
 
+/** Distributive Omit — keeps each union variant's own fields. */
+type SansSeq<T> = T extends Omit<T, "seq"> ? Omit<T, "seq"> : never;
+type AgentStreamEventSansSeq = SansSeq<AgentStreamEvent>;
+
 export class ResponseEventSink {
 	private readonly deps: ResponseEventSinkDeps;
 	private readonly clock: () => number;
 	private text = "";
 	private thinking: string | null = null;
 	private toolEvents: ToolEventRecord[] = [];
+	private seqCounter = 0;
+	private lateFlushDropped = 0;
 	private usage: Record<string, unknown> | null = null;
 	private errorMessage: string | null = null;
 	private lastFlushAt = 0;
@@ -57,12 +67,18 @@ export class ResponseEventSink {
 		this.clock = deps.clock ?? Date.now;
 	}
 
-	private emit(event: AgentStreamEvent): void {
+	private emit(event: AgentStreamEventSansSeq): void {
 		try {
-			this.deps.onStreamEvent?.(event);
+			this.seqCounter += 1;
+			this.deps.onStreamEvent?.({ ...event, seq: this.seqCounter } as AgentStreamEvent);
 		} catch {
 			// Ephemeral UI stream must never break the durable path.
 		}
+	}
+
+	/** 0017 §5.3 observability: late flush after row deletion (no revive). */
+	get lateFlushesDropped(): number {
+		return this.lateFlushDropped;
 	}
 
 	private maybeFirstVisible(): void {
@@ -81,7 +97,7 @@ export class ResponseEventSink {
 		this.lastFlushAt = now;
 		this.pendingBytes = 0;
 		const content = this.finalContent ?? this.text;
-		this.deps.drafts.upsert({
+		const landed = this.deps.drafts.upsert({
 			attemptId: this.deps.attemptId,
 			turnExecutionId: this.deps.turnExecutionId,
 			parentInvocationId: this.deps.parentInvocationId,
@@ -93,6 +109,7 @@ export class ResponseEventSink {
 			createdAt: this.deps.createdAt,
 			updatedAt: now,
 		});
+		if (landed === null) this.lateFlushDropped += 1;
 	}
 
 	handle(event: RpcEvent): void {
@@ -103,22 +120,54 @@ export class ResponseEventSink {
 			case "tool_execution_start":
 			case "tool_execution_end": {
 				const name = typeof event.toolName === "string" ? event.toolName : "unknown";
-				const record: ToolEventRecord = {
-					kind: event.type === "tool_execution_start" ? "tool_call" : "tool_result",
-					name,
-					at: this.clock(),
-					payload: event.type === "tool_execution_end" ? event.result : event.args,
-				};
-				this.toolEvents.push(record);
-				this.emit({
-					type: record.kind,
-					agentId: this.deps.agentId,
-					turnExecutionId: this.deps.turnExecutionId,
-					name,
-					args: (event.args as unknown) ?? undefined,
-					result: (event.result as unknown) ?? undefined,
-					timestamp: record.at,
-				} as AgentStreamEvent);
+				const toolCallId =
+					typeof event.toolCallId === "string" && event.toolCallId
+						? event.toolCallId
+						: `anon-${this.toolEvents.length + 1}`;
+				const now = this.clock();
+				if (event.type === "tool_execution_start") {
+					this.toolEvents.push({
+						toolCallId,
+						name,
+						status: "running",
+						at: now,
+						args: event.args,
+					});
+					this.emit({
+						type: "tool_call",
+						agentId: this.deps.agentId,
+						turnExecutionId: this.deps.turnExecutionId,
+						toolId: toolCallId,
+						name,
+						args: (event.args as unknown) ?? undefined,
+						timestamp: now,
+					});
+				} else {
+					// 0017 §5.2: end updates the start record (status/result).
+					const record = this.toolEvents.find((entry) => entry.toolCallId === toolCallId);
+					if (record) {
+						record.status = "completed";
+						record.endedAt = now;
+						record.result = event.result;
+					} else {
+						this.toolEvents.push({
+							toolCallId,
+							name,
+							status: "completed",
+							at: now,
+							result: event.result,
+						});
+					}
+					this.emit({
+						type: "tool_result",
+						agentId: this.deps.agentId,
+						turnExecutionId: this.deps.turnExecutionId,
+						toolId: toolCallId,
+						name,
+						result: (event.result as unknown) ?? undefined,
+						timestamp: now,
+					});
+				}
 				this.pendingBytes += name.length + 64;
 				this.flush();
 				return;

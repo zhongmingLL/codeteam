@@ -129,10 +129,13 @@ export class WorkerPool {
 				worker.poolKey.provider === poolKey.provider &&
 				worker.poolKey.model === poolKey.model;
 			if (worker && sameKey) {
-				this.workers.heartbeat(worker.id, now, this.leaseTtlMs);
-				this.bindings.touchUsed(session.id, now);
 				const connection = this.liveConnections.get(existing.workerId);
 				if (connection) {
+					// Renew the lease ONLY on an actual reuse return — a zombie
+					// row without a live connection must not get its lease
+					// extended before we fall through to a fresh spawn (review).
+					this.workers.heartbeat(worker.id, now, this.leaseTtlMs);
+					this.bindings.touchUsed(session.id, now);
 					this.acquiredAt.set(existing.workerId, now);
 					return {
 						workerId: worker.id,
