@@ -71,6 +71,29 @@ describe("F018 greenfield migration harness", () => {
 		expect(db.migrateUp()).toBe(2);
 	});
 
+	it("maps messages physical columns per 0007 §3.1.1 (author columns, mentions index)", () => {
+		const { db } = makeDb();
+		db.migrateUp();
+		const cols = (db.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>).map((r) => r.name);
+		expect(cols).toContain("author_kind");
+		expect(cols).toContain("author_id");
+		expect(cols).not.toContain("from_json");
+		const indexes = (
+			db.db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'messages'").all() as Array<{
+				name: string;
+			}>
+		).map((r) => r.name);
+		expect(indexes).toContain("messages_mentions_user");
+	});
+
+	it("creates nested parent directories with usable permissions", () => {
+		const dir = mkdtempSync(join(tmpdir(), "f018-nested-"));
+		dirs.push(dir);
+		const db = new F018Database({ path: join(dir, "a", "b", "f018.db") });
+		expect(db.appliedVersions().length).toBeGreaterThan(0);
+		db.close();
+	});
+
 	it("enforces thread ownership columns at the schema level", () => {
 		const { db } = makeDb();
 		db.migrateUp();

@@ -146,7 +146,7 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 
 > **Status 2026-11-19**: R1-0 merged (PR #97, baseline `984903f34`). R1-a in
 > progress (worktree `codeteam-f018-r1a`, branch `feat/f018-r1-a-schema`):
-> db harness + f018-core/messages migrations + shared types + AgentRegistry/
+> db harness + core/messages migrations + shared types + AgentRegistry/
 > mention parser + thread/message/read-state stores landed; PR pending.
 
 > operator 2026-11-18：`@宪宪 后续F018的开发工作你交接给砚砚`。F018 开发主责（owner）
