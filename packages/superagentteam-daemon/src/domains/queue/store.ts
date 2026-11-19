@@ -467,6 +467,35 @@ export class QueueLedgerStore {
 	}
 
 	/**
+	 * §3.9 requestRetry: put failed targets back on a QUEUED anchor row (no
+	 * claim involved — the row is released with empty pending). Idempotent per
+	 * target; only status='queued' rows accept requeue.
+	 */
+	requeueTargets(
+		threadId: string,
+		queueEntryId: string,
+		input: { targets: QueueTarget[]; now?: number },
+	): QueueReleaseResult {
+		const now = input.now ?? Date.now();
+		const row = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.get(threadId, queueEntryId) as QueueRow | undefined;
+		if (!row) return { outcome: "not_found" };
+		if (row.status !== "queued") return { outcome: "state_changed" };
+		const current = JSON.parse(row.targets_json) as QueueTarget[];
+		const keys = new Set(current.map((t) => `agent:${t.id}`));
+		for (const target of input.targets) {
+			if (!keys.has(`agent:${target.id}`)) current.push(target);
+		}
+		this.db
+			.prepare(
+				"UPDATE invocation_queue SET targets_json = ?, updated_at = ? WHERE thread_id = ? AND queue_entry_id = ? AND status = 'queued'",
+			)
+			.run(JSON.stringify(current), now, threadId, queueEntryId);
+		return { outcome: "updated", entry: this.get(threadId, queueEntryId)! };
+	}
+
+	/**
 	 * §3.2 explicit entry deletion — T3 parent-terminal / operator abandon /
 	 * TTL path (R2-c/R2-d). Retire never deletes on its own anymore.
 	 */

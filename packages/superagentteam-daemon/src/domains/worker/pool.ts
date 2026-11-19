@@ -91,6 +91,18 @@ export class WorkerPool {
 		return this.clock();
 	}
 
+	/** Processor-facing capacity port (threadId unused — pool is process-global). */
+	checkCapacityFor(_threadId: string, _targets: readonly string[]): { ok: true } | { ok: false; reason: string } {
+		// v1: a single global pool key class — capacity is per-process.
+		const anyKey: import("./store.ts").WorkerPoolKey = {
+			projectPath: "*",
+			accountRef: "*",
+			provider: "*",
+			model: "*",
+		};
+		return this.checkCapacity(anyKey);
+	}
+
 	/**
 	 * Dispatch preflight (§3.5.2): evicts idle-draining workers, then typed
 	 * `worker_capacity` when still no slot. Does NOT spawn.
