@@ -352,9 +352,7 @@ export class ResponseRecoveryService {
 					// (refs + draft + pending), idempotently.
 					runInTransaction(this.deps.db, () => {
 						this.deps.drafts.delete(turn.turnExecutionId);
-						if (attempt.queueEntryId) {
-							this.committer.settleInputDispatchRefsPublic(attempt, this.clock());
-						}
+						this.committer.settleInputDispatchRefsPublic(attempt, this.clock());
 						this.deps.turns.clearResponsePending(turn.turnExecutionId);
 					});
 					result.settled += 1;

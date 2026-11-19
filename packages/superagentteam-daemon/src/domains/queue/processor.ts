@@ -3,7 +3,7 @@ import type { AgentConfig, QueueEntry, QueueTarget } from "@superagentteam/share
 import { runInTransaction } from "../../infrastructure/db/database.ts";
 import type { AgentRegistry } from "../agent/registry.ts";
 import type { InvocationCredentialStore } from "../auth/store.ts";
-import { type CollectorTargetView, collectTerminalDispositions } from "../invocation/collector.ts";
+import { aggregateParent } from "../invocation/aggregate.ts";
 import type { InvocationAttemptStore, InvocationRecordStore, TurnExecutionStore } from "../invocation/store.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { ResponseDraftStore } from "../response/store.ts";
@@ -321,16 +321,26 @@ export class QueueProcessor {
 
 			// Phase A (§3.2 step 4): ONE transaction covering all claimed targets.
 			phaseA = runInTransaction(this.deps.db, () => {
-				const created = this.deps.records.create({
-					invocationId,
-					threadId: entry.threadId,
-					userId,
-					sourceRecordId: entry.payload.sourceRecordId,
-					userMessageId: entry.payload.messageId ?? null,
-					targetAgentIds: entry.targets.map((target) => target.id),
-					now,
-				});
-				if (created.outcome === "conflict") throw new Error("phase_a_parent_conflict");
+				// §3.9 retry reuses the SAME parent: an existing parent for this
+				// source accepts a re-admission slice (claimed ⊆ recorded
+				// targets) instead of hitting the create identity conflict.
+				const existingParent = this.deps.records.byThreadSource(entry.threadId, entry.payload.sourceRecordId);
+				if (existingParent) {
+					if (existingParent.userId !== userId) throw new Error("phase_a_parent_conflict");
+					const outside = entry.targets.filter((target) => !existingParent.targetAgentIds.includes(target.id));
+					if (outside.length > 0) throw new Error("phase_a_parent_conflict");
+				} else {
+					const created = this.deps.records.create({
+						invocationId,
+						threadId: entry.threadId,
+						userId,
+						sourceRecordId: entry.payload.sourceRecordId,
+						userMessageId: entry.payload.messageId ?? null,
+						targetAgentIds: entry.targets.map((target) => target.id),
+						now,
+					});
+					if (created.outcome === "conflict") throw new Error("phase_a_parent_conflict");
+				}
 				// P2: a terminal/missing parent must not admit new attempts.
 				if (!this.deps.records.markRunning(invocationId, now)) {
 					throw new Error("phase_a_parent_not_runnable");
@@ -711,58 +721,114 @@ export class QueueProcessor {
 	}
 
 	/**
+	 * §3.9 route recovery: retry failed/interrupted targets of a
+	 * failed/partial_failed parent. Same invocation, same source message, same
+	 * queue entry — exact-entry claim re-adds the targets as pending; the next
+	 * drain appends attempt+1. Canceled/successful targets are never retried.
+	 */
+	requestRetry(
+		invocationId: string,
+		targetAgentIds?: string[],
+	): {
+		outcome: "admitted" | "not_retryable" | "nothing_to_retry";
+		retriedAgents: string[];
+	} {
+		const parent = this.deps.records.get(invocationId);
+		if (!parent) throw new Error("invocation_not_found");
+		if (parent.status !== "failed" && parent.status !== "partial_failed") {
+			return { outcome: "not_retryable", retriedAgents: [] };
+		}
+		const retryable = parent.targetAgentIds.filter((agentId) => {
+			if (targetAgentIds && !targetAgentIds.includes(agentId)) return false;
+			const latest = this.deps.attempts.getLatest(invocationId, agentId);
+			if (!latest) return false;
+			if (latest.deliveryState !== "failed" && latest.deliveryState !== "interrupted") return false;
+			// §3.9: only settled old attempts retry — pending ones wait for T4.
+			return latest.settlement === "settled";
+		});
+		if (retryable.length === 0) return { outcome: "nothing_to_retry", retriedAgents: [] };
+		const now = this.now();
+		const entryId = this.deps.attempts.getLatest(invocationId, retryable[0]!)?.queueEntryId;
+		runInTransaction(this.deps.db, () => {
+			// Store-side flip first (admitRetry: failed/partial_failed → queued,
+			// retryCount++, clear terminal fields).
+			if (!this.deps.records.admitRetry(invocationId)) {
+				throw new Error("retry_admit_conflict");
+			}
+			if (entryId) {
+				const requeued = this.deps.queue.requeueTargets(this.deps.records.get(invocationId)!.threadId, entryId, {
+					targets: retryable.map((agentId) => ({ kind: "agent", id: agentId })),
+					now,
+				});
+				if (requeued.outcome === "not_found") {
+					// Anchor already deleted (e.g. canceled path): exact-entry retry
+					// needs the row — typed reject rather than re-admission.
+					throw new Error("retry_anchor_missing");
+				}
+				if (requeued.outcome === "state_changed") {
+					throw new Error("retry_anchor_not_queued");
+				}
+			}
+			for (const agentId of retryable) {
+				this.deferrals.reset(this.deps.records.get(invocationId)!.threadId, agentId);
+			}
+		});
+		return { outcome: "admitted", retriedAgents: retryable };
+	}
+
+	/**
+	 * §3.9 abandon: failed/partial_failed parent with no running child →
+	 * canceled(operator_abandon) + queue entry deleted; attempts/R preserved.
+	 */
+	abandon(
+		invocationId: string,
+		now = Date.now(),
+	): {
+		outcome: "abandoned" | "already_canceled" | "not_abandonable";
+	} {
+		const parent = this.deps.records.get(invocationId);
+		if (!parent) throw new Error("invocation_not_found");
+		if (parent.status === "canceled") return { outcome: "already_canceled" };
+		if (parent.status !== "failed" && parent.status !== "partial_failed") {
+			return { outcome: "not_abandonable" };
+		}
+		const stillRunning = parent.targetAgentIds.some((agentId) => {
+			const latest = this.deps.attempts.getLatest(invocationId, agentId);
+			return latest?.deliveryState === "appended";
+		});
+		if (stillRunning) return { outcome: "not_abandonable" };
+		runInTransaction(this.deps.db, () => {
+			// §3.9: the ONLY legal terminal→terminal transition.
+			if (!this.deps.records.abandon(invocationId, "operator_abandon", now)) {
+				throw new Error("abandon_conflict");
+			}
+			const latest = this.deps.attempts.getLatest(invocationId, parent.targetAgentIds[0]!);
+			if (latest) {
+				this.deps.queue.deleteEntry(parent.threadId, latest.queueEntryId);
+			}
+		});
+		return { outcome: "abandoned" };
+	}
+
+	/**
 	 * T3 parent aggregate (§3.9): collector over per-target latest attempt +
 	 * canonical child + queue pending; writes parent status /
 	 * successfulAgentIds / terminalReason and deletes terminal queue entries.
 	 * Never writes child/credential/R.
 	 */
 	private aggregateParent(entry: QueueEntry, invocationId: string, _userId: string): void {
-		// §3.9: the collector runs INSIDE the write transaction — attempts and
-		// children are re-read after the lock is held so two children reaching
-		// terminal concurrently cannot aggregate from a stale snapshot
-		// (round-1 P1-2).
-		runInTransaction(this.deps.db, () => {
-			const parent = this.deps.records.get(invocationId);
-			if (!parent || (parent.status !== "queued" && parent.status !== "running")) return;
-			const liveEntry = this.deps.queue.get(entry.threadId, entry.queueEntryId);
-			const pendingKeys = new Set((liveEntry?.targets ?? []).map((target) => `agent:${target.id}`));
-			const views: CollectorTargetView[] = parent.targetAgentIds.map((agentId) => {
-				const latest = this.deps.attempts.getLatest(invocationId, agentId);
-				const child = latest?.turnExecutionId ? this.deps.turns.get(latest.turnExecutionId) : null;
-				return {
-					agentId,
-					latestAttempt: latest,
-					child,
-					retryablePending:
-						pendingKeys.has(`agent:${agentId}`) &&
-						(latest?.deliveryState === "failed" || latest?.deliveryState === "interrupted"),
-				};
-			});
-			const result = collectTerminalDispositions({ parent, targets: views });
-			if (result.parentStatus === "running" || result.parentStatus === "queued") {
-				if (result.successfulAgentIds.length > 0) {
-					this.deps.records.addSuccessfulAgents(invocationId, result.successfulAgentIds);
-				}
-				return;
-			}
-			// §3.9: usage rollup from the latest attempts (per agent).
-			const usageByAgent: Record<string, unknown> = {};
-			for (const view of views) {
-				if (view.latestAttempt?.usage) usageByAgent[view.agentId] = view.latestAttempt.usage;
-			}
-			this.deps.records.applyTerminalAggregate({
-				invocationId,
-				status: result.parentStatus,
-				successfulAgentIds: result.successfulAgentIds,
-				terminalReason: result.primaryTerminalError,
-				usageByAgent: Object.keys(usageByAgent).length > 0 ? usageByAgent : undefined,
-				now: this.now(),
-			});
-			// §3.2: parent completed/canceled → delete the anchor entry;
-			// partial_failed/failed stay for retry/abandon/TTL.
-			if (result.parentStatus === "completed" || result.parentStatus === "canceled") {
-				this.deps.queue.deleteEntry(entry.threadId, entry.queueEntryId);
-			}
-		});
+		// R2-d: the SHARED §3.9 aggregator (also used by startup/reaper) —
+		// write-locked re-read, collector rules, anchor lifecycle.
+		aggregateParent(
+			{
+				db: this.deps.db,
+				records: this.deps.records,
+				attempts: this.deps.attempts,
+				turns: this.deps.turns,
+				queue: this.deps.queue,
+			},
+			{ threadId: entry.threadId, queueEntryId: entry.queueEntryId, invocationId },
+			this.now(),
+		);
 	}
 }

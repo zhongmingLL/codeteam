@@ -24,6 +24,11 @@ export interface StaleSlot {
 
 export class InvocationTracker {
 	private readonly slots = new Map<string, InvocationSlot>();
+	private readonly clock: () => number;
+
+	constructor(clock: () => number = Date.now) {
+		this.clock = clock;
+	}
 
 	private key(threadId: string, agentId: string): string {
 		return `${threadId}\u0000${agentId}`;
@@ -41,7 +46,7 @@ export class InvocationTracker {
 			userId,
 			turnExecutionId,
 			controller,
-			startedAt: Date.now(),
+			startedAt: this.clock(),
 		});
 		return controller;
 	}

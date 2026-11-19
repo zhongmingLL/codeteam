@@ -227,6 +227,20 @@ export class InvocationRecordStore {
 		return true;
 	}
 
+	/**
+	 * §3.9 abandon: failed/partial_failed → canceled(operator_abandon).
+	 * The ONLY legal terminal→terminal transition (operator action).
+	 */
+	abandon(invocationId: string, reason: string, now: number): boolean {
+		return (
+			this.db
+				.prepare(
+					"UPDATE invocation_records SET status = 'canceled', terminal_reason = ?, ended_at = ? WHERE invocation_id = ? AND status IN ('failed', 'partial_failed')",
+				)
+				.run(reason, now, invocationId).changes > 0
+		);
+	}
+
 	/** requestRetry store-side state flip only (§3.9 API boundary). */
 	admitRetry(invocationId: string): boolean {
 		return (
