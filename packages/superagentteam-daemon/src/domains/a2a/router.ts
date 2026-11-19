@@ -63,10 +63,20 @@ export class OperatorMessageIngress {
 		this.queue = deps.queue;
 	}
 
+	/** 0010 §6.1.3 ingress gate: an implicit candidate must be routable now. */
+	private routable(agentId: string): boolean {
+		const config = this.registry.agents.get(agentId);
+		if (!config || !config.enabled) return false;
+		return this.registry.accounts.has(config.accountRef);
+	}
+
 	/**
 	 * 0007 §3.0 step 3: implicit target chain — (1) last user message's
 	 * targetAgentIds, (2) most recent successfully-responding agent, (3) first
 	 * thread participant, (4) registry defaultAgentId, (5) no_target.
+	 * Each candidate is checked for CURRENT routability (enabled + account);
+	 * an invalid candidate falls through to the next step instead of being
+	 * admitted to fail at dispatch (round-2).
 	 */
 	resolveImplicitTargets(threadId: string): { agentId: string; reason: RoutingReason } | null {
 		// (1) last user message with explicit targets
@@ -75,21 +85,29 @@ export class OperatorMessageIngress {
 			const message = recent[i]!;
 			if (message.from.kind !== "user") continue;
 			const targets = message.extra?.targetAgentIds;
-			if (targets && targets.length > 0) return { agentId: targets[0]!, reason: "previous_user_mentions" };
+			if (targets && targets.length > 0) {
+				const candidate = targets.find((agentId) => this.routable(agentId));
+				if (candidate) return { agentId: candidate, reason: "previous_user_mentions" };
+				break; // latest user message's targets are all unroutable → continue chain
+			}
 			break; // only the LATEST user message carries the fallback
 		}
-		// (2) recent replier: last completed TurnExecution agent on the thread
-		const replier = this.db
+		// (2) recent replier: last completed ordinary TurnExecution per agent,
+		// newest first, first routable one wins.
+		const repliers = this.db
 			.prepare(
-				"SELECT agent_id FROM turn_executions WHERE thread_id = ? AND status = 'completed' AND execution_kind = 'ordinary' ORDER BY ended_at DESC LIMIT 1",
+				"SELECT agent_id, MAX(ended_at) AS last FROM turn_executions WHERE thread_id = ? AND status = 'completed' AND execution_kind = 'ordinary' GROUP BY agent_id ORDER BY last DESC",
 			)
-			.get(threadId) as { agent_id: string } | undefined;
-		if (replier) return { agentId: replier.agent_id, reason: "recent_replier" };
-		// (3) first participant by join order
-		const participants = this.threads.listParticipants(threadId);
-		if (participants.length > 0) return { agentId: participants[0]!, reason: "thread_participant" };
+			.all(threadId) as Array<{ agent_id: string }>;
+		for (const replier of repliers) {
+			if (this.routable(replier.agent_id)) return { agentId: replier.agent_id, reason: "recent_replier" };
+		}
+		// (3) participants by join order, first routable
+		for (const participant of this.threads.listParticipants(threadId)) {
+			if (this.routable(participant)) return { agentId: participant, reason: "thread_participant" };
+		}
 		// (4) registry default
-		if (this.registry.defaultAgentId) {
+		if (this.registry.defaultAgentId && this.routable(this.registry.defaultAgentId)) {
 			return { agentId: this.registry.defaultAgentId, reason: "default_agent" };
 		}
 		return null;
@@ -130,26 +148,29 @@ export class OperatorMessageIngress {
 		if (thread.deletedAt !== null && thread.deletedAt !== undefined) {
 			throw new Error(`thread_deleted: ${input.threadId}`);
 		}
-		// Idempotent replay: same messageId + same identity returns the
+		// Idempotent replay: same messageId + same STORED identity returns the
 		// existing message/entry instead of hitting the UNIQUE constraint.
+		// Replay compares only persisted facts — re-resolving against the
+		// CURRENT registry would turn a legit replay into a conflict when an
+		// agent was disabled/removed since admission (round-2).
 		if (input.messageId) {
 			const existing = this.messages.get(input.messageId, { includeDeleted: true });
 			if (existing) {
-				const resolved = this.resolveTargets(input.threadId, input.body);
+				const storedTargets = existing.extra?.targetAgentIds ?? [];
 				const sameIdentity =
 					existing.threadId === input.threadId &&
 					existing.from.kind === "user" &&
 					existing.from.userId === input.userId &&
 					existing.content === input.body &&
-					resolved.kind === "ok" &&
-					existing.extra?.targetAgentIds?.join("\u0000") === resolved.targetAgentIds.join("\u0000");
+					storedTargets.length > 0;
 				if (!sameIdentity) throw new Error("ingress_message_id_conflict");
 				const liveEntry = this.queue.getBySource(input.threadId, existing.id, 1);
+				if (!liveEntry) throw new Error("ingress_replay_entry_missing");
 				return {
 					message: existing,
-					queueEntry: liveEntry!,
-					targetAgentIds: existing.extra?.targetAgentIds ?? [],
-					reason: resolved.kind === "ok" ? resolved.reason : "current_message_mentions",
+					queueEntry: liveEntry,
+					targetAgentIds: storedTargets,
+					reason: "current_message_mentions",
 				};
 			}
 		}

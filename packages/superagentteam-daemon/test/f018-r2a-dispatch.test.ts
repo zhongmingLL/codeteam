@@ -476,6 +476,12 @@ describe("QueueProcessor (0007 §3.2)", () => {
 		const turnId = attempt?.turnExecutionId;
 		expect(turnId).toBeTruthy();
 		expect(w.turns.get(turnId!)?.status).toBe("failed");
+		// Round-2 P1-1: credential follows child truth (terminal, failed).
+		const credential = w.credentials.getByTurn(turnId!);
+		expect(credential?.state).toBe("terminal");
+		expect(credential?.disposition).toBe("failed");
+		// Round-2: the empty draft is dropped with the settlement.
+		expect(w.drafts.getByTurn(turnId!)).toBeNull();
 		const response = w.messages.get(`resp:${turnId}`);
 		expect(response?.lifecycle?.kind).toBe("response");
 		if (response?.lifecycle?.kind === "response") {
@@ -518,6 +524,73 @@ describe("QueueProcessor (0007 §3.2)", () => {
 			const refTargets = input.lifecycle.dispatchRefs.map((r) => r.target.id).sort();
 			expect(refTargets).toEqual(["a1", "a2"]);
 		}
+	});
+
+	it("round-2: convergence failure is typed, not an escape (claim changed hands)", async () => {
+		const w = makeWorld();
+		w.ingress.submit({ threadId: "t1", userId: "u1", body: "go @a1", now: 10 });
+		const processor = new QueueProcessor({
+			db: w.db,
+			registry: w.registry,
+			queue: w.queue,
+			records: w.records,
+			turns: w.turns,
+			attempts: w.attempts,
+			sessions: w.sessions,
+			credentials: w.credentials,
+			drafts: w.drafts,
+			messages: w.messages,
+			threads: w.threads,
+			tracker: w.tracker,
+			dispatchTarget: {
+				async dispatch(prepared: PreparedDispatch) {
+					// Sabotage: the claim changes hands (e.g. TTL expiry +
+					// re-claim) before the port throws → restoreTargets will
+					// hit state_changed inside the convergence transaction.
+					w.queue.releaseClaim(prepared.threadId, prepared.queueEntryId, prepared.claimId, 2000);
+					throw new Error("provider exploded after claim loss");
+				},
+			},
+			clock: () => 1000,
+		});
+		const result = await processor.drain("t1", "u1");
+		expect(result.processed).toBe(1);
+		// drain completes (no escape) and surfaces the convergence failure as
+		// a typed field; the durable state stays inspectable/recoverable.
+		expect(result.convergenceFailed).toEqual(["a1"]);
+	});
+
+	it("round-2: implicit chain skips currently-unroutable candidates", () => {
+		const w = makeWorld([agentConfig(), agentConfig({ id: "a2", mentionPatterns: ["@a2"], enabled: false })]);
+		// Last user message targeted a2; a2 is now disabled → the chain falls
+		// through to the default agent (a1) instead of admitting a dead target.
+		w.messages.append({
+			id: "m-old",
+			threadId: "t1",
+			from: { kind: "user", userId: "u1" },
+			content: "go @a2",
+			lifecycle: { kind: "input", dispatchRefs: [] },
+			extra: { targetAgentIds: ["a2"] },
+			now: 1,
+		});
+		const result = w.ingress.submit({ threadId: "t1", userId: "u1", body: "and now?", now: 20 });
+		expect(result.reason).toBe("default_agent");
+		expect(result.targetAgentIds).toEqual(["a1"]);
+	});
+
+	it("round-2: replay with a deleted queue entry is a typed reject, not a fake success", () => {
+		const w = makeWorld();
+		const first = w.ingress.submit({
+			threadId: "t1",
+			userId: "u1",
+			body: "go @a1",
+			messageId: "m-gone",
+			now: 10,
+		});
+		w.queue.deleteEntry("t1", first.queueEntry.queueEntryId);
+		expect(() =>
+			w.ingress.submit({ threadId: "t1", userId: "u1", body: "go @a1", messageId: "m-gone", now: 20 }),
+		).toThrowError(/ingress_replay_entry_missing/);
 	});
 
 	it("busy target holds later entries (per-target ordering)", async () => {

@@ -37,7 +37,22 @@ export interface PreparedDispatch {
 	claimId: string;
 }
 
-/** Post-Phase-B continuation port (R2-b: real worker/prompt/stream/T1). */
+/**
+ * Post-Phase-B continuation port (R2-b: real worker/prompt/stream/T1).
+ *
+ * PORT CONTRACT (round-2 review):
+ * - The port OWES terminalization: on provider-phase failure it either (a)
+ *   throws WITHOUT having terminalized anything (the processor then converges
+ *   turn/attempt/credential/R to failed and restores the target), or (b)
+ *   performs its own T1 terminal + settlement and returns WITHOUT throwing.
+ *   Terminalize-then-throw is a contract violation: the processor's
+ *   convergence would hit already_terminal conflicts and surface a typed
+ *   convergenceFailed instead of silently double-converging.
+ * - The port must release/retire any worker it acquired before throwing
+ *   (warmTtl=0); the processor does not know worker ids.
+ * - The port must not touch the queue claim or targets; retirement/restore
+ *   is processor-owned.
+ */
 export interface DispatchTargetPort {
 	dispatch(prepared: PreparedDispatch): Promise<void>;
 }
@@ -67,13 +82,22 @@ export interface QueueProcessorDeps {
 }
 
 export type ProcessEntryResult =
-	| { outcome: "dispatched"; parentInvocationId: string; dispatched: string[]; invalid: string[] }
+	| {
+			outcome: "dispatched";
+			parentInvocationId: string;
+			dispatched: string[];
+			invalid: string[];
+			/** Targets whose provider phase failed AND whose convergence tx also failed (typed, recoverable). */
+			convergenceFailed?: string[];
+	  }
 	| { outcome: "deferred"; reason: string }
 	| { outcome: "nothing_startable"; parentInvocationId: string; invalid: string[] };
 
 export interface DrainResult {
 	processed: number;
 	deferred: number;
+	/** Targets whose provider-phase convergence transaction failed (typed, recoverable). */
+	convergenceFailed: string[];
 }
 
 type PreflightTarget =
@@ -111,6 +135,12 @@ export class RetryDeferrals {
 		const at = this.nextEligible.get(this.key(threadId, agentId));
 		return at === undefined || at <= now;
 	}
+	/** Successful dispatch resets the backoff ladder (next failure starts at base). */
+	reset(threadId: string, agentId: string): void {
+		const key = this.key(threadId, agentId);
+		this.nextEligible.delete(key);
+		this.lastGap.delete(key);
+	}
 }
 
 export class QueueProcessor {
@@ -146,14 +176,21 @@ export class QueueProcessor {
 		const maxEntries = options.maxEntries ?? 1;
 		let processed = 0;
 		let deferred = 0;
+		const convergenceFailed: string[] = [];
 		for (let i = 0; i < maxEntries; i += 1) {
 			const claimed = this.claimNext(threadId, userId);
 			if (!claimed) break;
 			const result = await this.processEntry(claimed.entry, claimed.claimId, userId);
-			if (result.outcome === "deferred") deferred += 1;
-			else processed += 1;
+			if (result.outcome === "deferred") {
+				deferred += 1;
+			} else {
+				processed += 1;
+				if (result.outcome === "dispatched" && result.convergenceFailed) {
+					convergenceFailed.push(...result.convergenceFailed);
+				}
+			}
 		}
-		return { processed, deferred };
+		return { processed, deferred, convergenceFailed };
 	}
 
 	private claimNext(threadId: string, userId: string): { entry: QueueEntry; claimId: string } | null {
@@ -380,11 +417,14 @@ export class QueueProcessor {
 			if ("error" in startAll) {
 				const nowB = this.now();
 				for (const prepared of phaseA) {
-					this.deps.attempts.markPrestartTerminal(prepared.attemptId, {
+					const terminal = this.deps.attempts.markPrestartTerminal(prepared.attemptId, {
 						status: "failed",
 						terminalReason: "tracker_start_failed",
 						endedAt: nowB,
 					});
+					if (!terminal || terminal.deliveryState !== "failed") {
+						throw new Error(`tracker_start_terminal_failed: ${prepared.agentId}`);
+					}
 					this.deferrals.defer(entry.threadId, prepared.agentId, nowB);
 				}
 				this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, nowB);
@@ -394,11 +434,19 @@ export class QueueProcessor {
 			// P1-1: ANY pre-Phase-B failure (validation, preflight throw, Phase A
 			// rollback, startAll setup) releases the claim and defers — the
 			// entry must not sit claimed until TTL (0010 §6.1.3 rows 1/3/4).
+			// Permanent causes (owner/registry/workspace/parent-terminal) are
+			// tagged so retry policy (R2-d) can stop backing off on them.
+			const message = String(error);
+			const permanent =
+				/owner|workspace|parent_not_runnable|parent_conflict|agent_not_found|agent_disabled|account_not_found/.test(
+					message,
+				);
 			this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, this.now());
-			return { outcome: "deferred", reason: String(error) };
+			return { outcome: "deferred", reason: permanent ? `permanent:${message}` : message };
 		}
 
 		const dispatched: string[] = [];
+		const convergenceFailed: string[] = [];
 		try {
 			// Phase B (§3.2 step 6): per-target independent dispatch transaction.
 			// A failing target writes delivery_failure and stays pending; healthy
@@ -495,31 +543,39 @@ export class QueueProcessor {
 						}
 					});
 					dispatched.push(prepared.agentId);
+					this.deferrals.reset(entry.threadId, prepared.agentId);
 				} catch (error) {
 					// Phase B tx rolled back: no R/child for this target; attempt
-					// starting→failed + delivery_failure; target stays pending
-					// (retryable); sibling targets continue (§3.2 step 6).
+					// starting→failed + delivery_failure in ONE transaction (a
+					// failing append must not leave the attempt marked failed
+					// without its receipt); target stays pending (retryable);
+					// sibling targets continue (§3.2 step 6).
 					const nowF = this.now();
-					this.deps.attempts.markPrestartTerminal(prepared.attemptId, {
-						status: "failed",
-						terminalReason: "phase_b_failed",
-						endedAt: nowF,
-					});
-					this.deps.messages.append({
-						id: `df:${prepared.attemptId}`,
-						threadId: entry.threadId,
-						from: { kind: "system", service: "queue" },
-						content: `delivery_failure (phase_b_failed): ${String(error)}`,
-						lifecycle: {
-							kind: "delivery_failure",
+					runInTransaction(this.deps.db, () => {
+						const terminal = this.deps.attempts.markPrestartTerminal(prepared.attemptId, {
 							status: "failed",
-							sourceEntryId: entry.queueEntryId,
-							inputMessageId: entry.payload.messageId ?? entry.payload.sourceRecordId,
-							requestedTargets: [{ kind: "agent", id: prepared.agentId }],
-							reason: "phase_b_failed",
-							createdAt: nowF,
-						},
-						now: nowF,
+							terminalReason: "phase_b_failed",
+							endedAt: nowF,
+						});
+						if (!terminal || terminal.deliveryState !== "failed") {
+							throw new Error(`phase_b_terminal_failed: ${prepared.agentId}`);
+						}
+						this.deps.messages.append({
+							id: `df:${prepared.attemptId}`,
+							threadId: entry.threadId,
+							from: { kind: "system", service: "queue" },
+							content: `delivery_failure (phase_b_failed): ${String(error)}`,
+							lifecycle: {
+								kind: "delivery_failure",
+								status: "failed",
+								sourceEntryId: entry.queueEntryId,
+								inputMessageId: entry.payload.messageId ?? entry.payload.sourceRecordId,
+								requestedTargets: [{ kind: "agent", id: prepared.agentId }],
+								reason: "phase_b_failed",
+								createdAt: nowF,
+							},
+							now: nowF,
+						});
 					});
 					this.deferrals.defer(entry.threadId, prepared.agentId, nowF);
 				}
@@ -555,6 +611,10 @@ export class QueueProcessor {
 					// (0010 §6.1.3 row 6). Converge the chain terminal-failed and
 					// put the target back on the entry so the bounded backoff can
 					// re-dispatch (new attempt). No delivery_failure, no ack.
+					// Round-2: the convergence itself is caught — a failing
+					// convergence (port terminalized before throwing, claim
+					// changed hands) surfaces a typed convergenceFailed instead
+					// of escaping and skipping the final claim release.
 					const nowP = this.now();
 					const responseMessageId = `resp:${prepared.turnExecutionId}`;
 					try {
@@ -576,10 +636,17 @@ export class QueueProcessor {
 							if (projected.outcome === "not_found" || projected.outcome === "terminal_conflict") {
 								throw new Error("provider_phase_projection_conflict");
 							}
+							// Credential follows child truth (0007 §5.3, T1
+							// same close-out): canonical-first commitTerminal.
+							const cred = this.deps.credentials.commitTerminal(prepared.turnExecutionId, "failed");
+							if (cred.outcome === "not_found" || cred.outcome === "conflict") {
+								throw new Error("provider_phase_credential_conflict");
+							}
 							// The response R is terminal-failed here (no T2 will
 							// commit it); settle the attempt so T4 has nothing
-							// dangling to recover.
+							// dangling to recover, and drop the empty draft.
 							this.deps.attempts.setSettlement(prepared.attemptId, "settled", responseMessageId);
+							this.deps.drafts.delete(prepared.turnExecutionId);
 							const response = this.deps.messages.get(responseMessageId, { includeDeleted: true });
 							if (response?.lifecycle?.kind === "response") {
 								this.deps.messages.updateLifecycle(
@@ -596,6 +663,9 @@ export class QueueProcessor {
 								throw new Error("provider_phase_restore_state_changed");
 							}
 						});
+					} catch (convergenceError) {
+						convergenceFailed.push(prepared.agentId);
+						void convergenceError;
 					} finally {
 						this.deferrals.defer(entry.threadId, prepared.agentId, nowP);
 					}
@@ -603,15 +673,16 @@ export class QueueProcessor {
 			}
 		} finally {
 			// T3 slot release (§3.2 step 8): per-target ownership-fenced complete
-			// so a stale finally cannot release a replacement slot.
+			// so a stale finally cannot release a replacement slot. The claim is
+			// released HERE too — an escaping exception must not leave it
+			// claimed until TTL (round-2 P1-2).
 			for (const prepared of phaseA) {
 				this.deps.tracker.complete(entry.threadId, prepared.agentId, prepared.turnExecutionId);
 			}
+			// §3.2 step 6 note: release whatever the claim still holds (targets
+			// that never reached retireTargets stay pending for the next drain).
+			this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, this.now());
 		}
-
-		// §3.2 step 6 note: release whatever the claim still holds (targets
-		// that never reached retireTargets stay pending for the next drain).
-		this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, this.now());
 
 		if (dispatched.length === 0 && invalid.length > 0) {
 			return {
@@ -625,6 +696,7 @@ export class QueueProcessor {
 			parentInvocationId: invocationId,
 			dispatched,
 			invalid: invalid.map((t) => t.agentId),
+			convergenceFailed: convergenceFailed.length > 0 ? convergenceFailed : undefined,
 		};
 	}
 }
