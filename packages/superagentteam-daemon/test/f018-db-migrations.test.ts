@@ -68,7 +68,7 @@ describe("F018 greenfield migration harness", () => {
 			}[]
 		).map((row) => row.name);
 		expect(tables).not.toContain("threads");
-				expect(db.migrateUp()).toBe(2);
+		expect(db.migrateUp()).toBe(2);
 	});
 
 	it("enforces thread ownership columns at the schema level", () => {

@@ -9,5 +9,5 @@
 
 export type SuperAgentTeamSharedVersion = "v1-r1-0";
 
-export * from "./thread.ts";
 export * from "./message.ts";
+export * from "./thread.ts";

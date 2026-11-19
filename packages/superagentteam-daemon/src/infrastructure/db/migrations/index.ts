@@ -18,7 +18,9 @@ export function assertF018MigrationSet(migrations: readonly ControlMigration[]):
 	if (migrations.length === 0) throw new Error("f018_migrations_empty");
 	for (const [index, migration] of migrations.entries()) {
 		if (migration.version !== index + 1) {
-			throw new Error(`f018_migration_version_gap: expected ${index + 1}, got ${migration.version} (${migration.name})`);
+			throw new Error(
+				`f018_migration_version_gap: expected ${index + 1}, got ${migration.version} (${migration.name})`,
+			);
 		}
 		if (migration.up.length === 0) throw new Error(`f018_migration_empty_up: ${migration.name}`);
 		if (migration.down.length === 0) throw new Error(`f018_migration_empty_down: ${migration.name}`);

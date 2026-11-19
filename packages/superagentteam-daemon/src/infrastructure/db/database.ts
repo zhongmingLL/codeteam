@@ -29,19 +29,19 @@ export interface F018MigrationStatus {
 	applied_at: number;
 }
 
-function ensureParent(path: string, mode: 0o600): void {
+function ensureParent(path: string, mode: 0o700): void {
 	mkdirSync(dirname(path), { recursive: true, mode });
 }
 
 export class F018Database {
 	readonly db: DatabaseSync;
-	private readonly migrationsPath: string;
+	private readonly dbPath: string;
 
 	constructor(options: F018DatabaseOptions = {}) {
 		const path = options.path ?? `${resolveDataDir()}/f018.db`;
-		ensureParent(path, 0o600);
+		ensureParent(path, 0o700);
 		this.db = new DatabaseSync(path);
-		this.migrationsPath = path;
+		this.dbPath = path;
 		try {
 			chmodSync(path, 0o600);
 		} catch {
@@ -49,13 +49,14 @@ export class F018Database {
 			// restricted the file on platforms that honor mkdirSync/open modes.
 		}
 		this.db.exec("PRAGMA journal_mode = WAL");
+		this.db.exec("PRAGMA busy_timeout = 5000");
 		this.db.exec("PRAGMA foreign_keys = ON");
 		this.ensureLedger();
 		if (!options.noMigrate) this.migrateUp();
 	}
 
 	get path(): string {
-		return this.migrationsPath;
+		return this.dbPath;
 	}
 
 	private ensureLedger(): void {

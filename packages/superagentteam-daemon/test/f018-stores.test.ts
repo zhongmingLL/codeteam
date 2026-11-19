@@ -2,11 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-
-import { F018Database } from "../src/infrastructure/db/database.ts";
-import { AgentReadStateStore } from "../src/domains/message/store.ts";
-import { MessageStore } from "../src/domains/message/store.ts";
+import { AgentReadStateStore, MessageStore } from "../src/domains/message/store.ts";
 import { ThreadStore } from "../src/domains/thread/store.ts";
+import { F018Database } from "../src/infrastructure/db/database.ts";
 
 const dirs: string[] = [];
 
@@ -19,7 +17,12 @@ function makeStores(): {
 	const dir = mkdtempSync(join(tmpdir(), "f018-stores-"));
 	dirs.push(dir);
 	const db = new F018Database({ path: join(dir, "f018.db") });
-	return { thread: new ThreadStore(db.db), message: new MessageStore(db.db), read: new AgentReadStateStore(db.db), db };
+	return {
+		thread: new ThreadStore(db.db),
+		message: new MessageStore(db.db),
+		read: new AgentReadStateStore(db.db),
+		db,
+	};
 }
 
 afterEach(() => {
@@ -98,6 +101,44 @@ describe("MessageStore (0007 §3.1)", () => {
 		expect(stored.extra?.targetAgentIds).toEqual(["a1"]);
 	});
 
+	it("append updates threads.last_active_at but not updated_at (0009 §2.3)", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 100 });
+		message.append({ id: "m1", threadId: "t1", from: { kind: "user", userId: "u1" }, content: "hi", now: 500 });
+		const t = thread.get("t1")!;
+		expect(t.lastActiveAt).toBe(500);
+		expect(t.updatedAt).toBe(100);
+	});
+
+	it("append rejects user messages from a non-owner (0011 §11)", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		expect(() =>
+			message.append({ id: "mx", threadId: "t1", from: { kind: "user", userId: "u2" }, content: "x", now: 2 }),
+		).toThrow(/owner/);
+	});
+
+	it("reads exclude soft-deleted messages by default; includeDeleted opts in", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		message.append({ id: "m1", threadId: "t1", from: { kind: "user", userId: "u1" }, content: "a", now: 2 });
+		message.append({ id: "m2", threadId: "t1", from: { kind: "user", userId: "u1" }, content: "b", now: 3 });
+		message.softDelete("m1", "u1", 4);
+		expect(message.getByThreadAfter("t1", 0, 10).map((m) => m.id)).toEqual(["m2"]);
+		expect(message.getByThreadAfter("t1", 0, 10, { includeDeleted: true }).map((m) => m.id)).toEqual(["m1", "m2"]);
+		expect(message.get("m1")).toBeNull();
+		expect(message.get("m1", { includeDeleted: true })?.id).toBe("m1");
+	});
+
+	it("round-trips author mapping for all three sender kinds", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		message.append({ id: "m1", threadId: "t1", from: { kind: "agent", agentId: "a9" }, content: "", now: 2 });
+		message.append({ id: "m2", threadId: "t1", from: { kind: "system", service: "svc" }, content: "", now: 3 });
+		expect(message.get("m1")?.from).toEqual({ kind: "agent", agentId: "a9" });
+		expect(message.get("m2")?.from).toEqual({ kind: "system", service: "svc" });
+	});
+
 	it("soft delete and lifecycle update persist", () => {
 		const { thread, message } = makeStores();
 		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
@@ -105,7 +146,7 @@ describe("MessageStore (0007 §3.1)", () => {
 		message.updateLifecycle("m1", { kind: "input", dispatchRefs: [] }, 3);
 		expect(message.get("m1")?.lifecycle?.kind).toBe("input");
 		expect(message.softDelete("m1", "u1", 4)).toBe(true);
-		expect(message.get("m1")?.deletedAt).toBe(4);
+		expect(message.get("m1", { includeDeleted: true })?.deletedAt).toBe(4);
 	});
 });
 

@@ -1,17 +1,20 @@
 import type { ControlMigration } from "./index.ts";
 
 /**
- * F018 R1-a messages table: StoredMessage (0007 §3.1) as a greenfield v1
- * table. Legacy task-first message columns (task_id/control_ref/
- * dispatch_refs_json/rich_blocks_json/kind) are deliberately absent.
+ * F018 R1-a messages table: StoredMessage (0007 §3.1) greenfield v1 table.
+ * Physical mapping per 0007 §3.1.1: author_kind + author_id map
+ * StoredMessage.from (no `from` column); body_md = content; created_at =
+ * timestamp; content_json/tool_events_json/lifecycle_json/extra_json =
+ * contentBlocks/toolEvents/lifecycle/extra. Legacy task-first columns are
+ * deliberately absent.
  */
 export const F018_MESSAGES_STATEMENTS = [
 	`CREATE TABLE messages (
 		id TEXT PRIMARY KEY,
 		thread_id TEXT NOT NULL,
 		seq INTEGER NOT NULL CHECK (seq >= 0),
-		from_json TEXT NOT NULL
-			CHECK (json_valid(from_json) AND json_type(from_json) = 'object'),
+		author_kind TEXT NOT NULL CHECK (author_kind IN ('user', 'agent', 'system')),
+		author_id TEXT NOT NULL,
 		body_md TEXT NOT NULL DEFAULT '',
 		content_json TEXT
 			CHECK (content_json IS NULL OR (json_valid(content_json) AND json_type(content_json) = 'array')),
@@ -33,11 +36,10 @@ export const F018_MESSAGES_STATEMENTS = [
 		FOREIGN KEY (reply_to) REFERENCES messages(id) ON DELETE RESTRICT
 	) STRICT`,
 	`CREATE INDEX messages_thread_seq ON messages(thread_id, seq)`,
+	`CREATE INDEX messages_mentions_user ON messages(thread_id, created_at) WHERE mentions_user = 1`,
 ] as const;
 
-export const F018_MESSAGES_DOWNS = [
-	`DROP TABLE IF EXISTS messages`,
-] as const;
+export const F018_MESSAGES_DOWNS = [`DROP TABLE IF EXISTS messages`] as const;
 
 export const f018MessagesMigration: ControlMigration = {
 	version: 2,

@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
-
 import type { AccountConfig, AgentCatalog } from "@superagentteam/shared/types";
+import { describe, expect, it } from "vitest";
 
 import { computeExclusionSpans, parseOperatorMentions, scanOperatorMentions } from "../src/domains/agent/mentions.ts";
 import { buildRegistry, CatalogError, resolveExplicitTarget } from "../src/domains/agent/registry.ts";
@@ -102,22 +101,44 @@ describe("AgentRegistry (0008 §6)", () => {
 
 	it("fails closed on cross-agent pattern conflicts", () => {
 		const { catalog, accounts } = makeCatalog();
-		catalog.agents[1]!.mentionPatterns = ["@YANYAN"];
+		Object.assign(catalog.agents[1], { mentionPatterns: ["@YANYAN"] });
 		expect(() => buildRegistry(catalog, accounts)).toThrow(CatalogError);
 	});
 
 	it("rejects defaultModel outside the account models", () => {
 		const { catalog, accounts } = makeCatalog();
-		catalog.agents[0]!.defaultModel = "gpt-99";
+		Object.assign(catalog.agents[0], { defaultModel: "gpt-99" });
 		expect(() => buildRegistry(catalog, accounts)).toThrow(/defaultModel/);
+	});
+
+	it("dedupes same-agent duplicate patterns instead of conflicting", () => {
+		const { catalog, accounts } = makeCatalog();
+		Object.assign(catalog.agents[0], { mentionPatterns: ["@砚砚", "@砚砚"] });
+		const registry = buildRegistry(catalog, accounts);
+		expect(registry.mentionIndex.get("@砚砚")).toBe("yanyan");
+	});
+
+	it("rejects whitespace inside patterns, non-boolean flags, wrong version, empty model names", () => {
+		const { catalog, accounts } = makeCatalog();
+		Object.assign(catalog.agents[0], { mentionPatterns: ["@砚 砚"] });
+		expect(() => buildRegistry(catalog, accounts)).toThrow(CatalogError);
+		const { catalog: c2, accounts: a2 } = makeCatalog();
+		Object.assign(c2, { version: 2 });
+		expect(() => buildRegistry(c2, a2)).toThrow(/version/);
+		const { catalog: c3, accounts: a3 } = makeCatalog();
+		Object.assign(c3.agents[0], { enabled: "yes" as unknown as boolean });
+		expect(() => buildRegistry(c3, a3)).toThrow(/boolean/);
+		const { catalog: c4, accounts: a4 } = makeCatalog();
+		Object.assign(a4[0], { models: ["glm-5.3", "  "] });
+		expect(() => buildRegistry(c4, a4)).toThrow(/model/);
 	});
 
 	it("rejects unknown account refs and empty patterns", () => {
 		const { catalog, accounts } = makeCatalog();
-		catalog.agents[0]!.accountRef = "nope";
+		Object.assign(catalog.agents[0], { accountRef: "nope" });
 		expect(() => buildRegistry(catalog, accounts)).toThrow(/account/i);
 		const { catalog: c2, accounts: a2 } = makeCatalog();
-		c2.agents[0]!.mentionPatterns = ["  "];
+		Object.assign(c2.agents[0], { mentionPatterns: ["  "] });
 		expect(() => buildRegistry(c2, a2)).toThrow(CatalogError);
 	});
 

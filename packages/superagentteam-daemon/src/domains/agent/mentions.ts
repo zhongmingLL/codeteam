@@ -10,12 +10,6 @@
 
 /** @internal Token boundary after a handle (borrowed from Clowder). */
 const TOKEN_BOUNDARY = String.raw`(?=$|[\s,.:;!?()\[\]{}<>，。！？、：；（）【】《》「」『』〈〉]|[^a-z0-9_.-])`;
-const LINE_START_PREFIX = String.raw`(?:\s|>|\*|-|\+|\d+[.)])*`;
-
-export function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /** Spans to exclude from scanning: fenced code, inline code, URL-ish tokens. */
 export function computeExclusionSpans(text: string): Array<[number, number]> {
 	const spans: Array<[number, number]> = [];
@@ -55,10 +49,7 @@ export interface MentionMatch {
  * a longer pattern wins over its prefix at the same position. First match
  * at a position wins; overlapping shorter matches are skipped.
  */
-export function scanOperatorMentions(
-	text: string,
-	patterns: readonly string[],
-): MentionMatch[] {
+export function scanOperatorMentions(text: string, patterns: readonly string[]): MentionMatch[] {
 	if (!text || patterns.length === 0) return [];
 	const lower = text.toLowerCase();
 	const spans = computeExclusionSpans(text);

@@ -37,6 +37,8 @@ export interface AgentRegistry {
 	readonly mentionIndex: ReadonlyMap<string, string>;
 	readonly accounts: ReadonlyMap<string, AccountConfig>;
 	readonly defaultAgentId: string | null;
+	/** Bumped on registry rebuild; config-change reconcile uses it (0008 §1). */
+	readonly revision: number;
 }
 
 function normalizePattern(raw: string): string {
@@ -54,7 +56,13 @@ export function validateCatalog(catalog: AgentCatalog, accounts: readonly Accoun
 		if (!Array.isArray(account.models) || account.models.length === 0) {
 			throw new CatalogError("account_models_empty", `account ${account.ref} has no models`);
 		}
+		if (account.models.some((model) => typeof model !== "string" || !model.trim())) {
+			throw new CatalogError("account_models_empty", `account ${account.ref} has an empty model name`);
+		}
 		accountModels.set(account.ref, new Set(account.models));
+	}
+	if ((catalog as { version?: number }).version !== 1) {
+		throw new CatalogError("catalog_invalid_shape", "catalog.version must be 1");
 	}
 	const seenIds = new Set<string>();
 	const seenPatterns = new Map<string, string>();
@@ -67,12 +75,22 @@ export function validateCatalog(catalog: AgentCatalog, accounts: readonly Accoun
 		if (!Array.isArray(agent.mentionPatterns) || agent.mentionPatterns.length === 0) {
 			throw new CatalogError("mention_patterns_empty", `agent ${agent.id} has no mentionPatterns`);
 		}
+		if (typeof agent.enabled !== "boolean" || typeof agent.sessionChain !== "boolean") {
+			throw new CatalogError("catalog_invalid_shape", `agent ${agent.id} enabled/sessionChain must be boolean`);
+		}
+		if (!Array.isArray(agent.restrictions) || !Array.isArray(agent.strengths)) {
+			throw new CatalogError("catalog_invalid_shape", `agent ${agent.id} restrictions/strengths must be arrays`);
+		}
 		for (const raw of agent.mentionPatterns) {
 			const pattern = normalizePattern(raw);
 			if (pattern === "@") throw new CatalogError("mention_pattern_empty", `agent ${agent.id} has empty pattern`);
+			if (/\s/.test(pattern.slice(1))) {
+				throw new CatalogError("mention_pattern_empty", `agent ${agent.id} pattern ${pattern} contains whitespace`);
+			}
 			const owner = seenPatterns.get(pattern);
-			if (owner !== undefined) {
+			if (owner !== undefined && owner !== agent.id) {
 				// Cross-agent case-insensitive uniqueness; fail closed (0008 §6).
+				// Same-agent duplicates (case variants) are deduped, not conflicts.
 				throw new CatalogError(
 					"mention_pattern_conflict",
 					`pattern ${pattern} claimed by ${owner} and ${agent.id}`,
@@ -87,7 +105,10 @@ export function validateCatalog(catalog: AgentCatalog, accounts: readonly Accoun
 		if (!agent.roleId) throw new CatalogError("role_id_empty", `agent ${agent.id} roleId empty`);
 		const models = accountModels.get(agent.accountRef);
 		if (models === undefined) {
-			throw new CatalogError("account_ref_unresolved", `agent ${agent.id} references unknown account ${agent.accountRef}`);
+			throw new CatalogError(
+				"account_ref_unresolved",
+				`agent ${agent.id} references unknown account ${agent.accountRef}`,
+			);
 		}
 		if (!models.has(agent.defaultModel)) {
 			throw new CatalogError(
@@ -114,7 +135,13 @@ export function buildRegistry(
 	}
 	const resolvedDefault =
 		defaultAgentId && agents.has(defaultAgentId) ? defaultAgentId : (catalog.agents[0]?.id ?? null);
-	return { agents, mentionIndex, accounts: new Map(accounts.map((a) => [a.ref, a])), defaultAgentId: resolvedDefault };
+	return {
+		agents,
+		mentionIndex,
+		accounts: new Map(accounts.map((a) => [a.ref, a])),
+		defaultAgentId: resolvedDefault,
+		revision: Date.now(),
+	};
 }
 
 export interface CatalogPaths {
@@ -144,7 +171,9 @@ export function loadRegistryFromFiles(paths: CatalogPaths, defaultAgentId?: stri
  * inconsistency -> agent_not_found (fail closed). Ambiguity is impossible by
  * construction (uniqueness enforced at load); this is kept defensive.
  */
-export type ResolvedTarget = { kind: "ok"; agentId: string } | { kind: "agent_disabled" | "agent_not_found"; pattern: string };
+export type ResolvedTarget =
+	| { kind: "ok"; agentId: string }
+	| { kind: "agent_disabled" | "agent_not_found"; pattern: string };
 
 export function resolveExplicitTarget(registry: AgentRegistry, pattern: string): ResolvedTarget {
 	const normalized = normalizePattern(pattern);
