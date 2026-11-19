@@ -75,7 +75,7 @@ describe("InvocationRecordStore (0007 §3.2)", () => {
 	it("creates idempotently by sourceRecordId and flips queued→running (G-02)", () => {
 		const { db, records } = makeStores();
 		seedThread(db);
-		const first = records.create({
+		records.create({
 			invocationId: "inv1",
 			threadId: "t1",
 			userId: "u1",
