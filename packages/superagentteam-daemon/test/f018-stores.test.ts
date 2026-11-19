@@ -1,0 +1,122 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { F018Database } from "../src/infrastructure/db/database.ts";
+import { AgentReadStateStore } from "../src/domains/message/store.ts";
+import { MessageStore } from "../src/domains/message/store.ts";
+import { ThreadStore } from "../src/domains/thread/store.ts";
+
+const dirs: string[] = [];
+
+function makeStores(): {
+	thread: ThreadStore;
+	message: MessageStore;
+	read: AgentReadStateStore;
+	db: F018Database;
+} {
+	const dir = mkdtempSync(join(tmpdir(), "f018-stores-"));
+	dirs.push(dir);
+	const db = new F018Database({ path: join(dir, "f018.db") });
+	return { thread: new ThreadStore(db.db), message: new MessageStore(db.db), read: new AgentReadStateStore(db.db), db };
+}
+
+afterEach(() => {
+	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe("ThreadStore (0009)", () => {
+	it("creates, gets, and scopes listing by owner excluding deleted", () => {
+		const { thread } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 100 });
+		thread.create({ id: "t2", projectPath: "/q", createdBy: "u1", now: 200 });
+		thread.create({ id: "t3", projectPath: "/r", createdBy: "u2", now: 300 });
+		thread.softDelete("t2", 250);
+		expect(thread.list({ createdBy: "u1" }).map((t) => t.id)).toEqual(["t1"]);
+		expect(thread.list({ createdBy: "u1", includeDeleted: true }).map((t) => t.id)).toEqual(["t2", "t1"]);
+		expect(thread.list({ createdBy: "u2" }).map((t) => t.id)).toEqual(["t3"]);
+	});
+
+	it("participants preserve join order and dedupe", () => {
+		const { thread } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		thread.addParticipant("t1", "a2", 10);
+		thread.addParticipant("t1", "a1", 20);
+		thread.addParticipant("t1", "a2", 30);
+		expect(thread.get("t1")?.participants).toEqual(["a2", "a1"]);
+	});
+
+	it("soft delete is recoverable and updates timestamps", () => {
+		const { thread } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 100 });
+		expect(thread.softDelete("t1", 150)).toBe(true);
+		expect(thread.softDelete("t1", 160)).toBe(false);
+		expect(thread.get("t1")?.deletedAt).toBe(150);
+		expect(thread.restore("t1", 200)).toBe(true);
+		expect(thread.get("t1")?.deletedAt).toBeNull();
+	});
+});
+
+describe("MessageStore (0007 §3.1)", () => {
+	it("allocates thread-global seq in append order and reads ascending windows", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		for (const [i, id] of ["m1", "m2", "m3"].entries()) {
+			message.append({
+				id,
+				threadId: "t1",
+				from: { kind: "user", userId: "u1" },
+				content: `body-${i}`,
+				now: 10 + i,
+			});
+		}
+		expect(message.get("m1")?.seq).toBe(1);
+		expect(message.get("m2")?.seq).toBe(2);
+		expect(message.getByThreadAfter("t1", 0, 10).map((m) => m.id)).toEqual(["m1", "m2", "m3"]);
+		expect(message.getByThreadAfter("t1", 1, 10).map((m) => m.id)).toEqual(["m2", "m3"]);
+		expect(message.getByThreadAfter("t1", 1, 1).map((m) => m.id)).toEqual(["m2"]);
+	});
+
+	it("round-trips from/lifecycle/extra/mentionsUser JSON columns", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		message.append({
+			id: "m1",
+			threadId: "t1",
+			from: { kind: "agent", agentId: "a1" },
+			content: "hello",
+			lifecycle: { kind: "input", dispatchRefs: [] },
+			mentionsUser: true,
+			extra: { targetAgentIds: ["a1"] },
+			now: 5,
+		});
+		const stored = message.get("m1")!;
+		expect(stored.from).toEqual({ kind: "agent", agentId: "a1" });
+		expect(stored.lifecycle?.kind).toBe("input");
+		expect(stored.mentionsUser).toBe(true);
+		expect(stored.extra?.targetAgentIds).toEqual(["a1"]);
+	});
+
+	it("soft delete and lifecycle update persist", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		message.append({ id: "m1", threadId: "t1", from: { kind: "system", service: "x" }, content: "", now: 2 });
+		message.updateLifecycle("m1", { kind: "input", dispatchRefs: [] }, 3);
+		expect(message.get("m1")?.lifecycle?.kind).toBe("input");
+		expect(message.softDelete("m1", "u1", 4)).toBe(true);
+		expect(message.get("m1")?.deletedAt).toBe(4);
+	});
+});
+
+describe("AgentReadStateStore (0007 §4.5)", () => {
+	it("ack is monotonic; rewind is explicit", () => {
+		const { read, thread } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		read.ack("t1", "a1", 5, 1);
+		read.ack("t1", "a1", 3, 2);
+		expect(read.get("t1", "a1")?.deliveryCursor).toBe(5);
+		read.rewind("t1", "a1", 0, 3);
+		expect(read.get("t1", "a1")?.deliveryCursor).toBe(0);
+	});
+});
