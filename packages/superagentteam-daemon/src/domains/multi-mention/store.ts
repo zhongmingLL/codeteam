@@ -398,6 +398,28 @@ export class MultiMentionStore {
 		return this.getResponse(input.requestId, input.targetAgentId)?.responseState === "terminal";
 	}
 
+	/** T2: the R message is terminal; project response_state=terminal. */
+	markResponseTerminalByMessage(responseMessageId: string): boolean {
+		return (
+			this.db
+				.prepare(
+					"UPDATE multi_mention_responses SET response_state = 'terminal' WHERE response_message_id = ? AND response_state <> 'terminal'",
+				)
+				.run(responseMessageId).changes > 0
+		);
+	}
+
+	/** T4 response_missing: projection only; target status is unchanged. */
+	markResponseMissingByTurn(turnExecutionId: string): boolean {
+		return (
+			this.db
+				.prepare(
+					"UPDATE multi_mention_responses SET response_state = 'missing' WHERE turn_execution_id = ? AND response_state <> 'terminal'",
+				)
+				.run(turnExecutionId).changes > 0
+		);
+	}
+
 	getResponse(requestId: string, targetAgentId: string): MultiMentionResponse | null {
 		const row = this.db
 			.prepare("SELECT * FROM multi_mention_responses WHERE request_id = ? AND target_agent_id = ?")

@@ -87,6 +87,8 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		messages,
 		queue,
 		credentials,
+		attempts,
+		turns,
 		store: multiMention,
 		clock,
 	});
@@ -121,6 +123,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		tracker,
 		dispatchTarget: runAgentTurn,
 		multiMention,
+		multiMentionOrchestrator,
 		capacity: { check: (threadId, targets) => pool.checkCapacityFor(threadId, targets) },
 		clock,
 	});
@@ -134,8 +137,6 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		messages,
 		drafts,
 		multiMention,
-		a2aTools,
-		multiMentionOrchestrator,
 		threads,
 		clock,
 	};
@@ -161,6 +162,12 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 			return worker.leaseExpiresAt > clock();
 		},
 		processStartedAt: deps.processStartedAt ?? clock(),
+		settleMultiMention: (now) => {
+			multiMentionOrchestrator.settleExpired(now);
+		},
+		recoverMultiMention: (now) => {
+			multiMentionOrchestrator.recover(now);
+		},
 	};
 	return {
 		threads,

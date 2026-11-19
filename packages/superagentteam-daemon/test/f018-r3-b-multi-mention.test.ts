@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildA2ARuntime, type A2ARuntime } from "../src/domains/a2a/runtime.ts";
 import { A2AToolError, type A2AToolContext } from "../src/domains/a2a/tool-service.ts";
 import { buildRegistry } from "../src/domains/agent/registry.ts";
+import { MultiMentionOrchestrator } from "../src/domains/multi-mention/orchestrator.ts";
 import type { WorkerRpcConnection, WorkerSpawnPort } from "../src/domains/worker/pool.ts";
 import { F018Database } from "../src/infrastructure/db/database.ts";
 import type { RpcEvent } from "../src/workers/rpc-client.ts";
@@ -103,11 +104,12 @@ function makeWorld(): { runtime: A2ARuntime; spawn: MockSpawnPort; fd: F018Datab
 	};
 	const registry = buildRegistry(catalog, [ACCOUNT]);
 	const spawn = new MockSpawnPort();
+	let clockNow = 1000;
 	const runtime = buildA2ARuntime({
 		db: fd.db,
 		registry,
 		spawn,
-		clock: () => 1000,
+		clock: () => clockNow,
 		processStartedAt: 1,
 	});
 	runtime.threads.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
@@ -147,7 +149,17 @@ function makeWorld(): { runtime: A2ARuntime; spawn: MockSpawnPort; fd: F018Datab
 		allowedTools: ["multi_mention", "post_message"],
 		now: 4,
 	});
-	return { runtime, spawn, fd };
+	return {
+		runtime,
+		spawn,
+		fd,
+		advance: (ms: number) => {
+			clockNow += ms;
+		},
+		get now() {
+			return clockNow;
+		},
+	};
 }
 
 function ctx(overrides: Partial<A2AToolContext> = {}): A2AToolContext {
@@ -286,7 +298,7 @@ describe("F018 R3-b multi_mention create", () => {
 		}
 	});
 
-	it("fan-out runs a2/a3, T3 records received responses and participants; group waits for R3-c aggregate", async () => {
+	it("fan-out runs a2/a3, T3 records responses, aggregate+callback close the group, participants join", async () => {
 		const w = makeWorld();
 		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput());
 		expect(w.runtime.multiMention.get(created.requestId)?.status).toBe("pending");
@@ -295,13 +307,32 @@ describe("F018 R3-b multi_mention create", () => {
 		expect(drained.processed).toBe(1);
 		expect(drained.convergenceFailed).toEqual([]);
 		const request = w.runtime.multiMention.get(created.requestId)!;
-		expect(request.status).toBe("partial");
+		expect(request.status).toBe("done");
+		expect(request.aggregateMessageId).toBeTruthy();
 		expect(request.parentInvocationId).toBe(`inv:t1:${created.message.id}`);
 		const responses = w.runtime.multiMention.listResponses(created.requestId);
 		expect(responses).toHaveLength(2);
 		expect(responses.map((response) => response.targetAgentId).sort()).toEqual(["a2", "a3"]);
 		expect(responses.every((response) => response.status === "received")).toBe(true);
+		expect(responses.every((response) => response.responseState === "terminal")).toBe(true);
 		expect(w.runtime.multiMention.allTargetsAccounted(created.requestId)).toBe(true);
+		const aggregate = w.runtime.messages.get(request.aggregateMessageId!)!;
+		expect(aggregate.from).toEqual({ kind: "system", service: "multi_mention" });
+		expect(aggregate.extra?.multiMention).toMatchObject({
+			requestId: created.requestId,
+			status: "done",
+			callbackTo: "a1",
+			allFailed: false,
+		});
+		const callback = w.runtime.multiMention.getCallback(created.requestId)!;
+		expect(callback.status).toBe("queued");
+		expect(callback.callbackToAgentId).toBe("a1");
+		expect(callback.callbackDepth).toBe(1);
+		expect(callback.queueEntryId).toBeTruthy();
+		const callbackEntry = w.runtime.queue.get("t1", callback.queueEntryId!)!;
+		expect(callbackEntry.kind).toBe("message_wake");
+		expect(callbackEntry.targets.map((target) => target.id)).toEqual(["a1"]);
+		expect(callbackEntry.execution.multiMentionCallbackDepth).toBe(1);
 		const parent = w.runtime.records.get(`inv:t1:${created.message.id}`)!;
 		expect(parent.status).toBe("completed");
 		const childTurns = ["a2", "a3"].map((agentId) => {
@@ -323,5 +354,138 @@ describe("F018 R3-b multi_mention create", () => {
 		} else {
 			throw new Error("expected input lifecycle");
 		}
+	});
+
+	it("delivers the callback child and closes the callback lifecycle", async () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput());
+		w.spawn.scripts = [happyScript("from a2"), happyScript("from a3")];
+		await w.runtime.processor.drain("t1", "u1");
+		expect(w.runtime.multiMention.get(created.requestId)?.status).toBe("done");
+		const queued = w.runtime.multiMention.getCallback(created.requestId)!;
+		expect(queued.status).toBe("queued");
+		w.spawn.scripts = [happyScript("callback from a1")];
+		const drained = await w.runtime.processor.drain("t1", "u1");
+		expect(drained.processed).toBe(1);
+		const callback = w.runtime.multiMention.getCallback(created.requestId)!;
+		expect(callback.status).toBe("completed");
+		expect(callback.turnExecutionId).toBeTruthy();
+		const turn = w.runtime.turns.get(callback.turnExecutionId!)!;
+		expect(turn.causal.multiMentionRequestId).toBe(created.requestId);
+		expect(turn.causal.multiMentionCallbackDepth).toBe(1);
+	});
+
+	it("keeps a received sibling when another target fails; allFailed stays false", async () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput());
+		w.spawn.scripts = [
+			happyScript("a2 ok"),
+			[
+				{ type: "message_end", message: { role: "assistant", content: [], errorMessage: "boom" } },
+				{ type: "agent_settled", aborted: false },
+			],
+		];
+		await w.runtime.processor.drain("t1", "u1");
+		const request = w.runtime.multiMention.get(created.requestId)!;
+		expect(request.status).toBe("done");
+		const responses = w.runtime.multiMention.listResponses(created.requestId);
+		expect(responses.find((response) => response.targetAgentId === "a2")?.status).toBe("received");
+		expect(responses.find((response) => response.targetAgentId === "a3")?.status).toBe("failed");
+		expect(w.runtime.multiMention.statusView(created.requestId)?.allFailed).toBe(false);
+		const aggregate = w.runtime.messages.get(request.aggregateMessageId!)!;
+		expect(aggregate.content).toContain("a2 ok");
+		expect(aggregate.content).toContain("boom");
+		expect(w.runtime.multiMention.getCallback(created.requestId)?.status).toBe("queued");
+	});
+
+	it("all failed targets still close with done + allFailed=true", async () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput());
+		const failure: RpcEvent[] = [
+			{ type: "message_end", message: { role: "assistant", content: [], errorMessage: "boom" } },
+			{ type: "agent_settled", aborted: false },
+		];
+		w.spawn.scripts = [failure, failure];
+		await w.runtime.processor.drain("t1", "u1");
+		const request = w.runtime.multiMention.get(created.requestId)!;
+		expect(request.status).toBe("done");
+		expect(w.runtime.multiMention.statusView(created.requestId)?.allFailed).toBe(true);
+		expect(w.runtime.multiMention.getCallback(created.requestId)?.status).toBe("queued");
+	});
+
+	it("settles an expired running request as timeout with a timeout aggregate + callback", () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput({ timeoutMinutes: 3 }));
+		expect(w.runtime.multiMention.setStatus(created.requestId, "running", 1000).outcome).toBe("updated");
+		w.advance(3 * 60_000);
+		expect(w.runtime.multiMentionOrchestrator.settleExpired(w.now)).toBe(1);
+		const request = w.runtime.multiMention.get(created.requestId)!;
+		expect(request.status).toBe("timeout");
+		const responses = w.runtime.multiMention.listResponses(created.requestId);
+		expect(responses).toHaveLength(2);
+		expect(responses.every((response) => response.status === "timeout")).toBe(true);
+		expect(w.runtime.multiMention.statusView(created.requestId)?.allFailed).toBe(true);
+		expect(w.runtime.messages.get(request.aggregateMessageId!)?.extra?.multiMention?.status).toBe("timeout");
+		expect(w.runtime.multiMention.getCallback(created.requestId)?.status).toBe("queued");
+	});
+
+	it("recover fails a pending callback when callbackTo is disabled", () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMention.createRequest({
+			requestId: "mm-cb-fail",
+			threadId: "t1",
+			userId: "u1",
+			initiatorAgentId: "a1",
+			initiatorTurnExecutionId: "te-caller",
+			callbackToAgentId: "a3",
+			question: "callback failure",
+			targetAgentIds: ["a1", "a2"],
+			timeoutMinutes: 8,
+			sourceRecordId: "src-cb-fail",
+			now: 1000,
+		});
+		expect(created.outcome).toBe("created");
+		w.runtime.multiMention.setStatus("mm-cb-fail", "running", 1000);
+		w.runtime.multiMention.setStatus("mm-cb-fail", "done", 1001);
+		const aggregate = w.runtime.messages.append({
+			id: "agg-cb-fail",
+			threadId: "t1",
+			from: { kind: "system", service: "multi_mention" },
+			content: "aggregate",
+			now: 1002,
+		});
+		w.runtime.multiMention.createCallback({
+			requestId: "mm-cb-fail",
+			threadId: "t1",
+			callbackToAgentId: "a3",
+			aggregateMessageId: aggregate.id,
+			callbackDepth: 1,
+			now: 1003,
+		});
+		const disabledCatalog: AgentCatalog = {
+			version: 1,
+			agents: [agentConfig("a1"), agentConfig("a2"), agentConfig("a3", { enabled: false })],
+		};
+		const disabledRegistry = buildRegistry(disabledCatalog, [ACCOUNT]);
+		const orchestrator = new MultiMentionOrchestrator({
+			db: w.fd.db,
+			registry: disabledRegistry,
+			threads: w.runtime.threads,
+			messages: w.runtime.messages,
+			queue: w.runtime.queue,
+			credentials: w.runtime.credentials,
+			attempts: w.runtime.attempts,
+			turns: w.runtime.turns,
+			store: w.runtime.multiMention,
+			clock: () => w.now,
+		});
+		const recovered = orchestrator.recover(1004);
+		expect(recovered.callbacksDelivered).toBe(1);
+		expect(w.runtime.multiMention.getCallback("mm-cb-fail")?.status).toBe("failed");
+		expect(
+			w.runtime.messages
+				.getByThread("t1", 50)
+				.some((message) => message.content.includes("multi_mention_callback_failed")),
+		).toBe(true);
 	});
 });

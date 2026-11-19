@@ -7,6 +7,7 @@ import { aggregateParent } from "../invocation/aggregate.ts";
 import type { InvocationAttemptStore, InvocationRecordStore, TurnExecutionStore } from "../invocation/store.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { MultiMentionStore } from "../multi-mention/store.ts";
+import type { MultiMentionOrchestrator } from "../multi-mention/orchestrator.ts";
 import type { ResponseDraftStore } from "../response/store.ts";
 import type { AgentSessionStore } from "../session/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
@@ -79,6 +80,7 @@ export interface QueueProcessorDeps {
 	tracker: InvocationTracker;
 	dispatchTarget: DispatchTargetPort;
 	multiMention?: MultiMentionStore;
+	multiMentionOrchestrator?: MultiMentionOrchestrator;
 	capacity?: CapacityChecker;
 	clock?: () => number;
 	owner?: string;
@@ -350,15 +352,35 @@ export class QueueProcessor {
 				const multiMentionRequestId = entry.execution.multiMentionRequestId;
 				if (multiMentionRequestId) {
 					if (!this.deps.multiMention) throw new Error("phase_a_multi_mention_store_missing");
-					const transition = this.deps.multiMention.setStatus(multiMentionRequestId, "running", now, {
-						parentInvocationId: invocationId,
-					});
+					const callback = this.deps.multiMention.getCallback(multiMentionRequestId);
 					if (
-						transition.outcome === "not_found" ||
-						transition.outcome === "terminal_conflict" ||
-						transition.outcome === "invalid_transition"
+						callback &&
+						(callback.queueEntryId === entry.queueEntryId ||
+							callback.aggregateMessageId === entry.payload.sourceRecordId)
 					) {
-						throw new Error("phase_a_multi_mention_state");
+						const updated = this.deps.multiMention.updateCallback(multiMentionRequestId, {
+							status: "running",
+							parentInvocationId: invocationId,
+							now,
+						});
+						if (
+							updated.outcome === "not_found" ||
+							updated.outcome === "terminal_conflict" ||
+							updated.outcome === "invalid_transition"
+						) {
+							throw new Error("phase_a_multi_mention_callback_state");
+						}
+					} else {
+						const transition = this.deps.multiMention.setStatus(multiMentionRequestId, "running", now, {
+							parentInvocationId: invocationId,
+						});
+						if (
+							transition.outcome === "not_found" ||
+							transition.outcome === "terminal_conflict" ||
+							transition.outcome === "invalid_transition"
+						) {
+							throw new Error("phase_a_multi_mention_state");
+						}
 					}
 				}
 				const prepared: Array<{ agentId: string; turnExecutionId: string; attemptId: string }> = [];
@@ -561,17 +583,22 @@ export class QueueProcessor {
 							updatedAt: now,
 						});
 						if (entry.payload.messageId) {
-							this.deps.messages.appendDispatchRef(
-								entry.payload.messageId,
-								{
-									target: { kind: "agent", id: prepared.agentId },
-									queueEntryId: entry.queueEntryId,
-									attempt: this.deps.attempts.get(prepared.attemptId)?.attempt ?? 1,
-									turnExecutionId: prepared.turnExecutionId,
-									at: now,
-								},
-								now,
-							);
+							// Callback deliveries use the multi_mention_callbacks row,
+							// not dispatchRefs; only input messages carry refs.
+							const sourceMessage = this.deps.messages.get(entry.payload.messageId, { includeDeleted: true });
+							if (sourceMessage?.lifecycle?.kind === "input") {
+								this.deps.messages.appendDispatchRef(
+									entry.payload.messageId,
+									{
+										target: { kind: "agent", id: prepared.agentId },
+										queueEntryId: entry.queueEntryId,
+										attempt: this.deps.attempts.get(prepared.attemptId)?.attempt ?? 1,
+										turnExecutionId: prepared.turnExecutionId,
+										at: now,
+									},
+									now,
+								);
+							}
 						}
 						// P2: a lost claim must NOT commit R/child/credential for a
 						// still-pending target (double-dispatch risk) — the whole
@@ -873,11 +900,48 @@ export class QueueProcessor {
 		if (!requestId || !this.deps.multiMention) return;
 		const parent = this.deps.records.get(invocationId);
 		if (!parent) return;
+		const callback = this.deps.multiMention.getCallback(requestId);
+		if (
+			callback &&
+			(callback.queueEntryId === entry.queueEntryId ||
+				callback.aggregateMessageId === entry.payload.sourceRecordId)
+		) {
+			if (
+				parent.status === "completed" ||
+				parent.status === "failed" ||
+				parent.status === "partial_failed" ||
+				parent.status === "canceled"
+			) {
+				const latest = this.deps.attempts.getLatest(invocationId, callback.callbackToAgentId);
+				this.deps.multiMention.updateCallback(requestId, {
+					status:
+						parent.status === "completed"
+							? "completed"
+							: parent.status === "canceled"
+								? "canceled"
+								: "failed",
+					parentInvocationId: invocationId,
+					turnExecutionId: latest?.turnExecutionId ?? null,
+					reason: parent.status === "completed" ? null : parent.terminalReason ?? parent.status,
+					now: this.now(),
+				});
+			}
+			return;
+		}
 		const now = this.now();
 		for (const agentId of parent.targetAgentIds) {
 			const latest = this.deps.attempts.getLatest(invocationId, agentId);
 			if (!latest) continue;
 			const child = latest.turnExecutionId ? this.deps.turns.get(latest.turnExecutionId) : null;
+			const responseMessage = latest.responseMessageId
+				? this.deps.messages.get(latest.responseMessageId, { includeDeleted: true })
+				: null;
+			const responseState =
+				responseMessage?.lifecycle?.kind === "response"
+					? responseMessage.lifecycle.status === "processing"
+						? "pending"
+						: "terminal"
+					: "missing";
 			if (child) {
 				if (child.status === "completed") {
 					this.deps.multiMention.recordTargetOutcome({
@@ -886,7 +950,7 @@ export class QueueProcessor {
 						turnExecutionId: child.turnExecutionId,
 						responseMessageId: latest.responseMessageId,
 						status: "received",
-						responseState: "pending",
+						responseState,
 						now,
 					});
 				} else if (
@@ -900,7 +964,7 @@ export class QueueProcessor {
 						turnExecutionId: child.turnExecutionId,
 						responseMessageId: latest.responseMessageId,
 						status: "failed",
-						responseState: "missing",
+						responseState,
 						reason: child.terminalReason ?? child.status,
 						now,
 					});
@@ -924,5 +988,6 @@ export class QueueProcessor {
 				});
 			}
 		}
+		this.deps.multiMentionOrchestrator?.finalizeIfReady(requestId, now);
 	}
 }

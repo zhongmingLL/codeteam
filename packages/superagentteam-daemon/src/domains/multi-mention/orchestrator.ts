@@ -9,6 +9,9 @@ import {
 	MULTI_MENTION_MAX_TIMEOUT_MINUTES,
 	MULTI_MENTION_MIN_TARGETS,
 	MULTI_MENTION_MIN_TIMEOUT_MINUTES,
+	MULTI_MENTION_TERMINAL_STATUSES,
+	type MultiMentionRequest,
+	type MultiMentionResponse,
 	type MultiMentionStatus,
 	type MultiMentionTriggerType,
 	type StoredMessage,
@@ -16,6 +19,7 @@ import {
 import { runInTransaction } from "../../infrastructure/db/database.ts";
 import type { AgentRegistry } from "../agent/registry.ts";
 import type { InvocationCredentialStore } from "../auth/store.ts";
+import type { InvocationAttemptStore, TurnExecutionStore } from "../invocation/store.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { QueueLedgerStore } from "../queue/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
@@ -62,6 +66,8 @@ export interface MultiMentionOrchestratorDeps {
 	messages: MessageStore;
 	queue: QueueLedgerStore;
 	credentials: InvocationCredentialStore;
+	attempts: InvocationAttemptStore;
+	turns: TurnExecutionStore;
 	store: MultiMentionStore;
 	clock?: () => number;
 }
@@ -300,5 +306,293 @@ export class MultiMentionOrchestrator {
 			callbackTo: input.callbackTo,
 			replayed: false,
 		};
+	}
+
+	finalizeIfReady(
+		requestId: string,
+		now: number,
+	): "finalized" | "waiting" | "already_terminal" | "not_found" {
+		const request = this.deps.store.get(requestId);
+		if (!request) return "not_found";
+		if (MULTI_MENTION_TERMINAL_STATUSES.has(request.status)) return "already_terminal";
+		const responses = this.deps.store.listResponses(requestId);
+		if (responses.length < request.targetAgentIds.length) return "waiting";
+		return this.finalizeRequest(request, "done", responses, now);
+	}
+
+	/** Reaper/startup timeout path: backfill terminal children, then settle. */
+	settleExpired(now: number): number {
+		let finalized = 0;
+		for (const request of this.deps.store.listExpired(now)) {
+			this.backfillTerminalChildren(request, now);
+			let responses = this.deps.store.listResponses(request.requestId);
+			if (responses.length >= request.targetAgentIds.length) {
+				if (this.finalizeRequest(request, "done", responses, now) === "finalized") finalized += 1;
+				continue;
+			}
+			const status = request.status === "pending" ? "failed" : "timeout";
+			for (const agentId of request.targetAgentIds) {
+				if (responses.some((response) => response.targetAgentId === agentId)) continue;
+				this.deps.store.recordTargetOutcome({
+					requestId: request.requestId,
+					targetAgentId: agentId,
+					status: "timeout",
+					responseState: "missing",
+					now,
+				});
+			}
+			responses = this.deps.store.listResponses(request.requestId);
+			if (this.finalizeRequest(request, status, responses, now) === "finalized") finalized += 1;
+		}
+		return finalized;
+	}
+
+	/** Startup: settle expired requests and re-deliver pending callbacks only. */
+	recover(now: number): { settled: number; callbacksDelivered: number } {
+		const settled = this.settleExpired(now);
+		let callbacksDelivered = 0;
+		for (const callback of this.deps.store.listPendingCallbacks()) {
+			this.deliverCallback(callback.requestId, now);
+			if (this.deps.store.getCallback(callback.requestId)?.status !== "pending") callbacksDelivered += 1;
+		}
+		return { settled, callbacksDelivered };
+	}
+
+	private finalizeRequest(
+		request: MultiMentionRequest,
+		status: "done" | "timeout" | "failed",
+		responses: MultiMentionResponse[],
+		now: number,
+	): "finalized" | "waiting" | "already_terminal" | "not_found" {
+		const current = this.deps.store.get(request.requestId);
+		if (!current) return "not_found";
+		if (MULTI_MENTION_TERMINAL_STATUSES.has(current.status)) return "already_terminal";
+		if (responses.length < request.targetAgentIds.length) return "waiting";
+		const aggregateMessageId = `msg:${request.threadId}:${now}:agg:${randomUUID().slice(0, 8)}`;
+		const allFailed = responses.every((response) => response.status !== "received");
+		const body = this.buildAggregateBody(request, status, responses);
+		const causal = this.initiatorCausal(request);
+		const callbackDepth = Math.min((causal.multiMentionCallbackDepth ?? 0) + 1, 2) as 1 | 2;
+		let outcome: "finalized" | "already_terminal" = "finalized";
+		runInTransaction(this.deps.db, () => {
+			const fresh = this.deps.store.get(request.requestId);
+			if (!fresh || MULTI_MENTION_TERMINAL_STATUSES.has(fresh.status)) {
+				outcome = "already_terminal";
+				return;
+			}
+			this.deps.messages.append({
+				id: aggregateMessageId,
+				threadId: request.threadId,
+				from: { kind: "system", service: "multi_mention" },
+				content: body,
+				extra: {
+					multiMention: {
+						requestId: request.requestId,
+						status,
+						callbackTo: request.callbackToAgentId,
+						targetAgentIds: request.targetAgentIds,
+						responses: responses.map((response) => ({
+							targetAgentId: response.targetAgentId,
+							status: response.status,
+							responseState: response.responseState,
+							responseMessageId: response.responseMessageId,
+							reason: response.reason,
+						})),
+						allFailed,
+					},
+				},
+				now,
+			});
+			this.deps.store.createCallback({
+				requestId: request.requestId,
+				threadId: request.threadId,
+				callbackToAgentId: request.callbackToAgentId,
+				aggregateMessageId,
+				callbackDepth,
+				now,
+			});
+			const transition = this.deps.store.setStatus(request.requestId, status, now, { aggregateMessageId });
+			if (transition.outcome !== "updated" && transition.outcome !== "already_terminal") {
+				throw new Error("multi_mention_finalize_state");
+			}
+		});
+		if (outcome === "finalized") this.deliverCallback(request.requestId, now);
+		return outcome;
+	}
+
+	private deliverCallback(requestId: string, now: number): void {
+		const callback = this.deps.store.getCallback(requestId);
+		if (!callback || callback.status !== "pending") return;
+		const request = this.deps.store.get(requestId);
+		if (!request) {
+			this.callbackFailed(requestId, callback, "request_missing", now);
+			return;
+		}
+		const causal = this.initiatorCausal(request);
+		const callbackDepth = (causal.multiMentionCallbackDepth ?? 0) + 1;
+		const a2aDepth = (causal.a2aDepth ?? 0) + 1;
+		const callbackAgent = this.deps.registry.agents.get(callback.callbackToAgentId);
+		if (!callbackAgent || !callbackAgent.enabled || !this.deps.registry.accounts.get(callbackAgent.accountRef)) {
+			this.callbackFailed(requestId, callback, "multi_mention_invalid_callback", now);
+			return;
+		}
+		if (callbackDepth > MULTI_MENTION_MAX_CALLBACK_DEPTH) {
+			this.callbackFailed(requestId, callback, "multi_mention_cascade", now);
+			return;
+		}
+		if (a2aDepth > MAX_A2A_DEPTH) {
+			this.callbackFailed(requestId, callback, "a2a_depth_exceeded", now);
+			return;
+		}
+		const aggregate = this.deps.messages.get(callback.aggregateMessageId, { includeDeleted: true });
+		if (!aggregate) {
+			this.callbackFailed(requestId, callback, "aggregate_message_missing", now);
+			return;
+		}
+		try {
+			runInTransaction(this.deps.db, () => {
+				const enqueued = this.deps.queue.enqueue(
+					{
+						threadId: request.threadId,
+						sourceRecordId: callback.aggregateMessageId,
+						messageId: callback.aggregateMessageId,
+						attempt: 1,
+						owner: { kind: "system", service: "multi_mention" },
+						kind: "message_wake",
+						from: { kind: "system", service: "multi_mention" },
+						content: aggregate.content,
+						targets: [{ kind: "agent", id: callback.callbackToAgentId }],
+						priority: "normal",
+						execution: {
+							a2aParentTurnExecutionId: request.initiatorTurnExecutionId,
+							a2aTriggerMessageId: callback.aggregateMessageId,
+							a2aDepth,
+							multiMentionRequestId: request.requestId,
+							multiMentionCallbackDepth: callbackDepth,
+						},
+					},
+					now,
+				);
+				if (enqueued.outcome === "conflict") throw new Error("queue_admission_conflict");
+				if (!enqueued.entry) throw new Error("queue_admission_replayed");
+				const updated = this.deps.store.updateCallback(requestId, {
+					status: "queued",
+					queueEntryId: enqueued.entry.queueEntryId,
+					now,
+				});
+				if (updated.outcome !== "updated" && updated.outcome !== "already_terminal") {
+					throw new Error("callback_state_conflict");
+				}
+			});
+		} catch (error) {
+			this.callbackFailed(requestId, callback, error instanceof Error ? error.message : "callback_failed", now);
+		}
+	}
+
+	private callbackFailed(
+		requestId: string,
+		callback: NonNullable<ReturnType<MultiMentionStore["getCallback"]>>,
+		reason: string,
+		now: number,
+	): void {
+		const request = this.deps.store.get(requestId);
+		if (!request) return;
+		this.deps.store.updateCallback(requestId, { status: "failed", reason, now });
+		this.deps.messages.append({
+			id: `msg:${request.threadId}:${now}:cb-fail:${randomUUID().slice(0, 8)}`,
+			threadId: request.threadId,
+			from: { kind: "system", service: "multi_mention" },
+			content: `multi_mention_callback_failed: ${reason}`,
+			now,
+		});
+		void callback;
+	}
+
+	private buildAggregateBody(
+		request: MultiMentionRequest,
+		status: "done" | "timeout" | "failed",
+		responses: MultiMentionResponse[],
+	): string {
+		const lines = ["## Multi-Mention 结果汇总", "", `Question: ${request.question}`];
+		for (const response of responses) {
+			const message = response.responseMessageId
+				? this.deps.messages.get(response.responseMessageId, { includeDeleted: true })
+				: null;
+			const content = message?.content?.trim() ?? "";
+			const pending = response.responseState === "pending" ? " (response pending)" : "";
+			const reason = response.reason ? ` (${response.reason})` : "";
+			lines.push(
+				`- ${response.targetAgentId}: ${response.status}${pending}${reason}${content ? ` — ${content}` : ""}`,
+			);
+		}
+		if (status === "timeout") lines.push("", "Status: timeout");
+		if (status === "failed") lines.push("", "Status: failed");
+		return lines.join("\n");
+	}
+
+	private initiatorCausal(request: MultiMentionRequest): {
+		a2aDepth?: number;
+		multiMentionCallbackDepth?: number;
+	} {
+		const row = this.deps.db
+			.prepare("SELECT causal_json FROM turn_executions WHERE turn_execution_id = ?")
+			.get(request.initiatorTurnExecutionId) as { causal_json: string } | undefined;
+		if (!row) return {};
+		try {
+			return JSON.parse(row.causal_json) as {
+				a2aDepth?: number;
+				multiMentionCallbackDepth?: number;
+			};
+		} catch {
+			return {};
+		}
+	}
+
+	private backfillTerminalChildren(request: MultiMentionRequest, now: number): void {
+		if (!request.parentInvocationId) return;
+		for (const agentId of request.targetAgentIds) {
+			if (this.deps.store.getResponse(request.requestId, agentId)) continue;
+			const latest = this.deps.attempts.getLatest(request.parentInvocationId, agentId);
+			if (!latest) continue;
+			const child = latest.turnExecutionId ? this.deps.turns.get(latest.turnExecutionId) : null;
+			if (child?.status === "completed") {
+				this.deps.store.recordTargetOutcome({
+					requestId: request.requestId,
+					targetAgentId: agentId,
+					turnExecutionId: child.turnExecutionId,
+					responseMessageId: latest.responseMessageId,
+					status: "received",
+					responseState: "pending",
+					now,
+				});
+			} else if (child && (child.status === "failed" || child.status === "interrupted" || child.status === "canceled")) {
+				this.deps.store.recordTargetOutcome({
+					requestId: request.requestId,
+					targetAgentId: agentId,
+					turnExecutionId: child.turnExecutionId,
+					responseMessageId: latest.responseMessageId,
+					status: "failed",
+					responseState: "missing",
+					reason: child.terminalReason ?? child.status,
+					now,
+				});
+			} else if (
+				!child &&
+				(latest.deliveryState === "failed" ||
+					latest.deliveryState === "interrupted" ||
+					latest.deliveryState === "canceled")
+			) {
+				this.deps.store.recordTargetOutcome({
+					requestId: request.requestId,
+					targetAgentId: agentId,
+					turnExecutionId: latest.turnExecutionId,
+					responseMessageId: latest.responseMessageId,
+					status: "failed",
+					responseState: "missing",
+					reason: latest.terminalReason ?? latest.deliveryState,
+					now,
+				});
+			}
+		}
 	}
 }
