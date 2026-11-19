@@ -37,7 +37,7 @@ export interface AgentRegistry {
 	readonly mentionIndex: ReadonlyMap<string, string>;
 	readonly accounts: ReadonlyMap<string, AccountConfig>;
 	readonly defaultAgentId: string | null;
-	/** Bumped on registry rebuild; config-change reconcile uses it (0008 §1). */
+	/** Monotonic per-process counter bumped on every registry rebuild (0008 §1). */
 	readonly revision: number;
 }
 
@@ -45,6 +45,8 @@ function normalizePattern(raw: string): string {
 	const trimmed = raw.trim().toLowerCase();
 	return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
 }
+
+let registryRevisionCounter = 0;
 
 export function validateCatalog(catalog: AgentCatalog, accounts: readonly AccountConfig[]): void {
 	if (!catalog || !Array.isArray(catalog.agents)) {
@@ -80,6 +82,16 @@ export function validateCatalog(catalog: AgentCatalog, accounts: readonly Accoun
 		}
 		if (!Array.isArray(agent.restrictions) || !Array.isArray(agent.strengths)) {
 			throw new CatalogError("catalog_invalid_shape", `agent ${agent.id} restrictions/strengths must be arrays`);
+		}
+		for (const restriction of agent.restrictions) {
+			if (typeof restriction !== "string" || !restriction.trim()) {
+				throw new CatalogError("catalog_invalid_shape", `agent ${agent.id} has a non-string/empty restriction`);
+			}
+		}
+		for (const strength of agent.strengths) {
+			if (typeof strength !== "string" || !strength.trim()) {
+				throw new CatalogError("catalog_invalid_shape", `agent ${agent.id} has a non-string/empty strength`);
+			}
 		}
 		for (const raw of agent.mentionPatterns) {
 			const pattern = normalizePattern(raw);
@@ -140,7 +152,7 @@ export function buildRegistry(
 		mentionIndex,
 		accounts: new Map(accounts.map((a) => [a.ref, a])),
 		defaultAgentId: resolvedDefault,
-		revision: Date.now(),
+		revision: ++registryRevisionCounter,
 	};
 }
 

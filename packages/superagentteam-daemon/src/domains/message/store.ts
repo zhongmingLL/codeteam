@@ -2,6 +2,16 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { AgentReadState, MessageFrom, MessageLifecycle, StoredMessage } from "@superagentteam/shared/types";
 
+// Typed owner error (review P3): callers can branch on code without parsing strings.
+
+export class MessageOwnerError extends Error {
+	readonly code = "message_author_not_thread_owner";
+	constructor(userId: string, threadOwnerId: string) {
+		super(`message_author_not_thread_owner: ${userId} != ${threadOwnerId}`);
+		this.name = "MessageOwnerError";
+	}
+}
+
 // F018 R1-a MessageStore + AgentReadStateStore (0007 §3.1/§3.1.1/§3.5.1).
 // Fresh implementation against the v1 greenfield schema.
 //
@@ -111,7 +121,7 @@ export class MessageStore {
 				throw new Error(`message_thread_not_found: ${input.threadId}`);
 			}
 			if (thread.created_by !== input.from.userId) {
-				throw new Error(`message_author_not_thread_owner: ${input.from.userId} != ${thread.created_by}`);
+				throw new MessageOwnerError(input.from.userId, thread.created_by);
 			}
 		}
 		const seqRow = this.db
