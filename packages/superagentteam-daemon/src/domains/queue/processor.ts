@@ -88,9 +88,10 @@ type PreflightTarget =
 	  }
 	| { kind: "invalid"; agentId: string; reason: "agent_not_found" | "agent_disabled" | "account_not_found" };
 
-/** Bounded backoff ledger for pre-handoff failures (base 10s, cap 1h; R2-d tunes). */
+/** Bounded exponential backoff ledger for pre-handoff failures (base 10s, cap 1h; R2-d tunes). */
 export class RetryDeferrals {
 	private readonly nextEligible = new Map<string, number>();
+	private readonly lastGap = new Map<string, number>();
 	private readonly baseMs: number;
 	private readonly capMs: number;
 	constructor(baseMs = 10_000, capMs = 3_600_000) {
@@ -102,9 +103,9 @@ export class RetryDeferrals {
 	}
 	defer(threadId: string, agentId: string, now: number): void {
 		const key = this.key(threadId, agentId);
-		const previous = this.nextEligible.get(key) ?? now;
-		const elapsedGap = Math.min(Math.max(previous - now, this.baseMs), this.capMs);
-		this.nextEligible.set(key, now + elapsedGap);
+		const gap = Math.min((this.lastGap.get(key) ?? this.baseMs / 2) * 2, this.capMs);
+		this.lastGap.set(key, gap);
+		this.nextEligible.set(key, now + gap);
 	}
 	eligible(threadId: string, agentId: string, now: number): boolean {
 		const at = this.nextEligible.get(this.key(threadId, agentId));
@@ -186,10 +187,16 @@ export class QueueProcessor {
 		return null;
 	}
 
-	/** Dispatch preflight (§3.2 step 3): startable / invalid / deferred. */
+	/**
+	 * Dispatch preflight (§3.2 step 3, 0010 §6.1.1 order): resolve config →
+	 * ensureActive session → capacity. Classification: startable / invalid
+	 * (permanent) / deferred (transient — any shortage defers the WHOLE entry
+	 * before anything is created and records a bounded backoff).
+	 */
 	private preflight(
 		entry: QueueEntry,
 		startableTargets: QueueTarget[],
+		userId: string,
 	): {
 		targets: PreflightTarget[];
 		deferred?: string;
@@ -210,22 +217,37 @@ export class QueueProcessor {
 				targets.push({ kind: "invalid", agentId: target.id, reason: "account_not_found" });
 				continue;
 			}
+			// 0010 §6.1.1 step 1: ensureActive per claimed target BEFORE
+			// capacity/Phase A (session rows are durable identity, safe to
+			// create outside the Phase A transaction).
+			const session = this.deps.sessions.ensureActive({
+				threadId: entry.threadId,
+				agentId: target.id,
+				userId,
+				workingDirectory: this.deps.threads.get(entry.threadId)?.projectPath ?? "",
+				now: this.now(),
+			});
 			targets.push({
 				kind: "startable",
 				agentId: target.id,
 				agentConfig: config,
 				provider: account.provider,
 				model: config.defaultModel,
-				attemptNumber: 0, // filled by caller against the parent record
-				agentSessionId: "",
+				attemptNumber: 0, // filled by Phase A against the parent record
+				agentSessionId: session.id,
 			});
 		}
-		// Capacity is checked for ALL startable targets (§3.2 step 3): any
-		// shortage defers the whole entry before anything is created.
+		// 0010 §6.1.1 step 2: capacity over ALL startable targets; any
+		// shortage defers the whole entry and records a bounded backoff so
+		// consecutive drains do not spin.
 		const startableIds = targets.filter((t) => t.kind === "startable").map((t) => (t as { agentId: string }).agentId);
 		if (this.deps.capacity && startableIds.length > 0) {
 			const check = this.deps.capacity.check(entry.threadId, startableIds);
-			if (!check.ok) return { targets, deferred: check.reason };
+			if (!check.ok) {
+				const now = this.now();
+				for (const agentId of startableIds) this.deferrals.defer(entry.threadId, agentId, now);
+				return { targets, deferred: check.reason };
+			}
 		}
 		return { targets };
 	}
@@ -233,132 +255,147 @@ export class QueueProcessor {
 	/** 0007 §3.2 processEntry: Phase A → tracker → Phase B per target. */
 	async processEntry(entry: QueueEntry, claimId: string, userId: string): Promise<ProcessEntryResult> {
 		const now = this.now();
-		// Step 1-2: claim keys must still be pending on the entry.
-		const claimKeys = entry.claim?.targetKeys ?? [];
-		const pendingKeys = entry.targets.map((target) => `agent:${target.id}`);
-		if (claimKeys.length === 0 || !claimKeys.every((key) => pendingKeys.includes(key))) {
-			throw new Error("process_entry_claim_not_pending");
-		}
-		const claimedTargets = entry.targets.filter((target) => claimKeys.includes(`agent:${target.id}`));
-
-		const preflight = this.preflight(entry, claimedTargets);
-		// Any deferred → release + defer; nothing created (0010 §6.1.3 row 1).
-		if (preflight.deferred) {
-			this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, now);
-			return { outcome: "deferred", reason: preflight.deferred };
-		}
-		const startable = preflight.targets.filter(
-			(t): t is Extract<PreflightTarget, { kind: "startable" }> => t.kind === "startable",
-		);
-		const invalid = preflight.targets.filter(
-			(t): t is Extract<PreflightTarget, { kind: "invalid" }> => t.kind === "invalid",
-		);
-
-		// Phase A (§3.2 step 4): ONE transaction covering all claimed targets.
 		const invocationId = `inv:${entry.threadId}:${entry.payload.sourceRecordId}`;
-		const phaseA = runInTransaction(this.deps.db, () => {
-			const created = this.deps.records.create({
-				invocationId,
-				threadId: entry.threadId,
-				userId,
-				sourceRecordId: entry.payload.sourceRecordId,
-				userMessageId: entry.payload.messageId ?? null,
-				targetAgentIds: entry.targets.map((target) => target.id),
-				now,
-			});
-			if (created.outcome === "conflict") throw new Error("phase_a_parent_conflict");
-			this.deps.records.markRunning(invocationId, now);
-			const prepared: Array<{ agentId: string; turnExecutionId: string; attemptId: string }> = [];
-			for (const target of startable) {
-				const session = this.deps.sessions.ensureActive({
-					threadId: entry.threadId,
-					agentId: target.agentId,
-					userId,
-					workingDirectory: this.deps.threads.get(entry.threadId)?.projectPath ?? "",
-					now,
-				});
-				const attemptNumber = (this.deps.attempts.getLatest(invocationId, target.agentId)?.attempt ?? 0) + 1;
-				const attemptId = `att:${invocationId}:${target.agentId}:${attemptNumber}`;
-				const appended = this.deps.attempts.appendQueued({
-					attemptId,
-					parentInvocationId: invocationId,
-					queueEntryId: entry.queueEntryId,
-					threadId: entry.threadId,
-					targetAgentId: target.agentId,
-					attempt: attemptNumber,
-					now,
-				});
-				if (appended.outcome === "conflict") throw new Error("phase_a_attempt_conflict");
-				const starting = this.deps.attempts.markStarting(attemptId, { agentSessionId: session.id, now });
-				// markStarting null/conflict (held gate pierced) rolls back the
-				// whole Phase A (§3.2 step 4 bullet 4).
-				if (!starting || starting.deliveryState !== "starting") throw new Error("phase_a_mark_starting_failed");
-				prepared.push({
-					agentId: target.agentId,
-					turnExecutionId: `te:${attemptId}`,
-					attemptId,
-				});
+		let phaseA: Array<{ agentId: string; turnExecutionId: string; attemptId: string }> = [];
+		let startable: Array<Extract<PreflightTarget, { kind: "startable" }>> = [];
+		let invalid: Array<Extract<PreflightTarget, { kind: "invalid" }>> = [];
+		try {
+			// Step 1-2: claim keys must still be pending on the entry.
+			const claimKeys = entry.claim?.targetKeys ?? [];
+			const pendingKeys = entry.targets.map((target) => `agent:${target.id}`);
+			if (claimKeys.length === 0 || !claimKeys.every((key) => pendingKeys.includes(key))) {
+				throw new Error("process_entry_claim_not_pending");
 			}
-			for (const target of invalid) {
-				const attemptNumber = (this.deps.attempts.getLatest(invocationId, target.agentId)?.attempt ?? 0) + 1;
-				const attemptId = `att:${invocationId}:${target.agentId}:${attemptNumber}`;
-				this.deps.attempts.appendQueued({
-					attemptId,
-					parentInvocationId: invocationId,
-					queueEntryId: entry.queueEntryId,
-					threadId: entry.threadId,
-					targetAgentId: target.agentId,
-					attempt: attemptNumber,
-					now,
-				});
-				this.deps.attempts.markPrestartTerminal(attemptId, {
-					status: "failed",
-					terminalReason: "target_invalid",
-					endedAt: now,
-				});
-				this.deps.messages.append({
-					id: `df:${attemptId}`,
-					threadId: entry.threadId,
-					from: { kind: "system", service: "queue" },
-					content: `delivery_failure (${target.reason})`,
-					lifecycle: {
-						kind: "delivery_failure",
-						status: "failed",
-						sourceEntryId: entry.queueEntryId,
-						inputMessageId: entry.payload.messageId ?? entry.payload.sourceRecordId,
-						requestedTargets: [{ kind: "agent", id: target.agentId }],
-						reason: "target_invalid",
-						createdAt: now,
-					},
-					now,
-				});
-				this.deps.queue.retireTargets(entry.threadId, entry.queueEntryId, claimId, {
-					targetKeys: [`agent:${target.agentId}`],
-					now,
-				});
-			}
-			return prepared;
-		});
+			const claimedTargets = entry.targets.filter((target) => claimKeys.includes(`agent:${target.id}`));
 
-		// Step 5: tracker.startAll all-or-nothing; failure → prestart failed,
-		// release + defer (no delivery_failure).
-		const startAll = this.deps.tracker.startAll(
-			entry.threadId,
-			phaseA.map((p) => ({ agentId: p.agentId, turnExecutionId: p.turnExecutionId })),
-			userId,
-		);
-		if ("error" in startAll) {
-			const nowB = this.now();
-			for (const prepared of phaseA) {
-				this.deps.attempts.markPrestartTerminal(prepared.attemptId, {
-					status: "failed",
-					terminalReason: "tracker_start_failed",
-					endedAt: nowB,
-				});
-				this.deferrals.defer(entry.threadId, prepared.agentId, nowB);
+			const preflight = this.preflight(entry, claimedTargets, userId);
+			// Any deferred → release + defer; nothing created (0010 §6.1.3 row 1).
+			if (preflight.deferred) {
+				this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, now);
+				return { outcome: "deferred", reason: preflight.deferred };
 			}
-			this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, nowB);
-			return { outcome: "deferred", reason: `tracker_start_failed:${startAll.agentId}` };
+			startable = preflight.targets.filter(
+				(t): t is Extract<PreflightTarget, { kind: "startable" }> => t.kind === "startable",
+			);
+			invalid = preflight.targets.filter(
+				(t): t is Extract<PreflightTarget, { kind: "invalid" }> => t.kind === "invalid",
+			);
+
+			// Phase A (§3.2 step 4): ONE transaction covering all claimed targets.
+			phaseA = runInTransaction(this.deps.db, () => {
+				const created = this.deps.records.create({
+					invocationId,
+					threadId: entry.threadId,
+					userId,
+					sourceRecordId: entry.payload.sourceRecordId,
+					userMessageId: entry.payload.messageId ?? null,
+					targetAgentIds: entry.targets.map((target) => target.id),
+					now,
+				});
+				if (created.outcome === "conflict") throw new Error("phase_a_parent_conflict");
+				// P2: a terminal/missing parent must not admit new attempts.
+				if (!this.deps.records.markRunning(invocationId, now)) {
+					throw new Error("phase_a_parent_not_runnable");
+				}
+				const prepared: Array<{ agentId: string; turnExecutionId: string; attemptId: string }> = [];
+				for (const target of startable) {
+					const attemptNumber = (this.deps.attempts.getLatest(invocationId, target.agentId)?.attempt ?? 0) + 1;
+					const attemptId = `att:${invocationId}:${target.agentId}:${attemptNumber}`;
+					const appended = this.deps.attempts.appendQueued({
+						attemptId,
+						parentInvocationId: invocationId,
+						queueEntryId: entry.queueEntryId,
+						threadId: entry.threadId,
+						targetAgentId: target.agentId,
+						attempt: attemptNumber,
+						now,
+					});
+					if (appended.outcome === "conflict") throw new Error("phase_a_attempt_conflict");
+					const starting = this.deps.attempts.markStarting(attemptId, {
+						agentSessionId: target.agentSessionId,
+						now,
+					});
+					// markStarting null/conflict (held gate pierced) rolls back the
+					// whole Phase A (§3.2 step 4 bullet 4).
+					if (!starting || starting.deliveryState !== "starting") throw new Error("phase_a_mark_starting_failed");
+					prepared.push({
+						agentId: target.agentId,
+						turnExecutionId: `te:${attemptId}`,
+						attemptId,
+					});
+				}
+				for (const target of invalid) {
+					const attemptNumber = (this.deps.attempts.getLatest(invocationId, target.agentId)?.attempt ?? 0) + 1;
+					const attemptId = `att:${invocationId}:${target.agentId}:${attemptNumber}`;
+					const appended = this.deps.attempts.appendQueued({
+						attemptId,
+						parentInvocationId: invocationId,
+						queueEntryId: entry.queueEntryId,
+						threadId: entry.threadId,
+						targetAgentId: target.agentId,
+						attempt: attemptNumber,
+						now,
+					});
+					if (appended.outcome === "conflict") throw new Error("phase_a_invalid_attempt_conflict");
+					const terminal = this.deps.attempts.markPrestartTerminal(attemptId, {
+						status: "failed",
+						terminalReason: "target_invalid",
+						endedAt: now,
+					});
+					if (!terminal || terminal.deliveryState !== "failed") throw new Error("phase_a_invalid_terminal_failed");
+					this.deps.messages.append({
+						id: `df:${attemptId}`,
+						threadId: entry.threadId,
+						from: { kind: "system", service: "queue" },
+						content: `delivery_failure (${target.reason})`,
+						lifecycle: {
+							kind: "delivery_failure",
+							status: "failed",
+							sourceEntryId: entry.queueEntryId,
+							inputMessageId: entry.payload.messageId ?? entry.payload.sourceRecordId,
+							requestedTargets: [{ kind: "agent", id: target.agentId }],
+							reason: "target_invalid",
+							createdAt: now,
+						},
+						now,
+					});
+					const retired = this.deps.queue.retireTargets(entry.threadId, entry.queueEntryId, claimId, {
+						targetKeys: [`agent:${target.agentId}`],
+						now,
+					});
+					if (retired.outcome !== "updated" && retired.outcome !== "retired_all") {
+						throw new Error("phase_a_invalid_retire_state_changed");
+					}
+				}
+				return prepared;
+			});
+
+			// Step 5: tracker.startAll all-or-nothing; failure → prestart failed,
+			// release + defer (no delivery_failure).
+			const startAll = this.deps.tracker.startAll(
+				entry.threadId,
+				phaseA.map((p) => ({ agentId: p.agentId, turnExecutionId: p.turnExecutionId })),
+				userId,
+			);
+			if ("error" in startAll) {
+				const nowB = this.now();
+				for (const prepared of phaseA) {
+					this.deps.attempts.markPrestartTerminal(prepared.attemptId, {
+						status: "failed",
+						terminalReason: "tracker_start_failed",
+						endedAt: nowB,
+					});
+					this.deferrals.defer(entry.threadId, prepared.agentId, nowB);
+				}
+				this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, nowB);
+				return { outcome: "deferred", reason: `tracker_start_failed:${startAll.agentId}` };
+			}
+		} catch (error) {
+			// P1-1: ANY pre-Phase-B failure (validation, preflight throw, Phase A
+			// rollback, startAll setup) releases the claim and defers — the
+			// entry must not sit claimed until TTL (0010 §6.1.3 rows 1/3/4).
+			this.deps.queue.releaseClaim(entry.threadId, entry.queueEntryId, claimId, this.now());
+			return { outcome: "deferred", reason: String(error) };
 		}
 
 		const dispatched: string[] = [];
@@ -446,10 +483,16 @@ export class QueueProcessor {
 								now,
 							);
 						}
-						this.deps.queue.retireTargets(entry.threadId, entry.queueEntryId, claimId, {
+						// P2: a lost claim must NOT commit R/child/credential for a
+						// still-pending target (double-dispatch risk) — the whole
+						// Phase B transaction rolls back instead.
+						const retired = this.deps.queue.retireTargets(entry.threadId, entry.queueEntryId, claimId, {
 							targetKeys: [`agent:${prepared.agentId}`],
 							now,
 						});
+						if (retired.outcome !== "updated" && retired.outcome !== "retired_all") {
+							throw new Error("phase_b_retire_state_changed");
+						}
 					});
 					dispatched.push(prepared.agentId);
 				} catch (error) {
@@ -483,10 +526,7 @@ export class QueueProcessor {
 			}
 
 			// Post-Phase-B port (§3.2 step 7 / R2-b: worker spawn + prompt +
-			// stream + T1) — only for targets whose Phase B committed. A port
-			// failure after the Phase B commit is a provider-phase failure
-			// (0010 §6.1.3 rows 6-7): NO delivery_failure; the target stays
-			// pending and the deferral backs off.
+			// stream + T1) — only for targets whose Phase B committed.
 			for (const agentId of dispatched) {
 				const prepared = phaseA.find((p) => p.agentId === agentId)!;
 				const target = startable.find((t) => t.agentId === prepared.agentId)!;
@@ -510,16 +550,63 @@ export class QueueProcessor {
 						claimId,
 					});
 				} catch {
-					this.deferrals.defer(entry.threadId, prepared.agentId, this.now());
+					// P1-2: provider-phase failure must NOT strand an appended
+					// attempt / running turn / processing R with a retired target
+					// (0010 §6.1.3 row 6). Converge the chain terminal-failed and
+					// put the target back on the entry so the bounded backoff can
+					// re-dispatch (new attempt). No delivery_failure, no ack.
+					const nowP = this.now();
+					const responseMessageId = `resp:${prepared.turnExecutionId}`;
+					try {
+						runInTransaction(this.deps.db, () => {
+							const terminal = this.deps.turns.transitionTerminal(prepared.turnExecutionId, {
+								status: "failed",
+								endedAt: nowP,
+								terminalReason: "provider_phase_failed",
+							});
+							if (terminal.outcome === "not_found" || terminal.outcome === "conflict") {
+								throw new Error("provider_phase_terminal_conflict");
+							}
+							const projected = this.deps.attempts.projectChildTerminal(prepared.attemptId, {
+								turnExecutionId: prepared.turnExecutionId,
+								childStatus: "failed",
+								terminalReason: "provider_phase_failed",
+								endedAt: nowP,
+							});
+							if (projected.outcome === "not_found" || projected.outcome === "terminal_conflict") {
+								throw new Error("provider_phase_projection_conflict");
+							}
+							// The response R is terminal-failed here (no T2 will
+							// commit it); settle the attempt so T4 has nothing
+							// dangling to recover.
+							this.deps.attempts.setSettlement(prepared.attemptId, "settled", responseMessageId);
+							const response = this.deps.messages.get(responseMessageId, { includeDeleted: true });
+							if (response?.lifecycle?.kind === "response") {
+								this.deps.messages.updateLifecycle(
+									responseMessageId,
+									{ ...response.lifecycle, status: "failed", endedAt: nowP },
+									nowP,
+								);
+							}
+							const restored = this.deps.queue.restoreTargets(entry.threadId, entry.queueEntryId, claimId, {
+								targets: [{ kind: "agent", id: prepared.agentId }],
+								now: nowP,
+							});
+							if (restored.outcome !== "updated") {
+								throw new Error("provider_phase_restore_state_changed");
+							}
+						});
+					} finally {
+						this.deferrals.defer(entry.threadId, prepared.agentId, nowP);
+					}
 				}
 			}
 		} finally {
-			// T3 slot release (§3.2 step 8): slots live through the dispatch
-			// port (provider phase), not just Phase B; always released.
-			this.deps.tracker.completeAll(
-				entry.threadId,
-				phaseA.map((p) => p.agentId),
-			);
+			// T3 slot release (§3.2 step 8): per-target ownership-fenced complete
+			// so a stale finally cannot release a replacement slot.
+			for (const prepared of phaseA) {
+				this.deps.tracker.complete(entry.threadId, prepared.agentId, prepared.turnExecutionId);
+			}
 		}
 
 		// §3.2 step 6 note: release whatever the claim still holds (targets

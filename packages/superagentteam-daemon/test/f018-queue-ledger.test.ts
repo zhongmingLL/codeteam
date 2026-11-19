@@ -151,9 +151,14 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 		const updatedEntry = updated.outcome === "updated" ? updated.entry : null;
 		expect(updatedEntry?.targets.map((t) => t.id)).toEqual(["a2"]);
 		expect(queue.retireTargets("t1", QID, "cX", { targetKeys: ["agent:a2"] }).outcome).toBe("state_changed");
-		const deleted = queue.retireTargets("t1", QID, "c1", { targetKeys: ["agent:a2"], now: 130 });
-		expect(deleted.outcome).toBe("deleted");
-		expect(queue.get("t1", QID)).toBeNull();
+		const retiredAll = queue.retireTargets("t1", QID, "c1", { targetKeys: ["agent:a2"], now: 130 });
+		expect(retiredAll.outcome).toBe("retired_all");
+		// §3.2 (R2-a review): retiring the last target keeps the row as the
+		// route anchor with empty pending targets; T3/abandon deletes via
+		// deleteEntry.
+		const anchored = queue.get("t1", QID);
+		expect(anchored?.targets).toHaveLength(0);
+		expect(queue.listQueued("t1")).toHaveLength(0);
 	});
 
 	it("releaseClaim returns target to queued; restoreExpiredClaims sweeps expired", () => {

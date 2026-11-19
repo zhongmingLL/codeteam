@@ -23,7 +23,7 @@ export type RoutingReason =
 export type ResolveTargetsResult =
 	| { kind: "ok"; targetAgentIds: string[]; reason: RoutingReason }
 	| { kind: "no_target" }
-	| { kind: "agent_disabled" | "agent_not_found"; pattern: string };
+	| { kind: "agent_disabled" | "agent_not_found" | "account_not_found"; pattern: string };
 
 export interface OperatorMessageIngressDeps {
 	db: DatabaseSync;
@@ -81,7 +81,7 @@ export class OperatorMessageIngress {
 		// (2) recent replier: last completed TurnExecution agent on the thread
 		const replier = this.db
 			.prepare(
-				"SELECT agent_id FROM turn_executions WHERE thread_id = ? AND status = 'completed' ORDER BY ended_at DESC LIMIT 1",
+				"SELECT agent_id FROM turn_executions WHERE thread_id = ? AND status = 'completed' AND execution_kind = 'ordinary' ORDER BY ended_at DESC LIMIT 1",
 			)
 			.get(threadId) as { agent_id: string } | undefined;
 		if (replier) return { agentId: replier.agent_id, reason: "recent_replier" };
@@ -103,6 +103,12 @@ export class OperatorMessageIngress {
 			for (const pattern of patterns) {
 				const resolved: ResolvedTarget = resolveExplicitTarget(this.registry, pattern);
 				if (resolved.kind !== "ok") return { kind: resolved.kind, pattern: resolved.pattern };
+				// 0020 R2: an explicitly-mentioned agent whose account is missing
+				// is an ingress-time typed reject, not a dispatch-time failure.
+				const config = this.registry.agents.get(resolved.agentId)!;
+				if (!this.registry.accounts.get(config.accountRef)) {
+					return { kind: "account_not_found", pattern };
+				}
 				if (!agentIds.includes(resolved.agentId)) agentIds.push(resolved.agentId);
 			}
 			return { kind: "ok", targetAgentIds: agentIds, reason: "current_message_mentions" };
@@ -123,6 +129,29 @@ export class OperatorMessageIngress {
 		if (!thread) throw new Error(`thread_not_found: ${input.threadId}`);
 		if (thread.deletedAt !== null && thread.deletedAt !== undefined) {
 			throw new Error(`thread_deleted: ${input.threadId}`);
+		}
+		// Idempotent replay: same messageId + same identity returns the
+		// existing message/entry instead of hitting the UNIQUE constraint.
+		if (input.messageId) {
+			const existing = this.messages.get(input.messageId, { includeDeleted: true });
+			if (existing) {
+				const resolved = this.resolveTargets(input.threadId, input.body);
+				const sameIdentity =
+					existing.threadId === input.threadId &&
+					existing.from.kind === "user" &&
+					existing.from.userId === input.userId &&
+					existing.content === input.body &&
+					resolved.kind === "ok" &&
+					existing.extra?.targetAgentIds?.join("\u0000") === resolved.targetAgentIds.join("\u0000");
+				if (!sameIdentity) throw new Error("ingress_message_id_conflict");
+				const liveEntry = this.queue.getBySource(input.threadId, existing.id, 1);
+				return {
+					message: existing,
+					queueEntry: liveEntry!,
+					targetAgentIds: existing.extra?.targetAgentIds ?? [],
+					reason: resolved.kind === "ok" ? resolved.reason : "current_message_mentions",
+				};
+			}
 		}
 		const resolved = this.resolveTargets(input.threadId, input.body);
 		if (resolved.kind === "no_target") throw new Error("no_target");

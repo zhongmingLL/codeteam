@@ -132,14 +132,16 @@ export class InvocationTracker {
 			.map((slot) => ({ agentId: slot.agentId, turnExecutionId: slot.turnExecutionId, startedAt: slot.startedAt }));
 	}
 
-	listStaleSlots(now: number): StaleSlot[] {
-		return [...this.slots.values()].map((slot) => ({
-			threadId: slot.threadId,
-			agentId: slot.agentId,
-			userId: slot.userId,
-			turnExecutionId: slot.turnExecutionId,
-			startedAt: slot.startedAt,
-			ageMs: now - slot.startedAt,
-		}));
+	listStaleSlots(now: number, minAgeMs = 0): StaleSlot[] {
+		return [...this.slots.values()]
+			.map((slot) => ({
+				threadId: slot.threadId,
+				agentId: slot.agentId,
+				userId: slot.userId,
+				turnExecutionId: slot.turnExecutionId,
+				startedAt: slot.startedAt,
+				ageMs: now - slot.startedAt,
+			}))
+			.filter((slot) => slot.ageMs >= minAgeMs);
 	}
 }

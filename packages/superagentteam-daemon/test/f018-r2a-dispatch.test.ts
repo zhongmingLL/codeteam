@@ -185,6 +185,55 @@ describe("OperatorMessageIngress (0007 §3.0)", () => {
 		);
 	});
 
+	it("explicit mention of an agent without an account is an ingress typed reject", () => {
+		// buildRegistry validates accountRefs at load time, so this state only
+		// arises through a hand-built registry (defense-in-depth for R2-b
+		// hot-reload paths).
+		const w = makeWorld();
+		const ghostAgent = agentConfig({ id: "a2", mentionPatterns: ["@a2"] });
+		const handBuilt: AgentRegistry = {
+			agents: new Map([["a2", ghostAgent]]),
+			mentionIndex: new Map([["@a2", "a2"]]),
+			accounts: new Map(),
+			defaultAgentId: null,
+			revision: 999,
+		};
+		const ingress = new OperatorMessageIngress({
+			db: w.db,
+			registry: handBuilt,
+			threads: w.threads,
+			messages: w.messages,
+			queue: w.queue,
+		});
+		expect(() => ingress.submit({ threadId: "t1", userId: "u1", body: "hi @a2", now: 10 })).toThrowError(
+			/account_not_found/,
+		);
+	});
+
+	it("submit with the same messageId and identity replays idempotently", () => {
+		const w = makeWorld();
+		const first = w.ingress.submit({
+			threadId: "t1",
+			userId: "u1",
+			body: "go @a1",
+			messageId: "m-fix",
+			now: 10,
+		});
+		const replay = w.ingress.submit({
+			threadId: "t1",
+			userId: "u1",
+			body: "go @a1",
+			messageId: "m-fix",
+			now: 20,
+		});
+		expect(replay.message.id).toBe("m-fix");
+		expect(replay.queueEntry.queueEntryId).toBe(first.queueEntry.queueEntryId);
+		expect(w.queue.listQueued("t1")).toHaveLength(1);
+		expect(() =>
+			w.ingress.submit({ threadId: "t1", userId: "u1", body: "DIFFERENT @a2", messageId: "m-fix", now: 30 }),
+		).toThrowError(/ingress_message_id_conflict/);
+	});
+
 	it("queue_full rolls the message back (admission is atomic)", () => {
 		const w = makeWorld();
 		for (let i = 0; i < 5; i += 1) {
@@ -392,7 +441,7 @@ describe("QueueProcessor (0007 §3.2)", () => {
 		expect(w.dispatched).toHaveLength(0);
 	});
 
-	it("post-Phase-B port failure is a provider-phase failure: no delivery_failure", async () => {
+	it("P1-2: port failure converges the chain and re-queues the target for replay", async () => {
 		const w = makeWorld();
 		const submitted = w.ingress.submit({ threadId: "t1", userId: "u1", body: "go @a1", now: 10 });
 		const processor = new QueueProcessor({
@@ -418,13 +467,57 @@ describe("QueueProcessor (0007 §3.2)", () => {
 		const result = await processor.drain("t1", "u1");
 		expect(result.processed).toBe(1);
 		const invocationId = `inv:t1:${submitted.message.id}`;
-		// Phase B committed; provider phase failed without delivery_failure.
+		// 0010 §6.1.3 row 6: attempt failed, turn failed, R failed (no
+		// promptDelivered), settlement settled (nothing for T4 to recover).
 		const attempt = w.attempts.getLatest(invocationId, "a1");
-		expect(attempt?.deliveryState).toBe("appended");
+		expect(attempt?.deliveryState).toBe("failed");
+		expect(attempt?.terminalReason).toBe("provider_phase_failed");
+		expect(attempt?.settlement).toBe("settled");
+		const turnId = attempt?.turnExecutionId;
+		expect(turnId).toBeTruthy();
+		expect(w.turns.get(turnId!)?.status).toBe("failed");
+		const response = w.messages.get(`resp:${turnId}`);
+		expect(response?.lifecycle?.kind).toBe("response");
+		if (response?.lifecycle?.kind === "response") {
+			expect(response.lifecycle.status).toBe("failed");
+		}
+		// No delivery_failure for provider-phase failures.
 		const failures = w.messages.getByThread("t1", 50).filter((m) => m.lifecycle?.kind === "delivery_failure");
 		expect(failures).toHaveLength(0);
+		// The retired target is back on the entry → the bounded backoff can
+		// re-dispatch (next drain appends attempt 2).
+		const queued = w.queue.listQueued("t1");
+		expect(queued).toHaveLength(1);
+		expect(queued[0]!.targets.map((t) => t.id)).toEqual(["a1"]);
 		// Slot released even though the port failed.
 		expect(w.tracker.isBusy("t1", "a1")).toBe(false);
+	});
+
+	it("P1-1: Phase A failure releases the claim and defers (no claim-TTL stall)", async () => {
+		const w = makeWorld();
+		const submitted = w.ingress.submit({ threadId: "t1", userId: "u1", body: "go @a1", now: 10 });
+		// Wrong userId → records.create throws invocation_owner_not_thread_owner
+		// inside the Phase A transaction.
+		const result = await w.processor.drain("t1", "attacker");
+		expect(result.deferred).toBe(1);
+		// Entry back to queued (claim released), no parent created.
+		const queued = w.queue.listQueued("t1");
+		expect(queued).toHaveLength(1);
+		expect(queued[0]!.payload.messageId).toBe(submitted.message.id);
+		expect(w.records.byThreadSource("t1", submitted.message.id)).toBeNull();
+	});
+
+	it("P1-3: multi-target dispatch records one dispatchRef per target", async () => {
+		const w = makeWorld();
+		const submitted = w.ingress.submit({ threadId: "t1", userId: "u1", body: "both @a1 @a2", now: 10 });
+		const result = await w.processor.drain("t1", "u1");
+		expect(result.processed).toBe(1);
+		const input = w.messages.get(submitted.message.id)!;
+		expect(input.lifecycle?.kind).toBe("input");
+		if (input.lifecycle?.kind === "input") {
+			const refTargets = input.lifecycle.dispatchRefs.map((r) => r.target.id).sort();
+			expect(refTargets).toEqual(["a1", "a2"]);
+		}
 	});
 
 	it("busy target holds later entries (per-target ordering)", async () => {

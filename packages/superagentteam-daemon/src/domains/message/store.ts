@@ -248,7 +248,11 @@ export class MessageStore {
 		if (!message) throw new Error("dispatch_ref_message_not_found");
 		if (message.lifecycle?.kind !== "input") throw new Error("dispatch_ref_not_input_message");
 		const exists = message.lifecycle.dispatchRefs.some(
-			(existing) => existing.queueEntryId === ref.queueEntryId && existing.attempt === ref.attempt,
+			(existing) =>
+				existing.queueEntryId === ref.queueEntryId &&
+				existing.attempt === ref.attempt &&
+				existing.target.kind === ref.target.kind &&
+				existing.target.id === ref.target.id,
 		);
 		if (exists) return false;
 		const dispatchRefs = [
