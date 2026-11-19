@@ -9,6 +9,9 @@ export type QueueOwner = { kind: "user"; userId: string } | { kind: "system"; se
 
 export type QueueEntryKind = "conversation_input" | "message_wake";
 
+/** 0007 §3.8 / DP-F018SURFACE-2=A: max A2A hop depth. */
+export const MAX_A2A_DEPTH = 15;
+
 /** Durable row statuses only; processing/terminal are projections (§3.1). */
 export type QueueDurableStatus = "queued" | "claimed";
 
