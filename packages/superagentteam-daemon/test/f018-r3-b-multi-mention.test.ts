@@ -96,7 +96,13 @@ function happyScript(text: string): RpcEvent[] {
 
 function makeWorld(
 	allowedTools: string[] = ["multi_mention", "post_message"],
-): { runtime: A2ARuntime; spawn: MockSpawnPort; fd: F018Database } {
+): {
+	runtime: A2ARuntime;
+	spawn: MockSpawnPort;
+	fd: F018Database;
+	advance: (ms: number) => void;
+	readonly now: number;
+} {
 	const dir = mkdtempSync(join(tmpdir(), "f018-r3b-"));
 	dirs.push(dir);
 	const fd = new F018Database({ path: join(dir, "f018.db") });
