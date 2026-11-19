@@ -208,11 +208,21 @@ export class InvocationCredentialStore {
 			messageId: input.messageId,
 			queueEntryId: input.queueEntryId,
 		};
+		// Single-writer note: this store assumes one daemon process (SQLite
+		// single connection serializes statements). For multi-writer safety
+		// the write is followed by a verify re-read: if a concurrent claim
+		// replaced the map, surface conflict instead of silently losing it.
 		this.db
 			.prepare(
 				"UPDATE invocation_credentials SET tool_call_claims_json = ?, updated_at = ? WHERE turn_execution_id = ? AND state = 'active'",
 			)
 			.run(JSON.stringify(claims), now, turnExecutionId);
+		const verify = this.db
+			.prepare("SELECT tool_call_claims_json FROM invocation_credentials WHERE turn_execution_id = ?")
+			.get(turnExecutionId) as { tool_call_claims_json: string } | undefined;
+		if (!verify) return { outcome: "conflict" };
+		const landed = (JSON.parse(verify.tool_call_claims_json) as Record<string, ToolCallClaim>)[input.piExtToolCallId];
+		if (!landed || landed.intentHash !== input.intentHash) return { outcome: "conflict" };
 		return { outcome: "reserved" };
 	}
 
@@ -242,15 +252,21 @@ export class InvocationCredentialStore {
 		if (child.status === "running") {
 			throw new Error("credential_child_not_terminal");
 		}
-		const expected: Record<string, Exclude<InvocationCredential["disposition"], null>> = {
+		// Equality applies only to child-mirrored dispositions. revoked
+		// (owner/orphan-repair) and replaced (retry/preempt) have no child-side
+		// twin; they require the child to BE terminal (checked above) plus —
+		// for replaced — a valid successor, but not status equality (§5.3).
+		const expected: Partial<Record<string, Exclude<InvocationCredential["disposition"], null>>> = {
 			completed: "completed",
 			failed: "failed",
 			interrupted: "interrupted",
 			canceled: "canceled",
 		};
-		const childDisposition = expected[child.status];
-		if (childDisposition !== disposition) {
-			throw new Error(`credential_disposition_mismatch: child ${child.status} != ${disposition}`);
+		if (disposition !== "revoked" && disposition !== "replaced") {
+			const childDisposition = expected[child.status];
+			if (childDisposition !== disposition) {
+				throw new Error(`credential_disposition_mismatch: child ${child.status} != ${disposition}`);
+			}
 		}
 		// revoked has no child-side signal (owner action) and replaced needs the
 		// successor to share parent/thread.

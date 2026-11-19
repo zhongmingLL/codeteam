@@ -102,20 +102,31 @@ export class WorkerStore {
 	}
 
 	private retireIdle(): number {
-		const result = this.db
-			.prepare(
-				`UPDATE workers SET state = 'retired', retired_at = ?, updated_at = ?
-				 WHERE state = 'draining' AND idle_since IS NOT NULL`,
-			)
-			.run(Date.now(), Date.now());
-		return Number(result.changes);
+		const idle = this.db
+			.prepare("SELECT id FROM workers WHERE state = 'draining' AND idle_since IS NOT NULL")
+			.all() as Array<{ id: string }>;
+		for (const row of idle) {
+			this.db
+				.prepare("UPDATE workers SET state = 'retired', retired_at = ?, updated_at = ? WHERE id = ?")
+				.run(Date.now(), Date.now(), row.id);
+			this.db.prepare("UPDATE worker_bindings SET state = 'reattach_pending' WHERE worker_id = ?").run(row.id);
+		}
+		return idle.length;
 	}
 
 	ensure(input: EnsureWorkerInput): Worker {
 		const existing = this.db.prepare("SELECT * FROM workers WHERE id = ?").get(input.workerId) as
 			| WorkerRow
 			| undefined;
-		if (existing) return mapWorker(existing);
+		if (existing) {
+			const sameKey =
+				existing.project_path === input.poolKey.projectPath &&
+				existing.account_ref === input.poolKey.accountRef &&
+				existing.provider === input.poolKey.provider &&
+				existing.model === input.poolKey.model;
+			if (!sameKey) throw new Error("worker_pool_key_conflict");
+			return mapWorker(existing);
+		}
 		this.db
 			.prepare(
 				`INSERT INTO workers (id, project_path, account_ref, provider, model, state, heartbeat_at, lease_expires_at, created_at, updated_at)
@@ -210,6 +221,14 @@ export class WorkerBindingStore {
 			.get(input.agentSessionId) as BindingRow | undefined;
 		if (existing) {
 			if (existing.worker_id === input.workerId && existing.state === "attached") return mapBinding(existing);
+			// Target worker must not already serve another session (worker_id
+			// UNIQUE would otherwise surface as a raw constraint error).
+			const owner = this.db
+				.prepare("SELECT agent_session_id FROM worker_bindings WHERE worker_id = ?")
+				.get(input.workerId) as { agent_session_id: string } | undefined;
+			if (owner && owner.agent_session_id !== input.agentSessionId) {
+				throw new Error(`worker_bound_to_other_session: ${owner.agent_session_id}`);
+			}
 			// Move to a different worker: generation+1 fences the old one.
 			this.db
 				.prepare(

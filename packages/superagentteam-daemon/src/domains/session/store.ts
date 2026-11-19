@@ -149,7 +149,15 @@ export class AgentSessionStore {
 	}
 
 	recordCompletedTurn(sessionId: string, turnExecutionId: string): AgentSession | null {
-		return this.recordUserVisibleOutput(sessionId, turnExecutionId);
+		// 0010 §6: a completed turn resets the resume-failure breaker even
+		// when the turn was already counted.
+		const counted = this.recordUserVisibleOutput(sessionId, turnExecutionId);
+		this.db
+			.prepare(
+				"UPDATE agent_sessions SET consecutive_resume_failures = 0, updated_at = ? WHERE id = ? AND consecutive_resume_failures <> 0",
+			)
+			.run(Date.now(), sessionId);
+		return counted ?? this.get(sessionId);
 	}
 
 	/** 0010 §6: 3 consecutive resume failures → circuit-breaker seal. */

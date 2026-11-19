@@ -355,3 +355,136 @@ describe("004 down rebuilds attempts without session/worker FKs", () => {
 		db.close();
 	});
 });
+
+describe("round-2 fixes", () => {
+	it("revoked/replaced bypass disposition equality; running child still rejects", () => {
+		const world = makeWorld();
+		const seeded = seedTurnChain(world);
+		world.creds.create({
+			turnExecutionId: seeded.turnId,
+			parentInvocationId: "inv1",
+			threadId: "t1",
+			agentId: "a1",
+			agentSessionId: seeded.sessionId,
+			userId: "u1",
+			allowedTools: [],
+			now: 10,
+		});
+		// running → revoked still rejected (canonical-first terminal gate)
+		expect(() => world.creds.commitTerminal(seeded.turnId, "revoked")).toThrow(/child_not_terminal/);
+		// interrupted child → revoked OK (orphan repair)
+		world.turns.transitionTerminal(seeded.turnId, { status: "interrupted", endedAt: 200, terminalReason: "x" });
+		expect(world.creds.commitTerminal(seeded.turnId, "revoked").outcome).toBe("terminalized");
+	});
+
+	it("replaced on canceled child with valid successor succeeds; wrong-parent successor rejects", () => {
+		const world = makeWorld();
+		const seeded = seedTurnChain(world);
+		world.creds.create({
+			turnExecutionId: seeded.turnId,
+			parentInvocationId: "inv1",
+			threadId: "t1",
+			agentId: "a1",
+			agentSessionId: seeded.sessionId,
+			userId: "u1",
+			allowedTools: [],
+			now: 10,
+		});
+		world.turns.transitionTerminal(seeded.turnId, { status: "canceled", endedAt: 200, terminalReason: "op" });
+		// successor in a different parent → typed reject
+		world.db.db
+			.prepare(
+				"INSERT INTO threads (id, project_path, created_by, last_active_at, created_at, updated_at) VALUES ('t2', '/p', 'u1', 1, 1, 1)",
+			)
+			.run();
+		world.records.create({
+			invocationId: "inv2",
+			threadId: "t2",
+			userId: "u1",
+			sourceRecordId: "s2",
+			userMessageId: null,
+			targetAgentIds: ["a1"],
+			now: 10,
+		});
+		world.turns.createRunning({
+			turnExecutionId: "te-out",
+			parentInvocationId: "inv2",
+			threadId: "t2",
+			userId: "u1",
+			agentId: "a1",
+			executionKind: "ordinary",
+			causal: { triggerMessageId: "m2" },
+			startedAt: 300,
+		});
+		expect(() =>
+			world.creds.commitTerminal(seeded.turnId, "replaced", { replacedByTurnExecutionId: "te-out" }),
+		).toThrow(/successor_parent_mismatch/);
+		// same-parent successor → replaced succeeds
+		world.turns.createRunning({
+			turnExecutionId: "te-ok",
+			parentInvocationId: "inv1",
+			threadId: "t1",
+			userId: "u1",
+			agentId: "a1",
+			executionKind: "ordinary",
+			causal: { triggerMessageId: "m3" },
+			startedAt: 300,
+		});
+		const res = world.creds.commitTerminal(seeded.turnId, "replaced", { replacedByTurnExecutionId: "te-ok" });
+		expect(res.outcome).toBe("terminalized");
+	});
+
+	it("completed turn resets consecutive resume failures", () => {
+		const { sessions } = makeWorld();
+		const s = sessions.ensureActive({ threadId: "t1", agentId: "a1", userId: "u1", workingDirectory: "/p", now: 1 });
+		sessions.recordResumeFailureWithSeal(s.id, "f", 2);
+		sessions.recordUserVisibleOutput(s.id, "te1"); // already counted
+		sessions.recordCompletedTurn(s.id, "te1"); // replay — still resets
+		expect(sessions.get(s.id)?.consecutiveResumeFailures).toBe(0);
+	});
+
+	it("bind moving a session onto another session's worker is a typed conflict", () => {
+		const world = makeWorld();
+		const key = { projectPath: "/p", accountRef: "main", provider: "p", model: "m" };
+		world.workers.ensure({ workerId: "wA", poolKey: key, now: 1, leaseTtlMs: 1000 });
+		world.workers.ensure({ workerId: "wB", poolKey: key, now: 1, leaseTtlMs: 1000 });
+		const s1 = world.sessions.ensureActive({
+			threadId: "t1",
+			agentId: "a1",
+			userId: "u1",
+			workingDirectory: "/p",
+			now: 1,
+		});
+		const s2 = world.sessions.ensureActive({
+			threadId: "t1",
+			agentId: "a2",
+			userId: "u1",
+			workingDirectory: "/p",
+			now: 2,
+		});
+		world.bindings.bind({ agentSessionId: s1.id, workerId: "wA", now: 10 });
+		// s2 tries to MOVE onto wA (already s1's) → typed, not raw UNIQUE
+		expect(() => world.bindings.bind({ agentSessionId: s2.id, workerId: "wA", now: 11 })).toThrow(/other_session/);
+		// s1 rebinds to wB (free) → generation bump works
+		const b = world.bindings.bind({ agentSessionId: s1.id, workerId: "wB", now: 12 });
+		expect(b.generation).toBe(2);
+	});
+
+	it("ensure with same id but different poolKey is a typed conflict", () => {
+		const world = makeWorld();
+		world.workers.ensure({
+			workerId: "w1",
+			poolKey: { projectPath: "/p", accountRef: "main", provider: "p", model: "m" },
+			now: 1,
+			leaseTtlMs: 1000,
+		});
+		expect(() =>
+			world.workers.ensure({
+				workerId: "w1",
+				poolKey: { projectPath: "/OTHER", accountRef: "main", provider: "p", model: "m" },
+				now: 2,
+				leaseTtlMs: 1000,
+			}),
+		).toThrow(/pool_key_conflict/);
+	});
+});
