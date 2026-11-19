@@ -27,6 +27,7 @@ import {
 	A2AToolError,
 	type A2ATarget,
 	type A2AToolContext,
+	assertCredentialAllowsTool,
 	normalizeTargets,
 } from "../a2a/tool-service.ts";
 import type { MultiMentionStore } from "./store.ts";
@@ -132,6 +133,7 @@ export class MultiMentionOrchestrator {
 		if (input.context && Buffer.byteLength(input.context, "utf8") > MAX_CONTEXT_BYTES) {
 			fail("invalid_input", "context exceeds 5 KiB");
 		}
+		assertCredentialAllowsTool(this.deps.credentials, ctx.callerTurnExecutionId, "multi_mention");
 		const timeoutMinutes = input.timeoutMinutes ?? MULTI_MENTION_DEFAULT_TIMEOUT_MINUTES;
 		if (
 			!Number.isInteger(timeoutMinutes) ||

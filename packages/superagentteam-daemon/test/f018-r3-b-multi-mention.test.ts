@@ -94,7 +94,9 @@ function happyScript(text: string): RpcEvent[] {
 	];
 }
 
-function makeWorld(): { runtime: A2ARuntime; spawn: MockSpawnPort; fd: F018Database } {
+function makeWorld(
+	allowedTools: string[] = ["multi_mention", "post_message"],
+): { runtime: A2ARuntime; spawn: MockSpawnPort; fd: F018Database } {
 	const dir = mkdtempSync(join(tmpdir(), "f018-r3b-"));
 	dirs.push(dir);
 	const fd = new F018Database({ path: join(dir, "f018.db") });
@@ -146,7 +148,7 @@ function makeWorld(): { runtime: A2ARuntime; spawn: MockSpawnPort; fd: F018Datab
 		agentId: "a1",
 		agentSessionId: session.id,
 		userId: "u1",
-		allowedTools: ["multi_mention", "post_message"],
+		allowedTools,
 		now: 4,
 	});
 	return {
@@ -270,6 +272,16 @@ describe("F018 R3-b multi_mention create", () => {
 			throw new Error("expected error");
 		} catch (error) {
 			expectCode(error, "multi_mention_cascade");
+		}
+	});
+
+	it("enforces the multi_mention credential allowlist", () => {
+		const w = makeWorld([]);
+		try {
+			w.runtime.multiMentionOrchestrator.create(ctx({ piExtToolCallId: "mm-no-tool" }), multiMentionInput());
+			throw new Error("expected error");
+		} catch (error) {
+			expectCode(error, "tool_not_allowed");
 		}
 	});
 
