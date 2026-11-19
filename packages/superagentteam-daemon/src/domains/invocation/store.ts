@@ -619,7 +619,11 @@ export class InvocationAttemptStore {
 		return this.get(attemptId);
 	}
 
-	/** starting→appended; writes execution binding snapshot (§4.3.1). */
+	/**
+	 * starting→appended; writes execution binding snapshot (§4.3.1).
+	 * `modelFamily` resolves at provider time (Phase B runs pre-worker), so it
+	 * may be null here; re-bind identity comparison treats null == null.
+	 */
 	bindAppended(
 		attemptId: string,
 		input: {
@@ -628,7 +632,7 @@ export class InvocationAttemptStore {
 			workerId: string | null;
 			provider: string;
 			model: string;
-			modelFamily: string;
+			modelFamily: string | null;
 			responseMessageId: string;
 			now: number;
 		},

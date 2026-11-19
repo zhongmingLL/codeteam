@@ -167,7 +167,7 @@ function terminalProjection(
 
 export type RetireResult =
 	| { outcome: "updated"; entry: QueueEntry; projection: QueueAttemptProjection }
-	| { outcome: "deleted"; entry: QueueEntry; projection: QueueTerminalProjection }
+	| { outcome: "retired_all"; entry: QueueEntry }
 	| { outcome: "not_found" }
 	| { outcome: "state_changed" };
 
@@ -392,17 +392,16 @@ export class QueueLedgerStore {
 		const remaining = (JSON.parse(row.targets_json) as QueueTarget[]).filter(
 			(t) => !input.targetKeys.includes(`agent:${t.id}`),
 		);
+		// §3.2: the queue entry is the route anchor — retiring the last target
+		// keeps the row with empty targets (retry/terminal association survives
+		// provider-phase failures; T3/abandon deletes via deleteEntry).
 		if (remaining.length === 0) {
 			this.db
-				.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ? AND claim_id = ?")
-				.run(threadId, queueEntryId, claimId);
-			const before = mapEntry(row);
-			const retiredSlice = targetsForKeys(before, input.targetKeys);
-			return {
-				outcome: "deleted",
-				entry: before,
-				projection: terminalProjection(before, retiredSlice, "dispatched", now),
-			};
+				.prepare(
+					`UPDATE invocation_queue SET targets_json = '[]', updated_at = ? WHERE thread_id = ? AND queue_entry_id = ? AND claim_id = ?`,
+				)
+				.run(now, threadId, queueEntryId, claimId);
+			return { outcome: "retired_all", entry: this.get(threadId, queueEntryId)! };
 		}
 		const changes = this.db
 			.prepare(
@@ -435,6 +434,66 @@ export class QueueLedgerStore {
 		return changes > 0
 			? { outcome: "updated", entry: this.get(threadId, queueEntryId)! }
 			: { outcome: "state_changed" };
+	}
+
+	/**
+	 * F018 R2-a review P1-2: claim-fenced re-add of retired target keys
+	 * (provider-phase failure replay). Only the current claim holder may
+	 * restore; keys already pending are no-ops.
+	 */
+	restoreTargets(
+		threadId: string,
+		queueEntryId: string,
+		claimId: string,
+		input: { targets: QueueTarget[]; now?: number },
+	): QueueReleaseResult {
+		const now = input.now ?? Date.now();
+		const row = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.get(threadId, queueEntryId) as QueueRow | undefined;
+		if (!row) return { outcome: "not_found" };
+		if (row.claim_id !== claimId) return { outcome: "state_changed" };
+		const current = JSON.parse(row.targets_json) as QueueTarget[];
+		const currentKeys = new Set(current.map((t) => `agent:${t.id}`));
+		for (const target of input.targets) {
+			if (!currentKeys.has(`agent:${target.id}`)) current.push(target);
+		}
+		this.db
+			.prepare(
+				"UPDATE invocation_queue SET targets_json = ?, updated_at = ? WHERE thread_id = ? AND queue_entry_id = ? AND claim_id = ?",
+			)
+			.run(JSON.stringify(current), now, threadId, queueEntryId, claimId);
+		return { outcome: "updated", entry: this.get(threadId, queueEntryId)! };
+	}
+
+	/**
+	 * §3.2 explicit entry deletion — T3 parent-terminal / operator abandon /
+	 * TTL path (R2-c/R2-d). Retire never deletes on its own anymore.
+	 */
+	deleteEntry(
+		threadId: string,
+		queueEntryId: string,
+		input: { claimId?: string } = {},
+	): {
+		outcome: "deleted" | "not_found" | "state_changed";
+	} {
+		const row = this.db
+			.prepare("SELECT claim_id FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.get(threadId, queueEntryId) as { claim_id: string | null } | undefined;
+		if (!row) return { outcome: "not_found" };
+		if (input.claimId && row.claim_id !== input.claimId) return { outcome: "state_changed" };
+		this.db
+			.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.run(threadId, queueEntryId);
+		return { outcome: "deleted" };
+	}
+
+	/** Ingress replay support: live entry by admission identity. */
+	getBySource(threadId: string, sourceRecordId: string, attempt = 1): QueueEntry | null {
+		const row = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND source_record_id = ? AND attempt = ?")
+			.get(threadId, sourceRecordId, attempt) as QueueRow | undefined;
+		return row ? mapEntry(row) : null;
 	}
 
 	withdrawTargets(threadId: string, queueEntryId: string, input: WithdrawInput): WithdrawResult {

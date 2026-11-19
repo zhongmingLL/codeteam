@@ -119,3 +119,22 @@ export class F018Database {
 		this.db.close();
 	}
 }
+
+/**
+ * F018 R2-a: single-connection transaction wrapper for runtime multi-statement
+ * units (Phase A / Phase B / ingress admission; 0007 §3.2). BEGIN IMMEDIATE
+ * grabs the write lock up front. NOT nestable — callers must not start a
+ * transaction inside another one.
+ */
+export function runInTransaction<T>(db: DatabaseSync, fn: () => T): T {
+	db.exec("BEGIN IMMEDIATE");
+	let result: T;
+	try {
+		result = fn();
+		db.exec("COMMIT");
+	} catch (error) {
+		db.exec("ROLLBACK");
+		throw error;
+	}
+	return result;
+}
