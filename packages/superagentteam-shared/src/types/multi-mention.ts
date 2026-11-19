@@ -37,7 +37,7 @@ export function isValidMultiMentionTransition(from: MultiMentionStatus, to: Mult
 		case "running":
 			return to === "partial" || to === "done" || to === "timeout" || to === "failed";
 		case "partial":
-			return to === "done" || to === "timeout";
+			return to === "done" || to === "timeout" || to === "failed";
 		case "done":
 		case "timeout":
 		case "failed":

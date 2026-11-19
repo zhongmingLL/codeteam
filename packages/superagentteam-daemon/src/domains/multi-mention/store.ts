@@ -245,6 +245,12 @@ export class MultiMentionStore {
 			throw new Error("multi_mention_invalid_timeout");
 		}
 		if (!input.question.trim()) throw new Error("multi_mention_question_empty");
+		if (Buffer.byteLength(input.question, "utf8") > 5 * 1024) {
+			throw new Error("multi_mention_question_too_large");
+		}
+		if (input.context && Buffer.byteLength(input.context, "utf8") > 5 * 1024) {
+			throw new Error("multi_mention_context_too_large");
+		}
 		const existing = this.getBySourceRecordId(input.sourceRecordId);
 		if (existing) {
 			return sameRequestIdentity(existing, input)
@@ -306,6 +312,7 @@ export class MultiMentionStore {
 	): StatusOutcome {
 		const current = this.get(requestId);
 		if (!current) return { outcome: "not_found", request: null };
+		// same_status (also covers non-terminal idempotent no-op).
 		if (current.status === to) return { outcome: "already_terminal", request: current };
 		if (MULTI_MENTION_TERMINAL_STATUSES.has(current.status)) {
 			return { outcome: "terminal_conflict", request: current };
@@ -380,14 +387,15 @@ export class MultiMentionStore {
 	}
 
 	recordTargetResponse(input: RecordTargetResponseInput): boolean {
-		return (
-			this.db
-				.prepare(
-					`UPDATE multi_mention_responses SET response_message_id = ?, response_state = ?
-					 WHERE request_id = ? AND target_agent_id = ?`,
-				)
-				.run(input.responseMessageId, input.responseState, input.requestId, input.targetAgentId).changes > 0
-		);
+		const changes = this.db
+			.prepare(
+				`UPDATE multi_mention_responses SET response_message_id = ?, response_state = ?
+				 WHERE request_id = ? AND target_agent_id = ? AND response_state <> 'terminal'`,
+			)
+			.run(input.responseMessageId, input.responseState, input.requestId, input.targetAgentId).changes;
+		if (changes > 0) return true;
+		// terminal is monotonic: a late/stale T4 must not downgrade it to missing.
+		return this.getResponse(input.requestId, input.targetAgentId)?.responseState === "terminal";
 	}
 
 	getResponse(requestId: string, targetAgentId: string): MultiMentionResponse | null {
@@ -419,6 +427,17 @@ export class MultiMentionStore {
 		if (input.callbackDepth < 1 || input.callbackDepth > MULTI_MENTION_MAX_CALLBACK_DEPTH) {
 			throw new Error("multi_mention_cascade");
 		}
+		const request = this.get(input.requestId);
+		if (!request) throw new Error("multi_mention_not_found");
+		if (request.threadId !== input.threadId || request.callbackToAgentId !== input.callbackToAgentId) {
+			throw new Error("multi_mention_callback_mismatch");
+		}
+		const aggregate = this.db
+			.prepare("SELECT thread_id, deleted_at FROM messages WHERE id = ?")
+			.get(input.aggregateMessageId) as { thread_id: string; deleted_at: number | null } | undefined;
+		if (!aggregate || aggregate.thread_id !== input.threadId || aggregate.deleted_at !== null) {
+			throw new Error("multi_mention_aggregate_invalid");
+		}
 		const existing = this.getCallback(input.requestId);
 		if (existing) return { outcome: "replayed", callback: existing };
 		this.db
@@ -449,6 +468,7 @@ export class MultiMentionStore {
 	updateCallback(requestId: string, input: UpdateCallbackInput): CallbackOutcome {
 		const current = this.getCallback(requestId);
 		if (!current) return { outcome: "not_found", callback: null };
+		// same_status (also covers non-terminal idempotent no-op).
 		if (current.status === input.status) return { outcome: "already_terminal", callback: current };
 		if (isCallbackTerminal(current.status)) {
 			return { outcome: "terminal_conflict", callback: current };
@@ -518,10 +538,7 @@ export class MultiMentionStore {
 		const request = this.get(requestId);
 		if (!request) return null;
 		const responses = this.listResponses(requestId);
-		const allFailed =
-			request.status === "failed" ||
-			(responses.length === request.targetAgentIds.length &&
-				responses.every((response) => response.status !== "received"));
+		const allFailed = responses.every((response) => response.status !== "received");
 		return { request, responses, allFailed, callback: this.getCallback(requestId) };
 	}
 }

@@ -162,6 +162,84 @@ describe("F018 R3 multi_mention store", () => {
 		expect(view.request.status).toBe("timeout");
 	});
 
+	it("allows partial→failed and derives allFailed purely from responses", () => {
+		const w = makeWorld();
+		w.store.createRequest(requestInput({ requestId: "r3", sourceRecordId: "src-mm-3" }));
+		w.store.setStatus("r3", "running", 100);
+		w.store.recordTargetOutcome({ requestId: "r3", targetAgentId: "a1", status: "received", now: 200 });
+		expect(w.store.get("r3")?.status).toBe("partial");
+		expect(w.store.setStatus("r3", "failed", 300).outcome).toBe("updated");
+		expect(w.store.statusView("r3")?.allFailed).toBe(false);
+
+		w.store.createRequest(requestInput({ requestId: "r4", sourceRecordId: "src-mm-4" }));
+		w.store.setStatus("r4", "running", 100);
+		w.store.recordTargetOutcome({ requestId: "r4", targetAgentId: "a1", status: "failed", now: 200 });
+		expect(w.store.setStatus("r4", "failed", 300).outcome).toBe("updated");
+		expect(w.store.statusView("r4")?.allFailed).toBe(true);
+	});
+
+	it("keeps terminal response_state monotonic against a late missing update", () => {
+		const w = makeWorld();
+		w.store.createRequest(requestInput());
+		w.store.setStatus("r1", "running", 100);
+		w.store.recordTargetOutcome({
+			requestId: "r1",
+			targetAgentId: "a1",
+			status: "received",
+			responseMessageId: "resp1",
+			responseState: "terminal",
+			now: 200,
+		});
+		expect(
+			w.store.recordTargetResponse({
+				requestId: "r1",
+				targetAgentId: "a1",
+				responseMessageId: null,
+				responseState: "missing",
+			}),
+		).toBe(true);
+		const response = w.store.getResponse("r1", "a1")!;
+		expect(response.responseState).toBe("terminal");
+		expect(response.responseMessageId).toBe("resp1");
+	});
+
+	it("rejects oversized question/context and mismatched callbacks", () => {
+		const w = makeWorld();
+		expect(() =>
+			w.store.createRequest(
+				requestInput({ question: "x".repeat(5 * 1024 + 1), sourceRecordId: "src-too-large" }),
+			),
+		).toThrow("multi_mention_question_too_large");
+		w.store.createRequest(requestInput({ sourceRecordId: "src-cb-check" }));
+		const aggregate = w.messages.append({
+			id: "agg-cb-check",
+			threadId: "t1",
+			from: { kind: "system", service: "multi_mention" },
+			content: "aggregate",
+			now: 2000,
+		});
+		expect(() =>
+			w.store.createCallback({
+				requestId: "r1",
+				threadId: "t2",
+				callbackToAgentId: "a3",
+				aggregateMessageId: aggregate.id,
+				callbackDepth: 1,
+				now: 2001,
+			}),
+		).toThrow("multi_mention_callback_mismatch");
+		expect(() =>
+			w.store.createCallback({
+				requestId: "r1",
+				threadId: "t1",
+				callbackToAgentId: "a3",
+				aggregateMessageId: "missing-aggregate",
+				callbackDepth: 1,
+				now: 2002,
+			}),
+		).toThrow("multi_mention_aggregate_invalid");
+	});
+
 	it("creates one callback per request and follows the callback lifecycle", () => {
 		const w = makeWorld();
 		w.store.createRequest(requestInput());
