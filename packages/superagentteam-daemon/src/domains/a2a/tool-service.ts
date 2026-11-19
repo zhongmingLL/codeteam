@@ -15,6 +15,16 @@ import type { ThreadStore } from "../thread/store.ts";
 
 const MAX_BODY_BYTES = 32 * 1024;
 
+/** 0007 §3.7: the v1 child credential owns this A2A tool allowlist. */
+export const A2A_CREDENTIAL_TOOL_NAMES = [
+	"post_message",
+	"cross_post_message",
+	"multi_mention",
+	"thread_context",
+] as const;
+
+export type A2ACredentialTool = (typeof A2A_CREDENTIAL_TOOL_NAMES)[number];
+
 export type A2AToolErrorCode =
 	| "invalid_input"
 	| "body_empty"
@@ -146,7 +156,7 @@ function hasLineStartOperatorMention(body: string): boolean {
 export function assertCredentialAllowsTool(
 	credentials: InvocationCredentialStore,
 	turnExecutionId: string,
-	tool: "post_message" | "cross_post_message" | "multi_mention",
+	tool: A2ACredentialTool,
 ): void {
 	const credential = credentials.getByTurn(turnExecutionId);
 	if (!credential) fail("credential_not_found");
