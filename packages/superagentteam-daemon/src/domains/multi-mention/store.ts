@@ -534,6 +534,21 @@ export class MultiMentionStore {
 		return rows.map(mapRequest);
 	}
 
+	/** Anti-cascade (§3.8): is this agent a target of an active multi_mention? */
+	isActiveTarget(agentId: string): boolean {
+		const row = this.db
+			.prepare(
+				`SELECT 1 AS hit
+				 FROM multi_mention_requests r, json_each(r.target_agent_ids_json) t
+				 WHERE r.status IN ('pending', 'running', 'partial') AND t.value = ?
+				 LIMIT 1`,
+			)
+			.get(agentId) as { hit: number } | undefined;
+		return row !== undefined;
+	}
+
+	/** Sources created by a multi_mention request are looked up by message id. */
+
 	statusView(requestId: string): MultiMentionStatusView | null {
 		const request = this.get(requestId);
 		if (!request) return null;

@@ -6,6 +6,7 @@ import type { InvocationCredentialStore } from "../auth/store.ts";
 import { aggregateParent } from "../invocation/aggregate.ts";
 import type { InvocationAttemptStore, InvocationRecordStore, TurnExecutionStore } from "../invocation/store.ts";
 import type { MessageStore } from "../message/store.ts";
+import type { MultiMentionStore } from "../multi-mention/store.ts";
 import type { ResponseDraftStore } from "../response/store.ts";
 import type { AgentSessionStore } from "../session/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
@@ -77,6 +78,7 @@ export interface QueueProcessorDeps {
 	threads: ThreadStore;
 	tracker: InvocationTracker;
 	dispatchTarget: DispatchTargetPort;
+	multiMention?: MultiMentionStore;
 	capacity?: CapacityChecker;
 	clock?: () => number;
 	owner?: string;
@@ -344,6 +346,20 @@ export class QueueProcessor {
 				// P2: a terminal/missing parent must not admit new attempts.
 				if (!this.deps.records.markRunning(invocationId, now)) {
 					throw new Error("phase_a_parent_not_runnable");
+				}
+				const multiMentionRequestId = entry.execution.multiMentionRequestId;
+				if (multiMentionRequestId) {
+					if (!this.deps.multiMention) throw new Error("phase_a_multi_mention_store_missing");
+					const transition = this.deps.multiMention.setStatus(multiMentionRequestId, "running", now, {
+						parentInvocationId: invocationId,
+					});
+					if (
+						transition.outcome === "not_found" ||
+						transition.outcome === "terminal_conflict" ||
+						transition.outcome === "invalid_transition"
+					) {
+						throw new Error("phase_a_multi_mention_state");
+					}
 				}
 				const prepared: Array<{ agentId: string; turnExecutionId: string; attemptId: string }> = [];
 				for (const target of startable) {
@@ -830,5 +846,68 @@ export class QueueProcessor {
 			{ threadId: entry.threadId, queueEntryId: entry.queueEntryId, invocationId },
 			this.now(),
 		);
+		this.recordMultiMentionOutcomes(entry, invocationId);
+	}
+
+	/**
+	 * R3-b: T3 records each target's first terminal outcome. The group status
+	 * moves running→partial here; done/timeout + aggregate/callback are R3-c.
+	 */
+	private recordMultiMentionOutcomes(entry: QueueEntry, invocationId: string): void {
+		const requestId = entry.execution.multiMentionRequestId;
+		if (!requestId || !this.deps.multiMention) return;
+		const parent = this.deps.records.get(invocationId);
+		if (!parent) return;
+		const now = this.now();
+		for (const agentId of parent.targetAgentIds) {
+			const latest = this.deps.attempts.getLatest(invocationId, agentId);
+			if (!latest) continue;
+			const child = latest.turnExecutionId ? this.deps.turns.get(latest.turnExecutionId) : null;
+			if (child) {
+				if (child.status === "completed") {
+					this.deps.multiMention.recordTargetOutcome({
+						requestId,
+						targetAgentId: agentId,
+						turnExecutionId: child.turnExecutionId,
+						responseMessageId: latest.responseMessageId,
+						status: "received",
+						responseState: "pending",
+						now,
+					});
+				} else if (
+					child.status === "failed" ||
+					child.status === "interrupted" ||
+					child.status === "canceled"
+				) {
+					this.deps.multiMention.recordTargetOutcome({
+						requestId,
+						targetAgentId: agentId,
+						turnExecutionId: child.turnExecutionId,
+						responseMessageId: latest.responseMessageId,
+						status: "failed",
+						responseState: "missing",
+						reason: child.terminalReason ?? child.status,
+						now,
+					});
+				}
+				continue;
+			}
+			if (
+				latest.deliveryState === "failed" ||
+				latest.deliveryState === "interrupted" ||
+				latest.deliveryState === "canceled"
+			) {
+				this.deps.multiMention.recordTargetOutcome({
+					requestId,
+					targetAgentId: agentId,
+					turnExecutionId: latest.turnExecutionId,
+					responseMessageId: latest.responseMessageId,
+					status: "failed",
+					responseState: "missing",
+					reason: latest.terminalReason ?? latest.deliveryState,
+					now,
+				});
+			}
+		}
 	}
 }

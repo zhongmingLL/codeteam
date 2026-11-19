@@ -34,7 +34,12 @@ export type A2AToolErrorCode =
 	| "pi_ext_tool_call_replay_missing"
 	| "queue_full"
 	| "queue_admission_conflict"
-	| "credential_not_found";
+	| "credential_not_found"
+	| "multi_mention_invalid_targets"
+	| "multi_mention_invalid_callback"
+	| "multi_mention_invalid_timeout"
+	| "multi_mention_cascade"
+	| "multi_mention_not_found";
 
 export class A2AToolError extends Error {
 	readonly code: A2AToolErrorCode;
@@ -113,7 +118,7 @@ function fail(code: A2AToolErrorCode, message?: string): never {
 	throw new A2AToolError(code, message);
 }
 
-function normalizeTargets(raw: readonly A2ATarget[] | undefined): A2ATarget[] {
+export function normalizeTargets(raw: readonly A2ATarget[] | undefined): A2ATarget[] {
 	if (raw === undefined) return [];
 	if (!Array.isArray(raw)) fail("invalid_input", "targets must be an array");
 	const seen = new Set<string>();
