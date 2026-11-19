@@ -106,6 +106,7 @@ export interface EnqueueInput {
 	targets: QueueTarget[];
 	priority?: "urgent" | "normal";
 	execution?: Partial<QueueExecution>;
+	piExtToolCallId?: string;
 }
 
 export type EnqueueOutcome =
@@ -186,6 +187,7 @@ export class QueueLedgerStore {
 			multiMentionCallbackDepth: input.execution?.multiMentionCallbackDepth ?? null,
 		};
 		const priority = input.priority ?? "normal";
+		if (input.piExtToolCallId) payload.piExtToolCallId = input.piExtToolCallId;
 		const fingerprint = computeAdmissionFingerprint({
 			owner: input.owner,
 			kind: input.kind,
@@ -223,7 +225,9 @@ export class QueueLedgerStore {
 				.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS next FROM invocation_queue WHERE thread_id = ?")
 				.get(input.threadId) as { next: number }
 		).next;
-		const queueEntryId = `queue:${input.sourceRecordId}:${attempt}`;
+		const queueEntryId = `queue:${Buffer.from(`${input.threadId}\u0000${input.sourceRecordId}\u0000${attempt}`)
+			.toString("base64url")
+			.slice(0, 40)}`;
 		this.db
 			.prepare(
 				`INSERT INTO invocation_queue (version, queue_entry_id, thread_id, source_record_id, message_id, origin_record_id, attempt, owner_json, kind, from_json, targets_json, payload_json, execution_json, priority, position, status, enqueued_at, updated_at)
@@ -310,7 +314,8 @@ export class QueueLedgerStore {
 			.get(threadId, queueEntryId) as QueueRow | undefined;
 		if (!row) return { outcome: "not_found" };
 		const entry = mapEntry(row);
-		const targetKeys = input.targetKeys.length > 0 ? input.targetKeys : entry.targets.map((t) => `agent:${t.id}`);
+		if (input.targetKeys.length === 0) throw new Error("claim_targets_empty");
+		const targetKeys = input.targetKeys;
 		const covered = targetKeys.every((key) => entry.targets.some((t) => `agent:${t.id}` === key));
 		if (!covered) throw new Error("claim_targets_not_pending");
 		const changes = this.db
@@ -340,6 +345,11 @@ export class QueueLedgerStore {
 			.get(threadId, queueEntryId) as QueueRow | undefined;
 		if (!row) return { outcome: "not_found" };
 		if (row.claim_id !== claimId) return { outcome: "state_changed" };
+		const claimKeys = JSON.parse(row.claimed_target_keys_json ?? "[]") as string[];
+		const outsideClaim = input.targetKeys.filter((key) => !claimKeys.includes(key));
+		if (outsideClaim.length > 0) {
+			throw new Error(`retire_targets_outside_claim: ${outsideClaim.join(",")}`);
+		}
 		const remaining = (JSON.parse(row.targets_json) as QueueTarget[]).filter(
 			(t) => !input.targetKeys.includes(`agent:${t.id}`),
 		);
@@ -393,6 +403,29 @@ export class QueueLedgerStore {
 				.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
 				.run(threadId, queueEntryId);
 			return { outcome: "deleted", entry: current };
+		}
+		if (row.status === "claimed" && row.claimed_target_keys_json) {
+			// Claimed partial withdrawal: shrink claimed keys to pending
+			// targets still covered; release the claim when nothing remains.
+			const remainingPendingKeys = remaining.map((t) => `agent:${t.id}`);
+			const stillCovered = (JSON.parse(row.claimed_target_keys_json) as string[]).filter((k) =>
+				remainingPendingKeys.includes(k),
+			);
+			if (stillCovered.length === 0) {
+				this.db
+					.prepare(
+						`UPDATE invocation_queue SET targets_json = ?, status = 'queued', claim_id = NULL, claim_owner = NULL, claimed_at = NULL, claim_expires_at = NULL, claimed_target_keys_json = NULL, updated_at = ?
+						 WHERE thread_id = ? AND queue_entry_id = ?`,
+					)
+					.run(JSON.stringify(remaining), now, threadId, queueEntryId);
+			} else {
+				this.db
+					.prepare(
+						"UPDATE invocation_queue SET targets_json = ?, claimed_target_keys_json = ?, updated_at = ? WHERE thread_id = ? AND queue_entry_id = ?",
+					)
+					.run(JSON.stringify(remaining), JSON.stringify(stillCovered), now, threadId, queueEntryId);
+			}
+			return { outcome: "updated", entry: this.get(threadId, queueEntryId)! };
 		}
 		this.db
 			.prepare(

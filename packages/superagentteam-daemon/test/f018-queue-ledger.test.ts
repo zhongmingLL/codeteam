@@ -48,7 +48,10 @@ function baseInput(overrides: Partial<EnqueueArgs> = {}): EnqueueArgs {
 describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 	it("enqueue is replay/conflict on live row AND on admission receipt after row deletion", () => {
 		const { db, queue } = makeQueue();
-		expect(queue.enqueue(baseInput(), 100).outcome).toBe("enqueued");
+		const eq1 = queue.enqueue(baseInput(), 100);
+		expect(eq1.outcome).toBe("enqueued");
+		const QID = eq1.outcome === "enqueued" ? eq1.entry.queueEntryId : "";
+		void QID;
 		expect(queue.enqueue(baseInput(), 110).outcome).toBe("replayed");
 		const drifted = queue.enqueue(baseInput({ content: "changed" }), 120);
 		expect(drifted.outcome).toBe("conflict");
@@ -87,9 +90,10 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 
 	it("claim is CAS: queued→claimed once, second claim state_changed; not-found for unknown", () => {
 		const { queue } = makeQueue();
-		queue.enqueue(baseInput(), 100);
+		const eq = queue.enqueue(baseInput(), 100);
+		const QID = eq.outcome === "enqueued" ? eq.entry.queueEntryId : "";
 		expect(
-			queue.claim("t1", "queue:s1:1", {
+			queue.claim("t1", QID, {
 				claimId: "c1",
 				owner: "p1",
 				ttlMs: 1000,
@@ -98,7 +102,7 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 			}).outcome,
 		).toBe("claimed");
 		expect(
-			queue.claim("t1", "queue:s1:1", {
+			queue.claim("t1", QID, {
 				claimId: "c2",
 				owner: "p2",
 				ttlMs: 1000,
@@ -110,9 +114,10 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 			queue.claim("t1", "queue:none:1", { claimId: "c3", owner: "p1", ttlMs: 1000, targetKeys: [] }).outcome,
 		).toBe("not_found");
 		// claim covering non-pending target rejected
-		queue.enqueue(baseInput({ sourceRecordId: "s2" }), 130);
+		const eq2 = queue.enqueue(baseInput({ sourceRecordId: "s2" }), 130);
+		const QID2 = eq2.outcome === "enqueued" ? eq2.entry.queueEntryId : "";
 		expect(() =>
-			queue.claim("t1", "queue:s2:1", {
+			queue.claim("t1", QID2, {
 				claimId: "c4",
 				owner: "p1",
 				ttlMs: 1000,
@@ -124,7 +129,7 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 
 	it("retireTargets shrinks and deletes on empty; wrong claim is state_changed", () => {
 		const { queue } = makeQueue();
-		queue.enqueue(
+		const eq = queue.enqueue(
 			baseInput({
 				targets: [
 					{ kind: "agent", id: "a1" },
@@ -133,32 +138,34 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 			}),
 			100,
 		);
-		queue.claim("t1", "queue:s1:1", {
+		const QID = eq.outcome === "enqueued" ? eq.entry.queueEntryId : "";
+		queue.claim("t1", QID, {
 			claimId: "c1",
 			owner: "p1",
 			ttlMs: 10_000,
 			targetKeys: ["agent:a1", "agent:a2"],
 			now: 110,
 		});
-		const updated = queue.retireTargets("t1", "queue:s1:1", "c1", { targetKeys: ["agent:a1"], now: 120 });
+		const updated = queue.retireTargets("t1", QID, "c1", { targetKeys: ["agent:a1"], now: 120 });
 		expect(updated.outcome).toBe("updated");
 		const updatedEntry = updated.outcome === "updated" ? updated.entry : null;
 		expect(updatedEntry?.targets.map((t) => t.id)).toEqual(["a2"]);
-		expect(queue.retireTargets("t1", "queue:s1:1", "cX", { targetKeys: ["agent:a2"] }).outcome).toBe("state_changed");
-		const deleted = queue.retireTargets("t1", "queue:s1:1", "c1", { targetKeys: ["agent:a2"], now: 130 });
+		expect(queue.retireTargets("t1", QID, "cX", { targetKeys: ["agent:a2"] }).outcome).toBe("state_changed");
+		const deleted = queue.retireTargets("t1", QID, "c1", { targetKeys: ["agent:a2"], now: 130 });
 		expect(deleted.outcome).toBe("deleted");
-		expect(queue.get("t1", "queue:s1:1")).toBeNull();
+		expect(queue.get("t1", QID)).toBeNull();
 	});
 
-	it("releaseClaim returns targets to queued; restoreExpiredClaims sweeps expired", () => {
+	it("releaseClaim returns target to queued; restoreExpiredClaims sweeps expired", () => {
 		const { queue } = makeQueue();
-		queue.enqueue(baseInput(), 100);
-		queue.claim("t1", "queue:s1:1", { claimId: "c1", owner: "p1", ttlMs: 50, targetKeys: ["agent:a1"], now: 110 });
-		expect(queue.releaseClaim("t1", "queue:s1:1", "c1", 120).outcome).toBe("updated");
-		expect(queue.get("t1", "queue:s1:1")?.status).toBe("queued");
-		queue.claim("t1", "queue:s1:1", { claimId: "c2", owner: "p1", ttlMs: 50, targetKeys: ["agent:a1"], now: 200 });
+		const eq = queue.enqueue(baseInput(), 100);
+		const QID = eq.outcome === "enqueued" ? eq.entry.queueEntryId : "";
+		queue.claim("t1", QID, { claimId: "c1", owner: "p1", ttlMs: 50, targetKeys: ["agent:a1"], now: 110 });
+		expect(queue.releaseClaim("t1", QID, "c1", 120).outcome).toBe("updated");
+		expect(queue.get("t1", QID)?.status).toBe("queued");
+		queue.claim("t1", QID, { claimId: "c2", owner: "p1", ttlMs: 50, targetKeys: ["agent:a1"], now: 200 });
 		expect(queue.restoreExpiredClaims(500)).toBe(1);
-		expect(queue.get("t1", "queue:s1:1")?.status).toBe("queued");
+		expect(queue.get("t1", QID)?.status).toBe("queued");
 		expect(queue.restoreExpiredClaims(600)).toBe(0);
 	});
 
@@ -172,9 +179,9 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 		expect(queue.countQueued("t1", "message_wake")).toBe(0);
 	});
 
-	it("withdrawTargets removes or deletes without a claim", () => {
+	it("retireTargets rejects keys outside the claim coverage", () => {
 		const { queue } = makeQueue();
-		queue.enqueue(
+		const eqA = queue.enqueue(
 			baseInput({
 				targets: [
 					{ kind: "agent", id: "a1" },
@@ -183,13 +190,71 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 			}),
 			100,
 		);
-		const partial = queue.withdrawTargets("t1", "queue:s1:1", {
+		const QID = eqA.outcome === "enqueued" ? eqA.entry.queueEntryId : "";
+		queue.claim("t1", QID, { claimId: "c1", owner: "p", ttlMs: 10_000, targetKeys: ["agent:a1"], now: 110 });
+		expect(() => queue.retireTargets("t1", QID, "c1", { targetKeys: ["agent:a2"], now: 120 })).toThrow(
+			/outside_claim/,
+		);
+		// covered key still works
+		expect(queue.retireTargets("t1", QID, "c1", { targetKeys: ["agent:a1"], now: 121 }).outcome).toBe("updated");
+	});
+
+	it("claimed partial withdrawal shrinks claimed keys; release when coverage empties", () => {
+		const { queue } = makeQueue();
+		const eqB = queue.enqueue(
+			baseInput({
+				targets: [
+					{ kind: "agent", id: "a1" },
+					{ kind: "agent", id: "a2" },
+				],
+			}),
+			100,
+		);
+		const QID = eqB.outcome === "enqueued" ? eqB.entry.queueEntryId : "";
+		queue.claim("t1", QID, {
+			claimId: "c1",
+			owner: "p",
+			ttlMs: 10_000,
+			targetKeys: ["agent:a1", "agent:a2"],
+			now: 110,
+		});
+		queue.withdrawTargets("t1", QID, { actorRef: "op", reason: "r", claimId: "c1", targetKeys: ["agent:a1"] });
+		const after = queue.get("t1", QID)!;
+		expect(after.claim?.targetKeys).toEqual(["agent:a2"]);
+		expect(after.targets.map((t) => t.id)).toEqual(["a2"]);
+		// withdraw the last covered target -> claim released, entry back to queued
+		queue.withdrawTargets("t1", QID, { actorRef: "op", reason: "r", claimId: "c1", targetKeys: ["agent:a2"] });
+		expect(queue.listQueued("t1")).toHaveLength(0); // no pending targets remain in listQueued
+	});
+
+	it("claim rejects empty targetKeys (must be a non-empty subset)", () => {
+		const { queue } = makeQueue();
+		const eq = queue.enqueue(baseInput(), 100);
+		const qid = eq.outcome === "enqueued" ? eq.entry.queueEntryId : "";
+		expect(() => queue.claim("t1", qid, { claimId: "c1", owner: "p", ttlMs: 1000, targetKeys: [] })).toThrow(
+			/claim_targets_empty/,
+		);
+	});
+
+	it("withdrawTargets removes or deletes without a claim", () => {
+		const { queue } = makeQueue();
+		const eqC = queue.enqueue(
+			baseInput({
+				targets: [
+					{ kind: "agent", id: "a1" },
+					{ kind: "agent", id: "a2" },
+				],
+			}),
+			100,
+		);
+		const QID = eqC.outcome === "enqueued" ? eqC.entry.queueEntryId : "";
+		const partial = queue.withdrawTargets("t1", QID, {
 			actorRef: "op",
 			reason: "r",
 			targetKeys: ["agent:a1"],
 		});
 		expect(partial.outcome).toBe("updated");
-		const full = queue.withdrawTargets("t1", "queue:s1:1", { actorRef: "op", reason: "r" });
+		const full = queue.withdrawTargets("t1", QID, { actorRef: "op", reason: "r" });
 		expect(full.outcome).toBe("deleted");
 	});
 });

@@ -135,15 +135,22 @@ export class InvocationRecordStore {
 		return row ? mapRecord(row) : null;
 	}
 
-	/** claim-time status flip; parent is running from claim on (G-02). */
-	markRunning(invocationId: string, now: number): boolean {
-		return (
-			this.db
-				.prepare(
-					"UPDATE invocation_records SET status = 'running', started_at = COALESCE(started_at, ?) WHERE invocation_id = ? AND status = 'queued'",
-				)
-				.run(now, invocationId).changes > 0
-		);
+	/**
+	 * Claim-time status flip (G-02). Idempotent on running (returns the
+	 * record); terminal or missing returns null so callers distinguish
+	 * replay from failure.
+	 */
+	markRunning(invocationId: string, now: number): InvocationRecord | null {
+		const current = this.get(invocationId);
+		if (!current) return null;
+		if (current.status === "running") return current;
+		if (current.status !== "queued") return null;
+		this.db
+			.prepare(
+				"UPDATE invocation_records SET status = 'running', started_at = COALESCE(started_at, ?) WHERE invocation_id = ? AND status = 'queued'",
+			)
+			.run(now, invocationId);
+		return this.get(invocationId);
 	}
 
 	/** Monotonic union of successful agents (§3.9 aggregate rule). */
@@ -161,6 +168,13 @@ export class InvocationRecordStore {
 		if (status !== "completed" && status !== "canceled" && !terminalReason) {
 			throw new Error("invocation_terminal_reason_required");
 		}
+		const current = this.get(invocationId);
+		if (!current) return false;
+		// §5.1: queued → canceled only; every other terminal comes from running.
+		if (current.status === "queued" && status !== "canceled") {
+			throw new Error(`invocation_illegal_terminal_transition: queued -> ${status}`);
+		}
+		if (current.status !== "queued" && current.status !== "running") return false;
 		return (
 			this.db
 				.prepare(
@@ -186,6 +200,10 @@ export class InvocationRecordStore {
 		const row = this.get(input.invocationId);
 		if (!row) throw new Error("invocation_not_found");
 		if (row.status !== "queued" && row.status !== "running") return false;
+		// §5.1: queued → canceled only; every other terminal comes from running.
+		if (row.status === "queued" && input.status !== "canceled") {
+			throw new Error(`invocation_illegal_terminal_transition: queued -> ${input.status}`);
+		}
 		const outside = input.successfulAgentIds.filter((a) => !row.targetAgentIds.includes(a));
 		if (outside.length > 0) throw new Error("invocation_successful_outside_targets");
 		if (input.status !== "completed" && input.status !== "canceled" && !input.terminalReason) {
@@ -289,6 +307,18 @@ export class TurnExecutionStore {
 	 * replayed 不授予第二次 provider lease；identity 不同 = conflict。
 	 */
 	createRunning(input: CreateTurnExecutionInput): CreateTurnExecutionResult {
+		// Ownership (0011 §11): userId must equal the parent/thread owner and
+		// threadId must equal the parent's thread; agentId must be a target.
+		const parent = this.db
+			.prepare("SELECT thread_id, user_id, target_agent_ids_json FROM invocation_records WHERE invocation_id = ?")
+			.get(input.parentInvocationId) as
+			| { thread_id: string; user_id: string; target_agent_ids_json: string }
+			| undefined;
+		if (!parent) throw new Error("turn_parent_not_found");
+		if (parent.thread_id !== input.threadId) throw new Error("turn_thread_not_parent_thread");
+		if (parent.user_id !== input.userId) throw new Error("turn_user_not_parent_owner");
+		const parentTargets = JSON.parse(parent.target_agent_ids_json) as string[];
+		if (!parentTargets.includes(input.agentId)) throw new Error("turn_agent_not_parent_target");
 		const existing = this.get(input.turnExecutionId);
 		if (existing) {
 			const sameIdentity =
@@ -495,6 +525,15 @@ export class InvocationAttemptStore {
 		outcome: "created" | "replayed" | "conflict";
 		record: InvocationAttempt;
 	} {
+		// Parent alignment (0007 §4.3.1): thread and target must match the
+		// parent record's admission snapshot.
+		const parent = this.db
+			.prepare("SELECT thread_id, target_agent_ids_json FROM invocation_records WHERE invocation_id = ?")
+			.get(input.parentInvocationId) as { thread_id: string; target_agent_ids_json: string } | undefined;
+		if (!parent) throw new Error("attempt_parent_not_found");
+		if (parent.thread_id !== input.threadId) throw new Error("attempt_thread_not_parent_thread");
+		const parentTargets = JSON.parse(parent.target_agent_ids_json) as string[];
+		if (!parentTargets.includes(input.targetAgentId)) throw new Error("attempt_target_not_parent_target");
 		const existing = this.db
 			.prepare(
 				"SELECT * FROM invocation_attempts WHERE parent_invocation_id = ? AND target_agent_id = ? AND attempt = ?",
@@ -561,12 +600,21 @@ export class InvocationAttemptStore {
 
 	/** queued→starting only; Phase A reservation (0016 T1a). */
 	markStarting(attemptId: string, input: { agentSessionId: string; now: number }): InvocationAttempt | null {
-		const changes = this.db
+		const current = this.get(attemptId);
+		if (!current) return null;
+		if (current.deliveryState === "starting") {
+			if (current.agentSessionId !== input.agentSessionId) {
+				throw new Error("attempt_starting_session_conflict");
+			}
+			return current;
+		}
+		if (current.deliveryState !== "queued") return current;
+		this.db
 			.prepare(
 				"UPDATE invocation_attempts SET delivery_state = 'starting', agent_session_id = ?, started_at = ? WHERE attempt_id = ? AND delivery_state = 'queued'",
 			)
-			.run(input.agentSessionId, input.now, attemptId).changes;
-		return changes > 0 ? this.get(attemptId) : (this.get(attemptId) ?? null);
+			.run(input.agentSessionId, input.now, attemptId);
+		return this.get(attemptId);
 	}
 
 	/** starting→appended; writes execution binding snapshot (§4.3.1). */
@@ -586,10 +634,15 @@ export class InvocationAttemptStore {
 		const current = this.get(attemptId);
 		if (!current) return null;
 		if (current.deliveryState === "appended") {
-			// Idempotent re-bind: same values no-op, different fail closed.
+			// Idempotent re-bind: FULL binding identity must match; any drift
+			// (session/provider/model/family too) fails closed.
 			if (
 				current.turnExecutionId !== input.turnExecutionId ||
-				current.responseMessageId !== input.responseMessageId
+				current.responseMessageId !== input.responseMessageId ||
+				current.agentSessionId !== input.agentSessionId ||
+				current.provider !== input.provider ||
+				current.model !== input.model ||
+				current.modelFamily !== input.modelFamily
 			) {
 				throw new Error("attempt_rebind_conflict");
 			}
@@ -677,9 +730,7 @@ export class InvocationAttemptStore {
 		if (current.turnExecutionId !== input.turnExecutionId) return { outcome: "terminal_conflict" };
 		const child = this.turns.get(input.turnExecutionId);
 		if (!child) throw new Error("attempt_child_not_found");
-		if (child.status !== input.childStatus) {
-			throw new Error(`attempt_child_status_mismatch: ${child.status} != ${input.childStatus}`);
-		}
+		if (child.status !== input.childStatus) return { outcome: "terminal_conflict" };
 		if (current.deliveryState !== "appended") {
 			const sameTerminal =
 				(current.deliveryState === "handled" && input.childStatus === "completed") ||

@@ -618,7 +618,7 @@ interface DispatchRef {
   `delivery_failure` 消息 + `TurnExecution`。
 - queue live row 保留到 attempt 终态；读模型从 `StoredMessage.lifecycle` +
   `invocation_attempts` + `turn_executions` 还原“发给了谁、谁处理、对应哪条 response”；
-  `queue_admissions` 只负责 admission 幂等。
+  `queue_admissions`（`(thread_id, source_record_id, attempt)` receipt，R-01）只负责 admission 幂等。
 - v1 不做 Clowder 的 `appendAcceptance` / `inputRead` / `coveredMessageIds`；
   这些属于 append acceptance / carrier 审计，v2 再加。
 

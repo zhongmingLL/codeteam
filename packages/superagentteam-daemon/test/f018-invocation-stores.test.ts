@@ -117,8 +117,9 @@ describe("InvocationRecordStore (0007 §3.2)", () => {
 				now: 30,
 			}),
 		).toThrow(/owner/);
-		expect(records.markRunning("inv1", 30)).toBe(true);
-		expect(records.markRunning("inv1", 40)).toBe(false);
+		expect(records.markRunning("inv1", 30)?.status).toBe("running");
+		expect(records.markRunning("inv1", 40)?.status).toBe("running"); // idempotent replay
+		expect(records.markRunning("inv1", 40)?.startedAt).toBe(30); // startedAt stable
 		expect(records.get("inv1")?.status).toBe("running");
 	});
 
@@ -193,19 +194,132 @@ describe("TurnExecutionStore (0007 §3.6)", () => {
 	});
 });
 
-describe("InvocationAttemptStore (0007 §4.3.1 / 0016 §4)", () => {
-	function seedAttempt(attempts: InvocationAttemptStore, attemptId = "at1", target = "a1", n = 1) {
-		return attempts.appendQueued({
-			attemptId,
-			parentInvocationId: "inv1",
-			queueEntryId: "q1",
-			threadId: "t1",
-			targetAgentId: target,
-			attempt: n,
-			now: 10,
-		});
-	}
+function seedAttempt(attempts: InvocationAttemptStore, attemptId = "at1", target = "a1", n = 1) {
+	return attempts.appendQueued({
+		attemptId,
+		parentInvocationId: "inv1",
+		queueEntryId: "q1",
+		threadId: "t1",
+		targetAgentId: target,
+		attempt: n,
+		now: 10,
+	});
+}
 
+describe("review round-2 fail-closed negatives", () => {
+	it("markStarting rejects a different session on an already-starting attempt", () => {
+		const { db, records, attempts } = makeStores();
+		seedThread(db);
+		seedParent(records);
+		seedAttempt(attempts);
+		attempts.markStarting("at1", { agentSessionId: "s1", now: 20 });
+		expect(() => attempts.markStarting("at1", { agentSessionId: "s2", now: 21 })).toThrow(/session_conflict/);
+		expect(attempts.markStarting("at1", { agentSessionId: "s1", now: 22 })?.agentSessionId).toBe("s1");
+	});
+
+	it("bindAppended rejects full-identity drift (session/provider)", () => {
+		const { db, records, turns, attempts } = makeStores();
+		seedThread(db);
+		seedParent(records);
+		seedAttempt(attempts);
+		seedTurn(turns, "te1", "a1");
+		seedMessage(db, "rm1");
+		attempts.markStarting("at1", { agentSessionId: "s1", now: 20 });
+		attempts.bindAppended("at1", {
+			turnExecutionId: "te1",
+			agentSessionId: "s1",
+			workerId: null,
+			provider: "p1",
+			model: "m1",
+			modelFamily: "f1",
+			responseMessageId: "rm1",
+			now: 30,
+		});
+		expect(() =>
+			attempts.bindAppended("at1", {
+				turnExecutionId: "te1",
+				agentSessionId: "SOTHER",
+				workerId: null,
+				provider: "p1",
+				model: "m1",
+				modelFamily: "f1",
+				responseMessageId: "rm1",
+				now: 31,
+			}),
+		).toThrow(/rebind/);
+		expect(() =>
+			attempts.bindAppended("at1", {
+				turnExecutionId: "te1",
+				agentSessionId: "s1",
+				workerId: null,
+				provider: "p2",
+				model: "m1",
+				modelFamily: "f1",
+				responseMessageId: "rm1",
+				now: 32,
+			}),
+		).toThrow(/rebind/);
+	});
+
+	it("createRunning rejects wrong thread/user/agent vs parent", () => {
+		const { db, records, turns } = makeStores();
+		seedThread(db);
+		db.db
+			.prepare(
+				"INSERT INTO threads (id, project_path, created_by, last_active_at, created_at, updated_at) VALUES ('t2', '/p', 'u1', 1, 1, 1)",
+			)
+			.run();
+		seedParent(records);
+		const base = {
+			turnExecutionId: "te1",
+			parentInvocationId: "inv1",
+			userId: "u1",
+			agentId: "a1",
+			executionKind: "ordinary" as const,
+			causal: { triggerMessageId: "m1" },
+			startedAt: 100,
+		};
+		expect(() => turns.createRunning({ ...base, threadId: "t2" })).toThrow(/thread/);
+		expect(() => turns.createRunning({ ...base, threadId: "t1", userId: "attacker" })).toThrow(/owner/);
+		expect(() => turns.createRunning({ ...base, threadId: "t1", agentId: "a9" })).toThrow(/target/);
+	});
+
+	it("appendQueued rejects target drift vs parent", () => {
+		const { db, records, attempts } = makeStores();
+		seedThread(db);
+		seedParent(records);
+		expect(() =>
+			attempts.appendQueued({
+				attemptId: "atX",
+				parentInvocationId: "inv1",
+				queueEntryId: "q1",
+				threadId: "t1",
+				targetAgentId: "a9",
+				attempt: 1,
+				now: 10,
+			}),
+		).toThrow(/target/);
+	});
+
+	it("setTerminal rejects queued→failed; aggregate likewise (§5.1)", () => {
+		const { db, records } = makeStores();
+		seedThread(db);
+		seedParent(records);
+		expect(() => records.setTerminal("inv1", "failed", "boom", 50)).toThrow(/illegal/);
+		expect(() =>
+			records.applyTerminalAggregate({
+				invocationId: "inv1",
+				status: "failed",
+				successfulAgentIds: [],
+				terminalReason: "boom",
+				now: 51,
+			}),
+		).toThrow(/illegal/);
+		expect(records.setTerminal("inv1", "canceled", "operator", 52)).toBe(true);
+	});
+});
+
+describe("InvocationAttemptStore (0007 §4.3.1 / 0016 §4)", () => {
 	it("append-only ledger: (parent,target,attempt) idempotent; different queue = conflict", () => {
 		const { db, records, attempts } = makeStores();
 		seedThread(db);
