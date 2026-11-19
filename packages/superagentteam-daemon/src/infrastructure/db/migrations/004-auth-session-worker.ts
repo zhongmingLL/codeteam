@@ -18,7 +18,8 @@ export const AUTH_SESSION_WORKER_STATEMENTS = [
 		thread_id TEXT NOT NULL,
 		agent_id TEXT NOT NULL,
 		user_id TEXT NOT NULL,
-		seq INTEGER NOT NULL DEFAULT 1 CHECK (seq >= 1),
+		seq INTEGER NOT NULL DEFAULT 0 CHECK (seq >= 0),
+		last_counted_turn_execution_id TEXT,
 		status TEXT NOT NULL CHECK (status IN ('active', 'sealing', 'sealed')),
 		pi_session_id TEXT,
 		pi_session_file TEXT,
@@ -34,7 +35,7 @@ export const AUTH_SESSION_WORKER_STATEMENTS = [
 	) STRICT`,
 	`CREATE UNIQUE INDEX agent_sessions_one_active
 		ON agent_sessions(thread_id, agent_id) WHERE status = 'active'`,
-	`CREATE INDEX agent_sessions_pair_seq ON agent_sessions(thread_id, agent_id, seq)`,
+	`CREATE UNIQUE INDEX agent_sessions_pair_seq ON agent_sessions(thread_id, agent_id, seq)`,
 
 	// workers (0007 §4.6): ephemeral execution carrier, capacity=1.
 	`CREATE TABLE workers (
@@ -199,12 +200,83 @@ export const ATTEMPTS_FK_REBUILD_STATEMENTS = [
 		WHERE delivery_state IN ('starting', 'appended') AND agent_session_id IS NOT NULL`,
 ] as const;
 
+/** Rebuild invocation_attempts back to the 003 (no-session/worker-FK) shape. */
+const ATTEMPTS_FK_ROLLBACK_STATEMENTS = [
+	`CREATE TABLE invocation_attempts_nofk (
+		attempt_id TEXT PRIMARY KEY,
+		parent_invocation_id TEXT NOT NULL,
+		queue_entry_id TEXT NOT NULL,
+		thread_id TEXT NOT NULL,
+		target_agent_id TEXT NOT NULL,
+		attempt INTEGER NOT NULL CHECK (attempt >= 1),
+		turn_execution_id TEXT UNIQUE,
+		delivery_state TEXT NOT NULL CHECK (delivery_state IN (
+			'queued', 'starting', 'appended', 'handled',
+			'failed', 'interrupted', 'canceled'
+		)),
+		terminal_reason TEXT,
+		agent_session_id TEXT,
+		worker_id TEXT,
+		provider TEXT,
+		model TEXT,
+		model_family TEXT,
+		usage_json TEXT
+			CHECK (usage_json IS NULL OR (json_valid(usage_json) AND json_type(usage_json) = 'object')),
+		settlement TEXT
+			CHECK (settlement IS NULL OR settlement IN ('streaming', 'response_pending', 'settled')),
+		response_message_id TEXT UNIQUE,
+		delivery_boundary_seq INTEGER
+			CHECK (delivery_boundary_seq IS NULL OR delivery_boundary_seq >= 0),
+		prompt_delivered_at INTEGER,
+		created_at INTEGER NOT NULL,
+		started_at INTEGER,
+		ended_at INTEGER,
+		CHECK (delivery_state IN ('queued', 'starting', 'appended') OR ended_at IS NOT NULL),
+		CHECK (delivery_state IN ('queued', 'starting') OR started_at IS NOT NULL
+			OR (delivery_state IN ('failed', 'canceled') AND turn_execution_id IS NULL)),
+		CHECK (delivery_state NOT IN ('appended', 'handled') OR turn_execution_id IS NOT NULL),
+		CHECK (delivery_state NOT IN ('failed', 'interrupted', 'canceled') OR terminal_reason IS NOT NULL),
+		CHECK (turn_execution_id IS NOT NULL OR delivery_state IN ('queued', 'starting', 'failed', 'canceled')),
+		CHECK (settlement IS NULL OR response_message_id IS NOT NULL),
+		CHECK (settlement IS NULL OR delivery_state NOT IN ('queued', 'starting')),
+		CHECK (settlement <> 'streaming' OR delivery_state = 'appended'),
+		CHECK (settlement <> 'response_pending' OR delivery_state NOT IN ('queued', 'starting', 'appended')),
+		CHECK (settlement <> 'settled' OR delivery_state NOT IN ('queued', 'starting', 'appended')),
+		CHECK (response_message_id IS NULL OR delivery_state NOT IN ('queued', 'starting')),
+		CHECK (delivery_boundary_seq IS NULL OR delivery_state NOT IN ('queued', 'starting')),
+		CHECK (prompt_delivered_at IS NULL OR delivery_boundary_seq IS NOT NULL),
+		CHECK (prompt_delivered_at IS NULL OR worker_id IS NOT NULL),
+		CHECK (prompt_delivered_at IS NULL OR prompt_delivered_at >= started_at),
+		CHECK (delivery_state <> 'handled' OR prompt_delivered_at IS NOT NULL),
+		UNIQUE (parent_invocation_id, target_agent_id, attempt),
+		FOREIGN KEY (parent_invocation_id)
+			REFERENCES invocation_records(invocation_id) ON DELETE RESTRICT,
+		FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
+		FOREIGN KEY (turn_execution_id)
+			REFERENCES turn_executions(turn_execution_id) ON DELETE SET NULL,
+		FOREIGN KEY (response_message_id) REFERENCES messages(id) ON DELETE RESTRICT
+	) STRICT`,
+	`INSERT INTO invocation_attempts_nofk SELECT * FROM invocation_attempts`,
+	`DROP TABLE invocation_attempts`,
+	`ALTER TABLE invocation_attempts_nofk RENAME TO invocation_attempts`,
+	`CREATE INDEX invocation_attempts_latest
+		ON invocation_attempts(parent_invocation_id, target_agent_id, attempt DESC)`,
+	`CREATE INDEX invocation_attempts_delivery_state
+		ON invocation_attempts(delivery_state, started_at)`,
+	`CREATE INDEX invocation_attempts_settlement
+		ON invocation_attempts(settlement) WHERE settlement = 'response_pending'`,
+	`CREATE UNIQUE INDEX invocation_attempts_one_active_per_session
+		ON invocation_attempts(agent_session_id)
+		WHERE delivery_state IN ('starting', 'appended') AND agent_session_id IS NOT NULL`,
+] as const;
+
 export const AUTH_SESSION_WORKER_DOWNS = [
 	`DROP TABLE IF EXISTS invocation_credentials`,
 	`DROP TABLE IF EXISTS response_drafts`,
 	`DROP TABLE IF EXISTS worker_bindings`,
 	`DROP TABLE IF EXISTS workers`,
 	`DROP TABLE IF EXISTS agent_sessions`,
+	...ATTEMPTS_FK_ROLLBACK_STATEMENTS,
 ] as const;
 
 export const authSessionWorkerMigration: ControlMigration = {

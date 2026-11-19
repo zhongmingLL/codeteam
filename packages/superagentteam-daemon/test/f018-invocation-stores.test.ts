@@ -38,7 +38,7 @@ function seedThread(db: F018Database): void {
 	db.db
 		.prepare(
 			`INSERT INTO agent_sessions (id, thread_id, agent_id, user_id, seq, status, working_directory, created_at, updated_at)
-			 VALUES ('s', 't1', 'a1', 'u1', 1, 'active', '/p', 1, 1)`,
+			 VALUES ('s', 't1', 'a1', 'u1', 0, 'active', '/p', 1, 1)`,
 		)
 		.run();
 	db.db

@@ -93,13 +93,27 @@ export class InvocationCredentialStore {
 		if (turn.user_id !== input.userId) throw new Error("credential_user_mismatch");
 		if (turn.agent_id !== input.agentId) throw new Error("credential_agent_mismatch");
 		if (turn.parent_invocation_id !== input.parentInvocationId) throw new Error("credential_parent_mismatch");
+		const session = this.db
+			.prepare("SELECT thread_id, agent_id, user_id, status FROM agent_sessions WHERE id = ?")
+			.get(input.agentSessionId) as
+			| { thread_id: string; agent_id: string; user_id: string; status: string }
+			| undefined;
+		if (!session) throw new Error("credential_session_not_found");
+		if (session.status !== "active") throw new Error("credential_session_not_active");
+		if (session.thread_id !== input.threadId) throw new Error("credential_session_thread_mismatch");
+		if (session.agent_id !== input.agentId) throw new Error("credential_session_agent_mismatch");
+		if (session.user_id !== input.userId) throw new Error("credential_session_user_mismatch");
 		const existing = this.db
 			.prepare("SELECT * FROM invocation_credentials WHERE turn_execution_id = ?")
 			.get(input.turnExecutionId) as CredentialRow | undefined;
 		if (existing) {
 			// Deterministic re-creation returns the stored credential; the secret
 			// cannot be re-derived (hash-only), so callers must treat replay as
-			// "already minted" and not re-issue the token.
+			// "already minted" and not re-issue the token. A replay with
+			// different allowedTools is a conflicting intent, not a replay.
+			const existingTools = JSON.parse(existing.allowed_tools_json) as string[];
+			const sameTools = existingTools.join("\u0000") === [...input.allowedTools].join("\u0000");
+			if (!sameTools) throw new Error("credential_allowed_tools_conflict");
 			return { credential: mapCredential(existing), token: "" };
 		}
 		const credentialId = `cred:${input.turnExecutionId}`;
@@ -174,6 +188,7 @@ export class InvocationCredentialStore {
 	reserveToolCallClaim(
 		turnExecutionId: string,
 		input: { piExtToolCallId: string; intentHash: string; messageId: string; queueEntryId: string | null },
+		now = Date.now(),
 	): { outcome: "reserved" | "replayed" | "conflict" } {
 		const row = this.db
 			.prepare("SELECT tool_call_claims_json, state FROM invocation_credentials WHERE turn_execution_id = ?")
@@ -195,9 +210,9 @@ export class InvocationCredentialStore {
 		};
 		this.db
 			.prepare(
-				"UPDATE invocation_credentials SET tool_call_claims_json = ?, updated_at = ? WHERE turn_execution_id = ?",
+				"UPDATE invocation_credentials SET tool_call_claims_json = ?, updated_at = ? WHERE turn_execution_id = ? AND state = 'active'",
 			)
-			.run(JSON.stringify(claims), Date.now(), turnExecutionId);
+			.run(JSON.stringify(claims), now, turnExecutionId);
 		return { outcome: "reserved" };
 	}
 
@@ -216,6 +231,40 @@ export class InvocationCredentialStore {
 		}
 		if (disposition === "replaced" && !options.replacedByTurnExecutionId) {
 			throw new Error("credential_replaced_requires_successor");
+		}
+		// Canonical-first (0007 §3.7 / 0016): the child TurnExecution must
+		// already be terminal with the matching disposition; credential only
+		// projects child truth. A running child cannot terminalize anything.
+		const child = this.db
+			.prepare("SELECT status FROM turn_executions WHERE turn_execution_id = ?")
+			.get(turnExecutionId) as { status: string } | undefined;
+		if (!child) return { outcome: "not_found" };
+		if (child.status === "running") {
+			throw new Error("credential_child_not_terminal");
+		}
+		const expected: Record<string, Exclude<InvocationCredential["disposition"], null>> = {
+			completed: "completed",
+			failed: "failed",
+			interrupted: "interrupted",
+			canceled: "canceled",
+		};
+		const childDisposition = expected[child.status];
+		if (childDisposition !== disposition) {
+			throw new Error(`credential_disposition_mismatch: child ${child.status} != ${disposition}`);
+		}
+		// revoked has no child-side signal (owner action) and replaced needs the
+		// successor to share parent/thread.
+		if (disposition === "replaced" && options.replacedByTurnExecutionId) {
+			const successor = this.db
+				.prepare("SELECT parent_invocation_id, thread_id FROM turn_executions WHERE turn_execution_id = ?")
+				.get(options.replacedByTurnExecutionId) as { parent_invocation_id: string; thread_id: string } | undefined;
+			if (!successor) throw new Error("credential_successor_not_found");
+			if (successor.parent_invocation_id !== row.parent_invocation_id) {
+				throw new Error("credential_successor_parent_mismatch");
+			}
+			if (successor.thread_id !== row.thread_id) {
+				throw new Error("credential_successor_thread_mismatch");
+			}
 		}
 		this.db
 			.prepare(

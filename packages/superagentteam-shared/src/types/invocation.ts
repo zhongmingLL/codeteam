@@ -185,7 +185,10 @@ export interface AgentSession {
 	threadId: string;
 	agentId: string;
 	userId: string;
+	/** 0-based per-pair sequence; unique with (threadId, agentId). */
 	seq: number;
+	/** Durable messageCount dedup: last turn that already counted. */
+	lastCountedTurnExecutionId: string | null;
 	status: "active" | "sealing" | "sealed";
 	piSessionId: string | null;
 	piSessionFile: string | null;

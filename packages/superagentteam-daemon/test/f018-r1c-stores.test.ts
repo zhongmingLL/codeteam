@@ -122,21 +122,49 @@ describe("AgentSessionStore (0010)", () => {
 		expect(next.id).not.toBe(first.id);
 	});
 
-	it("messageCount: first visible output 0→1; uncounted done +1; counted done no-op", () => {
+	it("messageCount: per-turn dedup counting (0010)", () => {
 		const { sessions } = makeWorld();
 		const s = sessions.ensureActive({ threadId: "t1", agentId: "a1", userId: "u1", workingDirectory: "/p", now: 1 });
-		sessions.recordFirstVisibleOutput(s.id);
+		sessions.recordUserVisibleOutput(s.id, "te1");
 		expect(sessions.get(s.id)?.messageCount).toBe(1);
-		sessions.recordCompletedTurn(s.id, true);
+		sessions.recordCompletedTurn(s.id, "te1"); // same turn done — no double count
 		expect(sessions.get(s.id)?.messageCount).toBe(1);
-		sessions.recordCompletedTurn(s.id, false);
+		sessions.recordCompletedTurn(s.id, "te2"); // new turn without visible output
 		expect(sessions.get(s.id)?.messageCount).toBe(2);
 	});
 });
 
 describe("ResponseDraftStore (0017)", () => {
+	function seedDraftChain(world: ReturnType<typeof makeWorld>) {
+		const seeded = seedTurn(world);
+		seedDraft(world);
+		return seeded;
+	}
+
 	function seedDraft(world: ReturnType<typeof makeWorld>) {
 		const seeded = seedTurn(world);
+		world.db.db
+			.prepare(
+				`INSERT OR IGNORE INTO workers (id, project_path, account_ref, provider, model, state, heartbeat_at, lease_expires_at, created_at, updated_at)
+				 VALUES ('wd', '/p', 'main', 'p', 'm', 'online', 1, 999999, 1, 1)`,
+			)
+			.run();
+		world.db.db
+			.prepare(
+				"INSERT OR IGNORE INTO messages (id, thread_id, seq, author_kind, author_id, body_md, created_at, updated_at) VALUES ('rm-d', 't1', 1, 'agent', 'a1', '', 1, 1)",
+			)
+			.run();
+		world.attempts.markStarting(seeded.attemptId, { agentSessionId: seeded.sessionId, now: 20 });
+		world.attempts.bindAppended(seeded.attemptId, {
+			turnExecutionId: seeded.turnId,
+			agentSessionId: seeded.sessionId,
+			workerId: null,
+			provider: "p",
+			model: "m",
+			modelFamily: "f",
+			responseMessageId: "rm-d",
+			now: 30,
+		});
 		return world.drafts.create({
 			attemptId: seeded.attemptId,
 			turnExecutionId: "te1",
@@ -168,24 +196,12 @@ describe("ResponseDraftStore (0017)", () => {
 				createdAt: 2,
 				updatedAt: 2,
 			}),
-		).toThrow(/identity/);
+		).toThrow(/not_found|mismatch/);
 	});
 
 	it("upsert is a full snapshot; late flush after delete returns null, does not recreate", () => {
 		const world = makeWorld();
-		const seeded = seedTurn(world);
-		world.drafts.create({
-			attemptId: seeded.attemptId,
-			turnExecutionId: seeded.turnId,
-			parentInvocationId: "inv1",
-			threadId: "t1",
-			agentId: "a1",
-			content: "",
-			toolEvents: [],
-			thinking: null,
-			createdAt: 1,
-			updatedAt: 1,
-		});
+		const seeded = seedDraftChain(world);
 		const upserted = world.drafts.upsert({
 			attemptId: seeded.attemptId,
 			turnExecutionId: seeded.turnId,
@@ -305,6 +321,8 @@ describe("InvocationCredentialStore (0007 §4.4)", () => {
 			now: 10,
 		});
 		expect(() => creds.commitTerminal("te1", "replaced")).toThrow(/successor/);
+		expect(() => creds.commitTerminal("te1", "completed")).toThrow(/child_not_terminal/);
+		turns.transitionTerminal("te1", { status: "completed", endedAt: 200 });
 		expect(creds.commitTerminal("te1", "completed").outcome).toBe("terminalized");
 		expect(creds.commitTerminal("te1", "completed").outcome).toBe("already_terminal");
 		expect(creds.commitTerminal("te1", "failed").outcome).toBe("conflict");

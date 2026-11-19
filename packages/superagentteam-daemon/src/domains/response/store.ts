@@ -47,6 +47,25 @@ export class ResponseDraftStore {
 	 * the existing draft.
 	 */
 	create(draft: DraftRecord): DraftRecord {
+		// Alignment: the attempt row must actually bind this turn + same
+		// parent/thread/target, so a draft cannot smuggle mismatched keys.
+		const attempt = this.db
+			.prepare(
+				"SELECT turn_execution_id, parent_invocation_id, thread_id, target_agent_id FROM invocation_attempts WHERE attempt_id = ?",
+			)
+			.get(draft.attemptId) as
+			| {
+					turn_execution_id: string | null;
+					parent_invocation_id: string;
+					thread_id: string;
+					target_agent_id: string;
+			  }
+			| undefined;
+		if (!attempt) throw new Error("draft_attempt_not_found");
+		if (attempt.turn_execution_id !== draft.turnExecutionId) throw new Error("draft_attempt_turn_mismatch");
+		if (attempt.parent_invocation_id !== draft.parentInvocationId) throw new Error("draft_attempt_parent_mismatch");
+		if (attempt.thread_id !== draft.threadId) throw new Error("draft_attempt_thread_mismatch");
+		if (attempt.target_agent_id !== draft.agentId) throw new Error("draft_attempt_agent_mismatch");
 		const existing = this.getByTurn(draft.turnExecutionId);
 		if (existing) {
 			const sameIdentity =
@@ -82,16 +101,18 @@ export class ResponseDraftStore {
 	 * T2/T4 → returns null and does NOT recreate (0017 §5.3).
 	 */
 	upsert(draft: DraftRecord): DraftRecord | null {
+		// 0017 §4: identity is turnExecutionId; the attempt key may not drift.
 		const changes = this.db
 			.prepare(
 				`UPDATE response_drafts SET content = ?, tool_events_json = ?, thinking = ?, updated_at = ?
-				 WHERE attempt_id = ?`,
+				 WHERE turn_execution_id = ? AND attempt_id = ?`,
 			)
 			.run(
 				draft.content,
 				JSON.stringify(draft.toolEvents),
 				draft.thinking,
 				draft.updatedAt,
+				draft.turnExecutionId,
 				draft.attemptId,
 			).changes;
 		return changes > 0 ? this.getByTurn(draft.turnExecutionId) : null;
@@ -130,7 +151,15 @@ export class ResponseDraftStore {
 				 LEFT JOIN messages r ON r.id = (
 					 SELECT response_message_id FROM invocation_attempts WHERE turn_execution_id = d.turn_execution_id
 				 )
-				 WHERE (t.status IS NOT 'running' OR t.status IS NULL OR r.lifecycle_json IS NOT NULL)
+				 WHERE (
+					t.status IS NULL
+					OR t.status <> 'running'
+					OR (
+						r.lifecycle_json IS NOT NULL
+						AND json_extract(r.lifecycle_json, '$.kind') = 'response'
+						AND json_extract(r.lifecycle_json, '$.status') IN ('completed', 'failed', 'interrupted', 'canceled')
+					)
+				)
 				 AND d.updated_at < ?
 				 LIMIT ?`,
 			)

@@ -18,6 +18,7 @@ interface SessionRow {
 	message_count: number;
 	consecutive_resume_failures: number;
 	seal_reason: string | null;
+	last_counted_turn_execution_id: string | null;
 	created_at: number;
 	updated_at: number;
 	sealed_at: number | null;
@@ -37,6 +38,7 @@ function mapSession(row: SessionRow): AgentSession {
 		messageCount: row.message_count,
 		consecutiveResumeFailures: row.consecutive_resume_failures,
 		sealReason: row.seal_reason,
+		lastCountedTurnExecutionId: row.last_counted_turn_execution_id,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		sealedAt: row.sealed_at,
@@ -60,17 +62,26 @@ export class AgentSessionStore {
 
 	/** Returns the single active session, creating one if none exists (0010 §2). */
 	ensureActive(input: EnsureSessionInput): AgentSession {
-		const thread = this.db.prepare("SELECT created_by FROM threads WHERE id = ?").get(input.threadId) as
-			| { created_by: string }
+		const thread = this.db.prepare("SELECT created_by, project_path FROM threads WHERE id = ?").get(input.threadId) as
+			| { created_by: string; project_path: string }
 			| undefined;
 		if (!thread) throw new Error("session_thread_not_found");
 		if (thread.created_by !== input.userId) throw new Error("session_user_not_thread_owner");
 		const existing = this.getActive(input.threadId, input.agentId);
-		if (existing) return existing;
+		if (existing) {
+			if (existing.workingDirectory !== input.workingDirectory) {
+				throw new Error("session_workspace_changed");
+			}
+			return existing;
+		}
+		if (input.workingDirectory !== thread.project_path) {
+			throw new Error("session_workspace_not_thread_project");
+		}
+		// 0010 §2: seq is 0-based — COALESCE(MAX,-1)+1 gives 0 on first create.
 		const seq = (
 			this.db
 				.prepare(
-					"SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM agent_sessions WHERE thread_id = ? AND agent_id = ?",
+					"SELECT COALESCE(MAX(seq), -1) + 1 AS next FROM agent_sessions WHERE thread_id = ? AND agent_id = ?",
 				)
 				.get(input.threadId, input.agentId) as { next: number }
 		).next;
@@ -120,16 +131,43 @@ export class AgentSessionStore {
 	 * turn with NO visible output also +1; a turn that already counted its
 	 * visible output does not double-count.
 	 */
-	recordCompletedTurn(sessionId: string, countedVisibleOutput: boolean): void {
-		if (countedVisibleOutput) return; // already counted at first output
+	/**
+	 * 0010 §6.1 messageCount with durable dedup: each turn counts exactly
+	 * once — visible output or done; last_counted_turn_execution_id blocks
+	 * crash-replay double counts.
+	 */
+	recordUserVisibleOutput(sessionId: string, turnExecutionId: string): AgentSession | null {
+		const current = this.get(sessionId);
+		if (!current) return null;
+		if (current.lastCountedTurnExecutionId === turnExecutionId) return current;
 		this.db
-			.prepare("UPDATE agent_sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?")
-			.run(Date.now(), sessionId);
+			.prepare(
+				"UPDATE agent_sessions SET message_count = message_count + 1, last_counted_turn_execution_id = ?, updated_at = ? WHERE id = ?",
+			)
+			.run(turnExecutionId, Date.now(), sessionId);
+		return this.get(sessionId);
 	}
 
-	recordFirstVisibleOutput(sessionId: string): void {
+	recordCompletedTurn(sessionId: string, turnExecutionId: string): AgentSession | null {
+		return this.recordUserVisibleOutput(sessionId, turnExecutionId);
+	}
+
+	/** 0010 §6: 3 consecutive resume failures → circuit-breaker seal. */
+	recordResumeFailureWithSeal(sessionId: string, reason: string, now: number): AgentSession | null {
+		const current = this.get(sessionId);
+		if (!current) return null;
+		const failures = current.consecutiveResumeFailures + 1;
+		if (failures >= 3) return this.seal(sessionId, reason || "circuit_breaker", now);
 		this.db
-			.prepare("UPDATE agent_sessions SET message_count = 1, updated_at = ? WHERE id = ? AND message_count = 0")
-			.run(Date.now(), sessionId);
+			.prepare("UPDATE agent_sessions SET consecutive_resume_failures = ?, updated_at = ? WHERE id = ?")
+			.run(failures, now, sessionId);
+		return this.get(sessionId);
+	}
+
+	resetResumeFailures(sessionId: string, now: number): AgentSession | null {
+		this.db
+			.prepare("UPDATE agent_sessions SET consecutive_resume_failures = 0, updated_at = ? WHERE id = ?")
+			.run(now, sessionId);
+		return this.get(sessionId);
 	}
 }
