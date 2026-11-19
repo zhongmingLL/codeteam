@@ -1,6 +1,7 @@
 import { coreMigration } from "./001-core.ts";
 import { messagesMigration } from "./002-messages.ts";
 import { invocationQueueMigration } from "./003-invocation-queue.ts";
+import { authSessionWorkerMigration } from "./004-auth-session-worker.ts";
 
 /**
  * F018 migration unit. 0005 §4.2 defines the v1 table set; migrations are
@@ -17,6 +18,7 @@ export const F018_MIGRATIONS: readonly ControlMigration[] = [
 	coreMigration,
 	messagesMigration,
 	invocationQueueMigration,
+	authSessionWorkerMigration,
 ];
 
 export function assertF018MigrationSet(migrations: readonly ControlMigration[]): void {

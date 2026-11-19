@@ -47,6 +47,11 @@ describe("F018 greenfield migration harness", () => {
 		expect(tables).toContain("invocation_records");
 		expect(tables).toContain("turn_executions");
 		expect(tables).toContain("invocation_attempts");
+		expect(tables).toContain("agent_sessions");
+		expect(tables).toContain("workers");
+		expect(tables).toContain("worker_bindings");
+		expect(tables).toContain("response_drafts");
+		expect(tables).toContain("invocation_credentials");
 		// Greenfield guarantee: no task-first tables.
 		for (const legacyTable of ["tasks", "runs", "handoffs", "custody_events", "budgets", "reviews", "merges"]) {
 			expect(tables).not.toContain(legacyTable);
@@ -55,14 +60,21 @@ describe("F018 greenfield migration harness", () => {
 
 	it("applies pending migrations and is idempotent on re-run", () => {
 		const { db } = makeDb();
-		expect(db.migrateUp()).toBe(3);
+		expect(db.migrateUp()).toBe(4);
 		expect(db.migrateUp()).toBe(0);
-		expect(db.appliedVersions().map((row) => row.name)).toEqual(["core", "messages", "invocation-queue"]);
+		expect(db.appliedVersions().map((row) => row.name)).toEqual([
+			"core",
+			"messages",
+			"invocation-queue",
+			"auth-session-worker-draft",
+		]);
 	});
 
 	it("rolls back the newest migration and re-applies it", () => {
 		const { db } = makeDb();
 		db.migrateUp();
+		expect(db.migrateDown()).toBe(true);
+		expect(db.appliedVersions().map((row) => row.name)).toEqual(["core", "messages", "invocation-queue"]);
 		expect(db.migrateDown()).toBe(true);
 		expect(db.appliedVersions().map((row) => row.name)).toEqual(["core", "messages"]);
 		expect(db.migrateDown()).toBe(true);
@@ -75,7 +87,7 @@ describe("F018 greenfield migration harness", () => {
 			}[]
 		).map((row) => row.name);
 		expect(tables).not.toContain("threads");
-		expect(db.migrateUp()).toBe(3);
+		expect(db.migrateUp()).toBe(4);
 	});
 
 	it("maps messages physical columns per 0007 §3.1.1 (author columns, mentions index)", () => {
@@ -135,6 +147,40 @@ describe("F018 greenfield migration harness", () => {
 				)
 				.run(),
 		).toThrow(/CHECK|FOREIGN/i);
+	});
+
+	it("completes R1-b FK deferral and R1-c schema constraints", () => {
+		const { db } = makeDb();
+		db.migrateUp();
+		// attempts FKs now reference agent_sessions/workers (R1-b deferral closed)
+		const attemptsSql = (
+			db.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'invocation_attempts'").get() as { sql: string }
+		).sql;
+		expect(attemptsSql).toContain("agent_session_id) REFERENCES agent_sessions");
+		expect(attemptsSql).toContain("worker_id) REFERENCES workers");
+		// single active session per (thread, agent)
+		const sessionIndexes = (
+			db.db
+				.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'agent_sessions'")
+				.all() as Array<{ name: string }>
+		).map((r) => r.name);
+		expect(sessionIndexes).toContain("agent_sessions_one_active");
+		// credentials CHECK matrix: terminal requires disposition
+		expect(() =>
+			db.db
+				.prepare(
+					"INSERT INTO invocation_credentials (credential_id, token_hash, token_salt, turn_execution_id, parent_invocation_id, thread_id, agent_id, agent_session_id, user_id, allowed_tools_json, state, created_at, updated_at) VALUES ('c1','h','s','nope','nope','t','a','s','u','[]','terminal',1,1)",
+				)
+				.run(),
+		).toThrow(/CHECK|FOREIGN/i);
+		// drafts keyed by attempt, unique turn
+		expect(() =>
+			db.db
+				.prepare(
+					"INSERT INTO response_drafts (attempt_id, turn_execution_id, parent_invocation_id, thread_id, agent_id, created_at, updated_at) VALUES ('nope','nope','nope','t','a',1,1)",
+				)
+				.run(),
+		).toThrow(/FOREIGN/i);
 	});
 
 	it("enforces thread ownership columns at the schema level", () => {

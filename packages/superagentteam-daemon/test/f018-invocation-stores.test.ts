@@ -35,6 +35,18 @@ function seedThread(db: F018Database): void {
 			"INSERT INTO threads (id, project_path, created_by, last_active_at, created_at, updated_at) VALUES ('t1', '/p', 'u1', 1, 1, 1)",
 		)
 		.run();
+	db.db
+		.prepare(
+			`INSERT INTO agent_sessions (id, thread_id, agent_id, user_id, seq, status, working_directory, created_at, updated_at)
+			 VALUES ('s', 't1', 'a1', 'u1', 1, 'active', '/p', 1, 1)`,
+		)
+		.run();
+	db.db
+		.prepare(
+			`INSERT INTO agent_sessions (id, thread_id, agent_id, user_id, seq, status, seal_reason, sealed_at, working_directory, created_at, updated_at)
+			 VALUES ('sess1', 't1', 'a1', 'u1', 1, 'sealed', 'test', 1, '/p', 1, 1)`,
+		)
+		.run();
 }
 
 function seedMessage(db: F018Database, id: string): void {
@@ -194,6 +206,13 @@ describe("TurnExecutionStore (0007 §3.6)", () => {
 	});
 });
 
+function seedSessionRow(db: import("node:sqlite").DatabaseSync, id: string, target = "a1"): void {
+	db.prepare(
+		`INSERT INTO agent_sessions (id, thread_id, agent_id, user_id, seq, status, working_directory, created_at, updated_at)
+		 VALUES (?, 't1', ?, 'u1', 1, 'active', '/p', 1, 1)`,
+	).run(id, target);
+}
+
 function seedAttempt(attempts: InvocationAttemptStore, attemptId = "at1", target = "a1", n = 1) {
 	return attempts.appendQueued({
 		attemptId,
@@ -212,9 +231,9 @@ describe("review round-2 fail-closed negatives", () => {
 		seedThread(db);
 		seedParent(records);
 		seedAttempt(attempts);
-		attempts.markStarting("at1", { agentSessionId: "s1", now: 20 });
-		expect(() => attempts.markStarting("at1", { agentSessionId: "s2", now: 21 })).toThrow(/session_conflict/);
-		expect(attempts.markStarting("at1", { agentSessionId: "s1", now: 22 })?.agentSessionId).toBe("s1");
+		attempts.markStarting("at1", { agentSessionId: "s", now: 20 });
+		expect(() => attempts.markStarting("at1", { agentSessionId: "sess1", now: 21 })).toThrow(/session_conflict/);
+		expect(attempts.markStarting("at1", { agentSessionId: "s", now: 22 })?.agentSessionId).toBe("s");
 	});
 
 	it("bindAppended rejects full-identity drift (session/provider)", () => {
@@ -224,10 +243,10 @@ describe("review round-2 fail-closed negatives", () => {
 		seedAttempt(attempts);
 		seedTurn(turns, "te1", "a1");
 		seedMessage(db, "rm1");
-		attempts.markStarting("at1", { agentSessionId: "s1", now: 20 });
+		attempts.markStarting("at1", { agentSessionId: "s", now: 20 });
 		attempts.bindAppended("at1", {
 			turnExecutionId: "te1",
-			agentSessionId: "s1",
+			agentSessionId: "s",
 			workerId: null,
 			provider: "p1",
 			model: "m1",
@@ -250,7 +269,7 @@ describe("review round-2 fail-closed negatives", () => {
 		expect(() =>
 			attempts.bindAppended("at1", {
 				turnExecutionId: "te1",
-				agentSessionId: "s1",
+				agentSessionId: "s",
 				workerId: null,
 				provider: "p2",
 				model: "m1",
@@ -417,6 +436,12 @@ describe("InvocationAttemptStore (0007 §4.3.1 / 0016 §4)", () => {
 				now: 41,
 			}),
 		).toThrow(/rebind/);
+		db.db
+			.prepare(
+				`INSERT INTO workers (id, project_path, account_ref, provider, model, state, heartbeat_at, lease_expires_at, created_at, updated_at)
+				 VALUES ('w1', '/p', 'main', 'p', 'm', 'online', 1, 999999, 1, 1)`,
+			)
+			.run();
 		attempts.bindWorker("at1", "w1");
 		attempts.markPromptDelivered("at1", { deliveryBoundarySeq: 3, now: 45 });
 		turns.transitionTerminal("te1", { status: "completed", endedAt: 50 });
@@ -519,6 +544,12 @@ describe("InvocationAttemptStore (0007 §4.3.1 / 0016 §4)", () => {
 		seedTurn(turns, "te1", "a1");
 		seedMessage(db, "r");
 		expect(() => attempts.markPromptDelivered("at1", { deliveryBoundarySeq: 5, now: 1 })).toThrow(/appended/);
+		db.db
+			.prepare(
+				`INSERT INTO workers (id, project_path, account_ref, provider, model, state, heartbeat_at, lease_expires_at, created_at, updated_at)
+				 VALUES ('w1', '/p', 'main', 'p', 'm', 'online', 1, 999999, 1, 1)`,
+			)
+			.run();
 		attempts.markStarting("at1", { agentSessionId: "s", now: 20 });
 		attempts.bindAppended("at1", {
 			turnExecutionId: "te1",

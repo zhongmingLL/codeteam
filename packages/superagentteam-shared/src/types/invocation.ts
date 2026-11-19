@@ -176,3 +176,88 @@ export interface QueueTerminalProjection {
 	endedAt: number;
 	reason: "dispatched" | "withdrawn";
 }
+
+// --------------------------------------------- R1-c (0007 §4.3.2/§4.4/§4.6, 0010, 0017)
+
+/** 0010: thread × agent durable execution identity. */
+export interface AgentSession {
+	id: string;
+	threadId: string;
+	agentId: string;
+	userId: string;
+	seq: number;
+	status: "active" | "sealing" | "sealed";
+	piSessionId: string | null;
+	piSessionFile: string | null;
+	workingDirectory: string;
+	messageCount: number;
+	consecutiveResumeFailures: number;
+	sealReason: string | null;
+	createdAt: number;
+	updatedAt: number;
+	sealedAt: number | null;
+}
+
+/** 0007 §4.6: ephemeral worker; capacity=1 per pi v1. */
+export interface Worker {
+	id: string;
+	poolKey: { projectPath: string; accountRef: string; provider: string; model: string };
+	state: "starting" | "online" | "draining" | "stale" | "retired";
+	pid: number | null;
+	heartbeatAt: number;
+	leaseExpiresAt: number;
+	idleSince: number | null;
+	retiredAt: number | null;
+	lastError: string | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface WorkerBinding {
+	agentSessionId: string;
+	workerId: string;
+	generation: number;
+	state: "attached" | "idle" | "reattach_pending";
+	boundAt: number;
+	lastUsedAt: number;
+}
+
+/** piExtToolCallId → original result replay map (0007 §3.8). */
+export interface ToolCallClaim {
+	intentHash: string;
+	messageId: string;
+	queueEntryId: string | null;
+}
+
+/** 0007 §4.4: child TurnExecution capability. */
+export interface InvocationCredential {
+	credentialId: string;
+	turnExecutionId: string;
+	parentInvocationId: string;
+	threadId: string;
+	agentId: string;
+	agentSessionId: string;
+	userId: string;
+	allowedTools: string[];
+	toolCallClaims: Record<string, ToolCallClaim>;
+	state: "active" | "terminal";
+	disposition: "completed" | "failed" | "interrupted" | "canceled" | "revoked" | "replaced" | null;
+	replacedByTurnExecutionId: string | null;
+	expiresAt: number | null;
+	createdAt: number;
+	updatedAt: number;
+}
+
+/** 0017 §3: single draft record; read model AND write input. */
+export interface DraftRecord {
+	attemptId: string;
+	turnExecutionId: string;
+	parentInvocationId: string;
+	threadId: string;
+	agentId: string;
+	content: string;
+	toolEvents: unknown[];
+	thinking: string | null;
+	createdAt: number;
+	updatedAt: number;
+}
