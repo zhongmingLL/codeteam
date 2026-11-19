@@ -509,7 +509,22 @@ export class QueueProcessor {
 							userId,
 							agentId: prepared.agentId,
 							executionKind: "ordinary",
-							causal: { triggerMessageId: entry.payload.messageId ?? entry.payload.sourceRecordId },
+							causal: {
+								triggerMessageId: entry.payload.messageId ?? entry.payload.sourceRecordId,
+								...(entry.execution.a2aParentTurnExecutionId
+									? { a2aParentTurnExecutionId: entry.execution.a2aParentTurnExecutionId }
+									: {}),
+								...(entry.execution.a2aTriggerMessageId
+									? { a2aTriggerMessageId: entry.execution.a2aTriggerMessageId }
+									: {}),
+								a2aDepth: entry.execution.a2aDepth,
+								...(entry.execution.multiMentionRequestId
+									? { multiMentionRequestId: entry.execution.multiMentionRequestId }
+									: {}),
+								...(entry.execution.multiMentionCallbackDepth !== null
+									? { multiMentionCallbackDepth: entry.execution.multiMentionCallbackDepth }
+									: {}),
+							},
 							startedAt: now,
 						});
 						if (turn.outcome === "conflict") throw new Error("phase_b_turn_conflict");

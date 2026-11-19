@@ -304,6 +304,17 @@ describe("F018 R3-b multi_mention create", () => {
 		expect(w.runtime.multiMention.allTargetsAccounted(created.requestId)).toBe(true);
 		const parent = w.runtime.records.get(`inv:t1:${created.message.id}`)!;
 		expect(parent.status).toBe("completed");
+		const childTurns = ["a2", "a3"].map((agentId) => {
+			const attempt = w.runtime.attempts.getLatest(`inv:t1:${created.message.id}`, agentId)!;
+			return w.runtime.turns.get(attempt.turnExecutionId!)!;
+		});
+		for (const child of childTurns) {
+			expect(child.causal.a2aParentTurnExecutionId).toBe("te-caller");
+			expect(child.causal.a2aTriggerMessageId).toBe(created.message.id);
+			expect(child.causal.a2aDepth).toBe(1);
+			expect(child.causal.multiMentionRequestId).toBe(created.requestId);
+			expect(child.causal.multiMentionCallbackDepth).toBeUndefined();
+		}
 		expect(w.runtime.threads.listParticipants("t1")).toEqual(expect.arrayContaining(["a2", "a3"]));
 		expect(w.runtime.queue.get("t1", created.queueEntryId)).toBeNull();
 		const source = w.runtime.messages.get(created.message.id)!;
