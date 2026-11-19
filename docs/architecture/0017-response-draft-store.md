@@ -246,7 +246,8 @@ settlement=`response_pending`；draft 继续保留给 T2/T4。
   asc，cursor 稳定；只返回仍存活 draft。
 - Hub 合并规则：processing R + draft 渲染为 processing bubble；用
   `AgentStreamEvent.seq`（传输/事件顺序）去重，不用 draft 持久化 seq；
-  `complete` 用 `responseMessageId` 替换。
+  `done` 后以 `turnExecutionId` 读取 T2 提交的 terminal R 替换 processing bubble
+  （`done` 不带 `responseMessageId`；T2 未提交时保留 processing bubble）。
 - `AgentStreamEvent.seq` 是 per-turn 内存序号，daemon 重启/新连接从 0 开始，不是
   durable 版本。重连先订阅、再读 processing R + draft 快照；快照期间事件 buffer，
   完成后只应用 `seq > baseline`；无 baseline 时接受瞬态重复，terminal R 纠正。
