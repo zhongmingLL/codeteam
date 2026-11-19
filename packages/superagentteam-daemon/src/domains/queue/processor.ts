@@ -717,40 +717,52 @@ export class QueueProcessor {
 	 * Never writes child/credential/R.
 	 */
 	private aggregateParent(entry: QueueEntry, invocationId: string, _userId: string): void {
-		const parent = this.deps.records.get(invocationId);
-		if (!parent || (parent.status !== "queued" && parent.status !== "running")) return;
-		const liveEntry = this.deps.queue.get(entry.threadId, entry.queueEntryId);
-		const pendingKeys = new Set((liveEntry?.targets ?? []).map((target) => `agent:${target.id}`));
-		const views: CollectorTargetView[] = parent.targetAgentIds.map((agentId) => {
-			const latest = this.deps.attempts.getLatest(invocationId, agentId);
-			const child = latest?.turnExecutionId ? this.deps.turns.get(latest.turnExecutionId) : null;
-			return {
-				agentId,
-				latestAttempt: latest,
-				child,
-				retryablePending:
-					pendingKeys.has(`agent:${agentId}`) &&
-					(latest?.deliveryState === "failed" || latest?.deliveryState === "interrupted"),
-			};
-		});
-		const result = collectTerminalDispositions({ parent, targets: views });
-		if (result.parentStatus === "running" || result.parentStatus === "queued") {
-			if (result.successfulAgentIds.length > 0) {
-				this.deps.records.addSuccessfulAgents(invocationId, result.successfulAgentIds);
+		// §3.9: the collector runs INSIDE the write transaction — attempts and
+		// children are re-read after the lock is held so two children reaching
+		// terminal concurrently cannot aggregate from a stale snapshot
+		// (round-1 P1-2).
+		runInTransaction(this.deps.db, () => {
+			const parent = this.deps.records.get(invocationId);
+			if (!parent || (parent.status !== "queued" && parent.status !== "running")) return;
+			const liveEntry = this.deps.queue.get(entry.threadId, entry.queueEntryId);
+			const pendingKeys = new Set((liveEntry?.targets ?? []).map((target) => `agent:${target.id}`));
+			const views: CollectorTargetView[] = parent.targetAgentIds.map((agentId) => {
+				const latest = this.deps.attempts.getLatest(invocationId, agentId);
+				const child = latest?.turnExecutionId ? this.deps.turns.get(latest.turnExecutionId) : null;
+				return {
+					agentId,
+					latestAttempt: latest,
+					child,
+					retryablePending:
+						pendingKeys.has(`agent:${agentId}`) &&
+						(latest?.deliveryState === "failed" || latest?.deliveryState === "interrupted"),
+				};
+			});
+			const result = collectTerminalDispositions({ parent, targets: views });
+			if (result.parentStatus === "running" || result.parentStatus === "queued") {
+				if (result.successfulAgentIds.length > 0) {
+					this.deps.records.addSuccessfulAgents(invocationId, result.successfulAgentIds);
+				}
+				return;
 			}
-			return;
-		}
-		this.deps.records.applyTerminalAggregate({
-			invocationId,
-			status: result.parentStatus,
-			successfulAgentIds: result.successfulAgentIds,
-			terminalReason: result.primaryTerminalError,
-			now: this.now(),
+			// §3.9: usage rollup from the latest attempts (per agent).
+			const usageByAgent: Record<string, unknown> = {};
+			for (const view of views) {
+				if (view.latestAttempt?.usage) usageByAgent[view.agentId] = view.latestAttempt.usage;
+			}
+			this.deps.records.applyTerminalAggregate({
+				invocationId,
+				status: result.parentStatus,
+				successfulAgentIds: result.successfulAgentIds,
+				terminalReason: result.primaryTerminalError,
+				usageByAgent: Object.keys(usageByAgent).length > 0 ? usageByAgent : undefined,
+				now: this.now(),
+			});
+			// §3.2: parent completed/canceled → delete the anchor entry;
+			// partial_failed/failed stay for retry/abandon/TTL.
+			if (result.parentStatus === "completed" || result.parentStatus === "canceled") {
+				this.deps.queue.deleteEntry(entry.threadId, entry.queueEntryId);
+			}
 		});
-		// §3.2: parent completed/canceled → delete the anchor entry;
-		// partial_failed/failed stay for retry/abandon/TTL.
-		if (result.parentStatus === "completed" || result.parentStatus === "canceled") {
-			this.deps.queue.deleteEntry(entry.threadId, entry.queueEntryId);
-		}
 	}
 }

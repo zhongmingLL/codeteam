@@ -237,7 +237,26 @@ describe("T1/T2 full flow (0007 §3.6/§3.9)", () => {
 	it("completed turn: child terminal, R committed from draft, draft deleted, ack, participant, parent completed, entry deleted", async () => {
 		const w = makeWorld();
 		const submitted = w.ingress.submit({ threadId: "t1", userId: "u1", body: "go @a1", now: 10 });
-		w.spawnPort.scriptFor = happyScript("Final answer.");
+		w.spawnPort.scriptFor = [
+			{ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "pondering" } },
+			{ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Final answer." } },
+			{
+				type: "tool_execution_start",
+				toolCallId: "tc-9",
+				toolName: "read_file",
+				args: { path: "/x" },
+			},
+			{ type: "tool_execution_end", toolCallId: "tc-9", toolName: "read_file", result: { ok: true } },
+			{
+				type: "message_end",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "Final answer." }],
+					usage: { inputTokens: 7, outputTokens: 3 },
+				},
+			},
+			{ type: "agent_settled", aborted: false },
+		];
 		const result = await w.processor.drain("t1", "u1");
 		expect(result.processed).toBe(1);
 
@@ -256,8 +275,19 @@ describe("T1/T2 full flow (0007 §3.6/§3.9)", () => {
 			expect(response.lifecycle.endedAt).toBeTruthy();
 		}
 		expect(response.content).toBe("Final answer.");
+		// Round-1 P1-3: the R carries the draft's FULL payload — thinking +
+		// merged toolEvents survive the draft deletion.
+		expect(response.thinking).toBe("pondering");
+		expect(response.toolEvents).toHaveLength(1);
+		expect(response.toolEvents?.[0]).toMatchObject({ toolCallId: "tc-9", status: "completed" });
 		expect(w.drafts.getByTurn(turnId)).toBeNull();
 		expect(attempt.settlement).toBe("settled");
+
+		// Round-1 P2: re-commit after settle is idempotent — the settling tail
+		// (refs + draft + pending) runs without rewriting the terminal R.
+		const again = w.committer.commit({ turnExecutionId: turnId, content: "should not overwrite" });
+		expect(again.outcome).toBe("already_terminal");
+		expect(w.messages.get(attempt.responseMessageId!)?.content).toBe("Final answer.");
 		// Input dispatchRef settled.
 		const input = w.messages.get(submitted.message.id)!;
 		if (input.lifecycle?.kind === "input") {
@@ -562,6 +592,12 @@ describe("T4 ResponseRecoveryService", () => {
 		expect(result.missing).toBeGreaterThanOrEqual(1);
 		const system = w.messages.getByThread("t1", 10).find((message) => message.content.includes("response_missing"));
 		expect(system?.from.kind).toBe("system");
+		expect(w.turns.listResponsePending()).toHaveLength(0);
+		// 烁烁 P2 (livelock): a crash between the marker append and the clear
+		// must NOT strand the turn — a retried sweep converges without hitting
+		// the rm: message UNIQUE.
+		const rerun = w.recovery.runOnce();
+		expect(rerun.failures).toBe(0);
 		expect(w.turns.listResponsePending()).toHaveLength(0);
 	});
 });

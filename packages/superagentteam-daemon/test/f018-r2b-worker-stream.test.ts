@@ -52,6 +52,7 @@ class ScriptedConnection implements WorkerRpcConnection {
 	readonly finishes: string[] = [];
 	acceptedCount = 0;
 	script: RpcEvent[] = [];
+	promptError: string | null = null;
 
 	onEvent(listener: (event: RpcEvent) => void): () => void {
 		this.listeners.push(listener);
@@ -66,6 +67,7 @@ class ScriptedConnection implements WorkerRpcConnection {
 		options: { timeoutMs: number; signal?: AbortSignal; onAccepted?: () => void },
 	): Promise<{ aborted: boolean }> {
 		this.promptCalls.push(message);
+		if (this.promptError) throw new Error(this.promptError);
 		this.acceptedCount += 1;
 		options.onAccepted?.();
 		for (const event of this.script) {
@@ -84,6 +86,7 @@ class MockSpawnPort implements WorkerSpawnPort {
 	lastConnection: ScriptedConnection | null = null;
 	/** Pre-programmed event script handed to every spawned connection. */
 	scriptFor: RpcEvent[] = [];
+	promptError: string | null = null;
 
 	async spawn(): Promise<{
 		connection: WorkerRpcConnection;
@@ -95,6 +98,7 @@ class MockSpawnPort implements WorkerSpawnPort {
 		this.spawns += 1;
 		this.lastConnection = new ScriptedConnection();
 		this.lastConnection.script = this.scriptFor;
+		this.lastConnection.promptError = this.promptError;
 		return {
 			connection: this.lastConnection,
 			pid: 4242,
@@ -484,9 +488,11 @@ describe("RunAgentTurn (0010 §6.1.1 steps 2-8)", () => {
 		expect(w.streamEvents.some((event) => event.type === "done")).toBe(true);
 	});
 
-	it("provider error: clean throw → R2-a convergence terminalizes the chain", async () => {
+	it("R2-c P1-1: prompt ACCEPTED then provider error → T1 failed acks and does NOT replay", async () => {
 		const w = makeWorld();
-		w.ingress.submit({ threadId: "t1", userId: "u1", body: "explode please @a1", now: 10 });
+		const submitted = w.ingress.submit({ threadId: "t1", userId: "u1", body: "explode please @a1", now: 10 });
+		// The scripted connection fires onAccepted BEFORE replaying events, so
+		// this is the delivered-failure row of 0010 §6.1.3 (row 7).
 		w.spawnPort.scriptFor = [
 			{
 				type: "message_end",
@@ -497,12 +503,34 @@ describe("RunAgentTurn (0010 §6.1.1 steps 2-8)", () => {
 		const result = await w.processor.drain("t1", "u1");
 		expect(result.processed).toBe(1);
 		expect(result.convergenceFailed).toEqual([]);
-		const queued = w.queue.listQueued("t1");
-		const invocationId = `inv:t1:${queued[0]!.payload.sourceRecordId}`;
+		const invocationId = `inv:t1:${submitted.message.id}`;
+		const attempt = w.attempts.getLatest(invocationId, "a1")!;
+		expect(attempt.deliveryState).toBe("failed");
+		expect(attempt.terminalReason).toContain("provider_error");
+		// Delivered failure: cursor ACKED (no infinite replay)…
+		expect(w.readState.get("t1", "a1")?.deliveryCursor).toBe(attempt.deliveryBoundarySeq);
+		// …target NOT restored to pending, parent terminal failed.
+		expect(w.queue.listQueued("t1")).toHaveLength(0);
+		expect(w.records.get(invocationId)?.status).toBe("failed");
+	});
+
+	it("provider error BEFORE accept → clean throw → R2-a convergence replays the target", async () => {
+		const w = makeWorld();
+		const submitted = w.ingress.submit({ threadId: "t1", userId: "u1", body: "explode please @a1", now: 10 });
+		w.spawnPort.promptError = "connection refused";
+		const result = await w.processor.drain("t1", "u1");
+		expect(result.processed).toBe(1);
+		expect(result.convergenceFailed).toEqual([]);
+		const invocationId = `inv:t1:${submitted.message.id}`;
 		const attempt = w.attempts.getLatest(invocationId, "a1")!;
 		expect(attempt.deliveryState).toBe("failed");
 		expect(attempt.terminalReason).toBe("provider_phase_failed");
 		expect(attempt.settlement).toBe("settled");
+		// Undelivered: no ack, target back on the entry for replay.
+		expect(w.readState.get("t1", "a1")).toBeNull();
+		const queued = w.queue.listQueued("t1");
+		expect(queued).toHaveLength(1);
+		expect(queued[0]!.targets.map((t) => t.id)).toEqual(["a1"]);
 	});
 
 	it("toolCallClaims reserve: replay ok, divergent intent conflicts (strong CAS)", () => {

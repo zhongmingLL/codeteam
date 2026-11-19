@@ -144,7 +144,16 @@ export class ResponseEventSink {
 					});
 				} else {
 					// 0017 §5.2: end updates the start record (status/result).
-					const record = this.toolEvents.find((entry) => entry.toolCallId === toolCallId);
+					// Anon fallback (unreachable with real pi events — they carry
+					// toolCallId): merge into the LAST running record with the
+					// same name instead of synthesizing a second row.
+					const record =
+						this.toolEvents.find((entry) => entry.toolCallId === toolCallId) ??
+						(toolCallId.startsWith("anon-")
+							? ([...this.toolEvents]
+									.reverse()
+									.find((entry) => entry.name === name && entry.status === "running") ?? null)
+							: null);
 					if (record) {
 						record.status = "completed";
 						record.endedAt = now;

@@ -155,9 +155,34 @@ export class RunAgentTurn implements DispatchTargetPort {
 			}
 
 			const summary = sink.summary();
+			const lifecycle = new TurnExecutionLifecycle(this.settlementDeps());
+			const committer = new RouteResponseCommitter(this.settlementDeps());
+
 			if (summary.errorMessage) {
-				// Clean throw: the R2-a processor convergence terminalizes the
-				// chain (turn/attempt/credential/R) and restores the target.
+				// 0010 §6.1.3 rows 6-7 split on prompt delivery:
+				// - prompt ACCEPTED then failed → T1 failed (ack! no replay —
+				//   next round sees the failed R) + T2; return normally.
+				// - prompt never accepted → clean throw: the R2-a convergence
+				//   terminalizes the chain and restores the target to replay.
+				const fresh = this.deps.attempts.get(prepared.attemptId);
+				if (fresh?.promptDeliveredAt) {
+					const t1f = lifecycle.invokeTerminal({
+						turnExecutionId: prepared.turnExecutionId,
+						status: "failed",
+						endedAt: this.clock(),
+						terminalReason: `provider_error: ${summary.errorMessage}`,
+						userVisibleOutput: false,
+					});
+					if (t1f.outcome === "not_found" || t1f.outcome === "terminal_conflict") {
+						throw new Error(`t1_failed: ${t1f.outcome}`);
+					}
+					try {
+						committer.commit({ turnExecutionId: prepared.turnExecutionId, content: summary.content });
+					} catch {
+						// T4 owns recovery; the child is already terminal.
+					}
+					return;
+				}
 				throw new Error(`turn_provider_error: ${summary.errorMessage}`);
 			}
 			if (summary.usage) {
@@ -167,7 +192,6 @@ export class RunAgentTurn implements DispatchTargetPort {
 			// T1 child terminal (0010 §6.1.1 step 9): ONE transaction — child
 			// terminal + attempt projection + response_pending + credential +
 			// recordCompletedTurn + cursor ack (promptDelivered-gated).
-			const lifecycle = new TurnExecutionLifecycle(this.settlementDeps());
 			const t1 = lifecycle.invokeTerminal({
 				turnExecutionId: prepared.turnExecutionId,
 				status: "completed",
@@ -181,11 +205,7 @@ export class RunAgentTurn implements DispatchTargetPort {
 			// T2 response commit (§3.9): separate transaction; failure leaves
 			// response_pending for T4 — never fails the turn.
 			try {
-				new RouteResponseCommitter(this.settlementDeps()).commit({
-					turnExecutionId: prepared.turnExecutionId,
-					content: summary.content,
-					thinking: summary.thinking,
-				});
+				committer.commit({ turnExecutionId: prepared.turnExecutionId, content: summary.content });
 			} catch {
 				// T4 owns recovery; the child is already terminal.
 			}

@@ -34,6 +34,10 @@ export type T1Outcome =
 	| { outcome: "terminal_conflict"; attempt: InvocationAttempt }
 	| { outcome: "not_found"; attempt: InvocationAttempt | null };
 
+export interface SettlementRow {
+	user_message_id: string | null;
+}
+
 export interface SettlementDeps {
 	db: DatabaseSync;
 	turns: TurnExecutionStore;
@@ -167,9 +171,11 @@ export class RouteResponseCommitter {
 		runInTransaction(this.deps.db, () => {
 			if (response.lifecycle?.kind === "response") {
 				if (response.lifecycle.status !== "processing") {
-					// Idempotent: R already terminal (same or different status —
-					// T4/classification reads the stored truth, no rewrite).
+					// Idempotent head: R already terminal — still run the
+					// settling tail (refs + draft + pending) so a crash between
+					// terminalize and tail completes here (round-1 P2).
 					result = { outcome: "already_terminal", responseMessageId: attempt.responseMessageId! };
+					this.settlingTail(attempt, now);
 					return;
 				}
 				const child = this.deps.turns.get(input.turnExecutionId);
@@ -179,7 +185,15 @@ export class RouteResponseCommitter {
 					result = { outcome: "child_running", responseMessageId: attempt.responseMessageId! };
 					return;
 				}
-				this.deps.messages.updateBody(response.id, input.content, now);
+				// 0016 §5 / 0017 §5.2: the R carries the DRAFT's full payload —
+				// body from the draft (caller content is only a fallback),
+				// plus thinking and the merged toolEvents (the only source for
+				// contentBlocks reconstruction once the draft is deleted).
+				const draft = this.deps.drafts.getByTurn(input.turnExecutionId);
+				const body = draft?.content ?? input.content;
+				const thinking = draft?.thinking ?? input.thinking ?? null;
+				const toolEvents = draft?.toolEvents ?? [];
+				this.deps.messages.updateResponseContent(response.id, { content: body, thinking, toolEvents }, now);
 				this.deps.messages.updateLifecycle(
 					response.id,
 					{
@@ -190,14 +204,29 @@ export class RouteResponseCommitter {
 					now,
 				);
 			}
-			// Settle the input dispatchRefs (phase dispatched → settled).
-			if (attempt.queueEntryId) {
-				this.settleInputDispatchRefs(attempt, now);
-			}
-			this.deps.drafts.delete(input.turnExecutionId);
-			this.deps.turns.clearResponsePending(input.turnExecutionId);
+			this.settlingTail(attempt, now);
 		});
 		return result;
+	}
+
+	/** Idempotent settling tail: input refs → settled, draft deleted, pending cleared. */
+	private settlingTail(attempt: InvocationAttempt, now: number): void {
+		this.settleInputDispatchRefs(attempt, now);
+		this.deps.drafts.delete(attempt.turnExecutionId!);
+		this.deps.turns.clearResponsePending(attempt.turnExecutionId!);
+	}
+
+	/** Public tail access for T4's already-terminal branch. */
+	settleInputDispatchRefsPublic(attempt: InvocationAttempt, now: number): void {
+		this.settleInputDispatchRefs(attempt, now);
+	}
+
+	private recordsRow(invocationId: string): SettlementRow | null {
+		return (
+			(this.deps.db
+				.prepare("SELECT user_message_id FROM invocation_records WHERE invocation_id = ?")
+				.get(invocationId) as SettlementRow | undefined) ?? null
+		);
 	}
 
 	private settleInputDispatchRefs(attempt: InvocationAttempt, now: number): void {
@@ -215,16 +244,22 @@ export class RouteResponseCommitter {
 	}
 
 	private sourceMessageIdFor(attempt: InvocationAttempt): string | null {
+		// Primary: the live queue anchor's payload. Fallback (round-1 P2): the
+		// anchor may already be deleted by T3 — the parent's userMessageId is
+		// the durable equivalent.
 		const row = this.deps.db
 			.prepare("SELECT payload_json FROM invocation_queue WHERE queue_entry_id = ?")
 			.get(attempt.queueEntryId) as { payload_json: string } | undefined;
-		if (!row) return null;
-		try {
-			const payload = JSON.parse(row.payload_json) as { messageId?: string | null };
-			return payload.messageId ?? null;
-		} catch {
-			return null;
+		if (row) {
+			try {
+				const payload = JSON.parse(row.payload_json) as { messageId?: string | null };
+				if (payload.messageId) return payload.messageId;
+			} catch {
+				// fall through to the parent fallback
+			}
 		}
+		const parent = this.recordsRow(attempt.parentInvocationId);
+		return parent?.user_message_id ?? null;
 	}
 }
 
@@ -274,14 +309,19 @@ export class ResponseRecoveryService {
 				const response = attempt.responseMessageId ? this.deps.messages.get(attempt.responseMessageId) : null;
 				if (!response) {
 					const now = this.clock();
-					this.deps.messages.append({
-						id: `rm:${attempt.attemptId}`,
-						threadId: attempt.threadId,
-						from: { kind: "system", service: "recovery" },
-						content: "response_missing: processing response was not found for a terminal child",
-						now,
-					});
 					runInTransaction(this.deps.db, () => {
+						// Idempotent marker: a retried recovery after a partial
+						// failure must not hit the message UNIQUE (round-1 P2).
+						if (!this.deps.messages.get(`rm:${attempt.attemptId}`, { includeDeleted: true })) {
+							this.deps.messages.append({
+								id: `rm:${attempt.attemptId}`,
+								threadId: attempt.threadId,
+								from: { kind: "system", service: "recovery" },
+								content: "response_missing: processing response was not found for a terminal child",
+								now,
+							});
+						}
+						this.deps.drafts.delete(turn.turnExecutionId);
 						this.deps.turns.clearResponsePending(turn.turnExecutionId);
 					});
 					result.missing += 1;
@@ -300,8 +340,13 @@ export class ResponseRecoveryService {
 						result.failures += 1;
 					}
 				} else {
-					// R already terminal elsewhere — just clear the pending.
+					// R already terminal elsewhere — run the same settling tail
+					// (refs + draft + pending), idempotently.
 					runInTransaction(this.deps.db, () => {
+						this.deps.drafts.delete(turn.turnExecutionId);
+						if (attempt.queueEntryId) {
+							this.committer.settleInputDispatchRefsPublic(attempt, this.clock());
+						}
 						this.deps.turns.clearResponsePending(turn.turnExecutionId);
 					});
 					result.settled += 1;

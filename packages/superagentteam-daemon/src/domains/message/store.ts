@@ -226,11 +226,30 @@ export class MessageStore {
 		);
 	}
 
-	/** T2 response commit: replace the R message body with the draft content. */
-	updateBody(id: string, content: string, now: number): boolean {
+	/**
+	 * T2 response commit (0016 §5 / 0017 §5.2): write the R message's FULL
+	 * payload from the durable draft — body, thinking, merged toolEvents, and
+	 * a text content block. toolEvents are the only contentBlocks source
+	 * after the draft is deleted.
+	 */
+	updateResponseContent(
+		id: string,
+		payload: { content: string; thinking: string | null; toolEvents: readonly unknown[] },
+		now: number,
+	): boolean {
 		return (
-			this.db.prepare("UPDATE messages SET body_md = ?, updated_at = ? WHERE id = ?").run(content, now, id).changes >
-			0
+			this.db
+				.prepare(
+					"UPDATE messages SET body_md = ?, thinking = ?, tool_events_json = ?, content_json = ?, updated_at = ? WHERE id = ?",
+				)
+				.run(
+					payload.content,
+					payload.thinking,
+					JSON.stringify(payload.toolEvents),
+					JSON.stringify([{ type: "text", text: payload.content }]),
+					now,
+					id,
+				).changes > 0
 		);
 	}
 
