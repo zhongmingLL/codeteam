@@ -34,7 +34,7 @@ function agentConfig(id: string, overrides: Partial<AgentConfig> = {}): AgentCon
 	};
 }
 
-function makeWorld() {
+function makeWorld(allowedTools: string[] = ["post_message", "cross_post_message"]) {
 	const dir = mkdtempSync(join(tmpdir(), "f018-r3a-"));
 	dirs.push(dir);
 	const fd = new F018Database({ path: join(dir, "f018.db") });
@@ -93,11 +93,11 @@ function makeWorld() {
 		agentId: "a1",
 		agentSessionId: session.id,
 		userId: "u1",
-		allowedTools: ["post_message", "cross_post_message"],
+		allowedTools,
 		now: 4,
 	});
 	const service = new A2AToolService({ db: fd.db, registry, threads, messages, queue, credentials });
-	return { fd, threads, messages, queue, service };
+	return { fd, threads, messages, queue, credentials, service };
 }
 
 function ctx(overrides: Partial<A2AToolContext> = {}): A2AToolContext {
@@ -124,6 +124,28 @@ afterEach(() => {
 });
 
 describe("F018 R3-a post_message", () => {
+	it("enforces the invocation credential allowlist and active state", () => {
+		const denied = makeWorld([]);
+		try {
+			denied.service.postMessage(ctx(), { bodyMd: "denied" });
+			throw new Error("expected error");
+		} catch (error) {
+			expectCode(error, "tool_not_allowed");
+		}
+		const terminal = makeWorld();
+		terminal.fd.db
+			.prepare(
+				"UPDATE invocation_credentials SET state = 'terminal', disposition = 'completed', updated_at = 10 WHERE turn_execution_id = 'te1'",
+			)
+			.run();
+		try {
+			terminal.service.crossPostMessage(ctx(), { threadId: "t2", bodyMd: "terminal" });
+			throw new Error("expected error");
+		} catch (error) {
+			expectCode(error, "credential_terminal");
+		}
+	});
+
 	it("creates one agent message + one message_wake queue entry + execution metadata", () => {
 		const w = makeWorld();
 		const result = w.service.postMessage(ctx(), {

@@ -34,7 +34,9 @@ export type A2AToolErrorCode =
 	| "pi_ext_tool_call_replay_missing"
 	| "queue_full"
 	| "queue_admission_conflict"
-	| "credential_not_found";
+	| "credential_not_found"
+	| "credential_terminal"
+	| "tool_not_allowed";
 
 export class A2AToolError extends Error {
 	readonly code: A2AToolErrorCode;
@@ -130,7 +132,21 @@ function normalizeTargets(raw: readonly A2ATarget[] | undefined): A2ATarget[] {
 }
 
 function hasLineStartOperatorMention(body: string): boolean {
+	// v1 tolerates horizontal whitespace before @operator; "line-start" means
+	// the first non-space token on a line.
 	return /^[ \t]*@operator(?=\s|$)/m.test(body);
+}
+
+/** 0007 §3.7: the invocation credential owns the A2A tool allowlist. */
+export function assertCredentialAllowsTool(
+	credentials: InvocationCredentialStore,
+	turnExecutionId: string,
+	tool: "post_message" | "cross_post_message",
+): void {
+	const credential = credentials.getByTurn(turnExecutionId);
+	if (!credential) fail("credential_not_found");
+	if (credential.state !== "active") fail("credential_terminal");
+	if (!credential.allowedTools.includes(tool)) fail("tool_not_allowed");
 }
 
 /** Stable intent hash for piExtToolCallId replay/conflict (0007 §3.8). */
@@ -190,6 +206,11 @@ export class A2AToolService {
 		}
 		if (typeof input.bodyMd !== "string" || !input.bodyMd.trim()) fail("body_empty");
 		if (Buffer.byteLength(input.bodyMd, "utf8") > MAX_BODY_BYTES) fail("body_too_large");
+		assertCredentialAllowsTool(
+			this.deps.credentials,
+			ctx.callerTurnExecutionId,
+			crossPost ? "cross_post_message" : "post_message",
+		);
 		const targets = normalizeTargets(input.targets);
 		if (targets.length > 1) {
 			if (!crossPost) fail("use_multi_mention", "same-thread messages with multiple targets must use multi_mention");
@@ -224,6 +245,7 @@ export class A2AToolService {
 		}
 
 		if (input.replyTo) {
+			// v1 thread access is single-user; per-message visibility is deferred.
 			const reply = this.deps.messages.get(input.replyTo, { includeDeleted: true });
 			if (
 				!reply ||
@@ -312,6 +334,7 @@ export class A2AToolService {
 						if (error instanceof Error && error.message === "queue_full") fail("queue_full");
 						throw error;
 					}
+					// Random message ids make replayed unreachable; kept as a safety net.
 					if (enqueued.outcome !== "enqueued") fail("queue_admission_conflict");
 					queueEntryId = enqueued.entry!.queueEntryId;
 				}
