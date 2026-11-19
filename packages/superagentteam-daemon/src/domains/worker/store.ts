@@ -88,27 +88,28 @@ export class WorkerStore {
 	}
 
 	/** Dispatch 前预检 (0007 §3.5.2): does NOT spawn; typed reject on no slot. */
-	checkCapacity(_poolKey: WorkerPoolKey): { ok: true } | { ok: false; reason: "worker_capacity" } {
+	checkCapacity(_poolKey: WorkerPoolKey, now = Date.now()): { ok: true } | { ok: false; reason: "worker_capacity" } {
 		const live = (
 			this.db
 				.prepare("SELECT COUNT(*) AS n FROM workers WHERE state IN ('starting', 'online', 'draining')")
 				.get() as { n: number }
 		).n;
 		if (live >= MAX_LIVE_WORKERS) {
-			const evicted = this.retireIdle();
+			const evicted = this.retireIdle(now);
 			if (live - evicted >= MAX_LIVE_WORKERS) return { ok: false, reason: "worker_capacity" };
 		}
 		return { ok: true };
 	}
 
-	private retireIdle(): number {
+	/** R1 closeout handover: injected clock (was Date.now()). */
+	retireIdle(now = Date.now()): number {
 		const idle = this.db
 			.prepare("SELECT id FROM workers WHERE state = 'draining' AND idle_since IS NOT NULL")
 			.all() as Array<{ id: string }>;
 		for (const row of idle) {
 			this.db
 				.prepare("UPDATE workers SET state = 'retired', retired_at = ?, updated_at = ? WHERE id = ?")
-				.run(Date.now(), Date.now(), row.id);
+				.run(now, now, row.id);
 			this.db.prepare("UPDATE worker_bindings SET state = 'reattach_pending' WHERE worker_id = ?").run(row.id);
 		}
 		return idle.length;

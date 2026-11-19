@@ -94,7 +94,7 @@ describe("AgentSession review-round fixes (0010)", () => {
 		expect(() =>
 			sessions.ensureActive({ threadId: "t1", agentId: "a2", userId: "u1", workingDirectory: "/notproj", now: 2 }),
 		).toThrow(/not_thread_project/);
-		sessions.seal(first.id, "cb", 10);
+		sessions.sealActive(first.id, "cb", 10);
 		const next = sessions.ensureActive({
 			threadId: "t1",
 			agentId: "a1",
@@ -105,14 +105,19 @@ describe("AgentSession review-round fixes (0010)", () => {
 		expect(next.seq).toBe(1);
 	});
 
-	it("messageCount counts per turn with durable dedup; replay same turn does not double-count", () => {
+	it("messageCount: first visible output 0→1; later turns count at completion (0010 §6)", () => {
 		const { sessions } = makeWorld();
 		const s = sessions.ensureActive({ threadId: "t1", agentId: "a1", userId: "u1", workingDirectory: "/p", now: 1 });
 		sessions.recordUserVisibleOutput(s.id, "te1");
 		expect(sessions.get(s.id)?.messageCount).toBe(1);
 		sessions.recordUserVisibleOutput(s.id, "te1"); // replay
 		expect(sessions.get(s.id)?.messageCount).toBe(1);
-		sessions.recordUserVisibleOutput(s.id, "te2"); // second turn
+		// With messageCount ≥ 1 the output path no longer counts; the turn is
+		// counted at completion (recordCompletedTurn), deduped per turn.
+		sessions.recordUserVisibleOutput(s.id, "te2");
+		expect(sessions.get(s.id)?.messageCount).toBe(1);
+		expect(sessions.get(s.id)?.lastCountedTurnExecutionId).toBe("te1");
+		sessions.recordCompletedTurn(s.id, { turnExecutionId: "te2", userVisibleOutput: true, now: 2 });
 		expect(sessions.get(s.id)?.messageCount).toBe(2);
 		expect(sessions.get(s.id)?.lastCountedTurnExecutionId).toBe("te2");
 	});
@@ -438,8 +443,8 @@ describe("round-2 fixes", () => {
 		const { sessions } = makeWorld();
 		const s = sessions.ensureActive({ threadId: "t1", agentId: "a1", userId: "u1", workingDirectory: "/p", now: 1 });
 		sessions.recordResumeFailureWithSeal(s.id, "f", 2);
-		sessions.recordUserVisibleOutput(s.id, "te1"); // already counted
-		sessions.recordCompletedTurn(s.id, "te1"); // replay — still resets
+		sessions.recordUserVisibleOutput(s.id, "te1"); // counts the first turn
+		sessions.recordCompletedTurn(s.id, { turnExecutionId: "te1", userVisibleOutput: true, now: 3 }); // replay — still resets
 		expect(sessions.get(s.id)?.consecutiveResumeFailures).toBe(0);
 	});
 

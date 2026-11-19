@@ -56,6 +56,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0021-f018-r1-execution.md`](0021-f018-r1-execution.md) | F018 R1 执行计划：路径 A（supply-chain → #86 → R1）、greenfield baseline、Clowder-style `codeteam-shared` + daemon `domains`、task-first code/docs legacy move + guard、R1-0 + R1-a–d schema/migration 切片、R2–R5 门禁 | 烁烁（session/worker/queue）+ 砚砚（schema/auth）+ 墨墨（acceptance/docs） |
 | [`0022-codeteam-web-surface.md`](0022-codeteam-web-surface.md) | W7b web surface 目录设计：Next/React 分层、domains、shared DTO、API/WS 边界；不属 R1 | 墨墨（UX/流程）+ 砚砚（security/provenance）+ 烁烁（runtime 接口） |
 | [`0023-f019-superagentteam-rename.md`](0023-f019-superagentteam-rename.md) | F019 SuperAgentTeam rename：platform/team/SOP 分层、`@superagentteam/*`、env/data/CLI/tool alias、repo/branch last；R1-0 前置 | 砚砚（packages/auth/security）+ 墨墨（docs/naming）+ 烁烁（runtime/CLI） |
+| [`0024-f018-r2-execution.md`](0024-f018-r2-execution.md) | F018 R2 执行计划：R2-0 session/history 基座 → R2-a dispatch 管线 → R2-b worker/provider/stream → R2-c settlement T1-T4 → R2-d retry/recovery/出口；复用地图与 review 分工 | 宪宪（契约/事务）+ 烁烁（worker 集成）+ 墨墨（验收/文档） |
 
 ## W0–W8 一览
 
