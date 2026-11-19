@@ -1,0 +1,618 @@
+import type { DatabaseSync } from "node:sqlite";
+
+import type {
+	InvocationAttempt,
+	InvocationAttemptDeliveryState,
+	InvocationRecord,
+	InvocationRecordStatus,
+	TurnExecution,
+	TurnExecutionStatus,
+} from "@superagentteam/shared/types";
+
+// F018 R1-b invocation stores (0007 §3.2/§3.3/§3.6, 0016 §4). Fresh
+// implementations against the accepted contracts; task-first legacy code was
+// not used as a skeleton.
+
+// ------------------------------------------------------------ records (§3.2)
+
+interface RecordRow {
+	invocation_id: string;
+	thread_id: string;
+	user_id: string;
+	source_record_id: string;
+	user_message_id: string | null;
+	target_agent_ids_json: string;
+	status: InvocationRecordStatus;
+	successful_agent_ids_json: string;
+	usage_by_agent_json: string;
+	usage_recorded_at: number | null;
+	retry_count: number;
+	terminal_reason: string | null;
+	created_at: number;
+	started_at: number | null;
+	ended_at: number | null;
+}
+
+function mapRecord(row: RecordRow): InvocationRecord {
+	return {
+		invocationId: row.invocation_id,
+		threadId: row.thread_id,
+		userId: row.user_id,
+		sourceRecordId: row.source_record_id,
+		userMessageId: row.user_message_id,
+		targetAgentIds: JSON.parse(row.target_agent_ids_json) as string[],
+		status: row.status,
+		successfulAgentIds: JSON.parse(row.successful_agent_ids_json) as string[],
+		usageByAgent: JSON.parse(row.usage_by_agent_json) as Record<string, unknown>,
+		usageRecordedAt: row.usage_recorded_at,
+		retryCount: row.retry_count,
+		terminalReason: row.terminal_reason,
+		createdAt: row.created_at,
+		startedAt: row.started_at,
+		endedAt: row.ended_at,
+	};
+}
+
+export interface CreateInvocationRecordInput {
+	invocationId: string;
+	threadId: string;
+	userId: string;
+	sourceRecordId: string;
+	userMessageId: string | null;
+	targetAgentIds: string[];
+	now: number;
+}
+
+export class InvocationRecordStore {
+	private readonly db: DatabaseSync;
+
+	constructor(db: DatabaseSync) {
+		this.db = db;
+	}
+
+	/** Idempotent by sourceRecordId UNIQUE; re-create returns the existing row. */
+	create(input: CreateInvocationRecordInput): InvocationRecord {
+		const existing = this.bySource(input.sourceRecordId);
+		if (existing) return existing;
+		if (input.targetAgentIds.length === 0) throw new Error("invocation_targets_empty");
+		this.db
+			.prepare(
+				`INSERT INTO invocation_records (invocation_id, thread_id, user_id, source_record_id, user_message_id, target_agent_ids_json, status, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`,
+			)
+			.run(
+				input.invocationId,
+				input.threadId,
+				input.userId,
+				input.sourceRecordId,
+				input.userMessageId,
+				JSON.stringify(input.targetAgentIds),
+				input.now,
+			);
+		return this.bySource(input.sourceRecordId)!;
+	}
+
+	get(invocationId: string): InvocationRecord | null {
+		const row = this.db.prepare("SELECT * FROM invocation_records WHERE invocation_id = ?").get(invocationId) as
+			| RecordRow
+			| undefined;
+		return row ? mapRecord(row) : null;
+	}
+
+	bySource(sourceRecordId: string): InvocationRecord | null {
+		const row = this.db.prepare("SELECT * FROM invocation_records WHERE source_record_id = ?").get(sourceRecordId) as
+			| RecordRow
+			| undefined;
+		return row ? mapRecord(row) : null;
+	}
+
+	/** claim-time status flip; parent is running from claim on (G-02). */
+	markRunning(invocationId: string, now: number): boolean {
+		return (
+			this.db
+				.prepare(
+					"UPDATE invocation_records SET status = 'running', started_at = COALESCE(started_at, ?) WHERE invocation_id = ? AND status = 'queued'",
+				)
+				.run(now, invocationId).changes > 0
+		);
+	}
+
+	/** Monotonic union of successful agents (§3.9 aggregate rule). */
+	addSuccessfulAgents(invocationId: string, agentIds: string[]): void {
+		const row = this.get(invocationId);
+		if (!row) return;
+		const merged = [...new Set([...row.successfulAgentIds, ...agentIds])];
+		if (merged.length === row.successfulAgentIds.length) return;
+		this.db
+			.prepare("UPDATE invocation_records SET successful_agent_ids_json = ? WHERE invocation_id = ?")
+			.run(JSON.stringify(merged), invocationId);
+	}
+
+	setTerminal(
+		invocationId: string,
+		status: InvocationRecordStatus,
+		terminalReason: string | null,
+		now: number,
+	): boolean {
+		return (
+			this.db
+				.prepare(
+					"UPDATE invocation_records SET status = ?, terminal_reason = ?, ended_at = ? WHERE invocation_id = ? AND status IN ('queued', 'running')",
+				)
+				.run(status, terminalReason, now, invocationId).changes > 0
+		);
+	}
+
+	/** requestRetry store-side state flip only (§3.9 API boundary). */
+	admitRetry(invocationId: string, now: number): boolean {
+		return (
+			this.db
+				.prepare(
+					"UPDATE invocation_records SET status = 'queued', retry_count = retry_count + 1, ended_at = NULL, terminal_reason = NULL WHERE invocation_id = ? AND status IN ('failed', 'partial_failed')",
+				)
+				.run(invocationId).changes > 0
+		);
+	}
+}
+
+// -------------------------------------------------------- turns (§3.6/§4.3)
+
+interface TurnRow {
+	turn_execution_id: string;
+	parent_invocation_id: string;
+	thread_id: string;
+	user_id: string;
+	agent_id: string;
+	execution_kind: "ordinary" | "routing_guard";
+	causal_json: string;
+	status: TurnExecutionStatus;
+	terminal_reason: string | null;
+	started_at: number;
+	ended_at: number | null;
+}
+
+function mapTurn(row: TurnRow): TurnExecution {
+	return {
+		turnExecutionId: row.turn_execution_id,
+		parentInvocationId: row.parent_invocation_id,
+		threadId: row.thread_id,
+		userId: row.user_id,
+		agentId: row.agent_id,
+		executionKind: row.execution_kind,
+		causal: JSON.parse(row.causal_json) as TurnExecution["causal"],
+		status: row.status,
+		terminalReason: row.terminal_reason,
+		startedAt: row.started_at,
+		endedAt: row.ended_at,
+	};
+}
+
+export interface CreateTurnExecutionInput {
+	turnExecutionId: string;
+	parentInvocationId: string;
+	threadId: string;
+	userId: string;
+	agentId: string;
+	executionKind: "ordinary" | "routing_guard";
+	causal: TurnExecution["causal"];
+	startedAt: number;
+}
+
+export type CreateTurnOutcome = "created" | "replayed" | "conflict";
+
+export interface CreateTurnExecutionResult {
+	outcome: CreateTurnOutcome;
+	record: TurnExecution;
+}
+
+export interface TurnTerminalInput {
+	status: Exclude<TurnExecutionStatus, "running">;
+	endedAt: number;
+	terminalReason?: string | null;
+}
+
+export class TurnExecutionStore {
+	private readonly db: DatabaseSync;
+
+	constructor(db: DatabaseSync) {
+		this.db = db;
+	}
+
+	/**
+	 * Provider 前幂等入口（§3.6）：identity = 全字段（startedAt 不进 identity）。
+	 * replayed 不授予第二次 provider lease；identity 不同 = conflict。
+	 */
+	createRunning(input: CreateTurnExecutionInput): CreateTurnExecutionResult {
+		const existing = this.get(input.turnExecutionId);
+		if (existing) {
+			const sameIdentity =
+				existing.parentInvocationId === input.parentInvocationId &&
+				existing.threadId === input.threadId &&
+				existing.userId === input.userId &&
+				existing.agentId === input.agentId &&
+				existing.executionKind === input.executionKind &&
+				JSON.stringify(existing.causal) === JSON.stringify(input.causal);
+			if (!sameIdentity) throw new Error("turn_identity_conflict");
+			return { outcome: "replayed", record: existing };
+		}
+		this.db
+			.prepare(
+				`INSERT INTO turn_executions (turn_execution_id, parent_invocation_id, thread_id, user_id, agent_id, execution_kind, causal_json, status, started_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?)`,
+			)
+			.run(
+				input.turnExecutionId,
+				input.parentInvocationId,
+				input.threadId,
+				input.userId,
+				input.agentId,
+				input.executionKind,
+				JSON.stringify(input.causal),
+				input.startedAt,
+			);
+		return { outcome: "created", record: this.get(input.turnExecutionId)! };
+	}
+
+	get(turnExecutionId: string): TurnExecution | null {
+		const row = this.db.prepare("SELECT * FROM turn_executions WHERE turn_execution_id = ?").get(turnExecutionId) as
+			| TurnRow
+			| undefined;
+		return row ? mapTurn(row) : null;
+	}
+
+	listByInvocation(invocationId: string): TurnExecution[] {
+		const rows = this.db
+			.prepare("SELECT * FROM turn_executions WHERE parent_invocation_id = ?")
+			.all(invocationId) as unknown as TurnRow[];
+		return rows.map(mapTurn);
+	}
+
+	listRunning(): TurnExecution[] {
+		const rows = this.db
+			.prepare("SELECT * FROM turn_executions WHERE status = 'running'")
+			.all() as unknown as TurnRow[];
+		return rows.map(mapTurn);
+	}
+
+	/** Terminal first-write-wins; same status idempotent, different = conflict. */
+	transitionTerminal(
+		turnExecutionId: string,
+		input: TurnTerminalInput,
+	): { outcome: "transitioned" | "already_terminal" | "conflict" | "not_found" } {
+		const row = this.get(turnExecutionId);
+		if (!row) return { outcome: "not_found" };
+		if (row.status !== "running") {
+			return row.status === input.status ? { outcome: "already_terminal" } : { outcome: "conflict" };
+		}
+		if (input.status !== "completed" && !input.terminalReason) {
+			throw new Error("turn_terminal_reason_required");
+		}
+		if (input.endedAt < row.startedAt) throw new Error("turn_ended_before_started");
+		this.db
+			.prepare(
+				"UPDATE turn_executions SET status = ?, terminal_reason = ?, ended_at = ? WHERE turn_execution_id = ?",
+			)
+			.run(
+				input.status,
+				input.status === "completed" ? null : (input.terminalReason ?? null),
+				input.endedAt,
+				turnExecutionId,
+			);
+		return { outcome: "transitioned" };
+	}
+
+	/** Startup-only cutoff convergence (§3.10.1). */
+	interruptRunningBefore(
+		cutoffStartedAt: number,
+		input: { endedAt: number; terminalReason: string; excludedTurnExecutionIds?: readonly string[] },
+	): TurnExecution[] {
+		const excluded = new Set(input.excludedTurnExecutionIds ?? []);
+		const rows = this.db
+			.prepare("SELECT * FROM turn_executions WHERE status = 'running' AND started_at < ?")
+			.all(cutoffStartedAt) as unknown as TurnRow[];
+		const converged: TurnExecution[] = [];
+		for (const row of rows) {
+			if (excluded.has(row.turn_execution_id)) continue;
+			this.db
+				.prepare(
+					"UPDATE turn_executions SET status = 'interrupted', terminal_reason = ?, ended_at = ? WHERE turn_execution_id = ?",
+				)
+				.run(input.terminalReason, input.endedAt, row.turn_execution_id);
+			converged.push(this.get(row.turn_execution_id)!);
+		}
+		return converged;
+	}
+}
+
+// ------------------------------------------------------ attempts (§4.3.1)
+
+interface AttemptRow {
+	attempt_id: string;
+	parent_invocation_id: string;
+	queue_entry_id: string;
+	thread_id: string;
+	target_agent_id: string;
+	attempt: number;
+	turn_execution_id: string | null;
+	delivery_state: InvocationAttemptDeliveryState;
+	terminal_reason: string | null;
+	agent_session_id: string | null;
+	worker_id: string | null;
+	provider: string | null;
+	model: string | null;
+	model_family: string | null;
+	usage_json: string | null;
+	settlement: "streaming" | "response_pending" | "settled" | null;
+	response_message_id: string | null;
+	delivery_boundary_seq: number | null;
+	prompt_delivered_at: number | null;
+	created_at: number;
+	started_at: number | null;
+	ended_at: number | null;
+}
+
+function mapAttempt(row: AttemptRow): InvocationAttempt {
+	return {
+		attemptId: row.attempt_id,
+		parentInvocationId: row.parent_invocation_id,
+		queueEntryId: row.queue_entry_id,
+		threadId: row.thread_id,
+		targetAgentId: row.target_agent_id,
+		attempt: row.attempt,
+		turnExecutionId: row.turn_execution_id,
+		deliveryState: row.delivery_state,
+		terminalReason: row.terminal_reason,
+		agentSessionId: row.agent_session_id,
+		workerId: row.worker_id,
+		provider: row.provider,
+		model: row.model,
+		modelFamily: row.model_family,
+		usage: row.usage_json ? (JSON.parse(row.usage_json) as Record<string, unknown>) : null,
+		settlement: row.settlement,
+		responseMessageId: row.response_message_id,
+		deliveryBoundarySeq: row.delivery_boundary_seq,
+		promptDeliveredAt: row.prompt_delivered_at,
+		createdAt: row.created_at,
+		startedAt: row.started_at,
+		endedAt: row.ended_at,
+	};
+}
+
+export interface AppendAttemptInput {
+	attemptId: string;
+	parentInvocationId: string;
+	queueEntryId: string;
+	threadId: string;
+	targetAgentId: string;
+	attempt: number;
+	now: number;
+}
+
+export class InvocationAttemptStore {
+	private readonly db: DatabaseSync;
+
+	constructor(db: DatabaseSync) {
+		this.db = db;
+	}
+
+	/** Append-only ledger row; (parent, target, attempt) idempotent-create / conflict. */
+	appendQueued(input: AppendAttemptInput): {
+		outcome: "created" | "replayed" | "conflict";
+		record: InvocationAttempt;
+	} {
+		const existing = this.db
+			.prepare(
+				"SELECT * FROM invocation_attempts WHERE parent_invocation_id = ? AND target_agent_id = ? AND attempt = ?",
+			)
+			.get(input.parentInvocationId, input.targetAgentId, input.attempt) as AttemptRow | undefined;
+		if (existing) {
+			return existing.queue_entry_id === input.queueEntryId
+				? { outcome: "replayed", record: mapAttempt(existing) }
+				: { outcome: "conflict", record: mapAttempt(existing) };
+		}
+		this.db
+			.prepare(
+				`INSERT INTO invocation_attempts (attempt_id, parent_invocation_id, queue_entry_id, thread_id, target_agent_id, attempt, delivery_state, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`,
+			)
+			.run(
+				input.attemptId,
+				input.parentInvocationId,
+				input.queueEntryId,
+				input.threadId,
+				input.targetAgentId,
+				input.attempt,
+				input.now,
+			);
+		return {
+			outcome: "created",
+			record: mapAttempt(
+				this.db
+					.prepare("SELECT * FROM invocation_attempts WHERE attempt_id = ?")
+					.get(input.attemptId) as unknown as AttemptRow,
+			),
+		};
+	}
+
+	get(attemptId: string): InvocationAttempt | null {
+		const row = this.db.prepare("SELECT * FROM invocation_attempts WHERE attempt_id = ?").get(attemptId) as
+			| AttemptRow
+			| undefined;
+		return row ? mapAttempt(row) : null;
+	}
+
+	getByTurnExecutionId(turnExecutionId: string): InvocationAttempt | null {
+		const row = this.db
+			.prepare("SELECT * FROM invocation_attempts WHERE turn_execution_id = ?")
+			.get(turnExecutionId) as AttemptRow | undefined;
+		return row ? mapAttempt(row) : null;
+	}
+
+	getLatest(invocationId: string, targetAgentId: string): InvocationAttempt | null {
+		const row = this.db
+			.prepare(
+				"SELECT * FROM invocation_attempts WHERE parent_invocation_id = ? AND target_agent_id = ? ORDER BY attempt DESC LIMIT 1",
+			)
+			.get(invocationId, targetAgentId) as AttemptRow | undefined;
+		return row ? mapAttempt(row) : null;
+	}
+
+	listByInvocation(invocationId: string): InvocationAttempt[] {
+		const rows = this.db
+			.prepare("SELECT * FROM invocation_attempts WHERE parent_invocation_id = ? ORDER BY target_agent_id, attempt")
+			.all(invocationId) as unknown as AttemptRow[];
+		return rows.map(mapAttempt);
+	}
+
+	/** queued→starting only; Phase A reservation (0016 T1a). */
+	markStarting(attemptId: string, input: { agentSessionId: string; now: number }): InvocationAttempt | null {
+		const changes = this.db
+			.prepare(
+				"UPDATE invocation_attempts SET delivery_state = 'starting', agent_session_id = ?, started_at = ? WHERE attempt_id = ? AND delivery_state = 'queued'",
+			)
+			.run(input.agentSessionId, input.now, attemptId).changes;
+		return changes > 0 ? this.get(attemptId) : (this.get(attemptId) ?? null);
+	}
+
+	/** starting→appended; writes execution binding snapshot (§4.3.1). */
+	bindAppended(
+		attemptId: string,
+		input: {
+			turnExecutionId: string;
+			agentSessionId: string;
+			workerId: string | null;
+			provider: string;
+			model: string;
+			modelFamily: string;
+			responseMessageId: string;
+			now: number;
+		},
+	): InvocationAttempt | null {
+		const current = this.get(attemptId);
+		if (!current) return null;
+		if (current.deliveryState === "appended") {
+			// Idempotent re-bind: same values no-op, different fail closed.
+			if (
+				current.turnExecutionId !== input.turnExecutionId ||
+				current.responseMessageId !== input.responseMessageId
+			) {
+				throw new Error("attempt_rebind_conflict");
+			}
+			return current;
+		}
+		if (current.deliveryState !== "starting") throw new Error("attempt_not_starting");
+		this.db
+			.prepare(
+				`UPDATE invocation_attempts SET delivery_state = 'appended', turn_execution_id = ?, agent_session_id = ?, worker_id = COALESCE(?, worker_id), provider = ?, model = ?, model_family = ?, response_message_id = ?, settlement = 'streaming' WHERE attempt_id = ?`,
+			)
+			.run(
+				input.turnExecutionId,
+				input.agentSessionId,
+				input.workerId,
+				input.provider,
+				input.model,
+				input.modelFamily,
+				input.responseMessageId,
+				attemptId,
+			);
+		return this.get(attemptId);
+	}
+
+	bindWorker(attemptId: string, workerId: string): InvocationAttempt | null {
+		const current = this.get(attemptId);
+		if (!current) return null;
+		if (current.workerId && current.workerId !== workerId) throw new Error("attempt_worker_conflict");
+		if (current.workerId === workerId) return current;
+		this.db.prepare("UPDATE invocation_attempts SET worker_id = ? WHERE attempt_id = ?").run(workerId, attemptId);
+		return this.get(attemptId);
+	}
+
+	markPromptDelivered(
+		attemptId: string,
+		input: { deliveryBoundarySeq: number; now: number },
+	): InvocationAttempt | null {
+		const current = this.get(attemptId);
+		if (!current) return null;
+		if (current.promptDeliveredAt) {
+			if (current.deliveryBoundarySeq !== input.deliveryBoundarySeq)
+				throw new Error("attempt_prompt_boundary_conflict");
+			return current;
+		}
+		if (current.deliveryState !== "appended") throw new Error("attempt_not_appended");
+		this.db
+			.prepare(
+				"UPDATE invocation_attempts SET prompt_delivered_at = ?, delivery_boundary_seq = ? WHERE attempt_id = ?",
+			)
+			.run(input.now, input.deliveryBoundarySeq, attemptId);
+		return this.get(attemptId);
+	}
+
+	setSettlement(
+		attemptId: string,
+		settlement: "streaming" | "response_pending" | "settled",
+		responseMessageId?: string,
+	): InvocationAttempt | null {
+		this.db
+			.prepare(
+				"UPDATE invocation_attempts SET settlement = ?, response_message_id = COALESCE(?, response_message_id) WHERE attempt_id = ?",
+			)
+			.run(settlement, responseMessageId ?? null, attemptId);
+		return this.get(attemptId);
+	}
+
+	/** Canonical-first projection (0016 §4.4): validates child status matches. */
+	projectChildTerminal(
+		attemptId: string,
+		input: {
+			turnExecutionId: string;
+			childStatus: "completed" | "failed" | "interrupted" | "canceled";
+			terminalReason: string | null;
+			endedAt: number;
+		},
+	): { outcome: "transitioned" | "already_terminal" | "terminal_conflict" | "not_found" } {
+		const current = this.get(attemptId);
+		if (!current) return { outcome: "not_found" };
+		if (current.deliveryState !== "appended") {
+			return current.deliveryState === "handled" && current.turnExecutionId === input.turnExecutionId
+				? { outcome: "already_terminal" }
+				: { outcome: "terminal_conflict" };
+		}
+		const mapped: InvocationAttemptDeliveryState = input.childStatus === "completed" ? "handled" : input.childStatus;
+		if (mapped !== "handled" && !input.terminalReason) throw new Error("attempt_terminal_reason_required");
+		this.db
+			.prepare(
+				"UPDATE invocation_attempts SET delivery_state = ?, terminal_reason = ?, ended_at = ?, settlement = CASE WHEN settlement = 'streaming' THEN 'response_pending' ELSE settlement END WHERE attempt_id = ?",
+			)
+			.run(mapped, mapped === "handled" ? null : input.terminalReason, input.endedAt, attemptId);
+		return { outcome: "transitioned" };
+	}
+
+	/** Prestart terminal: queued→failed(target_invalid)|canceled, starting→failed|canceled. */
+	markPrestartTerminal(
+		attemptId: string,
+		input: { status: "failed" | "canceled"; terminalReason: string; endedAt: number },
+	): InvocationAttempt | null {
+		const current = this.get(attemptId);
+		if (!current) return null;
+		if (
+			current.deliveryState === "queued" &&
+			input.status === "failed" &&
+			input.terminalReason !== "target_invalid"
+		) {
+			throw new Error("attempt_queued_failed_requires_target_invalid");
+		}
+		this.db
+			.prepare(
+				"UPDATE invocation_attempts SET delivery_state = ?, terminal_reason = ?, ended_at = ? WHERE attempt_id = ? AND delivery_state IN ('queued', 'starting')",
+			)
+			.run(input.status, input.terminalReason, input.endedAt, attemptId);
+		return this.get(attemptId);
+	}
+
+	listResponsePending(): InvocationAttempt[] {
+		const rows = this.db
+			.prepare("SELECT * FROM invocation_attempts WHERE settlement = 'response_pending'")
+			.all() as unknown as AttemptRow[];
+		return rows.map(mapAttempt);
+	}
+}
