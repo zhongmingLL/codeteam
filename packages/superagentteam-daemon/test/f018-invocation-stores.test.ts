@@ -206,13 +206,6 @@ describe("TurnExecutionStore (0007 §3.6)", () => {
 	});
 });
 
-function seedSessionRow(db: import("node:sqlite").DatabaseSync, id: string, target = "a1"): void {
-	db.prepare(
-		`INSERT INTO agent_sessions (id, thread_id, agent_id, user_id, seq, status, working_directory, created_at, updated_at)
-		 VALUES (?, 't1', ?, 'u1', 1, 'active', '/p', 1, 1)`,
-	).run(id, target);
-}
-
 function seedAttempt(attempts: InvocationAttemptStore, attemptId = "at1", target = "a1", n = 1) {
 	return attempts.appendQueued({
 		attemptId,
