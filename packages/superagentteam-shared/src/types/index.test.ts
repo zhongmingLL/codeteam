@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type SuperAgentTeamSharedVersion } from "./index.ts";
+import type { SuperAgentTeamSharedVersion } from "./index.ts";
 
 describe("@superagentteam/shared types entry", () => {
 	it("exports the version marker", () => {
