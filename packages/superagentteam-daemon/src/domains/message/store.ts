@@ -1,6 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import type { AgentReadState, MessageFrom, MessageLifecycle, StoredMessage } from "@superagentteam/shared/types";
+import type {
+	AgentReadState,
+	MessageFrom,
+	MessageLifecycle,
+	QueueTarget,
+	StoredMessage,
+} from "@superagentteam/shared/types";
 
 // Typed owner error (review P3): callers can branch on code without parsing strings.
 
@@ -226,6 +232,37 @@ export class MessageStore {
 				.prepare("UPDATE messages SET lifecycle_json = ?, updated_at = ? WHERE id = ?")
 				.run(JSON.stringify(lifecycle), now, id).changes > 0
 		);
+	}
+
+	/**
+	 * F018 R2-a Phase B (0007 §3.1): append a dispatch receipt to an input
+	 * message's lifecycle. Only kind='input' rows accept dispatchRefs; the
+	 * append is idempotent per (queueEntryId, attempt).
+	 */
+	appendDispatchRef(
+		messageId: string,
+		ref: { target: QueueTarget; queueEntryId: string; attempt: number; turnExecutionId?: string; at: number },
+		now: number,
+	): boolean {
+		const message = this.get(messageId, { includeDeleted: true });
+		if (!message) throw new Error("dispatch_ref_message_not_found");
+		if (message.lifecycle?.kind !== "input") throw new Error("dispatch_ref_not_input_message");
+		const exists = message.lifecycle.dispatchRefs.some(
+			(existing) => existing.queueEntryId === ref.queueEntryId && existing.attempt === ref.attempt,
+		);
+		if (exists) return false;
+		const dispatchRefs = [
+			...message.lifecycle.dispatchRefs,
+			{
+				target: ref.target,
+				queueEntryId: ref.queueEntryId,
+				attempt: ref.attempt,
+				phase: "dispatched" as const,
+				turnExecutionId: ref.turnExecutionId,
+				at: ref.at,
+			},
+		];
+		return this.updateLifecycle(messageId, { kind: "input", dispatchRefs }, now);
 	}
 }
 

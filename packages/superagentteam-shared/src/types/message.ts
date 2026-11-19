@@ -97,7 +97,8 @@ export type MessageLifecycle =
 				| "credential_mint_failed"
 				| "draft_create_failed"
 				| "retire_targets_failed"
-				| "target_invalid";
+				| "target_invalid"
+				| "phase_b_failed";
 			createdAt: number;
 	  };
 
