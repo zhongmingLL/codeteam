@@ -509,6 +509,10 @@ describe("RunAgentTurn (0010 §6.1.1 steps 2-8)", () => {
 		expect(attempt.terminalReason).toContain("provider_error");
 		// Delivered failure: cursor ACKED (no infinite replay)…
 		expect(w.readState.get("t1", "a1")?.deliveryCursor).toBe(attempt.deliveryBoundarySeq);
+		// …and per 0010 §6 the FAILED turn does NOT count messageCount nor
+		// reset the resume breaker (round-2 P2).
+		const session = w.sessions.get(attempt.agentSessionId!)!;
+		expect(session.messageCount).toBe(0);
 		// …target NOT restored to pending, parent terminal failed.
 		expect(w.queue.listQueued("t1")).toHaveLength(0);
 		expect(w.records.get(invocationId)?.status).toBe("failed");

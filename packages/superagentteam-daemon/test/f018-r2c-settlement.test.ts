@@ -295,6 +295,8 @@ describe("T1/T2 full flow (0007 §3.6/§3.9)", () => {
 		}
 		// Ack: cursor advanced to the consumed boundary (promptDelivered ✓).
 		expect(w.readState.get("t1", "a1")?.deliveryCursor).toBe(attempt.deliveryBoundarySeq);
+		// Completed turn counts exactly once (0010 §6).
+		expect(w.sessions.get(attempt.agentSessionId!)?.messageCount).toBe(1);
 		// Participant added on first completed turn.
 		expect(w.threads.listParticipants("t1")).toContain("a1");
 		// T3: parent completed + queue anchor deleted.
@@ -593,11 +595,20 @@ describe("T4 ResponseRecoveryService", () => {
 		const system = w.messages.getByThread("t1", 10).find((message) => message.content.includes("response_missing"));
 		expect(system?.from.kind).toBe("system");
 		expect(w.turns.listResponsePending()).toHaveLength(0);
-		// 烁烁 P2 (livelock): a crash between the marker append and the clear
-		// must NOT strand the turn — a retried sweep converges without hitting
+		// 烁烁 P2 (livelock) + 宪宪 P3 (real crash window): simulate the crash
+		// between the marker append and the clear — marker EXISTS, pending is
+		// STILL SET — then verify the retried sweep converges without hitting
 		// the rm: message UNIQUE.
+		w.db
+			.prepare("UPDATE invocation_attempts SET settlement = 'response_pending' WHERE turn_execution_id = ?")
+			.run("te1");
 		const rerun = w.recovery.runOnce();
 		expect(rerun.failures).toBe(0);
 		expect(w.turns.listResponsePending()).toHaveLength(0);
+		// Exactly one marker despite the retried sweep.
+		const markers = w.messages
+			.getByThread("t1", 50)
+			.filter((message) => message.content.includes("response_missing"));
+		expect(markers).toHaveLength(1);
 	});
 });

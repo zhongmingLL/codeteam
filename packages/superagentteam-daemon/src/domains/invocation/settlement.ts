@@ -103,15 +103,20 @@ export class TurnExecutionLifecycle {
 			// Credential follows child truth (0007 §5.3).
 			const cred = this.deps.credentials.commitTerminal(input.turnExecutionId, input.status);
 			if (cred.outcome === "conflict") throw new Error("t1_credential_conflict");
-			// recordTurnTerminal: messageCount + cursor ack. The ack fires ONLY
-			// when this attempt actually delivered its prompt (0010 §6.1.1
-			// step 9 / §3.5.1): undelivered turns must replay next round.
+			// recordTurnTerminal (0010 §6): messageCount + the resume-failure
+			// breaker are touched ONLY on outcome=completed — failed/interrupted/
+			// canceled turns do not count and do not reset the breaker. The
+			// cursor ack is INDEPENDENT of the outcome: it fires whenever this
+			// attempt actually delivered its prompt (0010 §6.1.1 step 9 /
+			// §3.5.1) — undelivered turns must replay next round.
 			if (attempt.agentSessionId) {
-				this.deps.sessions.recordCompletedTurn(attempt.agentSessionId, {
-					turnExecutionId: input.turnExecutionId,
-					userVisibleOutput: input.userVisibleOutput,
-					now: input.endedAt,
-				});
+				if (input.status === "completed") {
+					this.deps.sessions.recordCompletedTurn(attempt.agentSessionId, {
+						turnExecutionId: input.turnExecutionId,
+						userVisibleOutput: input.userVisibleOutput,
+						now: input.endedAt,
+					});
+				}
 				if (attempt.promptDeliveredAt !== null && attempt.deliveryBoundarySeq !== null) {
 					this.deps.readState.ack(
 						attempt.threadId,
@@ -322,6 +327,9 @@ export class ResponseRecoveryService {
 							});
 						}
 						this.deps.drafts.delete(turn.turnExecutionId);
+						// Settle the input dispatchRefs like every other
+						// terminal branch (parent.userMessageId fallback inside).
+						this.committer.settleInputDispatchRefsPublic(attempt, now);
 						this.deps.turns.clearResponsePending(turn.turnExecutionId);
 					});
 					result.missing += 1;
