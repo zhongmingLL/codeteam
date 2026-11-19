@@ -144,7 +144,7 @@ export class InvocationRecordStore {
 	}
 
 	/** requestRetry store-side state flip only (§3.9 API boundary). */
-	admitRetry(invocationId: string, now: number): boolean {
+	admitRetry(invocationId: string): boolean {
 		return (
 			this.db
 				.prepare(

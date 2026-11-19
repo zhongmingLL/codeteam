@@ -108,7 +108,7 @@ describe("InvocationRecordStore (0007 §3.2)", () => {
 		records.addSuccessfulAgents("inv1", ["a1", "a2"]);
 		expect(records.get("inv1")?.successfulAgentIds).toEqual(["a1", "a2"]);
 		records.setTerminal("inv1", "partial_failed", "some_error", 100);
-		expect(records.admitRetry("inv1", 200)).toBe(true);
+		expect(records.admitRetry("inv1")).toBe(true);
 		const r = records.get("inv1")!;
 		expect(r.status).toBe("queued");
 		expect(r.retryCount).toBe(1);
