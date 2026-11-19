@@ -1323,13 +1323,9 @@ interface AgentTurnInput extends RouteInput {
   priorResponses?: Array<{ agentId: string; content: string }>;
 }
 
-type AgentStreamEvent =
-  | { type: "text"; agentId: string; turnExecutionId: string; content: string; timestamp: number }
-  | { type: "thinking"; agentId: string; turnExecutionId: string; content: string; timestamp: number }
-  | { type: "tool_call"; agentId: string; turnExecutionId: string; name: string; args: unknown; timestamp: number }
-  | { type: "tool_result"; agentId: string; turnExecutionId: string; name: string; result: unknown; timestamp: number }
-  | { type: "error"; agentId: string; turnExecutionId: string; error: string; timestamp: number }
-  | { type: "done"; agentId: string; turnExecutionId: string; timestamp: number };
+// AgentStreamEvent 见 §3.6.1；单一真相源为
+// packages/superagentteam-shared/src/types/invocation.ts
+// （text/thinking/tool_call/tool_result/error/done，含 seq/toolId/timestamp）。
 
 interface AgentTurnResult {
   agentId: string;
@@ -1993,19 +1989,21 @@ child/attempt failed/interrupted；R 由 T2/T4 提交为 failed/interrupted，�
 
 **pi RPC 已有事件**：`message_start` / `message_update`（含 `text_delta`）/
 `message_end` / `tool_execution_start` / `tool_execution_end` / `agent_settled`。
-codeteam 当前 `WorkerEventSink` 只处理 `message_end` 和 tool 事件，**忽略了
-`message_update`**；这是要补的。
+R2-b 前 `WorkerEventSink` 只处理 `message_end` 和 tool 事件，**忽略了
+`message_update`**；R2-b 的 `ResponseEventSink` 已补上增量事件。
 
 **v1 设计：processing response R + response_drafts + responsePending**
 
 ```ts
+// 单一真相源：packages/superagentteam-shared/src/types/invocation.ts
+// text/thinking 的 content 是增量；tool_call/tool_result 按 toolId 配对。
 type AgentStreamEvent =
-  | { type: "start"; turnExecutionId: string; agentId: string; seq: number }
-  | { type: "text_delta"; turnExecutionId: string; agentId: string; seq: number; delta: string }
-  | { type: "tool_call_start"; turnExecutionId: string; agentId: string; seq: number; toolName: string; toolId: string }
-  | { type: "tool_call_end"; turnExecutionId: string; agentId: string; seq: number; toolId: string; status: "ok" | "error" | "unknown" }
-  | { type: "complete"; turnExecutionId: string; agentId: string; seq: number; responseMessageId: string }
-  | { type: "error"; turnExecutionId: string; agentId: string; seq: number; code: string; message: string };
+  | { type: "text"; seq: number; agentId: string; turnExecutionId: string; content: string; timestamp: number }
+  | { type: "thinking"; seq: number; agentId: string; turnExecutionId: string; content: string; timestamp: number }
+  | { type: "tool_call"; seq: number; agentId: string; turnExecutionId: string; toolId: string; name: string; args: unknown; timestamp: number }
+  | { type: "tool_result"; seq: number; agentId: string; turnExecutionId: string; toolId: string; name: string; result: unknown; timestamp: number }
+  | { type: "error"; seq: number; agentId: string; turnExecutionId: string; error: string; timestamp: number }
+  | { type: "done"; seq: number; agentId: string; turnExecutionId: string; timestamp: number };
 ```
 
 - **transport**：走本地 control-plane event channel（与 pi extension/control socket 同一条
@@ -2016,13 +2014,16 @@ type AgentStreamEvent =
   > 100ms/4KB 是目标值，不是不可变契约；R2 做 write amplification/延迟 benchmark
   > 后可在 250–500ms 范围调整。
 - **UI merge**：UI 以 `turnExecutionId` 维护 draft bubble；按 `AgentStreamEvent.seq`
-  去重（收到 `seq > lastEventSeq` 的 `text_delta` 才追加），`tool_call_*` 按 `toolId`
-  合并；`complete` 用 `responseMessageId` 替换为持久 R；刷新/重连先加载 processing R +
-  draft，再接后续事件；`seq <= lastEventSeq` 的事件丢弃。draft 本身不存 `seq`。
+  去重（只把 `seq > lastEventSeq` 的 `text`/`thinking` 增量追加到 accumulator），
+  `tool_call` / `tool_result` 按 `toolId` 合并；`done` 表示 provider stream 结束，
+  UI 以 `turnExecutionId` 读取 T2 提交后的 terminal R 并替换 processing bubble
+  （`done` 本身不带 `responseMessageId`；T2 尚未提交时保留 processing bubble）；
+  刷新/重连先加载 processing R + draft，再接后续事件；`seq <= lastEventSeq` 的事件丢弃。
+  draft 本身不存 `seq`。
   `AgentStreamEvent.seq` 是 **per-turn、内存单调、可重置** 的传输序号（daemon 重启/
   新连接从 0 开始），不是 durable 版本。重连协议：先订阅事件、再读 processing R +
   draft 快照，快照期间收到的事件先 buffer，快照完成后只应用 `seq > baseline` 的事件；
-  无法拿到 baseline 时接受 processing bubble 的 at-least-once 瞬态重复，`complete`
+  无法拿到 baseline 时接受 processing bubble 的 at-least-once 瞬态重复，`done` 后
   用持久 R 纠正。
 - **error**：事件层 `error` 只标记 draft 错误；R 的 failed/interrupted/canceled 终态由
   T2 `RouteResponseCommitter` 提交；T2 失败时由 T4 `settleResponseFromDraft` 恢复，
