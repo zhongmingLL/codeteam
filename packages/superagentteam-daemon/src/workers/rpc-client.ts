@@ -168,7 +168,7 @@ export class RpcConnection {
 
 	async promptAndWait(
 		message: string,
-		options: { timeoutMs: number; signal?: AbortSignal },
+		options: { timeoutMs: number; signal?: AbortSignal; onAccepted?: () => void },
 	): Promise<{ aborted: boolean }> {
 		if (this.prompting) throw new Error("RPC connection is already prompting");
 		this.prompting = true;
@@ -229,6 +229,9 @@ export class RpcConnection {
 				return settled;
 			}
 			accepted = true;
+			// F018 R2-b: delivery-cursor ack gate — the provider has accepted
+			// the prompt payload; callers mark promptDelivered from here.
+			options.onAccepted?.();
 			if (settledSeen) finish(undefined, false);
 			return await settled;
 		} catch (error) {

@@ -208,21 +208,16 @@ export class InvocationCredentialStore {
 			messageId: input.messageId,
 			queueEntryId: input.queueEntryId,
 		};
-		// Single-writer note: this store assumes one daemon process (SQLite
-		// single connection serializes statements). For multi-writer safety
-		// the write is followed by a verify re-read: if a concurrent claim
-		// replaced the map, surface conflict instead of silently losing it.
-		this.db
+		// R2-b strong CAS (R1 handover): optimistic compare-and-set on the
+		// exact previous JSON bytes — a concurrent writer that replaced the
+		// map between our read and write fails the WHERE and surfaces
+		// `conflict` instead of silently losing the other writer's claim.
+		const changes = this.db
 			.prepare(
-				"UPDATE invocation_credentials SET tool_call_claims_json = ?, updated_at = ? WHERE turn_execution_id = ? AND state = 'active'",
+				"UPDATE invocation_credentials SET tool_call_claims_json = ?, updated_at = ? WHERE turn_execution_id = ? AND state = 'active' AND tool_call_claims_json = ?",
 			)
-			.run(JSON.stringify(claims), now, turnExecutionId);
-		const verify = this.db
-			.prepare("SELECT tool_call_claims_json FROM invocation_credentials WHERE turn_execution_id = ?")
-			.get(turnExecutionId) as { tool_call_claims_json: string } | undefined;
-		if (!verify) return { outcome: "conflict" };
-		const landed = (JSON.parse(verify.tool_call_claims_json) as Record<string, ToolCallClaim>)[input.piExtToolCallId];
-		if (!landed || landed.intentHash !== input.intentHash) return { outcome: "conflict" };
+			.run(JSON.stringify(claims), now, turnExecutionId, row.tool_call_claims_json).changes;
+		if (changes === 0) return { outcome: "conflict" };
 		return { outcome: "reserved" };
 	}
 

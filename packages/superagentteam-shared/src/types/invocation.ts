@@ -169,6 +169,15 @@ export interface QueueAttemptProjection {
 	startedAt: number;
 }
 
+/** Ephemeral UI stream event (0007 §3.5); NOT persisted — durable truth is response_drafts. */
+export type AgentStreamEvent =
+	| { type: "text"; agentId: string; turnExecutionId: string; content: string; timestamp: number }
+	| { type: "thinking"; agentId: string; turnExecutionId: string; content: string; timestamp: number }
+	| { type: "tool_call"; agentId: string; turnExecutionId: string; name: string; args: unknown; timestamp: number }
+	| { type: "tool_result"; agentId: string; turnExecutionId: string; name: string; result: unknown; timestamp: number }
+	| { type: "error"; agentId: string; turnExecutionId: string; error: string; timestamp: number }
+	| { type: "done"; agentId: string; turnExecutionId: string; timestamp: number };
+
 export interface QueueTerminalProjection {
 	status: "terminal";
 	queueEntryId: string;
