@@ -4,7 +4,7 @@ import type { ControlMigration } from "./index.ts";
  * F018 R1-a core schema: thread model (0009) + agent read state (0007 §4.5).
  * Greenfield only: the new-baseline database contains F018 tables only.
  */
-export const F018_CORE_STATEMENTS = [
+export const CORE_STATEMENTS = [
 	// threads (0009 §1): user-owned conversation aggregate.
 	`CREATE TABLE threads (
 		id TEXT PRIMARY KEY,
@@ -41,15 +41,15 @@ export const F018_CORE_STATEMENTS = [
 	) STRICT`,
 ] as const;
 
-export const F018_CORE_DOWNS = [
+export const CORE_DOWNS = [
 	`DROP TABLE IF EXISTS agent_read_state`,
 	`DROP TABLE IF EXISTS thread_participants`,
 	`DROP TABLE IF EXISTS threads`,
 ] as const;
 
-export const f018CoreMigration: ControlMigration = {
+export const coreMigration: ControlMigration = {
 	version: 1,
-	name: "f018-core",
-	up: [...F018_CORE_STATEMENTS],
-	down: [...F018_CORE_DOWNS],
+	name: "core",
+	up: [...CORE_STATEMENTS],
+	down: [...CORE_DOWNS],
 };

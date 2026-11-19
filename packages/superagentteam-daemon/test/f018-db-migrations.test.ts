@@ -52,14 +52,14 @@ describe("F018 greenfield migration harness", () => {
 		const { db } = makeDb();
 		expect(db.migrateUp()).toBe(2);
 		expect(db.migrateUp()).toBe(0);
-		expect(db.appliedVersions().map((row) => row.name)).toEqual(["f018-core", "f018-messages"]);
+		expect(db.appliedVersions().map((row) => row.name)).toEqual(["core", "messages"]);
 	});
 
 	it("rolls back the newest migration and re-applies it", () => {
 		const { db } = makeDb();
 		db.migrateUp();
 		expect(db.migrateDown()).toBe(true);
-		expect(db.appliedVersions().map((row) => row.name)).toEqual(["f018-core"]);
+		expect(db.appliedVersions().map((row) => row.name)).toEqual(["core"]);
 		expect(db.migrateDown()).toBe(true);
 		expect(db.appliedVersions()).toHaveLength(0);
 		const tables = (

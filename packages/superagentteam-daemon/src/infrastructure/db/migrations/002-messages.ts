@@ -8,7 +8,7 @@ import type { ControlMigration } from "./index.ts";
  * contentBlocks/toolEvents/lifecycle/extra. Legacy task-first columns are
  * deliberately absent.
  */
-export const F018_MESSAGES_STATEMENTS = [
+export const MESSAGES_STATEMENTS = [
 	`CREATE TABLE messages (
 		id TEXT PRIMARY KEY,
 		thread_id TEXT NOT NULL,
@@ -39,11 +39,11 @@ export const F018_MESSAGES_STATEMENTS = [
 	`CREATE INDEX messages_mentions_user ON messages(thread_id, created_at) WHERE mentions_user = 1`,
 ] as const;
 
-export const F018_MESSAGES_DOWNS = [`DROP TABLE IF EXISTS messages`] as const;
+export const MESSAGES_DOWNS = [`DROP TABLE IF EXISTS messages`] as const;
 
-export const f018MessagesMigration: ControlMigration = {
+export const messagesMigration: ControlMigration = {
 	version: 2,
-	name: "f018-messages",
-	up: [...F018_MESSAGES_STATEMENTS],
-	down: [...F018_MESSAGES_DOWNS],
+	name: "messages",
+	up: [...MESSAGES_STATEMENTS],
+	down: [...MESSAGES_DOWNS],
 };
