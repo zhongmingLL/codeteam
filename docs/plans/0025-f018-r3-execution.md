@@ -1,7 +1,7 @@
 ---
 title: "F018 — R3 execution plan (cross-thread / multi_mention)"
 doc_kind: plan
-status: in-progress
+status: done
 created: 2026-11-20
 updated: 2026-11-20
 owner: "宪宪 (DeepSeek Flash)"
