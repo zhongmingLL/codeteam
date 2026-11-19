@@ -22,8 +22,10 @@ export type CatalogErrorCode =
 	| "account_models_empty";
 
 export class CatalogError extends Error {
-	constructor(readonly code: CatalogErrorCode, message: string) {
+	readonly code: CatalogErrorCode;
+	constructor(code: CatalogErrorCode, message: string) {
 		super(message);
+		this.code = code;
 		this.name = "CatalogError";
 	}
 }
