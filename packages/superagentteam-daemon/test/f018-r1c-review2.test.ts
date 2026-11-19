@@ -350,6 +350,7 @@ describe("004 down rebuilds attempts without session/worker FKs", () => {
 		dirs.push(dir);
 		const db = new F018Database({ path: join(dir, "f018.db"), noMigrate: true });
 		db.migrateUp();
+		db.migrateDown(); // drops 005 (multi_mention) first
 		db.migrateDown(); // drops 004 tables
 		const fks = (db.db.prepare("PRAGMA foreign_key_list(invocation_attempts)").all() as Array<{ table: string }>).map(
 			(r) => r.table,
