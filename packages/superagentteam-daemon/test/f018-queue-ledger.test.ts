@@ -285,6 +285,7 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 		if (retired.outcome === "updated") {
 			expect(retired.projection.status).toBe("processing");
 			expect(retired.projection.queueEntryId).toBe(qid);
+			expect(retired.projection.targets.map((t) => t.id)).toEqual(["a1"]); // THIS slice, not remaining [a2]
 		} else {
 			throw new Error("expected updated");
 		}
@@ -298,6 +299,7 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 		if (gone.outcome === "deleted") {
 			expect(gone.projection.status).toBe("terminal");
 			expect(gone.projection.reason).toBe("withdrawn");
+			expect(gone.projection.targets.map((t) => t.id)).toEqual(["a2"]);
 		}
 	});
 

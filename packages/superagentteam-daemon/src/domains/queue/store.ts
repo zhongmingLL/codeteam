@@ -136,24 +136,30 @@ export interface RetireInput {
 	now?: number;
 }
 
-function attemptProjection(entry: QueueEntry): QueueAttemptProjection {
+function targetsForKeys(entry: QueueEntry, keys: readonly string[]): QueueTarget[] {
+	return entry.targets.filter((t) => keys.includes(`agent:${t.id}`));
+}
+
+/** §3.1: projection targets are THIS retire/withdraw slice, not the remaining set. */
+function attemptProjection(entry: QueueEntry, slice: readonly QueueTarget[]): QueueAttemptProjection {
 	return {
 		status: "processing",
 		queueEntryId: entry.queueEntryId,
-		targets: entry.targets,
+		targets: [...slice],
 		startedAt: entry.claim?.claimedAt ?? entry.enqueuedAt,
 	};
 }
 
 function terminalProjection(
 	entry: QueueEntry,
+	slice: readonly QueueTarget[],
 	reason: "dispatched" | "withdrawn",
 	now: number,
 ): QueueTerminalProjection {
 	return {
 		status: "terminal",
 		queueEntryId: entry.queueEntryId,
-		targets: entry.targets,
+		targets: [...slice],
 		endedAt: now,
 		reason,
 	};
@@ -162,6 +168,12 @@ function terminalProjection(
 export type RetireResult =
 	| { outcome: "updated"; entry: QueueEntry; projection: QueueAttemptProjection }
 	| { outcome: "deleted"; entry: QueueEntry; projection: QueueTerminalProjection }
+	| { outcome: "not_found" }
+	| { outcome: "state_changed" };
+
+/** §3.1 release has no projection: it returns targets to queued unchanged. */
+export type QueueReleaseResult =
+	| { outcome: "updated"; entry: QueueEntry }
 	| { outcome: "not_found" }
 	| { outcome: "state_changed" };
 
@@ -385,23 +397,30 @@ export class QueueLedgerStore {
 				.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ? AND claim_id = ?")
 				.run(threadId, queueEntryId, claimId);
 			const before = mapEntry(row);
-			return { outcome: "deleted", entry: before, projection: terminalProjection(before, "dispatched", now) };
+			const retiredSlice = targetsForKeys(before, input.targetKeys);
+			return {
+				outcome: "deleted",
+				entry: before,
+				projection: terminalProjection(before, retiredSlice, "dispatched", now),
+			};
 		}
 		const changes = this.db
 			.prepare(
 				`UPDATE invocation_queue SET targets_json = ?, updated_at = ? WHERE thread_id = ? AND queue_entry_id = ? AND claim_id = ?`,
 			)
 			.run(JSON.stringify(remaining), now, threadId, queueEntryId, claimId).changes;
-		return changes > 0
-			? {
-					outcome: "updated",
-					entry: this.get(threadId, queueEntryId)!,
-					projection: attemptProjection(this.get(threadId, queueEntryId)!),
-				}
-			: { outcome: "state_changed" };
+		if (changes > 0) {
+			const updatedEntry = this.get(threadId, queueEntryId)!;
+			return {
+				outcome: "updated",
+				entry: updatedEntry,
+				projection: attemptProjection(updatedEntry, targetsForKeys(mapEntry(row), input.targetKeys)),
+			};
+		}
+		return { outcome: "state_changed" };
 	}
 
-	releaseClaim(threadId: string, queueEntryId: string, claimId: string, now = Date.now()): RetireResult {
+	releaseClaim(threadId: string, queueEntryId: string, claimId: string, now = Date.now()): QueueReleaseResult {
 		const row = this.db
 			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
 			.get(threadId, queueEntryId) as QueueRow | undefined;
@@ -414,11 +433,7 @@ export class QueueLedgerStore {
 			)
 			.run(now, threadId, queueEntryId, claimId).changes;
 		return changes > 0
-			? {
-					outcome: "updated",
-					entry: this.get(threadId, queueEntryId)!,
-					projection: attemptProjection(this.get(threadId, queueEntryId)!),
-				}
+			? { outcome: "updated", entry: this.get(threadId, queueEntryId)! }
 			: { outcome: "state_changed" };
 	}
 
@@ -438,7 +453,11 @@ export class QueueLedgerStore {
 			this.db
 				.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
 				.run(threadId, queueEntryId);
-			return { outcome: "deleted", entry: current, projection: terminalProjection(current, "withdrawn", now) };
+			return {
+				outcome: "deleted",
+				entry: current,
+				projection: terminalProjection(current, targetsForKeys(current, keys), "withdrawn", now),
+			};
 		}
 		if (row.status === "claimed" && row.claimed_target_keys_json) {
 			// Claimed partial withdrawal: shrink claimed keys to pending
@@ -462,7 +481,11 @@ export class QueueLedgerStore {
 					.run(JSON.stringify(remaining), JSON.stringify(stillCovered), now, threadId, queueEntryId);
 			}
 			const claimUpdated = this.get(threadId, queueEntryId)!;
-			return { outcome: "updated", entry: claimUpdated, projection: attemptProjection(claimUpdated) };
+			return {
+				outcome: "updated",
+				entry: claimUpdated,
+				projection: attemptProjection(claimUpdated, targetsForKeys(current, keys)),
+			};
 		}
 		this.db
 			.prepare(
@@ -470,7 +493,11 @@ export class QueueLedgerStore {
 			)
 			.run(JSON.stringify(remaining), now, threadId, queueEntryId);
 		const finalEntry = this.get(threadId, queueEntryId)!;
-		return { outcome: "updated", entry: finalEntry, projection: attemptProjection(finalEntry) };
+		return {
+			outcome: "updated",
+			entry: finalEntry,
+			projection: attemptProjection(finalEntry, targetsForKeys(current, keys)),
+		};
 	}
 
 	/** Startup/reaper: expired claims return to queued; returns restored count. */
