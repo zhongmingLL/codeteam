@@ -150,3 +150,13 @@ export interface InvocationAttempt {
 	startedAt: number | null;
 	endedAt: number | null;
 }
+
+/** queue_admissions receipt row (0007 §4.1, R-01). */
+export interface QueueAdmission {
+	threadId: string;
+	sourceRecordId: string;
+	attempt: number;
+	queueEntryId: string;
+	fingerprint: string;
+	admittedAt: number;
+}

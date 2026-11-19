@@ -13,6 +13,15 @@ import type {
 // implementations against the accepted contracts; task-first legacy code was
 // not used as a skeleton.
 
+function canonicalJson(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+	if (value && typeof value === "object") {
+		const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1));
+		return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+	}
+	return JSON.stringify(value);
+}
+
 // ------------------------------------------------------------ records (§3.2)
 
 interface RecordRow {
@@ -53,6 +62,8 @@ function mapRecord(row: RecordRow): InvocationRecord {
 	};
 }
 
+export type TerminalStatus = Exclude<InvocationRecordStatus, "queued" | "running">;
+
 export interface CreateInvocationRecordInput {
 	invocationId: string;
 	threadId: string;
@@ -70,10 +81,28 @@ export class InvocationRecordStore {
 		this.db = db;
 	}
 
-	/** Idempotent by sourceRecordId UNIQUE; re-create returns the existing row. */
-	create(input: CreateInvocationRecordInput): InvocationRecord {
-		const existing = this.bySource(input.sourceRecordId);
-		if (existing) return existing;
+	/**
+	 * Three-state create (0011 §11 + R-01): owner must match thread owner;
+	 * replay compares immutable inputs; drift fails closed.
+	 */
+	create(input: CreateInvocationRecordInput): {
+		outcome: "created" | "replayed" | "conflict";
+		record: InvocationRecord;
+	} {
+		const thread = this.db.prepare("SELECT created_by FROM threads WHERE id = ?").get(input.threadId) as
+			| { created_by: string }
+			| undefined;
+		if (!thread) throw new Error("invocation_thread_not_found");
+		if (thread.created_by !== input.userId) throw new Error("invocation_owner_not_thread_owner");
+		const existing = this.byThreadSource(input.threadId, input.sourceRecordId);
+		if (existing) {
+			const sameIdentity =
+				existing.userId === input.userId &&
+				existing.targetAgentIds.join("\u0000") === input.targetAgentIds.join("\u0000") &&
+				(existing.userMessageId ?? null) === (input.userMessageId ?? null);
+			if (!sameIdentity) return { outcome: "conflict", record: existing };
+			return { outcome: "replayed", record: existing };
+		}
 		if (input.targetAgentIds.length === 0) throw new Error("invocation_targets_empty");
 		this.db
 			.prepare(
@@ -89,7 +118,7 @@ export class InvocationRecordStore {
 				JSON.stringify(input.targetAgentIds),
 				input.now,
 			);
-		return this.bySource(input.sourceRecordId)!;
+		return { outcome: "created", record: this.byThreadSource(input.threadId, input.sourceRecordId)! };
 	}
 
 	get(invocationId: string): InvocationRecord | null {
@@ -99,10 +128,10 @@ export class InvocationRecordStore {
 		return row ? mapRecord(row) : null;
 	}
 
-	bySource(sourceRecordId: string): InvocationRecord | null {
-		const row = this.db.prepare("SELECT * FROM invocation_records WHERE source_record_id = ?").get(sourceRecordId) as
-			| RecordRow
-			| undefined;
+	byThreadSource(threadId: string, sourceRecordId: string): InvocationRecord | null {
+		const row = this.db
+			.prepare("SELECT * FROM invocation_records WHERE thread_id = ? AND source_record_id = ?")
+			.get(threadId, sourceRecordId) as RecordRow | undefined;
 		return row ? mapRecord(row) : null;
 	}
 
@@ -128,19 +157,56 @@ export class InvocationRecordStore {
 			.run(JSON.stringify(merged), invocationId);
 	}
 
-	setTerminal(
-		invocationId: string,
-		status: InvocationRecordStatus,
-		terminalReason: string | null,
-		now: number,
-	): boolean {
+	setTerminal(invocationId: string, status: TerminalStatus, terminalReason: string | null, now: number): boolean {
+		if (status !== "completed" && status !== "canceled" && !terminalReason) {
+			throw new Error("invocation_terminal_reason_required");
+		}
 		return (
 			this.db
 				.prepare(
 					"UPDATE invocation_records SET status = ?, terminal_reason = ?, ended_at = ? WHERE invocation_id = ? AND status IN ('queued', 'running')",
 				)
-				.run(status, terminalReason, now, invocationId).changes > 0
+				.run(status, status === "completed" ? null : terminalReason, now, invocationId).changes > 0
 		);
+	}
+
+	/**
+	 * T3 aggregate write (0007 §3.9): only queued|running parents;
+	 * successfulAgentIds ⊆ targetAgentIds and monotonic; usage bucket first
+	 * write only (usageRecordedAt stable).
+	 */
+	applyTerminalAggregate(input: {
+		invocationId: string;
+		status: TerminalStatus;
+		successfulAgentIds: string[];
+		terminalReason: string | null;
+		usageByAgent?: Record<string, unknown>;
+		now: number;
+	}): boolean {
+		const row = this.get(input.invocationId);
+		if (!row) throw new Error("invocation_not_found");
+		if (row.status !== "queued" && row.status !== "running") return false;
+		const outside = input.successfulAgentIds.filter((a) => !row.targetAgentIds.includes(a));
+		if (outside.length > 0) throw new Error("invocation_successful_outside_targets");
+		if (input.status !== "completed" && input.status !== "canceled" && !input.terminalReason) {
+			throw new Error("invocation_terminal_reason_required");
+		}
+		const merged = [...new Set([...row.successfulAgentIds, ...input.successfulAgentIds])];
+		const usage = row.usageRecordedAt === null && input.usageByAgent ? JSON.stringify(input.usageByAgent) : null;
+		this.db
+			.prepare(
+				"UPDATE invocation_records SET status = ?, successful_agent_ids_json = ?, terminal_reason = ?, ended_at = ?, usage_by_agent_json = COALESCE(?, usage_by_agent_json), usage_recorded_at = COALESCE(usage_recorded_at, ?) WHERE invocation_id = ?",
+			)
+			.run(
+				input.status,
+				JSON.stringify(merged),
+				input.status === "completed" ? null : input.terminalReason,
+				input.now,
+				usage,
+				input.usageByAgent ? input.now : null,
+				input.invocationId,
+			);
+		return true;
 	}
 
 	/** requestRetry store-side state flip only (§3.9 API boundary). */
@@ -231,7 +297,7 @@ export class TurnExecutionStore {
 				existing.userId === input.userId &&
 				existing.agentId === input.agentId &&
 				existing.executionKind === input.executionKind &&
-				JSON.stringify(existing.causal) === JSON.stringify(input.causal);
+				canonicalJson(existing.causal) === canonicalJson(input.causal);
 			if (!sameIdentity) throw new Error("turn_identity_conflict");
 			return { outcome: "replayed", record: existing };
 		}
@@ -288,17 +354,17 @@ export class TurnExecutionStore {
 			throw new Error("turn_terminal_reason_required");
 		}
 		if (input.endedAt < row.startedAt) throw new Error("turn_ended_before_started");
-		this.db
+		const changes = this.db
 			.prepare(
-				"UPDATE turn_executions SET status = ?, terminal_reason = ?, ended_at = ? WHERE turn_execution_id = ?",
+				"UPDATE turn_executions SET status = ?, terminal_reason = ?, ended_at = ? WHERE turn_execution_id = ? AND status = 'running'",
 			)
 			.run(
 				input.status,
 				input.status === "completed" ? null : (input.terminalReason ?? null),
 				input.endedAt,
 				turnExecutionId,
-			);
-		return { outcome: "transitioned" };
+			).changes;
+		return changes > 0 ? { outcome: "transitioned" } : { outcome: "conflict" };
 	}
 
 	/** Startup-only cutoff convergence (§3.10.1). */
@@ -315,12 +381,39 @@ export class TurnExecutionStore {
 			if (excluded.has(row.turn_execution_id)) continue;
 			this.db
 				.prepare(
-					"UPDATE turn_executions SET status = 'interrupted', terminal_reason = ?, ended_at = ? WHERE turn_execution_id = ?",
+					"UPDATE turn_executions SET status = 'interrupted', terminal_reason = ?, ended_at = ? WHERE turn_execution_id = ? AND status = 'running'",
 				)
-				.run(input.terminalReason, input.endedAt, row.turn_execution_id);
-			converged.push(this.get(row.turn_execution_id)!);
+				.run(input.terminalReason, input.endedAt, row.turn_execution_id).changes;
+			if (row.status === "running") converged.push(this.get(row.turn_execution_id)!);
 		}
 		return converged;
+	}
+
+	/** attempt settlement projection (0007 §3.6): join over attempts. */
+	listResponsePending(): TurnExecution[] {
+		const rows = this.db
+			.prepare(
+				`SELECT t.* FROM turn_executions t JOIN invocation_attempts a ON a.turn_execution_id = t.turn_execution_id
+				 WHERE a.settlement = 'response_pending'`,
+			)
+			.all() as unknown as TurnRow[];
+		return rows.map(mapTurn);
+	}
+
+	clearResponsePending(turnExecutionId: string): {
+		outcome: "settled" | "already_settled" | "not_pending" | "not_found";
+	} {
+		const changes = this.db
+			.prepare(
+				"UPDATE invocation_attempts SET settlement = 'settled' WHERE turn_execution_id = ? AND settlement = 'response_pending'",
+			)
+			.run(turnExecutionId).changes;
+		if (changes > 0) return { outcome: "settled" };
+		const row = this.db
+			.prepare("SELECT settlement FROM invocation_attempts WHERE turn_execution_id = ?")
+			.get(turnExecutionId) as { settlement: string | null } | undefined;
+		if (!row) return { outcome: "not_found" };
+		return row.settlement === null ? { outcome: "not_pending" } : { outcome: "already_settled" };
 	}
 }
 
@@ -390,9 +483,11 @@ export interface AppendAttemptInput {
 
 export class InvocationAttemptStore {
 	private readonly db: DatabaseSync;
+	private readonly turns: TurnExecutionStore;
 
-	constructor(db: DatabaseSync) {
+	constructor(db: DatabaseSync, turns?: TurnExecutionStore) {
 		this.db = db;
+		this.turns = turns ?? new TurnExecutionStore(db);
 	}
 
 	/** Append-only ledger row; (parent, target, attempt) idempotent-create / conflict. */
@@ -552,6 +647,10 @@ export class InvocationAttemptStore {
 		settlement: "streaming" | "response_pending" | "settled",
 		responseMessageId?: string,
 	): InvocationAttempt | null {
+		const current = this.get(attemptId);
+		if (current?.settlement === "settled" && settlement !== "settled") {
+			throw new Error("attempt_settlement_regression");
+		}
 		this.db
 			.prepare(
 				"UPDATE invocation_attempts SET settlement = ?, response_message_id = COALESCE(?, response_message_id) WHERE attempt_id = ?",
@@ -572,10 +671,23 @@ export class InvocationAttemptStore {
 	): { outcome: "transitioned" | "already_terminal" | "terminal_conflict" | "not_found" } {
 		const current = this.get(attemptId);
 		if (!current) return { outcome: "not_found" };
+		// Canonical-first (0016 §4.4): read the TurnExecution and validate it
+		// is the bound child with exactly this status — no attempt write may
+		// invent or drift from child truth.
+		if (current.turnExecutionId !== input.turnExecutionId) return { outcome: "terminal_conflict" };
+		const child = this.turns.get(input.turnExecutionId);
+		if (!child) throw new Error("attempt_child_not_found");
+		if (child.status !== input.childStatus) {
+			throw new Error(`attempt_child_status_mismatch: ${child.status} != ${input.childStatus}`);
+		}
 		if (current.deliveryState !== "appended") {
-			return current.deliveryState === "handled" && current.turnExecutionId === input.turnExecutionId
-				? { outcome: "already_terminal" }
-				: { outcome: "terminal_conflict" };
+			const sameTerminal =
+				(current.deliveryState === "handled" && input.childStatus === "completed") ||
+				(current.deliveryState === input.childStatus &&
+					(input.childStatus === "failed" ||
+						input.childStatus === "interrupted" ||
+						input.childStatus === "canceled"));
+			return sameTerminal ? { outcome: "already_terminal" } : { outcome: "terminal_conflict" };
 		}
 		const mapped: InvocationAttemptDeliveryState = input.childStatus === "completed" ? "handled" : input.childStatus;
 		if (mapped !== "handled" && !input.terminalReason) throw new Error("attempt_terminal_reason_required");
@@ -607,6 +719,20 @@ export class InvocationAttemptStore {
 			)
 			.run(input.status, input.terminalReason, input.endedAt, attemptId);
 		return this.get(attemptId);
+	}
+
+	recordUsage(attemptId: string, usage: Record<string, unknown>): InvocationAttempt | null {
+		this.db
+			.prepare("UPDATE invocation_attempts SET usage_json = ? WHERE attempt_id = ?")
+			.run(JSON.stringify(usage), attemptId);
+		return this.get(attemptId);
+	}
+
+	listActive(): InvocationAttempt[] {
+		const rows = this.db
+			.prepare("SELECT * FROM invocation_attempts WHERE delivery_state IN ('starting', 'appended')")
+			.all() as unknown as AttemptRow[];
+		return rows.map(mapAttempt);
 	}
 
 	listResponsePending(): InvocationAttempt[] {

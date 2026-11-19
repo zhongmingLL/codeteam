@@ -1,0 +1,415 @@
+import type { DatabaseSync } from "node:sqlite";
+
+import type {
+	MessageFrom,
+	QueueEntry,
+	QueueEntryKind,
+	QueueExecution,
+	QueueOwner,
+	QueuePayload,
+	QueueTarget,
+} from "@superagentteam/shared/types";
+
+// F018 R1-b queue ledger store (0007 §3.1 QueueLedgerStore + §4.1 schema).
+// Fresh implementation; the task-first queue was frozen and not used.
+
+/** Immutable-admission fingerprint fields (§3.1 replay protection). */
+export interface AdmissionFingerprintInput {
+	owner: QueueOwner;
+	kind: QueueEntryKind;
+	from: MessageFrom;
+	payload: QueuePayload;
+	priority: "urgent" | "normal";
+	execution: QueueExecution;
+}
+
+export function computeAdmissionFingerprint(input: AdmissionFingerprintInput): string {
+	// Canonical JSON: sorted keys, stable stringify.
+	const canonical = (value: unknown): unknown => {
+		if (Array.isArray(value)) return value.map(canonical);
+		if (value && typeof value === "object") {
+			return Object.fromEntries(
+				Object.entries(value as Record<string, unknown>)
+					.sort(([a], [b]) => (a < b ? -1 : 1))
+					.map(([k, v]) => [k, canonical(v)]),
+			);
+		}
+		return value;
+	};
+	return JSON.stringify(canonical(input));
+}
+
+interface QueueRow {
+	version: number;
+	queue_entry_id: string;
+	thread_id: string;
+	source_record_id: string;
+	message_id: string | null;
+	origin_record_id: string | null;
+	attempt: number;
+	owner_json: string;
+	kind: string;
+	from_json: string;
+	targets_json: string;
+	payload_json: string;
+	execution_json: string;
+	priority: string;
+	position: number;
+	status: "queued" | "claimed";
+	claim_id: string | null;
+	claim_owner: string | null;
+	claimed_at: number | null;
+	claim_expires_at: number | null;
+	claimed_target_keys_json: string | null;
+	enqueued_at: number;
+	updated_at: number;
+}
+
+function mapEntry(row: QueueRow): QueueEntry {
+	return {
+		version: 1,
+		queueEntryId: row.queue_entry_id,
+		threadId: row.thread_id,
+		owner: JSON.parse(row.owner_json) as QueueOwner,
+		kind: row.kind as QueueEntryKind,
+		from: JSON.parse(row.from_json) as MessageFrom,
+		targets: JSON.parse(row.targets_json) as QueueTarget[],
+		payload: JSON.parse(row.payload_json) as QueuePayload,
+		execution: JSON.parse(row.execution_json) as QueueExecution,
+		claim: row.claim_id
+			? {
+					claimId: row.claim_id,
+					owner: row.claim_owner!,
+					claimedAt: row.claimed_at!,
+					expiresAt: row.claim_expires_at!,
+					targetKeys: JSON.parse(row.claimed_target_keys_json!) as string[],
+				}
+			: null,
+		status: row.status,
+		priority: row.priority as "urgent" | "normal",
+		position: row.position,
+		enqueuedAt: row.enqueued_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+export interface EnqueueInput {
+	threadId: string;
+	sourceRecordId: string;
+	messageId: string | null;
+	originRecordId?: string | null;
+	attempt?: number;
+	owner: QueueOwner;
+	kind: QueueEntryKind;
+	from: MessageFrom;
+	content: string;
+	targets: QueueTarget[];
+	priority?: "urgent" | "normal";
+	execution?: Partial<QueueExecution>;
+}
+
+export type EnqueueOutcome =
+	| { outcome: "enqueued"; entry: QueueEntry }
+	| { outcome: "replayed"; entry: QueueEntry | null }
+	| { outcome: "conflict"; entry: null };
+
+export interface ClaimInput {
+	claimId: string;
+	owner: string;
+	ttlMs: number;
+	targetKeys: string[];
+	now?: number;
+}
+
+export type ClaimResult =
+	| { outcome: "claimed"; entry: QueueEntry }
+	| { outcome: "not_found" }
+	| { outcome: "state_changed" };
+
+export interface RetireInput {
+	targetKeys: string[];
+	now?: number;
+}
+
+export type RetireResult =
+	| { outcome: "updated"; entry: QueueEntry }
+	| { outcome: "deleted"; entry: QueueEntry }
+	| { outcome: "not_found" }
+	| { outcome: "state_changed" };
+
+export interface WithdrawInput {
+	claimId?: string;
+	targetKeys?: string[];
+	actorRef: string;
+	reason: string;
+	now?: number;
+}
+
+export type WithdrawResult =
+	| { outcome: "updated"; entry: QueueEntry }
+	| { outcome: "deleted"; entry: QueueEntry }
+	| { outcome: "not_found" }
+	| { outcome: "state_changed" };
+
+/** Per-thread cap, counted separately per kind (0007 §3.1). */
+export const QUEUE_CAP_PER_KIND = 5;
+
+export class QueueLedgerStore {
+	private readonly db: DatabaseSync;
+
+	constructor(db: DatabaseSync) {
+		this.db = db;
+	}
+
+	enqueue(input: EnqueueInput, now = Date.now()): EnqueueOutcome {
+		const attempt = input.attempt ?? 1;
+		const thread = this.db.prepare("SELECT created_by FROM threads WHERE id = ?").get(input.threadId) as
+			| { created_by: string }
+			| undefined;
+		if (!thread) throw new Error("queue_thread_not_found");
+		if (input.owner.kind === "user" && input.owner.userId !== thread.created_by) {
+			throw new Error("queue_owner_not_thread_owner");
+		}
+		const payload: QueuePayload = {
+			sourceRecordId: input.sourceRecordId,
+			messageId: input.messageId,
+			originRecordId: input.originRecordId ?? null,
+			attempt,
+			content: input.content,
+			requestedTargets: input.targets,
+		};
+		const execution: QueueExecution = {
+			a2aParentTurnExecutionId: input.execution?.a2aParentTurnExecutionId ?? null,
+			a2aTriggerMessageId: input.execution?.a2aTriggerMessageId ?? null,
+			a2aDepth: input.execution?.a2aDepth ?? 0,
+			multiMentionRequestId: input.execution?.multiMentionRequestId ?? null,
+			multiMentionCallbackDepth: input.execution?.multiMentionCallbackDepth ?? null,
+		};
+		const priority = input.priority ?? "normal";
+		const fingerprint = computeAdmissionFingerprint({
+			owner: input.owner,
+			kind: input.kind,
+			from: input.from,
+			payload,
+			priority,
+			execution,
+		});
+
+		const live = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND source_record_id = ? AND attempt = ?")
+			.get(input.threadId, input.sourceRecordId, attempt) as QueueRow | undefined;
+		if (live) {
+			return this.matchesFingerprint(live, fingerprint)
+				? { outcome: "replayed", entry: mapEntry(live) }
+				: { outcome: "conflict", entry: null };
+		}
+		const receipt = this.db
+			.prepare(
+				"SELECT fingerprint FROM queue_admissions WHERE thread_id = ? AND source_record_id = ? AND attempt = ?",
+			)
+			.get(input.threadId, input.sourceRecordId, attempt) as { fingerprint: string } | undefined;
+		if (receipt) {
+			return receipt.fingerprint === fingerprint
+				? { outcome: "replayed", entry: null }
+				: { outcome: "conflict", entry: null };
+		}
+		// Cap check (admission-time; per kind).
+		if (input.targets.length > 0) {
+			const count = this.countQueued(input.threadId, input.kind);
+			if (count >= QUEUE_CAP_PER_KIND) throw new Error("queue_full");
+		}
+		const position = (
+			this.db
+				.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS next FROM invocation_queue WHERE thread_id = ?")
+				.get(input.threadId) as { next: number }
+		).next;
+		const queueEntryId = `queue:${input.sourceRecordId}:${attempt}`;
+		this.db
+			.prepare(
+				`INSERT INTO invocation_queue (version, queue_entry_id, thread_id, source_record_id, message_id, origin_record_id, attempt, owner_json, kind, from_json, targets_json, payload_json, execution_json, priority, position, status, enqueued_at, updated_at)
+				 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
+			)
+			.run(
+				queueEntryId,
+				input.threadId,
+				input.sourceRecordId,
+				input.messageId,
+				input.originRecordId ?? null,
+				attempt,
+				JSON.stringify(input.owner),
+				input.kind,
+				JSON.stringify(input.from),
+				JSON.stringify(input.targets),
+				JSON.stringify(payload),
+				JSON.stringify(execution),
+				priority,
+				position,
+				now,
+				now,
+			);
+		this.db
+			.prepare(
+				"INSERT INTO queue_admissions (thread_id, source_record_id, attempt, queue_entry_id, fingerprint, admitted_at) VALUES (?, ?, ?, ?, ?, ?)",
+			)
+			.run(input.threadId, input.sourceRecordId, attempt, queueEntryId, fingerprint, now);
+		return { outcome: "enqueued", entry: this.get(input.threadId, queueEntryId)! };
+	}
+
+	private matchesFingerprint(row: QueueRow, fingerprint: string): boolean {
+		const entry = mapEntry(row);
+		return (
+			computeAdmissionFingerprint({
+				owner: entry.owner,
+				kind: entry.kind,
+				from: entry.from,
+				payload: entry.payload,
+				priority: entry.priority,
+				execution: entry.execution,
+			}) === fingerprint
+		);
+	}
+
+	get(threadId: string, queueEntryId: string): QueueEntry | null {
+		const row = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.get(threadId, queueEntryId) as QueueRow | undefined;
+		return row ? mapEntry(row) : null;
+	}
+
+	listQueued(threadId: string): QueueEntry[] {
+		const rows = this.db
+			.prepare(
+				`SELECT * FROM invocation_queue WHERE thread_id = ? AND status = 'queued'
+				 AND json_array_length(targets_json) > 0
+				 ORDER BY CASE priority WHEN 'urgent' THEN 0 ELSE 1 END, position, enqueued_at, queue_entry_id`,
+			)
+			.all(threadId) as unknown as QueueRow[];
+		return rows.map(mapEntry);
+	}
+
+	listActive(threadId: string): QueueEntry[] {
+		const rows = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND status = 'claimed'")
+			.all(threadId) as unknown as QueueRow[];
+		return rows.map(mapEntry);
+	}
+
+	countQueued(threadId: string, kind: QueueEntryKind): number {
+		const row = this.db
+			.prepare(
+				"SELECT COUNT(*) AS n FROM invocation_queue WHERE thread_id = ? AND kind = ? AND status IN ('queued', 'claimed')",
+			)
+			.get(threadId, kind) as { n: number };
+		return row.n;
+	}
+
+	claim(threadId: string, queueEntryId: string, input: ClaimInput): ClaimResult {
+		const now = input.now ?? Date.now();
+		const row = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.get(threadId, queueEntryId) as QueueRow | undefined;
+		if (!row) return { outcome: "not_found" };
+		const entry = mapEntry(row);
+		const targetKeys = input.targetKeys.length > 0 ? input.targetKeys : entry.targets.map((t) => `agent:${t.id}`);
+		const covered = targetKeys.every((key) => entry.targets.some((t) => `agent:${t.id}` === key));
+		if (!covered) throw new Error("claim_targets_not_pending");
+		const changes = this.db
+			.prepare(
+				`UPDATE invocation_queue SET status = 'claimed', claim_id = ?, claim_owner = ?, claimed_at = ?, claim_expires_at = ?, claimed_target_keys_json = ?, updated_at = ?
+				 WHERE thread_id = ? AND queue_entry_id = ? AND status = 'queued'`,
+			)
+			.run(
+				input.claimId,
+				input.owner,
+				now,
+				now + input.ttlMs,
+				JSON.stringify(targetKeys),
+				now,
+				threadId,
+				queueEntryId,
+			).changes;
+		return changes > 0
+			? { outcome: "claimed", entry: this.get(threadId, queueEntryId)! }
+			: { outcome: "state_changed" };
+	}
+
+	retireTargets(threadId: string, queueEntryId: string, claimId: string, input: RetireInput): RetireResult {
+		const now = input.now ?? Date.now();
+		const row = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.get(threadId, queueEntryId) as QueueRow | undefined;
+		if (!row) return { outcome: "not_found" };
+		if (row.claim_id !== claimId) return { outcome: "state_changed" };
+		const remaining = (JSON.parse(row.targets_json) as QueueTarget[]).filter(
+			(t) => !input.targetKeys.includes(`agent:${t.id}`),
+		);
+		if (remaining.length === 0) {
+			this.db
+				.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ? AND claim_id = ?")
+				.run(threadId, queueEntryId, claimId);
+			return { outcome: "deleted", entry: mapEntry(row) };
+		}
+		const changes = this.db
+			.prepare(
+				`UPDATE invocation_queue SET targets_json = ?, updated_at = ? WHERE thread_id = ? AND queue_entry_id = ? AND claim_id = ?`,
+			)
+			.run(JSON.stringify(remaining), now, threadId, queueEntryId, claimId).changes;
+		return changes > 0
+			? { outcome: "updated", entry: this.get(threadId, queueEntryId)! }
+			: { outcome: "state_changed" };
+	}
+
+	releaseClaim(threadId: string, queueEntryId: string, claimId: string, now = Date.now()): RetireResult {
+		const row = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.get(threadId, queueEntryId) as QueueRow | undefined;
+		if (!row) return { outcome: "not_found" };
+		if (row.claim_id !== claimId) return { outcome: "state_changed" };
+		const changes = this.db
+			.prepare(
+				`UPDATE invocation_queue SET status = 'queued', claim_id = NULL, claim_owner = NULL, claimed_at = NULL, claim_expires_at = NULL, claimed_target_keys_json = NULL, updated_at = ?
+				 WHERE thread_id = ? AND queue_entry_id = ? AND status = 'claimed' AND claim_id = ?`,
+			)
+			.run(now, threadId, queueEntryId, claimId).changes;
+		return changes > 0
+			? { outcome: "updated", entry: this.get(threadId, queueEntryId)! }
+			: { outcome: "state_changed" };
+	}
+
+	withdrawTargets(threadId: string, queueEntryId: string, input: WithdrawInput): WithdrawResult {
+		const now = input.now ?? Date.now();
+		const row = this.db
+			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+			.get(threadId, queueEntryId) as QueueRow | undefined;
+		if (!row) return { outcome: "not_found" };
+		if (row.status === "claimed") {
+			if (!input.claimId || row.claim_id !== input.claimId) return { outcome: "state_changed" };
+		}
+		const current = mapEntry(row);
+		const keys = input.targetKeys ?? current.targets.map((t) => `agent:${t.id}`);
+		const remaining = current.targets.filter((t) => !keys.includes(`agent:${t.id}`));
+		if (remaining.length === 0) {
+			this.db
+				.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
+				.run(threadId, queueEntryId);
+			return { outcome: "deleted", entry: current };
+		}
+		this.db
+			.prepare(
+				"UPDATE invocation_queue SET targets_json = ?, updated_at = ? WHERE thread_id = ? AND queue_entry_id = ?",
+			)
+			.run(JSON.stringify(remaining), now, threadId, queueEntryId);
+		return { outcome: "updated", entry: this.get(threadId, queueEntryId)! };
+	}
+
+	/** Startup/reaper: expired claims return to queued; returns restored count. */
+	restoreExpiredClaims(now = Date.now()): number {
+		const result = this.db
+			.prepare(
+				`UPDATE invocation_queue SET status = 'queued', claim_id = NULL, claim_owner = NULL, claimed_at = NULL, claim_expires_at = NULL, claimed_target_keys_json = NULL, updated_at = ?
+				 WHERE status = 'claimed' AND claim_expires_at IS NOT NULL AND claim_expires_at <= ?`,
+			)
+			.run(now, now);
+		return Number(result.changes);
+	}
+}

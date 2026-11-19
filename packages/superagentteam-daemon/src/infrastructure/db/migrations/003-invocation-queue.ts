@@ -3,6 +3,10 @@ import type { ControlMigration } from "./index.ts";
 /**
  * F018 R1-b execution + queue schema (0007 §4.1-§4.3.1, 0011).
  *
+ * FK deferral note: agent_sessions/workers tables land in R1-c; the
+ * invocation_attempts FKs to them are added by the R1-c migration (tracked
+ * in plan 0021 R1-c deliverables — do not let the schema drift silently).
+ *
  - invocation_queue + queue_admissions (§4.1): durable statuses are
  *   queued|claimed only; admission receipt keeps replay working after live
  *   row deletion. R-01 (0018): queue_admissions carries thread_id and the
@@ -75,7 +79,7 @@ export const INVOCATION_RECORDS_STATEMENTS = [
 		invocation_id TEXT PRIMARY KEY,
 		thread_id TEXT NOT NULL,
 		user_id TEXT NOT NULL,
-		source_record_id TEXT NOT NULL UNIQUE,
+		source_record_id TEXT NOT NULL,
 		user_message_id TEXT,
 		target_agent_ids_json TEXT NOT NULL
 			CHECK (json_valid(target_agent_ids_json) AND json_type(target_agent_ids_json) = 'array'
@@ -98,7 +102,8 @@ export const INVOCATION_RECORDS_STATEMENTS = [
 		CHECK (status NOT IN ('completed', 'partial_failed')
 			OR json_array_length(successful_agent_ids_json) > 0),
 		FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE RESTRICT,
-		FOREIGN KEY (user_message_id) REFERENCES messages(id) ON DELETE RESTRICT
+		FOREIGN KEY (user_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
+		UNIQUE (thread_id, source_record_id)
 	) STRICT`,
 	`CREATE INDEX invocation_records_thread_status
 		ON invocation_records(thread_id, status)`,

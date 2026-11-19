@@ -75,7 +75,7 @@ describe("InvocationRecordStore (0007 §3.2)", () => {
 	it("creates idempotently by sourceRecordId and flips queued→running (G-02)", () => {
 		const { db, records } = makeStores();
 		seedThread(db);
-		records.create({
+		const created = records.create({
 			invocationId: "inv1",
 			threadId: "t1",
 			userId: "u1",
@@ -84,16 +84,39 @@ describe("InvocationRecordStore (0007 §3.2)", () => {
 			targetAgentIds: ["a1"],
 			now: 10,
 		});
+		expect(created.outcome).toBe("created");
 		const again = records.create({
 			invocationId: "invX",
 			threadId: "t1",
 			userId: "u1",
 			sourceRecordId: "s1",
 			userMessageId: null,
-			targetAgentIds: ["a2"],
+			targetAgentIds: ["a1"],
 			now: 20,
 		});
-		expect(again.invocationId).toBe("inv1");
+		expect(again.outcome).toBe("replayed");
+		expect(again.record.invocationId).toBe("inv1");
+		const drifted = records.create({
+			invocationId: "invY",
+			threadId: "t1",
+			userId: "u1",
+			sourceRecordId: "s1",
+			userMessageId: null,
+			targetAgentIds: ["a2"],
+			now: 30,
+		});
+		expect(drifted.outcome).toBe("conflict");
+		expect(() =>
+			records.create({
+				invocationId: "invZ",
+				threadId: "t1",
+				userId: "attacker",
+				sourceRecordId: "s2",
+				userMessageId: null,
+				targetAgentIds: ["a1"],
+				now: 30,
+			}),
+		).toThrow(/owner/);
 		expect(records.markRunning("inv1", 30)).toBe(true);
 		expect(records.markRunning("inv1", 40)).toBe(false);
 		expect(records.get("inv1")?.status).toBe("running");
@@ -249,6 +272,7 @@ describe("InvocationAttemptStore (0007 §4.3.1 / 0016 §4)", () => {
 		).toThrow(/rebind/);
 		attempts.bindWorker("at1", "w1");
 		attempts.markPromptDelivered("at1", { deliveryBoundarySeq: 3, now: 45 });
+		turns.transitionTerminal("te1", { status: "completed", endedAt: 50 });
 		const projected = attempts.projectChildTerminal("at1", {
 			turnExecutionId: "te1",
 			childStatus: "completed",
@@ -279,6 +303,7 @@ describe("InvocationAttemptStore (0007 §4.3.1 / 0016 §4)", () => {
 			responseMessageId: "r",
 			now: 30,
 		});
+		turns.transitionTerminal("te1", { status: "failed", endedAt: 40, terminalReason: "boom" });
 		attempts.projectChildTerminal("at1", {
 			turnExecutionId: "te1",
 			childStatus: "failed",
@@ -291,6 +316,14 @@ describe("InvocationAttemptStore (0007 §4.3.1 / 0016 §4)", () => {
 				childStatus: "failed",
 				terminalReason: "boom",
 				endedAt: 45,
+			}).outcome,
+		).toBe("already_terminal");
+		expect(
+			attempts.projectChildTerminal("at1", {
+				turnExecutionId: "te-other",
+				childStatus: "completed",
+				terminalReason: null,
+				endedAt: 46,
 			}).outcome,
 		).toBe("terminal_conflict");
 	});
