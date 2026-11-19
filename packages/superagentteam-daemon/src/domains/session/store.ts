@@ -128,6 +128,7 @@ export class AgentSessionStore {
 	): AgentSession {
 		const current = this.get(sessionId);
 		if (!current) throw new Error("session_not_found");
+		if (current.status !== "active") throw new Error("session_not_active");
 		if (!input.piSessionId || !input.piSessionFile) throw new Error("invalid_input");
 		if (current.piSessionId === null && current.piSessionFile === null) {
 			this.db
@@ -152,6 +153,7 @@ export class AgentSessionStore {
 	): AgentSession {
 		const current = this.get(sessionId);
 		if (!current) throw new Error("session_not_found");
+		if (current.status !== "active") throw new Error("session_not_active");
 		const bothNull = input.piSessionId === null && input.piSessionFile === null;
 		const bothSet = input.piSessionId !== null && input.piSessionFile !== null;
 		if (!bothNull && !bothSet) throw new Error("invalid_input");
@@ -178,6 +180,12 @@ export class AgentSessionStore {
 		}
 		if (this.getActive(input.threadId, input.agentId)) {
 			throw new Error("session_active_exists");
+		}
+		const predecessor = this.db
+			.prepare("SELECT status FROM agent_sessions WHERE thread_id = ? AND agent_id = ? ORDER BY seq DESC LIMIT 1")
+			.get(input.threadId, input.agentId) as { status: string } | undefined;
+		if (!predecessor || predecessor.status !== "sealed") {
+			throw new Error("session_no_sealed_predecessor");
 		}
 		const seq = (
 			this.db
@@ -229,6 +237,10 @@ export class AgentSessionStore {
 	 * 0010 §6: a completed turn counts +1 when this turn was not counted yet
 	 * (with or without visible output), deduped via
 	 * last_counted_turn_execution_id, and resets the resume-failure breaker.
+	 * `userVisibleOutput` is kept in the signature for 0010 §6 contract
+	 * fidelity / caller telemetry; counting does NOT branch on it — every
+	 * completed turn counts exactly once regardless of visibility (the
+	 * 0→1 first-visible case is recordUserVisibleOutput's job).
 	 */
 	recordCompletedTurn(
 		sessionId: string,

@@ -444,6 +444,127 @@ describe("HistoryAssembler (0007 §3.5.1)", () => {
 		expect(win?.rows).toHaveLength(0);
 		expect(win?.boundarySeq).toBe(0);
 	});
+
+	/** Shared seed: seq 1 is a processing placeholder, then `normal` plain rows. */
+	function seedThreadWithProcessingR(w: ReturnType<typeof makeWorld>, normal: number): void {
+		appendMsg(w.messages, {
+			from: { kind: "agent", agentId: "a2" },
+			lifecycle: {
+				kind: "response",
+				parentInvocationId: "inv0",
+				turnExecutionId: "te0",
+				target: { kind: "agent", id: "a2" },
+				status: "processing",
+				startedAt: 1,
+			},
+		});
+		for (let i = 0; i < normal; i += 1) appendMsg(w.messages);
+	}
+
+	it("P1 regression: processing R OUTSIDE the bootstrap window still caps the boundary", () => {
+		const w = makeWorld();
+		// seq 1 = processing R, seq 2..12 normal (12 total). Window 10 fetches
+		// seq 3..12, so the placeholder is below the window start.
+		seedThreadWithProcessingR(w, 11);
+		const win = w.assembler.loadHistory("t1", "a1", 10);
+		// Old bug: in-window scan finds nothing → boundary = 12. The scoped
+		// query must stop the boundary before the out-of-window placeholder.
+		expect(win?.rows).toHaveLength(10);
+		expect(win?.boundarySeq).toBe(0);
+	});
+
+	it("P1 regression: incremental cap works in-window; below-cursor placeholder does not over-block", () => {
+		const w = makeWorld();
+		// seq 1 = processing R, seq 2..13 normal (13 total). Incremental fetch
+		// is a contiguous (cursor, cursor+window] range, so an out-of-window
+		// processing R can only sit BELOW the cursor (already consumed) —
+		// the scoped cap query must ignore it there.
+		seedThreadWithProcessingR(w, 12);
+		w.readState.ack("t1", "a1", 0, 100); // cursor 0: fetch seq 1..10 includes seq 1
+		const capped = w.assembler.loadHistory("t1", "a1", 10);
+		expect(capped?.boundarySeq).toBe(0);
+		w.readState.rewind("t1", "a1", 5, 200); // cursor past the placeholder
+		const past = w.assembler.loadHistory("t1", "a1", 10);
+		expect(past?.boundarySeq).toBe(13);
+	});
+});
+
+// ------------------------------------------------------------------
+// Round-1 review fixes (P3): pi binding on non-active sessions,
+// createNextActive predecessor guard, prompt truncation marker.
+// ------------------------------------------------------------------
+describe("round-1 review fixes (P3)", () => {
+	it("bindPiSession/replacePiSession reject a non-active session", () => {
+		const w = makeWorld();
+		const s = w.sessions.ensureActive({
+			threadId: "t1",
+			agentId: "a1",
+			userId: "u1",
+			workingDirectory: "/proj/x",
+			now: 10,
+		});
+		w.sessions.sealActive(s.id, "fresh", 20);
+		expect(() => w.sessions.bindPiSession(s.id, { piSessionId: "pi-1", piSessionFile: "/f1", now: 30 })).toThrowError(
+			/session_not_active/,
+		);
+		expect(() => w.sessions.replacePiSession(s.id, { piSessionId: null, piSessionFile: null, now: 30 })).toThrowError(
+			/session_not_active/,
+		);
+	});
+
+	it("createNextActive requires a sealed predecessor row", () => {
+		const w = makeWorld();
+		expect(() =>
+			w.sessions.createNextActive({
+				threadId: "t1",
+				agentId: "a1",
+				userId: "u1",
+				workingDirectory: "/proj/x",
+				now: 10,
+			}),
+		).toThrowError(/session_no_sealed_predecessor/);
+		const s = w.sessions.ensureActive({
+			threadId: "t1",
+			agentId: "a1",
+			userId: "u1",
+			workingDirectory: "/proj/x",
+			now: 10,
+		});
+		// Still an unsealed active row → still rejected (must sealActive first).
+		expect(() =>
+			w.sessions.createNextActive({
+				threadId: "t1",
+				agentId: "a1",
+				userId: "u1",
+				workingDirectory: "/proj/x",
+				now: 20,
+			}),
+		).toThrowError(/session_active_exists/);
+		w.sessions.sealActive(s.id, "fresh", 30);
+		const next = w.sessions.createNextActive({
+			threadId: "t1",
+			agentId: "a1",
+			userId: "u1",
+			workingDirectory: "/proj/x",
+			now: 40,
+		});
+		expect(next.seq).toBe(1);
+	});
+
+	it("buildThreadPrompt marks a maxChars truncation", () => {
+		const w = makeWorld();
+		for (let i = 0; i < 5; i += 1) appendMsg(w.messages, { content: `message-body-${i}-padding-padding-padding` });
+		const thread = w.threads.get("t1")!;
+		const prompt = buildThreadPrompt({
+			thread,
+			participants: ["a1"],
+			rows: w.messages.getByThread("t1", 10),
+			selfAgentId: "a1",
+			maxChars: 220,
+		});
+		expect(prompt).toContain("…(truncated");
+		expect(prompt).not.toContain("message-body-4");
+	});
 });
 
 // ------------------------------------------------------------------

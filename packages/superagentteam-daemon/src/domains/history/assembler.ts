@@ -18,9 +18,18 @@ export interface HistoryWindow {
 	 * Consumed boundary: the last seq of the FETCHED window, including rows
 	 * filtered out by visibility, but never past the earliest processing
 	 * response (0007 §3.5.1: a parallel agent must not skip the final
-	 * terminal response by acking over a placeholder).
+	 * terminal response by acking over a placeholder). Soft-deleted tail
+	 * messages are outside the fetch surface, so the boundary naturally
+	 * stops at the last visible seq.
 	 */
 	boundarySeq: number;
+	/**
+	 * 0010 §6: optional resume-degradation marker (e.g. "fresh" after
+	 * consecutive resume failures). The assembler never sets it; the
+	 * AgentSessionManager layer (R2-b) populates it when this turn's
+	 * context came from a fresh/reset session instead of a resumed one.
+	 */
+	degraded?: string;
 }
 
 export interface HistoryAssemblerDeps {
@@ -73,11 +82,16 @@ export class HistoryAssembler {
 				: this.messages.getByThreadAfter(threadId, cursor, windowSize);
 		const lastFetchedSeq = fetched.length > 0 ? fetched[fetched.length - 1]!.seq : (cursor ?? 0);
 		let boundarySeq = lastFetchedSeq;
-		const earliestProcessing = fetched.find(
-			(message) => message.lifecycle?.kind === "response" && message.lifecycle.status === "processing",
-		);
-		if (earliestProcessing) {
-			boundarySeq = Math.min(boundarySeq, earliestProcessing.seq - 1);
+		// Boundary cap (0007 §3.5.1): query the earliest processing response
+		// INDEPENDENTLY of the fetched window — the bootstrap window takes the
+		// LAST N visible rows, so a placeholder below the window start would
+		// otherwise be silently crossed (review P1). The scan scope matches
+		// the fetch scope (whole thread for bootstrap, seq > cursor for
+		// incremental), so an already-consumed below-cursor placeholder does
+		// not over-block.
+		const earliestProcessingSeq = this.messages.getEarliestProcessingSeq(threadId, cursor ?? 0);
+		if (earliestProcessingSeq !== null) {
+			boundarySeq = Math.min(boundarySeq, earliestProcessingSeq - 1);
 		}
 		return {
 			mode: cursor === undefined ? "bootstrap" : "incremental",
@@ -121,11 +135,17 @@ export function buildThreadPrompt(input: BuildThreadPromptInput): string {
 	].join("\n");
 	const lines: string[] = [];
 	let used = header.length;
+	let truncated = false;
 	for (const message of rows) {
 		const line = `[seq ${message.seq}] ${renderSender(message)}: ${message.content}`;
-		if (maxChars !== undefined && used + line.length > maxChars) break;
+		if (maxChars !== undefined && used + line.length > maxChars) {
+			truncated = true;
+			break;
+		}
 		lines.push(line);
 		used += line.length + 1;
 	}
-	return lines.length > 0 ? `${header}\n${lines.join("\n")}\n` : `${header}\n(no messages)\n`;
+	const body = lines.length > 0 ? lines.join("\n") : "(no messages)";
+	const tail = truncated ? `\n…(truncated; older messages omitted by prompt budget)` : "";
+	return `${header}\n${body}${tail}\n`;
 }
