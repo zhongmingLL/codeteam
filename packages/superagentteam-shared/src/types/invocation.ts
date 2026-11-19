@@ -160,3 +160,19 @@ export interface QueueAdmission {
 	fingerprint: string;
 	admittedAt: number;
 }
+
+/** 0007 §3.1 transition projections: appear in return values/read models only. */
+export interface QueueAttemptProjection {
+	status: "processing";
+	queueEntryId: string;
+	targets: QueueTarget[];
+	startedAt: number;
+}
+
+export interface QueueTerminalProjection {
+	status: "terminal";
+	queueEntryId: string;
+	targets: QueueTarget[];
+	endedAt: number;
+	reason: "dispatched" | "withdrawn";
+}

@@ -236,6 +236,71 @@ describe("QueueLedgerStore (0007 §3.1/§4.1)", () => {
 		);
 	});
 
+	it("long thread/source ids and attempt=2 do not collide on the queue primary key", () => {
+		const { db, queue } = makeQueue();
+		const longThread = "thread_0123456789abcdef0123456789abcdef0123456789abcdef";
+		db.db
+			.prepare(
+				"INSERT INTO threads (id, project_path, created_by, last_active_at, created_at, updated_at) VALUES (?, '/p', 'u1', 1, 1, 1)",
+			)
+			.run(longThread);
+		const longSource = "msg_0123456789abcdef0123456789abcdef0123456789abcdef";
+		const first = queue.enqueue(baseInput({ threadId: longThread, sourceRecordId: longSource }), 100);
+		expect(first.outcome).toBe("enqueued");
+		// same thread, different long source — no collision
+		const second = queue.enqueue(baseInput({ threadId: longThread, sourceRecordId: `${longSource}-x` }), 110);
+		expect(second.outcome).toBe("enqueued");
+		// same thread/source, attempt=2 — no collision with attempt=1
+		const retry = queue.enqueue(baseInput({ threadId: longThread, sourceRecordId: longSource, attempt: 2 }), 120);
+		expect(retry.outcome).toBe("enqueued");
+		// ids distinct
+		const ids = [
+			first.outcome === "enqueued" ? first.entry.queueEntryId : "",
+			second.outcome === "enqueued" ? second.entry.queueEntryId : "",
+			retry.outcome === "enqueued" ? retry.entry.queueEntryId : "",
+		];
+		expect(new Set(ids).size).toBe(3);
+	});
+
+	it("retire/withdraw results carry projections", () => {
+		const { queue } = makeQueue();
+		const eq = queue.enqueue(
+			baseInput({
+				targets: [
+					{ kind: "agent", id: "a1" },
+					{ kind: "agent", id: "a2" },
+				],
+			}),
+			100,
+		);
+		const qid = eq.outcome === "enqueued" ? eq.entry.queueEntryId : "";
+		queue.claim("t1", qid, {
+			claimId: "c1",
+			owner: "p",
+			ttlMs: 10_000,
+			targetKeys: ["agent:a1", "agent:a2"],
+			now: 110,
+		});
+		const retired = queue.retireTargets("t1", qid, "c1", { targetKeys: ["agent:a1"], now: 120 });
+		if (retired.outcome === "updated") {
+			expect(retired.projection.status).toBe("processing");
+			expect(retired.projection.queueEntryId).toBe(qid);
+		} else {
+			throw new Error("expected updated");
+		}
+		const gone = queue.withdrawTargets("t1", qid, {
+			actorRef: "op",
+			reason: "r",
+			claimId: "c1",
+			targetKeys: ["agent:a2"],
+		});
+		expect(gone.outcome).toBe("deleted");
+		if (gone.outcome === "deleted") {
+			expect(gone.projection.status).toBe("terminal");
+			expect(gone.projection.reason).toBe("withdrawn");
+		}
+	});
+
 	it("withdrawTargets removes or deletes without a claim", () => {
 		const { queue } = makeQueue();
 		const eqC = queue.enqueue(

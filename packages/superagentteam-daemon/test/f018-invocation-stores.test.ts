@@ -319,6 +319,39 @@ describe("review round-2 fail-closed negatives", () => {
 	});
 });
 
+describe("round-3 negatives", () => {
+	it("clearResponsePending: streaming -> not_pending, settled -> already_settled", () => {
+		const { db, records, turns, attempts } = makeStores();
+		seedThread(db);
+		seedParent(records);
+		seedAttempt(attempts);
+		seedTurn(turns, "te1", "a1");
+		seedMessage(db, "r");
+		attempts.markStarting("at1", { agentSessionId: "s", now: 20 });
+		attempts.bindAppended("at1", {
+			turnExecutionId: "te1",
+			agentSessionId: "s",
+			workerId: null,
+			provider: "p",
+			model: "m",
+			modelFamily: "f",
+			responseMessageId: "r",
+			now: 30,
+		});
+		expect(turns.clearResponsePending("te1").outcome).toBe("not_pending");
+		// move to terminal delivery first (schema: response_pending requires terminal state)
+		turns.transitionTerminal("te1", { status: "failed", endedAt: 40, terminalReason: "x" });
+		attempts.projectChildTerminal("at1", {
+			turnExecutionId: "te1",
+			childStatus: "failed",
+			terminalReason: "x",
+			endedAt: 41,
+		});
+		expect(turns.clearResponsePending("te1").outcome).toBe("settled");
+		expect(turns.clearResponsePending("te1").outcome).toBe("already_settled");
+	});
+});
+
 describe("InvocationAttemptStore (0007 §4.3.1 / 0016 §4)", () => {
 	it("append-only ledger: (parent,target,attempt) idempotent; different queue = conflict", () => {
 		const { db, records, attempts } = makeStores();

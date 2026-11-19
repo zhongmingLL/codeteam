@@ -443,7 +443,9 @@ export class TurnExecutionStore {
 			.prepare("SELECT settlement FROM invocation_attempts WHERE turn_execution_id = ?")
 			.get(turnExecutionId) as { settlement: string | null } | undefined;
 		if (!row) return { outcome: "not_found" };
-		return row.settlement === null ? { outcome: "not_pending" } : { outcome: "already_settled" };
+		return row.settlement === null || row.settlement === "streaming"
+			? { outcome: "not_pending" }
+			: { outcome: "already_settled" };
 	}
 }
 

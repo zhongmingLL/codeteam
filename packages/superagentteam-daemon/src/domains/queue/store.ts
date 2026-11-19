@@ -1,13 +1,17 @@
+import { createHash } from "node:crypto";
+
 import type { DatabaseSync } from "node:sqlite";
 
 import type {
 	MessageFrom,
+	QueueAttemptProjection,
 	QueueEntry,
 	QueueEntryKind,
 	QueueExecution,
 	QueueOwner,
 	QueuePayload,
 	QueueTarget,
+	QueueTerminalProjection,
 } from "@superagentteam/shared/types";
 
 // F018 R1-b queue ledger store (0007 §3.1 QueueLedgerStore + §4.1 schema).
@@ -132,9 +136,32 @@ export interface RetireInput {
 	now?: number;
 }
 
+function attemptProjection(entry: QueueEntry): QueueAttemptProjection {
+	return {
+		status: "processing",
+		queueEntryId: entry.queueEntryId,
+		targets: entry.targets,
+		startedAt: entry.claim?.claimedAt ?? entry.enqueuedAt,
+	};
+}
+
+function terminalProjection(
+	entry: QueueEntry,
+	reason: "dispatched" | "withdrawn",
+	now: number,
+): QueueTerminalProjection {
+	return {
+		status: "terminal",
+		queueEntryId: entry.queueEntryId,
+		targets: entry.targets,
+		endedAt: now,
+		reason,
+	};
+}
+
 export type RetireResult =
-	| { outcome: "updated"; entry: QueueEntry }
-	| { outcome: "deleted"; entry: QueueEntry }
+	| { outcome: "updated"; entry: QueueEntry; projection: QueueAttemptProjection }
+	| { outcome: "deleted"; entry: QueueEntry; projection: QueueTerminalProjection }
 	| { outcome: "not_found" }
 	| { outcome: "state_changed" };
 
@@ -147,8 +174,8 @@ export interface WithdrawInput {
 }
 
 export type WithdrawResult =
-	| { outcome: "updated"; entry: QueueEntry }
-	| { outcome: "deleted"; entry: QueueEntry }
+	| { outcome: "updated"; entry: QueueEntry; projection: QueueAttemptProjection }
+	| { outcome: "deleted"; entry: QueueEntry; projection: QueueTerminalProjection }
 	| { outcome: "not_found" }
 	| { outcome: "state_changed" };
 
@@ -225,9 +252,9 @@ export class QueueLedgerStore {
 				.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS next FROM invocation_queue WHERE thread_id = ?")
 				.get(input.threadId) as { next: number }
 		).next;
-		const queueEntryId = `queue:${Buffer.from(`${input.threadId}\u0000${input.sourceRecordId}\u0000${attempt}`)
-			.toString("base64url")
-			.slice(0, 40)}`;
+		const queueEntryId = `queue:${createHash("sha256")
+			.update(`${input.threadId}\u0000${input.sourceRecordId}\u0000${attempt}`)
+			.digest("hex")}`;
 		this.db
 			.prepare(
 				`INSERT INTO invocation_queue (version, queue_entry_id, thread_id, source_record_id, message_id, origin_record_id, attempt, owner_json, kind, from_json, targets_json, payload_json, execution_json, priority, position, status, enqueued_at, updated_at)
@@ -357,7 +384,8 @@ export class QueueLedgerStore {
 			this.db
 				.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ? AND claim_id = ?")
 				.run(threadId, queueEntryId, claimId);
-			return { outcome: "deleted", entry: mapEntry(row) };
+			const before = mapEntry(row);
+			return { outcome: "deleted", entry: before, projection: terminalProjection(before, "dispatched", now) };
 		}
 		const changes = this.db
 			.prepare(
@@ -365,7 +393,11 @@ export class QueueLedgerStore {
 			)
 			.run(JSON.stringify(remaining), now, threadId, queueEntryId, claimId).changes;
 		return changes > 0
-			? { outcome: "updated", entry: this.get(threadId, queueEntryId)! }
+			? {
+					outcome: "updated",
+					entry: this.get(threadId, queueEntryId)!,
+					projection: attemptProjection(this.get(threadId, queueEntryId)!),
+				}
 			: { outcome: "state_changed" };
 	}
 
@@ -382,7 +414,11 @@ export class QueueLedgerStore {
 			)
 			.run(now, threadId, queueEntryId, claimId).changes;
 		return changes > 0
-			? { outcome: "updated", entry: this.get(threadId, queueEntryId)! }
+			? {
+					outcome: "updated",
+					entry: this.get(threadId, queueEntryId)!,
+					projection: attemptProjection(this.get(threadId, queueEntryId)!),
+				}
 			: { outcome: "state_changed" };
 	}
 
@@ -402,7 +438,7 @@ export class QueueLedgerStore {
 			this.db
 				.prepare("DELETE FROM invocation_queue WHERE thread_id = ? AND queue_entry_id = ?")
 				.run(threadId, queueEntryId);
-			return { outcome: "deleted", entry: current };
+			return { outcome: "deleted", entry: current, projection: terminalProjection(current, "withdrawn", now) };
 		}
 		if (row.status === "claimed" && row.claimed_target_keys_json) {
 			// Claimed partial withdrawal: shrink claimed keys to pending
@@ -425,14 +461,16 @@ export class QueueLedgerStore {
 					)
 					.run(JSON.stringify(remaining), JSON.stringify(stillCovered), now, threadId, queueEntryId);
 			}
-			return { outcome: "updated", entry: this.get(threadId, queueEntryId)! };
+			const claimUpdated = this.get(threadId, queueEntryId)!;
+			return { outcome: "updated", entry: claimUpdated, projection: attemptProjection(claimUpdated) };
 		}
 		this.db
 			.prepare(
 				"UPDATE invocation_queue SET targets_json = ?, updated_at = ? WHERE thread_id = ? AND queue_entry_id = ?",
 			)
 			.run(JSON.stringify(remaining), now, threadId, queueEntryId);
-		return { outcome: "updated", entry: this.get(threadId, queueEntryId)! };
+		const finalEntry = this.get(threadId, queueEntryId)!;
+		return { outcome: "updated", entry: finalEntry, projection: attemptProjection(finalEntry) };
 	}
 
 	/** Startup/reaper: expired claims return to queued; returns restored count. */
