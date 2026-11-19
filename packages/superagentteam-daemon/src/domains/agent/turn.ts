@@ -1,8 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { AgentStreamEvent } from "@superagentteam/shared/types";
 import { runInTransaction } from "../../infrastructure/db/database.ts";
+import type { InvocationCredentialStore } from "../auth/store.ts";
 import { buildThreadPrompt, type HistoryAssembler } from "../history/assembler.ts";
-import type { InvocationAttemptStore } from "../invocation/store.ts";
+import { RouteResponseCommitter, TurnExecutionLifecycle } from "../invocation/settlement.ts";
+import type { InvocationAttemptStore, TurnExecutionStore } from "../invocation/store.ts";
+import type { AgentReadStateStore, MessageStore } from "../message/store.ts";
 import type { DispatchTargetPort, PreparedDispatch } from "../queue/processor.ts";
 import { ResponseEventSink } from "../response/sink.ts";
 import type { ResponseDraftStore } from "../response/store.ts";
@@ -26,6 +29,11 @@ export interface RunAgentTurnDeps {
 	sessions: AgentSessionStore;
 	drafts: ResponseDraftStore;
 	threads: ThreadStore;
+	/** R2-c settlement layers (T1 child terminal + T2 response commit). */
+	turns: TurnExecutionStore;
+	credentials: InvocationCredentialStore;
+	readState: AgentReadStateStore;
+	messages: MessageStore;
 	onStreamEvent?: (event: AgentStreamEvent) => void;
 	clock?: () => number;
 	promptTimeoutMs?: number;
@@ -38,6 +46,21 @@ export class RunAgentTurn implements DispatchTargetPort {
 	constructor(deps: RunAgentTurnDeps) {
 		this.deps = deps;
 		this.clock = deps.clock ?? Date.now;
+	}
+
+	private settlementDeps() {
+		return {
+			db: this.deps.db,
+			turns: this.deps.turns,
+			attempts: this.deps.attempts,
+			credentials: this.deps.credentials,
+			sessions: this.deps.sessions,
+			readState: this.deps.readState,
+			messages: this.deps.messages,
+			drafts: this.deps.drafts,
+			threads: this.deps.threads,
+			clock: this.clock,
+		};
 	}
 
 	async dispatch(prepared: PreparedDispatch): Promise<void> {
@@ -132,21 +155,64 @@ export class RunAgentTurn implements DispatchTargetPort {
 			}
 
 			const summary = sink.summary();
+			const lifecycle = new TurnExecutionLifecycle(this.settlementDeps());
+			const committer = new RouteResponseCommitter(this.settlementDeps());
+
 			if (summary.errorMessage) {
-				// Clean throw: the R2-a processor convergence terminalizes the
-				// chain (turn/attempt/credential/R) and restores the target.
+				// 0010 §6.1.3 rows 6-7 split on prompt delivery:
+				// - prompt ACCEPTED then failed → T1 failed (ack! no replay —
+				//   next round sees the failed R) + T2; return normally.
+				// - prompt never accepted → clean throw: the R2-a convergence
+				//   terminalizes the chain and restores the target to replay.
+				const fresh = this.deps.attempts.get(prepared.attemptId);
+				if (fresh?.promptDeliveredAt) {
+					const t1f = lifecycle.invokeTerminal({
+						turnExecutionId: prepared.turnExecutionId,
+						status: "failed",
+						endedAt: this.clock(),
+						terminalReason: `provider_error: ${summary.errorMessage}`,
+						userVisibleOutput: false,
+					});
+					if (t1f.outcome === "not_found" || t1f.outcome === "terminal_conflict") {
+						throw new Error(`t1_failed: ${t1f.outcome}`);
+					}
+					try {
+						committer.commit({ turnExecutionId: prepared.turnExecutionId, content: summary.content });
+					} catch {
+						// T4 owns recovery; the child is already terminal.
+					}
+					return;
+				}
 				throw new Error(`turn_provider_error: ${summary.errorMessage}`);
 			}
 			if (summary.usage) {
 				this.deps.attempts.recordUsage(prepared.attemptId, summary.usage);
 			}
-			// Success: the durable response body lives in the draft; T1/T2
-			// (R2-c) terminalize the child and commit the response R.
+
+			// T1 child terminal (0010 §6.1.1 step 9): ONE transaction — child
+			// terminal + attempt projection + response_pending + credential +
+			// recordCompletedTurn + cursor ack (promptDelivered-gated).
+			const t1 = lifecycle.invokeTerminal({
+				turnExecutionId: prepared.turnExecutionId,
+				status: "completed",
+				endedAt: this.clock(),
+				userVisibleOutput: summary.content.trim().length > 0,
+			});
+			if (t1.outcome === "not_found" || t1.outcome === "terminal_conflict") {
+				throw new Error(`t1_failed: ${t1.outcome}`);
+			}
+
+			// T2 response commit (§3.9): separate transaction; failure leaves
+			// response_pending for T4 — never fails the turn.
+			try {
+				committer.commit({ turnExecutionId: prepared.turnExecutionId, content: summary.content });
+			} catch {
+				// T4 owns recovery; the child is already terminal.
+			}
 		} finally {
-			// warmTtl=0 retire. NOTE (R2-c): 0010 §6.1.1 step 10 releases the
-			// worker AFTER T2 R-settlement; until T2 lands, the draft already
-			// holds the full snapshot and the pi session file survives worker
-			// retirement, so this early release is safe and revisited in R2-c.
+			// 0010 §6.1.1 step 10 (R2-c): worker release AFTER T2 settlement —
+			// the response R is committed (or safely response_pending) before
+			// the carrier retires; the pi session file survives regardless.
 			if (handle) {
 				await this.deps.pool.release(handle, "turn-complete").catch(() => {});
 			}
