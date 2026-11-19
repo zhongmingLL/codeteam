@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { AgentConfig, QueueEntry, QueueTarget } from "@superagentteam/shared/types";
 import { runInTransaction } from "../../infrastructure/db/database.ts";
 import type { AgentRegistry } from "../agent/registry.ts";
+import { A2A_CREDENTIAL_TOOL_NAMES } from "../a2a/tool-service.ts";
 import type { InvocationCredentialStore } from "../auth/store.ts";
 import { aggregateParent } from "../invocation/aggregate.ts";
 import type { InvocationAttemptStore, InvocationRecordStore, TurnExecutionStore } from "../invocation/store.ts";
@@ -567,7 +568,7 @@ export class QueueProcessor {
 							agentId: prepared.agentId,
 							agentSessionId: session.id,
 							userId,
-							allowedTools: [],
+							allowedTools: [...A2A_CREDENTIAL_TOOL_NAMES],
 							now,
 						});
 						this.deps.drafts.create({
