@@ -17,19 +17,19 @@ import {
 	type StoredMessage,
 } from "@superagentteam/shared/types";
 import { runInTransaction } from "../../infrastructure/db/database.ts";
+import {
+	type A2ATarget,
+	type A2AToolContext,
+	A2AToolError,
+	assertCredentialAllowsTool,
+	normalizeTargets,
+} from "../a2a/tool-service.ts";
 import type { AgentRegistry } from "../agent/registry.ts";
 import type { InvocationCredentialStore } from "../auth/store.ts";
 import type { InvocationAttemptStore, TurnExecutionStore } from "../invocation/store.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { QueueLedgerStore } from "../queue/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
-import {
-	A2AToolError,
-	type A2ATarget,
-	type A2AToolContext,
-	assertCredentialAllowsTool,
-	normalizeTargets,
-} from "../a2a/tool-service.ts";
 import type { MultiMentionStore } from "./store.ts";
 
 // F018 R3-b MultiMentionOrchestrator.create (0007 §3.8, DP-F018MM-1=B):
@@ -181,10 +181,7 @@ export class MultiMentionOrchestrator {
 			searchEvidenceRefs: input.searchEvidenceRefs,
 			overrideReason: input.overrideReason,
 		});
-		const existingClaim = this.deps.credentials.getToolCallClaim(
-			ctx.callerTurnExecutionId,
-			ctx.piExtToolCallId,
-		);
+		const existingClaim = this.deps.credentials.getToolCallClaim(ctx.callerTurnExecutionId, ctx.piExtToolCallId);
 		if (existingClaim) {
 			if (existingClaim.intentHash !== intentHash) fail("pi_ext_tool_call_conflict");
 			const existing = this.deps.store.getBySourceRecordId(existingClaim.messageId);
@@ -310,10 +307,7 @@ export class MultiMentionOrchestrator {
 		};
 	}
 
-	finalizeIfReady(
-		requestId: string,
-		now: number,
-	): "finalized" | "waiting" | "already_terminal" | "not_found" {
+	finalizeIfReady(requestId: string, now: number): "finalized" | "waiting" | "already_terminal" | "not_found" {
 		const request = this.deps.store.get(requestId);
 		if (!request) return "not_found";
 		if (MULTI_MENTION_TERMINAL_STATUSES.has(request.status)) return "already_terminal";
@@ -498,16 +492,15 @@ export class MultiMentionOrchestrator {
 		now: number,
 	): void {
 		const request = this.deps.store.get(requestId);
-		if (!request) return;
+		const threadId = request?.threadId ?? callback.threadId;
 		this.deps.store.updateCallback(requestId, { status: "failed", reason, now });
 		this.deps.messages.append({
-			id: `msg:${request.threadId}:${now}:cb-fail:${randomUUID().slice(0, 8)}`,
-			threadId: request.threadId,
+			id: `msg:${threadId}:${now}:cb-fail:${randomUUID().slice(0, 8)}`,
+			threadId,
 			from: { kind: "system", service: "multi_mention" },
 			content: `multi_mention_callback_failed: ${reason}`,
 			now,
 		});
-		void callback;
 	}
 
 	private buildAggregateBody(
@@ -524,7 +517,7 @@ export class MultiMentionOrchestrator {
 			const pending = response.responseState === "pending" ? " (response pending)" : "";
 			const reason = response.reason ? ` (${response.reason})` : "";
 			lines.push(
-				`- ${response.targetAgentId}: ${response.status}${pending}${reason}${content ? ` — ${content}` : ""}`,
+				`- ${response.targetAgentId} [${response.status}${pending}${reason}]:${content ? ` ${content}` : ""}`,
 			);
 		}
 		if (status === "timeout") lines.push("", "Status: timeout");
@@ -567,7 +560,10 @@ export class MultiMentionOrchestrator {
 					responseState: "pending",
 					now,
 				});
-			} else if (child && (child.status === "failed" || child.status === "interrupted" || child.status === "canceled")) {
+			} else if (
+				child &&
+				(child.status === "failed" || child.status === "interrupted" || child.status === "canceled")
+			) {
 				this.deps.store.recordTargetOutcome({
 					requestId: request.requestId,
 					targetAgentId: agentId,
