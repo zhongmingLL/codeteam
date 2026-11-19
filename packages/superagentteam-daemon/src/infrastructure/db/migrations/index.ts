@@ -1,4 +1,5 @@
 import { f018CoreMigration } from "./001-f018-core.ts";
+import { f018MessagesMigration } from "./002-f018-messages.ts";
 
 /**
  * F018 migration unit. 0005 §4.2 defines the v1 table set; migrations are
@@ -11,7 +12,7 @@ export interface ControlMigration {
 	down: readonly string[];
 }
 
-export const F018_MIGRATIONS: readonly ControlMigration[] = [f018CoreMigration];
+export const F018_MIGRATIONS: readonly ControlMigration[] = [f018CoreMigration, f018MessagesMigration];
 
 export function assertF018MigrationSet(migrations: readonly ControlMigration[]): void {
 	if (migrations.length === 0) throw new Error("f018_migrations_empty");

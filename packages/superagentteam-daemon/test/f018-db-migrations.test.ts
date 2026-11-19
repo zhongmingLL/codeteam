@@ -41,6 +41,7 @@ describe("F018 greenfield migration harness", () => {
 		expect(tables).toContain("threads");
 		expect(tables).toContain("thread_participants");
 		expect(tables).toContain("agent_read_state");
+		expect(tables).toContain("messages");
 		// Greenfield guarantee: no task-first tables.
 		for (const legacyTable of ["tasks", "runs", "handoffs", "custody_events", "budgets", "reviews", "merges"]) {
 			expect(tables).not.toContain(legacyTable);
@@ -49,14 +50,16 @@ describe("F018 greenfield migration harness", () => {
 
 	it("applies pending migrations and is idempotent on re-run", () => {
 		const { db } = makeDb();
-		expect(db.migrateUp()).toBe(1);
+		expect(db.migrateUp()).toBe(2);
 		expect(db.migrateUp()).toBe(0);
-		expect(db.appliedVersions().map((row) => row.name)).toEqual(["f018-core"]);
+		expect(db.appliedVersions().map((row) => row.name)).toEqual(["f018-core", "f018-messages"]);
 	});
 
 	it("rolls back the newest migration and re-applies it", () => {
 		const { db } = makeDb();
 		db.migrateUp();
+		expect(db.migrateDown()).toBe(true);
+		expect(db.appliedVersions().map((row) => row.name)).toEqual(["f018-core"]);
 		expect(db.migrateDown()).toBe(true);
 		expect(db.appliedVersions()).toHaveLength(0);
 		const tables = (
@@ -65,7 +68,7 @@ describe("F018 greenfield migration harness", () => {
 			}[]
 		).map((row) => row.name);
 		expect(tables).not.toContain("threads");
-		expect(db.migrateUp()).toBe(1);
+				expect(db.migrateUp()).toBe(2);
 	});
 
 	it("enforces thread ownership columns at the schema level", () => {
