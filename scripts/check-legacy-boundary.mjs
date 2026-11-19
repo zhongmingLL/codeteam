@@ -36,7 +36,8 @@ const ALLOWLIST_PATH = join(ROOT, "scripts/legacy-boundary-allowlist.json");
 // these dirs get the strict v1 rules (no allowlist, no retired tools/tables).
 // v1 runtime paths. infrastructure/ added in R1-d per review: the DB layer
 // holds greenfield truth, so retired tools/legacy tables are machine-checked
-// there too (comment mentions are exempt — the check trims line comments).
+// there too. NOTE: the scan matches raw source text (no comment stripping) —
+// legacy tokens in comments also trip it, by design.
 const V1_DIRS = ["domains", "a2a", "thread", "invocation", "queue", "infrastructure"];
 const LEGACY_TOP_DIRS = [
   "dispatch",

@@ -107,8 +107,8 @@ export class AgentSessionStore {
 		return row ? mapSession(row) : null;
 	}
 
-	/** Lightweight seal (0010): active → sealed + seq increments on next ensure. */
-	seal(sessionId: string, reason: string, now: number): AgentSession | null {
+	/** Lightweight seal (0010 §6): active → sealed only; next active gets seq+1. */
+	sealActive(sessionId: string, reason: string, now: number): AgentSession | null {
 		const changes = this.db
 			.prepare(
 				"UPDATE agent_sessions SET status = 'sealed', seal_reason = ?, sealed_at = ?, updated_at = ? WHERE id = ? AND status = 'active'",
@@ -117,55 +117,157 @@ export class AgentSessionStore {
 		return changes > 0 ? this.get(sessionId) : this.get(sessionId);
 	}
 
-	recordResumeFailure(sessionId: string): AgentSession | null {
+	/**
+	 * 0010 §6: first pi binding. Both values must be non-null; replaying the
+	 * same pair is a no-op; a different pair on a bound session is
+	 * `invalid_input` (must go through replacePiSession).
+	 */
+	bindPiSession(
+		sessionId: string,
+		input: { piSessionId: string | null; piSessionFile: string | null; now: number },
+	): AgentSession {
+		const current = this.get(sessionId);
+		if (!current) throw new Error("session_not_found");
+		if (current.status !== "active") throw new Error("session_not_active");
+		if (!input.piSessionId || !input.piSessionFile) throw new Error("invalid_input");
+		if (current.piSessionId === null && current.piSessionFile === null) {
+			this.db
+				.prepare("UPDATE agent_sessions SET pi_session_id = ?, pi_session_file = ?, updated_at = ? WHERE id = ?")
+				.run(input.piSessionId, input.piSessionFile, input.now, sessionId);
+			return this.get(sessionId)!;
+		}
+		if (current.piSessionId === input.piSessionId && current.piSessionFile === input.piSessionFile) {
+			return current;
+		}
+		throw new Error("invalid_input");
+	}
+
+	/**
+	 * 0010 §6: resume-failure / reset path only. Both null (clear, pre-fresh)
+	 * or both non-null (rebind after fresh — current binding must already be
+	 * null); anything else is `invalid_input`.
+	 */
+	replacePiSession(
+		sessionId: string,
+		input: { piSessionId: string | null; piSessionFile: string | null; now: number },
+	): AgentSession {
+		const current = this.get(sessionId);
+		if (!current) throw new Error("session_not_found");
+		if (current.status !== "active") throw new Error("session_not_active");
+		const bothNull = input.piSessionId === null && input.piSessionFile === null;
+		const bothSet = input.piSessionId !== null && input.piSessionFile !== null;
+		if (!bothNull && !bothSet) throw new Error("invalid_input");
+		if (bothSet && current.piSessionId !== null) throw new Error("invalid_input");
+		this.db
+			.prepare("UPDATE agent_sessions SET pi_session_id = ?, pi_session_file = ?, updated_at = ? WHERE id = ?")
+			.run(input.piSessionId, input.piSessionFile, input.now, sessionId);
+		return this.get(sessionId)!;
+	}
+
+	/**
+	 * 0010 §6: post-seal next active row (seq = MAX+1, null pi binding).
+	 * Caller (AgentSessionManager.reset) seals the old active in the same
+	 * transaction first; a live active row here is a typed conflict.
+	 */
+	createNextActive(input: EnsureSessionInput): AgentSession {
+		const thread = this.db.prepare("SELECT created_by, project_path FROM threads WHERE id = ?").get(input.threadId) as
+			| { created_by: string; project_path: string }
+			| undefined;
+		if (!thread) throw new Error("session_thread_not_found");
+		if (thread.created_by !== input.userId) throw new Error("session_user_not_thread_owner");
+		if (input.workingDirectory !== thread.project_path) {
+			throw new Error("session_workspace_not_thread_project");
+		}
+		if (this.getActive(input.threadId, input.agentId)) {
+			throw new Error("session_active_exists");
+		}
+		const predecessor = this.db
+			.prepare("SELECT status FROM agent_sessions WHERE thread_id = ? AND agent_id = ? ORDER BY seq DESC LIMIT 1")
+			.get(input.threadId, input.agentId) as { status: string } | undefined;
+		if (!predecessor || predecessor.status !== "sealed") {
+			throw new Error("session_no_sealed_predecessor");
+		}
+		const seq = (
+			this.db
+				.prepare(
+					"SELECT COALESCE(MAX(seq), -1) + 1 AS next FROM agent_sessions WHERE thread_id = ? AND agent_id = ?",
+				)
+				.get(input.threadId, input.agentId) as { next: number }
+		).next;
+		const id = `sess:${input.threadId}:${input.agentId}:${seq}`;
+		this.db
+			.prepare(
+				`INSERT INTO agent_sessions (id, thread_id, agent_id, user_id, seq, status, working_directory, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+			)
+			.run(id, input.threadId, input.agentId, input.userId, seq, input.workingDirectory, input.now, input.now);
+		return this.getActive(input.threadId, input.agentId)!;
+	}
+
+	recordResumeFailure(sessionId: string, now = Date.now()): { session: AgentSession | null; failures: number } {
 		this.db
 			.prepare(
 				"UPDATE agent_sessions SET consecutive_resume_failures = consecutive_resume_failures + 1, updated_at = ? WHERE id = ?",
 			)
-			.run(Date.now(), sessionId);
-		return this.get(sessionId);
+			.run(now, sessionId);
+		const session = this.get(sessionId);
+		return { session, failures: session?.consecutiveResumeFailures ?? 0 };
 	}
 
 	/**
-	 * messageCount semantics (0010 §6.1): first visible output 0→1; a done
-	 * turn with NO visible output also +1; a turn that already counted its
-	 * visible output does not double-count.
+	 * 0010 §6: first user-visible output does the 0→1 unseal-safety count and
+	 * marks the turn; with messageCount ≥ 1 the per-turn counting is owned by
+	 * recordCompletedTurn — output time never increments past the first one.
 	 */
-	/**
-	 * 0010 §6.1 messageCount with durable dedup: each turn counts exactly
-	 * once — visible output or done; last_counted_turn_execution_id blocks
-	 * crash-replay double counts.
-	 */
-	recordUserVisibleOutput(sessionId: string, turnExecutionId: string): AgentSession | null {
+	recordUserVisibleOutput(sessionId: string, turnExecutionId: string, now = Date.now()): AgentSession | null {
 		const current = this.get(sessionId);
 		if (!current) return null;
-		if (current.lastCountedTurnExecutionId === turnExecutionId) return current;
-		this.db
-			.prepare(
-				"UPDATE agent_sessions SET message_count = message_count + 1, last_counted_turn_execution_id = ?, updated_at = ? WHERE id = ?",
-			)
-			.run(turnExecutionId, Date.now(), sessionId);
-		return this.get(sessionId);
+		if (current.messageCount === 0 && current.lastCountedTurnExecutionId !== turnExecutionId) {
+			this.db
+				.prepare(
+					"UPDATE agent_sessions SET message_count = 1, last_counted_turn_execution_id = ?, updated_at = ? WHERE id = ?",
+				)
+				.run(turnExecutionId, now, sessionId);
+			return this.get(sessionId);
+		}
+		return current;
 	}
 
-	recordCompletedTurn(sessionId: string, turnExecutionId: string): AgentSession | null {
-		// 0010 §6: a completed turn resets the resume-failure breaker even
-		// when the turn was already counted.
-		const counted = this.recordUserVisibleOutput(sessionId, turnExecutionId);
+	/**
+	 * 0010 §6: a completed turn counts +1 when this turn was not counted yet
+	 * (with or without visible output), deduped via
+	 * last_counted_turn_execution_id, and resets the resume-failure breaker.
+	 * `userVisibleOutput` is kept in the signature for 0010 §6 contract
+	 * fidelity / caller telemetry; counting does NOT branch on it — every
+	 * completed turn counts exactly once regardless of visibility (the
+	 * 0→1 first-visible case is recordUserVisibleOutput's job).
+	 */
+	recordCompletedTurn(
+		sessionId: string,
+		input: { turnExecutionId: string; userVisibleOutput: boolean; now: number },
+	): AgentSession | null {
+		const current = this.get(sessionId);
+		if (!current) return null;
+		if (current.lastCountedTurnExecutionId !== input.turnExecutionId) {
+			this.db
+				.prepare(
+					"UPDATE agent_sessions SET message_count = message_count + 1, last_counted_turn_execution_id = ?, updated_at = ? WHERE id = ?",
+				)
+				.run(input.turnExecutionId, input.now, sessionId);
+		}
 		this.db
 			.prepare(
 				"UPDATE agent_sessions SET consecutive_resume_failures = 0, updated_at = ? WHERE id = ? AND consecutive_resume_failures <> 0",
 			)
-			.run(Date.now(), sessionId);
-		return counted ?? this.get(sessionId);
+			.run(input.now, sessionId);
+		return this.get(sessionId);
 	}
 
 	/** 0010 §6: 3 consecutive resume failures → circuit-breaker seal. */
 	recordResumeFailureWithSeal(sessionId: string, reason: string, now: number): AgentSession | null {
-		const current = this.get(sessionId);
+		const { session: current, failures } = this.recordResumeFailure(sessionId, now);
 		if (!current) return null;
-		const failures = current.consecutiveResumeFailures + 1;
-		if (failures >= 3) return this.seal(sessionId, reason || "circuit_breaker", now);
+		if (failures >= 3) return this.sealActive(sessionId, reason || "circuit_breaker", now);
 		this.db
 			.prepare("UPDATE agent_sessions SET consecutive_resume_failures = ?, updated_at = ? WHERE id = ?")
 			.run(failures, now, sessionId);

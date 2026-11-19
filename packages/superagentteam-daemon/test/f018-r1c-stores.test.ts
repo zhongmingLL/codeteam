@@ -110,7 +110,7 @@ describe("AgentSessionStore (0010)", () => {
 			sessions.ensureActive({ threadId: "t1", agentId: "a1", userId: "attacker", workingDirectory: "/p", now: 3 }),
 		).toThrow(/owner/);
 		// seal + re-ensure → new seq
-		sessions.seal(first.id, "circuit_breaker", 10);
+		sessions.sealActive(first.id, "circuit_breaker", 10);
 		const next = sessions.ensureActive({
 			threadId: "t1",
 			agentId: "a1",
@@ -127,9 +127,9 @@ describe("AgentSessionStore (0010)", () => {
 		const s = sessions.ensureActive({ threadId: "t1", agentId: "a1", userId: "u1", workingDirectory: "/p", now: 1 });
 		sessions.recordUserVisibleOutput(s.id, "te1");
 		expect(sessions.get(s.id)?.messageCount).toBe(1);
-		sessions.recordCompletedTurn(s.id, "te1"); // same turn done — no double count
+		sessions.recordCompletedTurn(s.id, { turnExecutionId: "te1", userVisibleOutput: true, now: 2 }); // same turn done — no double count
 		expect(sessions.get(s.id)?.messageCount).toBe(1);
-		sessions.recordCompletedTurn(s.id, "te2"); // new turn without visible output
+		sessions.recordCompletedTurn(s.id, { turnExecutionId: "te2", userVisibleOutput: false, now: 3 }); // new turn without visible output
 		expect(sessions.get(s.id)?.messageCount).toBe(2);
 	});
 });

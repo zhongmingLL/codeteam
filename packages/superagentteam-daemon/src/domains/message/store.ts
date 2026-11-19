@@ -191,6 +191,25 @@ export class MessageStore {
 		return rows.map(mapMessage).reverse();
 	}
 
+	/**
+	 * Earliest response-lifecycle message still in 'processing' status with
+	 * seq > afterSeq (0007 §3.5.1 boundary cap). Independent of any fetch
+	 * window: a processing placeholder OUTSIDE the window (e.g. below the
+	 * bootstrap window start) must still stop the boundary. Deleted rows are
+	 * excluded, matching the fetch surface. Returns null when none exists.
+	 */
+	getEarliestProcessingSeq(threadId: string, afterSeq = 0): number | null {
+		const row = this.db
+			.prepare(
+				`SELECT MIN(seq) AS s FROM messages
+				 WHERE thread_id = ? AND seq > ? AND deleted_at IS NULL
+				 AND json_extract(lifecycle_json, '$.kind') = 'response'
+				 AND json_extract(lifecycle_json, '$.status') = 'processing'`,
+			)
+			.get(threadId, afterSeq) as { s: number | null } | undefined;
+		return row?.s ?? null;
+	}
+
 	softDelete(id: string, deletedBy: string, now: number): boolean {
 		return (
 			this.db
