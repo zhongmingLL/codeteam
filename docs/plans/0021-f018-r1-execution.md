@@ -322,6 +322,9 @@ runtime 暂不读新表。
 
 ### R1-d — legacy move verification + greenfield baseline gate
 
+> **2026-11-19：R1-d 完成（本文最后一行出口达成）。** 结果与证据见
+> `docs/reports/2026-11-19-f018-r1-closeout.md`；R2 开工清单同在该报告。
+
 **交付**
 
 - 验证 `legacy/task-first/` move + shims：旧 daemon/CLI 入口仍可编译，无行为变化。

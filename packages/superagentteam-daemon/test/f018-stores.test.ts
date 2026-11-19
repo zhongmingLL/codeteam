@@ -150,6 +150,34 @@ describe("MessageStore (0007 §3.1)", () => {
 	});
 });
 
+describe("R1-a P3 leftovers", () => {
+	it("seq allocation: interleaved appends allocate unique monotonic seqs", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		const ids: number[] = [];
+		for (let i = 0; i < 20; i++) {
+			const from =
+				i % 2 === 0 ? ({ kind: "user", userId: "u1" } as const) : ({ kind: "agent", agentId: "a1" } as const);
+			const m = message.append({ id: `m${i}`, threadId: "t1", from, content: `c${i}`, now: 2 + i });
+			ids.push(m.seq);
+		}
+		expect(new Set(ids).size).toBe(20);
+		expect(Math.min(...ids)).toBe(1);
+		expect(Math.max(...ids)).toBe(20);
+	});
+
+	it("MessageOwnerError is a typed error", () => {
+		const { thread, message } = makeStores();
+		thread.create({ id: "t1", projectPath: "/p", createdBy: "u1", now: 1 });
+		try {
+			message.append({ id: "mx", threadId: "t1", from: { kind: "user", userId: "u2" }, content: "", now: 2 });
+			throw new Error("should have thrown");
+		} catch (error) {
+			expect((error as { code?: string }).code).toBe("message_author_not_thread_owner");
+		}
+	});
+});
+
 describe("AgentReadStateStore (0007 §4.5)", () => {
 	it("ack is monotonic; rewind is explicit", () => {
 		const { read, thread } = makeStores();

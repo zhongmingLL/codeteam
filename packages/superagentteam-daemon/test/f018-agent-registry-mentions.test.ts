@@ -133,6 +133,19 @@ describe("AgentRegistry (0008 §6)", () => {
 		expect(() => buildRegistry(c4, a4)).toThrow(/model/);
 	});
 
+	it("rejects non-string restrictions/strengths elements; revision is monotonic", () => {
+		const { catalog, accounts } = makeCatalog();
+		Object.assign(catalog.agents[0]!, { restrictions: ["ok", 42] });
+		expect(() => buildRegistry(catalog, accounts)).toThrow(/restriction/);
+		const { catalog: c2, accounts: a2 } = makeCatalog();
+		Object.assign(c2.agents[0]!, { strengths: ["  "] });
+		expect(() => buildRegistry(c2, a2)).toThrow(/strength/);
+		const { catalog: c3, accounts: a3 } = makeCatalog();
+		const r1 = buildRegistry(c3, a3);
+		const r2 = buildRegistry(c3, a3);
+		expect(r2.revision).toBeGreaterThan(r1.revision);
+	});
+
 	it("rejects unknown account refs and empty patterns", () => {
 		const { catalog, accounts } = makeCatalog();
 		Object.assign(catalog.agents[0], { accountRef: "nope" });
