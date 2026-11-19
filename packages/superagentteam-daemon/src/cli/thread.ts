@@ -83,7 +83,10 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 	const operator = requireOperator(context);
 	const id = args.positionals[1];
 	if (!id)
-		throw new ControlError("invalid_input", "usage: superagentteam thread post <threadId> <body> [--to <profile>]");
+		throw new ControlError(
+			"invalid_input",
+			"usage: superagentteam thread post <threadId> <body> [--to <profile> ...] [--task <taskId>]",
+		);
 	const body = args.positionals[2] ?? option(args, "body");
 	if (body === undefined || body.trim() === "") throw new ControlError("invalid_input", "message body is required");
 	const kind = (option(args, "kind") ?? "chat") as MessageKind;
@@ -91,34 +94,33 @@ function postThread(args: ParsedArgs, context: CliContext): number {
 	const targets = options(args, "to");
 	const taskId = option(args, "task");
 	let boundTask: Task | null = null;
-	if (targets.length > 0) {
-		if (!taskId) {
-			throw new ControlError(
-				"invalid_input",
-				"thread post --to requires --task <taskId>; run superagentteam task list --thread <threadId>",
-			);
-		}
+	if (taskId) {
 		boundTask = context.store.tasks.get(taskId);
 		if (!boundTask) throw new ControlError("not_found", `task ${taskId} not found`);
 		if (boundTask.threadId !== id) {
 			throw new ControlError("invalid_input", `task ${taskId} is not bound to thread ${id}`);
 		}
-		if (!boundTask.worktree) {
+		if (targets.length > 0 && !boundTask.worktree) {
 			throw new ControlError(
 				"invalid_state",
 				`task ${taskId} has no worktree; run superagentteam task prepare ${taskId} --profile <profile>`,
 			);
 		}
-		for (const target of targets) {
-			const profile = context.store.profiles.get(target);
-			if (!profile || profile.status !== "active") {
-				throw new ControlError("invalid_state", `target ${target} is not an active profile`);
-			}
-			const sessions = context.store.sessions.list({ taskId, profileId: target, status: "active" });
+	}
+	for (const target of targets) {
+		const profile = context.store.profiles.get(target);
+		if (!profile || profile.status !== "active") {
+			throw new ControlError("invalid_state", `target ${target} is not an active profile`);
+		}
+		// A task-bound post keeps the legacy dispatch contract: one prepared
+		// session per target. A thread-scoped post (v1 shape) needs no task;
+		// the daemon resolves or provisions the thread session at dispatch.
+		if (boundTask) {
+			const sessions = context.store.sessions.list({ taskId: boundTask.id, profileId: target, status: "active" });
 			if (sessions.length !== 1) {
 				throw new ControlError(
 					"invalid_state",
-					`target ${target} has ${sessions.length} active sessions for task ${taskId}; run superagentteam task prepare ${taskId} --profile ${target}`,
+					`target ${target} has ${sessions.length} active sessions for task ${boundTask.id}; run superagentteam task prepare ${boundTask.id} --profile ${target}`,
 				);
 			}
 		}

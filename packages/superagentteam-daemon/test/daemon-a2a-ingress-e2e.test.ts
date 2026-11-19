@@ -228,7 +228,7 @@ async function waitFor<T>(check: () => T | null | undefined | false, timeoutMs =
 }
 
 describe("F016a ingress real RPC E2E", () => {
-	it("I1: operator thread post reaches a real worker and rejects unbound producers", async () => {
+	it("I1: operator thread post reaches a real worker and admits a thread-scoped post without --task", async () => {
 		const { dataDir, installationRoot } = setupDirs();
 		bootstrapProfiles(dataDir, [{ id: "profile:reviewer-2", role: "reviewer", displayName: "Reviewer Two" }]);
 		const mock = await startMockAnthropic(({ model }) =>
@@ -268,20 +268,18 @@ describe("F016a ingress real RPC E2E", () => {
 		);
 		expect(daemon.health().status).toBe("ready");
 
+		// F018 R3-d: --to needs only the thread + an enabled profile; a
+		// thread-scoped post does not require a task binding.
+		const noTask = cliJson<{
+			message: { id: string; taskId: string | null };
+			queue: { targets: string[] } | null;
+		}>(dataDir, ["thread", "post", dispatched.thread.id, "thread-scoped post", "--to", "profile:reviewer-2"]);
+		expect(noTask.message.taskId).toBeNull();
+		expect(noTask.queue?.targets).toEqual(["profile:reviewer-2"]);
+		expect(store.messages.get(noTask.message.id)?.taskId).toBeNull();
+
 		const queuesBefore = queueRowCount(store);
 		const messagesBefore = messageCount(store, dispatched.thread.id);
-		const noTask = cli(dataDir, [
-			"thread",
-			"post",
-			dispatched.thread.id,
-			"missing task binding",
-			"--to",
-			"profile:reviewer",
-		]);
-		expect(noTask.status).not.toBe(0);
-		expect(noTask.stderr).toContain("--task");
-		expect(queueRowCount(store)).toBe(queuesBefore);
-		expect(messageCount(store, dispatched.thread.id)).toBe(messagesBefore);
 
 		const extraBacklog = cliJson<{ id: string }>(dataDir, [
 			"backlog",

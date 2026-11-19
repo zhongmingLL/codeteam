@@ -129,7 +129,7 @@ function writeUsage(): void {
 	writeLine("backlog create dependencies: [--depends-on <backlogId> ...]");
 	writeLine("backlog depend: <id> [--on <backlogId> ... | --clear]");
 	writeLine("backlog dispatch: <id> --to <profile> [--phase coding|research|brainstorm] [--body]");
-	writeLine("thread post: <threadId> <body> [--to <profile> --task <taskId>] [--kind chat]");
+	writeLine("thread post: <threadId> <body> [--to <profile> ...] [--task <taskId>] [--kind chat]");
 	writeLine("thread tail: <threadId> [--after-seq N] [--follow] [--interval-ms N]");
 	writeLine("sop evidence: <backlogId> <check> <evidenceRef> --subject-revision <sha>");
 	writeLine("sop update: <backlogId> --stage <stage> --baton <profile|operator> --focus <text>");
