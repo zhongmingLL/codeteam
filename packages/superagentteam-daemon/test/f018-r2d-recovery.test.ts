@@ -373,6 +373,32 @@ describe("round-1 P1 repro (recovery edge shapes)", () => {
 });
 
 // ------------------------------------------------------------------
+// Round-2 P1 repro: fresh slot in the Phase A→B window
+// ------------------------------------------------------------------
+describe("round-2 P1 repro (stale-slot age gate)", () => {
+	it("a FRESH slot without a turn row survives the sweep; an OLD one is released", async () => {
+		const w = makeWorld();
+		// An OLD slot (past the safety threshold, no turn row).
+		w.runtime.tracker.start("t1", "a2", "u1", "te-old");
+		w.advance(120_000); // > default 60s staleSlotMinAgeMs
+
+		// NOW a fresh slot mid-dispatch (Phase A startAll ran; Phase B has
+		// not created the TurnExecution row yet) — age 0 at sweep time.
+		w.runtime.tracker.start("t1", "a1", "u1", "te-pending");
+		const sweep = await w.runtime.reaper.runOnce(w.now);
+		// The old slot is released; the fresh one survives.
+		expect(sweep.staleSlotsReleased).toBeGreaterThanOrEqual(1);
+		expect(w.runtime.tracker.isBusy("t1", "a2")).toBe(false);
+		expect(w.runtime.tracker.isBusy("t1", "a1")).toBe(true);
+
+		// An immediate second sweep still leaves the fresh slot alone.
+		const again = await w.runtime.reaper.runOnce(w.now);
+		expect(again.staleSlotsReleased).toBe(0);
+		expect(w.runtime.tracker.isBusy("t1", "a1")).toBe(true);
+	});
+});
+
+// ------------------------------------------------------------------
 // E2E exit evidence via the composition root (mock provider)
 // ------------------------------------------------------------------
 describe("R2 exit evidence via buildA2ARuntime (E1/E13/E14-class)", () => {

@@ -66,7 +66,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 	const turns = new TurnExecutionStore(db);
 	const attempts = new InvocationAttemptStore(db);
 	const queue = new QueueLedgerStore(db);
-	const tracker = new InvocationTracker();
+	const tracker = new InvocationTracker(clock);
 	const workerStore = new WorkerStore(db);
 	const bindingStore = new WorkerBindingStore(db);
 	const pool = new WorkerPool({ workers: workerStore, bindings: bindingStore, spawn: deps.spawn, clock });
@@ -124,7 +124,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		releaseSlot: (threadId, agentId, turnExecutionId) => {
 			tracker.complete(threadId, agentId, turnExecutionId);
 		},
-		listStaleSlots: (now) => tracker.listStaleSlots(now),
+		listStaleSlots: (now, minAgeMs) => tracker.listStaleSlots(now, minAgeMs),
 		isWorkerLive: (turnExecutionId) => {
 			// EXACT owner fence (§3.10.2): judge by the attempt's own worker
 			// binding — the session's CURRENT binding may belong to a newer

@@ -16,8 +16,15 @@ export interface RecoveryDeps extends SettlementDeps {
 	workers: WorkerStore;
 	/** tracker slot release (ownership-fenced complete). */
 	releaseSlot: (threadId: string, agentId: string, turnExecutionId: string) => void;
-	/** tracker stale-slot scan (§3.10.2 candidate set). */
-	listStaleSlots: (now: number) => Array<{ threadId: string; agentId: string; turnExecutionId: string }>;
+	/**
+	 * tracker stale-slot scan (§3.10.2 candidate set) with an age threshold —
+	 * callers must NEVER scan with minAge 0: the Phase A→B window holds fresh
+	 * slots whose TurnExecution row does not exist yet.
+	 */
+	listStaleSlots: (
+		now: number,
+		minAgeMs: number,
+	) => Array<{ threadId: string; agentId: string; turnExecutionId: string; ageMs: number }>;
 	/**
 	 * Exact-owner liveness (§3.10.2): judge by the ATTEMPT's worker binding +
 	 * turnExecutionId, never the session's current binding (a re-bound worker
@@ -27,6 +34,8 @@ export interface RecoveryDeps extends SettlementDeps {
 	processStartedAt: number;
 	/** Provider finalization grace before owner_reaped (default 5min). */
 	graceMs?: number;
+	/** Stale-slot release threshold (default 60s; must exceed the A→B window). */
+	staleSlotMinAgeMs?: number;
 }
 
 export interface RecoveryRunResult {
@@ -269,11 +278,20 @@ export class InvocationOwnerReaper {
 					result.deferred += 1;
 				}
 			}
-			// P2: tracker stale slots without a running turn get released.
-			for (const slot of this.deps.listStaleSlots(now)) {
+			// P2: tracker stale slots without a running turn get released — but
+			// ONLY past a safety age: Phase A startAll runs BEFORE Phase B creates
+			// the TurnExecution row, so a fresh slot without a turn row is
+			// mid-dispatch, not stale (round-2 P1).
+			const staleMinAge = this.deps.staleSlotMinAgeMs ?? 60_000;
+			for (const slot of this.deps.listStaleSlots(now, staleMinAge)) {
 				if (this.deps.turns.get(slot.turnExecutionId)?.status === "running") continue;
 				this.deps.releaseSlot(slot.threadId, slot.agentId, slot.turnExecutionId);
 				result.staleSlotsReleased += 1;
+			}
+			// Prune armed fences whose turn left the running set (bounded memory).
+			const runningIds = new Set(this.deps.turns.listRunning().map((turn) => turn.turnExecutionId));
+			for (const id of [...this.firstDeadSeen.keys()]) {
+				if (!runningIds.has(id)) this.firstDeadSeen.delete(id);
 			}
 			result.responseRecovered = new ResponseRecoveryService(this.deps).runOnce();
 			result.parentsReaggregated = this.converger.finalize(parents, now);
