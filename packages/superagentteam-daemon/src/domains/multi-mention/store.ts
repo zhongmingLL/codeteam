@@ -398,6 +398,28 @@ export class MultiMentionStore {
 		return this.getResponse(input.requestId, input.targetAgentId)?.responseState === "terminal";
 	}
 
+	/** T2: the R message is terminal; project response_state=terminal. */
+	markResponseTerminalByMessage(responseMessageId: string): boolean {
+		return (
+			this.db
+				.prepare(
+					"UPDATE multi_mention_responses SET response_state = 'terminal' WHERE response_message_id = ? AND response_state <> 'terminal'",
+				)
+				.run(responseMessageId).changes > 0
+		);
+	}
+
+	/** T4 response_missing: projection only; target status is unchanged. */
+	markResponseMissingByTurn(turnExecutionId: string): boolean {
+		return (
+			this.db
+				.prepare(
+					"UPDATE multi_mention_responses SET response_state = 'missing' WHERE turn_execution_id = ? AND response_state <> 'terminal'",
+				)
+				.run(turnExecutionId).changes > 0
+		);
+	}
+
 	getResponse(requestId: string, targetAgentId: string): MultiMentionResponse | null {
 		const row = this.db
 			.prepare("SELECT * FROM multi_mention_responses WHERE request_id = ? AND target_agent_id = ?")
@@ -533,6 +555,21 @@ export class MultiMentionStore {
 			.all() as unknown as RequestRow[];
 		return rows.map(mapRequest);
 	}
+
+	/** Anti-cascade (§3.8): is this agent a target of an active multi_mention? */
+	isActiveTarget(agentId: string): boolean {
+		const row = this.db
+			.prepare(
+				`SELECT 1 AS hit
+				 FROM multi_mention_requests r, json_each(r.target_agent_ids_json) t
+				 WHERE r.status IN ('pending', 'running', 'partial') AND t.value = ?
+				 LIMIT 1`,
+			)
+			.get(agentId) as { hit: number } | undefined;
+		return row !== undefined;
+	}
+
+	/** Sources created by a multi_mention request are looked up by message id. */
 
 	statusView(requestId: string): MultiMentionStatusView | null {
 		const request = this.get(requestId);

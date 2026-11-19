@@ -15,6 +15,16 @@ import type { ThreadStore } from "../thread/store.ts";
 
 const MAX_BODY_BYTES = 32 * 1024;
 
+/** 0007 §3.7: the v1 child credential owns this A2A tool allowlist. */
+export const A2A_CREDENTIAL_TOOL_NAMES = [
+	"post_message",
+	"cross_post_message",
+	"multi_mention",
+	"thread_context",
+] as const;
+
+export type A2ACredentialTool = (typeof A2A_CREDENTIAL_TOOL_NAMES)[number];
+
 export type A2AToolErrorCode =
 	| "invalid_input"
 	| "body_empty"
@@ -36,7 +46,12 @@ export type A2AToolErrorCode =
 	| "queue_admission_conflict"
 	| "credential_not_found"
 	| "credential_terminal"
-	| "tool_not_allowed";
+	| "tool_not_allowed"
+	| "multi_mention_invalid_targets"
+	| "multi_mention_invalid_callback"
+	| "multi_mention_invalid_timeout"
+	| "multi_mention_cascade"
+	| "multi_mention_not_found";
 
 export class A2AToolError extends Error {
 	readonly code: A2AToolErrorCode;
@@ -115,7 +130,7 @@ function fail(code: A2AToolErrorCode, message?: string): never {
 	throw new A2AToolError(code, message);
 }
 
-function normalizeTargets(raw: readonly A2ATarget[] | undefined): A2ATarget[] {
+export function normalizeTargets(raw: readonly A2ATarget[] | undefined): A2ATarget[] {
 	if (raw === undefined) return [];
 	if (!Array.isArray(raw)) fail("invalid_input", "targets must be an array");
 	const seen = new Set<string>();
@@ -141,7 +156,7 @@ function hasLineStartOperatorMention(body: string): boolean {
 export function assertCredentialAllowsTool(
 	credentials: InvocationCredentialStore,
 	turnExecutionId: string,
-	tool: "post_message" | "cross_post_message",
+	tool: A2ACredentialTool,
 ): void {
 	const credential = credentials.getByTurn(turnExecutionId);
 	if (!credential) fail("credential_not_found");

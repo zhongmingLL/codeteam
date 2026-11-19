@@ -36,6 +36,10 @@ export interface RecoveryDeps extends SettlementDeps {
 	graceMs?: number;
 	/** Stale-slot release threshold (default 60s; must exceed the A→B window). */
 	staleSlotMinAgeMs?: number;
+	/** R3-c: settle expired multi_mention requests (called by the single reaper). */
+	settleMultiMention?: (now: number) => void;
+	/** R3-c: startup recovery for expired requests + pending callbacks. */
+	recoverMultiMention?: (now: number) => void;
 }
 
 export interface RecoveryRunResult {
@@ -192,6 +196,11 @@ export class TurnExecutionStartupReconciler {
 				result.childrenInterrupted += 1;
 			}
 			result.responseRecovered = new ResponseRecoveryService(this.deps).runOnce();
+			try {
+				this.deps.recoverMultiMention?.(now);
+			} catch {
+				result.deferred += 1;
+			}
 			result.parentsReaggregated = this.converger.finalize(parents, now);
 			this.completed = true;
 		} catch {
@@ -294,6 +303,11 @@ export class InvocationOwnerReaper {
 				if (!runningIds.has(id)) this.firstDeadSeen.delete(id);
 			}
 			result.responseRecovered = new ResponseRecoveryService(this.deps).runOnce();
+			try {
+				this.deps.settleMultiMention?.(now);
+			} catch {
+				result.deferred += 1;
+			}
 			result.parentsReaggregated = this.converger.finalize(parents, now);
 		} finally {
 			this.inFlight = false;

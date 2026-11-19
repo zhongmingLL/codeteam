@@ -15,8 +15,11 @@ import { InvocationTracker } from "../queue/tracker.ts";
 import { ResponseDraftStore } from "../response/store.ts";
 import { AgentSessionStore } from "../session/store.ts";
 import { ThreadStore } from "../thread/store.ts";
+import { MultiMentionOrchestrator } from "../multi-mention/orchestrator.ts";
+import { MultiMentionStore } from "../multi-mention/store.ts";
 import { WorkerPool, type WorkerSpawnPort } from "../worker/pool.ts";
 import { WorkerBindingStore, WorkerStore } from "../worker/store.ts";
+import { A2AToolService } from "./tool-service.ts";
 
 // F018 R2-d composition root: one wiring point for the daemon (and the E2E
 // suite) — ingress, processor, runAgentTurn, pool, reaper, startup
@@ -39,6 +42,9 @@ export interface A2ARuntime {
 	sessions: AgentSessionStore;
 	credentials: InvocationCredentialStore;
 	drafts: ResponseDraftStore;
+	multiMention: MultiMentionStore;
+	a2aTools: A2AToolService;
+	multiMentionOrchestrator: MultiMentionOrchestrator;
 	records: InvocationRecordStore;
 	turns: TurnExecutionStore;
 	attempts: InvocationAttemptStore;
@@ -62,6 +68,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 	const sessions = new AgentSessionStore(db);
 	const credentials = new InvocationCredentialStore(db);
 	const drafts = new ResponseDraftStore(db);
+	const multiMention = new MultiMentionStore(db);
 	const records = new InvocationRecordStore(db);
 	const turns = new TurnExecutionStore(db);
 	const attempts = new InvocationAttemptStore(db);
@@ -72,6 +79,19 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 	const pool = new WorkerPool({ workers: workerStore, bindings: bindingStore, spawn: deps.spawn, clock });
 	const assembler = new HistoryAssembler({ messages, readState });
 	const ingress = new OperatorMessageIngress({ db, registry: deps.registry, threads, messages, queue });
+	const a2aTools = new A2AToolService({ db, registry: deps.registry, threads, messages, queue, credentials, clock });
+	const multiMentionOrchestrator = new MultiMentionOrchestrator({
+		db,
+		registry: deps.registry,
+		threads,
+		messages,
+		queue,
+		credentials,
+		attempts,
+		turns,
+		store: multiMention,
+		clock,
+	});
 	const runAgentTurn = new RunAgentTurn({
 		db,
 		assembler,
@@ -102,6 +122,8 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		threads,
 		tracker,
 		dispatchTarget: runAgentTurn,
+		multiMention,
+		multiMentionOrchestrator,
 		capacity: { check: (threadId, targets) => pool.checkCapacityFor(threadId, targets) },
 		clock,
 	});
@@ -114,6 +136,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		readState,
 		messages,
 		drafts,
+		multiMention,
 		threads,
 		clock,
 	};
@@ -139,6 +162,12 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 			return worker.leaseExpiresAt > clock();
 		},
 		processStartedAt: deps.processStartedAt ?? clock(),
+		settleMultiMention: (now) => {
+			multiMentionOrchestrator.settleExpired(now);
+		},
+		recoverMultiMention: (now) => {
+			multiMentionOrchestrator.recover(now);
+		},
 	};
 	return {
 		threads,
@@ -147,6 +176,9 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		sessions,
 		credentials,
 		drafts,
+		multiMention,
+		a2aTools,
+		multiMentionOrchestrator,
 		records,
 		turns,
 		attempts,

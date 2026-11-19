@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { MultiMentionStore } from "../multi-mention/store.ts";
 
 import type { InvocationAttempt, TurnExecution } from "@superagentteam/shared/types";
 
@@ -48,6 +49,7 @@ export interface SettlementDeps {
 	messages: MessageStore;
 	drafts: ResponseDraftStore;
 	threads: ThreadStore;
+	multiMention?: MultiMentionStore;
 	clock?: () => number;
 }
 
@@ -219,6 +221,9 @@ export class RouteResponseCommitter {
 		this.settleInputDispatchRefs(attempt, now);
 		this.deps.drafts.delete(attempt.turnExecutionId!);
 		this.deps.turns.clearResponsePending(attempt.turnExecutionId!);
+		if (attempt.responseMessageId) {
+			this.deps.multiMention?.markResponseTerminalByMessage(attempt.responseMessageId);
+		}
 	}
 
 	/** Public tail access for T4's already-terminal branch. */
@@ -331,6 +336,9 @@ export class ResponseRecoveryService {
 						// terminal branch (parent.userMessageId fallback inside).
 						this.committer.settleInputDispatchRefsPublic(attempt, now);
 						this.deps.turns.clearResponsePending(turn.turnExecutionId);
+						if (attempt.turnExecutionId) {
+							this.deps.multiMention?.markResponseMissingByTurn(attempt.turnExecutionId);
+						}
 					});
 					result.missing += 1;
 					continue;
