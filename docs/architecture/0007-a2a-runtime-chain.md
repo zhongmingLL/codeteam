@@ -618,7 +618,7 @@ interface DispatchRef {
   `delivery_failure` 消息 + `TurnExecution`。
 - queue live row 保留到 attempt 终态；读模型从 `StoredMessage.lifecycle` +
   `invocation_attempts` + `turn_executions` 还原“发给了谁、谁处理、对应哪条 response”；
-  `queue_admissions` 只负责 admission 幂等。
+  `queue_admissions`（`(thread_id, source_record_id, attempt)` receipt，R-01）只负责 admission 幂等。
 - v1 不做 Clowder 的 `appendAcceptance` / `inputRead` / `coveredMessageIds`；
   这些属于 append acceptance / carrier 审计，v2 再加。
 
@@ -3215,12 +3215,13 @@ CREATE UNIQUE INDEX invocation_queue_claim
   ON invocation_queue(claim_id) WHERE claim_id IS NOT NULL;
 
 CREATE TABLE queue_admissions (
+  thread_id TEXT NOT NULL,
   source_record_id TEXT NOT NULL,
   attempt INTEGER NOT NULL CHECK (attempt >= 1),
   queue_entry_id TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
   admitted_at INTEGER NOT NULL,
-  PRIMARY KEY (source_record_id, attempt)
+  PRIMARY KEY (thread_id, source_record_id, attempt)
 ) STRICT;
 ```
 
@@ -3281,7 +3282,9 @@ CREATE INDEX invocation_records_thread_status
   ON invocation_records(thread_id, status);
 ```
 
-- `source_record_id` unique：一个 source 一个 parent；重试复用同一 parent。
+- `(thread_id, source_record_id)` unique（0018 R-01）：同 thread 内一个 source 一个
+  parent；重试复用同一 parent。v1 messageId 全局唯一，行为不变，但唯一性
+  不再依赖该巧合。
 - `user_id` 是 parent ownership snapshot；必须等于 `thread.created_by`（`0011` §11）。
 - `user_message_id` 是 parent 的用户消息指针；v1 = `messageId`，未来 connector 可为 null。
 - `target_agent_ids_json` 是 admission 快照，不可变。
