@@ -19,6 +19,7 @@ import { AgentSessionStore } from "../session/store.ts";
 import { ThreadStore } from "../thread/store.ts";
 import { WorkerPool, type WorkerSpawnPort } from "../worker/pool.ts";
 import { WorkerBindingStore, WorkerStore } from "../worker/store.ts";
+import { LoopGuardService } from "./loop-guard.ts";
 import { ThreadContextService } from "./thread-context.ts";
 import { A2AToolService } from "./tool-service.ts";
 
@@ -81,7 +82,17 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 	const pool = new WorkerPool({ workers: workerStore, bindings: bindingStore, spawn: deps.spawn, clock });
 	const assembler = new HistoryAssembler({ messages, readState });
 	const ingress = new OperatorMessageIngress({ db, registry: deps.registry, threads, messages, queue });
-	const a2aTools = new A2AToolService({ db, registry: deps.registry, threads, messages, queue, credentials, clock });
+	const loopGuard = new LoopGuardService({ turns, messages, drafts });
+	const a2aTools = new A2AToolService({
+		db,
+		registry: deps.registry,
+		threads,
+		messages,
+		queue,
+		credentials,
+		loopGuard,
+		clock,
+	});
 	const threadContext = new ThreadContextService({ threads, messages });
 	const multiMentionOrchestrator = new MultiMentionOrchestrator({
 		db,
@@ -93,6 +104,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		attempts,
 		turns,
 		store: multiMention,
+		loopGuard,
 		clock,
 	});
 	const runAgentTurn = new RunAgentTurn({
