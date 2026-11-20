@@ -640,4 +640,76 @@ describe("F018 R3-b multi_mention create", () => {
 		).toBe(requestsBefore.count);
 		expect(w.runtime.messages.getByThread("t1", 100)).toHaveLength(messagesBefore);
 	});
+
+	it("records per-target cancellation and fails the group when every target is canceled", () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput());
+		w.runtime.multiMention.setStatus(created.requestId, "running", 1000);
+		expect(w.runtime.multiMentionOrchestrator.cancelTarget(created.requestId, "a2", "operator_cancel", 1001)).toBe(
+			"recorded",
+		);
+		expect(w.runtime.multiMention.get(created.requestId)?.status).toBe("partial");
+		expect(w.runtime.multiMentionOrchestrator.cancelTarget(created.requestId, "a3", "operator_cancel", 1002)).toBe(
+			"finalized",
+		);
+		const request = w.runtime.multiMention.get(created.requestId)!;
+		expect(request.status).toBe("failed");
+		const responses = w.runtime.multiMention.listResponses(created.requestId);
+		expect(responses.every((response) => response.status === "failed")).toBe(true);
+		expect(responses.every((response) => response.reason === "operator_cancel")).toBe(true);
+		expect(w.runtime.messages.get(request.aggregateMessageId!)?.extra?.multiMention?.status).toBe("failed");
+		expect(w.runtime.multiMention.getCallback(created.requestId)?.status).toBe("queued");
+	});
+
+	it("keeps a received sibling and closes the group as done on partial cancellation", () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput());
+		w.runtime.multiMention.setStatus(created.requestId, "running", 1000);
+		w.runtime.multiMention.recordTargetOutcome({
+			requestId: created.requestId,
+			targetAgentId: "a2",
+			status: "received",
+			responseState: "pending",
+			now: 1001,
+		});
+		expect(w.runtime.multiMentionOrchestrator.cancelRequest(created.requestId, "operator_abandon", 1002)).toBe(
+			"finalized",
+		);
+		const request = w.runtime.multiMention.get(created.requestId)!;
+		expect(request.status).toBe("done");
+		expect(w.runtime.multiMention.getResponse(created.requestId, "a2")?.status).toBe("received");
+		expect(w.runtime.multiMention.getResponse(created.requestId, "a3")?.status).toBe("failed");
+		expect(w.runtime.multiMention.statusView(created.requestId)?.allFailed).toBe(false);
+	});
+
+	it("maps the backfill response state from the actual R lifecycle", () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput());
+		const stateFor = (
+			w.runtime.multiMentionOrchestrator as unknown as {
+				responseStateFor(responseMessageId: string | null): "pending" | "terminal" | "missing";
+			}
+		).responseStateFor.bind(w.runtime.multiMentionOrchestrator);
+		const response = (id: string, status: "processing" | "completed") =>
+			w.runtime.messages.append({
+				id,
+				threadId: "t1",
+				from: { kind: "agent", agentId: "a2" },
+				content: id,
+				lifecycle: {
+					kind: "response",
+					parentInvocationId: `inv:t1:${created.message.id}`,
+					turnExecutionId: `te:${id}`,
+					target: { kind: "agent", id: "a2" },
+					status,
+					startedAt: 1000,
+				},
+				now: 1000,
+			});
+		response("resp-processing", "processing");
+		response("resp-terminal", "completed");
+		expect(stateFor("resp-processing")).toBe("pending");
+		expect(stateFor("resp-terminal")).toBe("terminal");
+		expect(stateFor("resp-missing")).toBe("missing");
+	});
 });

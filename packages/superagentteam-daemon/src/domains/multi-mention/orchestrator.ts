@@ -327,7 +327,7 @@ export class MultiMentionOrchestrator {
 		if (MULTI_MENTION_TERMINAL_STATUSES.has(request.status)) return "already_terminal";
 		const responses = this.deps.store.listResponses(requestId);
 		if (responses.length < request.targetAgentIds.length) return "waiting";
-		return this.finalizeRequest(request, "done", responses, now);
+		return this.finalizeRequest(request, this.finalStatus(responses), responses, now);
 	}
 
 	/** Reaper/startup timeout path: backfill terminal children, then settle. */
@@ -337,7 +337,9 @@ export class MultiMentionOrchestrator {
 			this.backfillTerminalChildren(request, now);
 			let responses = this.deps.store.listResponses(request.requestId);
 			if (responses.length >= request.targetAgentIds.length) {
-				if (this.finalizeRequest(request, "done", responses, now) === "finalized") finalized += 1;
+				if (this.finalizeRequest(request, this.finalStatus(responses), responses, now) === "finalized") {
+					finalized += 1;
+				}
 				continue;
 			}
 			const status = request.status === "pending" ? "failed" : "timeout";
@@ -355,6 +357,57 @@ export class MultiMentionOrchestrator {
 			if (this.finalizeRequest(request, status, responses, now) === "finalized") finalized += 1;
 		}
 		return finalized;
+	}
+
+	/**
+	 * 0007 §3.8 target cancellation: record one target as failed without
+	 * touching a completed sibling. Child/attempt cancellation itself belongs
+	 * to the execution owner; this settles the group projection.
+	 */
+	cancelTarget(
+		requestId: string,
+		targetAgentId: string,
+		reason: string,
+		now: number,
+	): "not_found" | "already_terminal" | "already_recorded" | "recorded" | "finalized" {
+		const request = this.deps.store.get(requestId);
+		if (!request) return "not_found";
+		if (MULTI_MENTION_TERMINAL_STATUSES.has(request.status)) return "already_terminal";
+		if (!request.targetAgentIds.includes(targetAgentId)) fail("multi_mention_not_found");
+		if (this.deps.store.getResponse(requestId, targetAgentId)) return "already_recorded";
+		this.deps.store.recordTargetOutcome({
+			requestId,
+			targetAgentId,
+			status: "failed",
+			responseState: "missing",
+			reason,
+			now,
+		});
+		const responses = this.deps.store.listResponses(requestId);
+		if (responses.length < request.targetAgentIds.length) return "recorded";
+		this.finalizeRequest(request, this.finalStatus(responses), responses, now);
+		return "finalized";
+	}
+
+	/** Operator/thread-wide cancellation: every unfinished target becomes failed. */
+	cancelRequest(requestId: string, reason: string, now: number): "not_found" | "already_terminal" | "finalized" {
+		const request = this.deps.store.get(requestId);
+		if (!request) return "not_found";
+		if (MULTI_MENTION_TERMINAL_STATUSES.has(request.status)) return "already_terminal";
+		for (const targetAgentId of request.targetAgentIds) {
+			if (this.deps.store.getResponse(requestId, targetAgentId)) continue;
+			this.deps.store.recordTargetOutcome({
+				requestId,
+				targetAgentId,
+				status: "failed",
+				responseState: "missing",
+				reason,
+				now,
+			});
+		}
+		const responses = this.deps.store.listResponses(requestId);
+		this.finalizeRequest(request, this.finalStatus(responses), responses, now);
+		return "finalized";
 	}
 
 	/** Startup: settle expired requests and re-deliver pending callbacks only. */
@@ -507,14 +560,25 @@ export class MultiMentionOrchestrator {
 	): void {
 		const request = this.deps.store.get(requestId);
 		const threadId = request?.threadId ?? callback.threadId;
-		this.deps.store.updateCallback(requestId, { status: "failed", reason, now });
-		this.deps.messages.append({
-			id: `msg:${threadId}:${now}:cb-fail:${randomUUID().slice(0, 8)}`,
-			threadId,
-			from: { kind: "system", service: "multi_mention" },
-			content: `multi_mention_callback_failed: ${reason}`,
-			now,
+		runInTransaction(this.deps.db, () => {
+			const updated = this.deps.store.updateCallback(requestId, { status: "failed", reason, now });
+			if (updated.outcome !== "updated") return;
+			this.deps.messages.append({
+				id: `msg:${threadId}:${now}:cb-fail:${randomUUID().slice(0, 8)}`,
+				threadId,
+				from: { kind: "system", service: "multi_mention" },
+				content: `multi_mention_callback_failed: ${reason}`,
+				now,
+			});
 		});
+	}
+
+	private finalStatus(responses: MultiMentionResponse[]): "done" | "failed" {
+		const allNotReceived = responses.every((response) => response.status !== "received");
+		const allCanceled =
+			allNotReceived &&
+			responses.every((response) => response.reason !== null && /cancel|abandon/i.test(response.reason));
+		return allCanceled ? "failed" : "done";
 	}
 
 	private buildAggregateBody(
@@ -571,7 +635,7 @@ export class MultiMentionOrchestrator {
 					turnExecutionId: child.turnExecutionId,
 					responseMessageId: latest.responseMessageId,
 					status: "received",
-					responseState: "pending",
+					responseState: this.responseStateFor(latest.responseMessageId),
 					now,
 				});
 			} else if (
@@ -584,7 +648,7 @@ export class MultiMentionOrchestrator {
 					turnExecutionId: child.turnExecutionId,
 					responseMessageId: latest.responseMessageId,
 					status: "failed",
-					responseState: "missing",
+					responseState: this.responseStateFor(latest.responseMessageId),
 					reason: child.terminalReason ?? child.status,
 					now,
 				});
@@ -600,11 +664,18 @@ export class MultiMentionOrchestrator {
 					turnExecutionId: latest.turnExecutionId,
 					responseMessageId: latest.responseMessageId,
 					status: "failed",
-					responseState: "missing",
+					responseState: this.responseStateFor(latest.responseMessageId),
 					reason: latest.terminalReason ?? latest.deliveryState,
 					now,
 				});
 			}
 		}
+	}
+
+	private responseStateFor(responseMessageId: string | null): "pending" | "terminal" | "missing" {
+		if (!responseMessageId) return "missing";
+		const message = this.deps.messages.get(responseMessageId, { includeDeleted: true });
+		if (!message || message.lifecycle?.kind !== "response") return "missing";
+		return message.lifecycle.status === "processing" ? "pending" : "terminal";
 	}
 }

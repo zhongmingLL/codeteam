@@ -1,14 +1,14 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { AgentConfig, QueueEntry, QueueTarget } from "@superagentteam/shared/types";
 import { runInTransaction } from "../../infrastructure/db/database.ts";
-import type { AgentRegistry } from "../agent/registry.ts";
 import { A2A_CREDENTIAL_TOOL_NAMES } from "../a2a/tool-service.ts";
+import type { AgentRegistry } from "../agent/registry.ts";
 import type { InvocationCredentialStore } from "../auth/store.ts";
 import { aggregateParent } from "../invocation/aggregate.ts";
 import type { InvocationAttemptStore, InvocationRecordStore, TurnExecutionStore } from "../invocation/store.ts";
 import type { MessageStore } from "../message/store.ts";
-import type { MultiMentionStore } from "../multi-mention/store.ts";
 import type { MultiMentionOrchestrator } from "../multi-mention/orchestrator.ts";
+import type { MultiMentionStore } from "../multi-mention/store.ts";
 import type { ResponseDraftStore } from "../response/store.ts";
 import type { AgentSessionStore } from "../session/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
@@ -856,6 +856,7 @@ export class QueueProcessor {
 			return latest?.deliveryState === "appended";
 		});
 		if (stillRunning) return { outcome: "not_abandonable" };
+		let multiMentionRequestId: string | null = null;
 		runInTransaction(this.deps.db, () => {
 			// §3.9: the ONLY legal terminal→terminal transition.
 			if (!this.deps.records.abandon(invocationId, "operator_abandon", now)) {
@@ -863,9 +864,14 @@ export class QueueProcessor {
 			}
 			const latest = this.deps.attempts.getLatest(invocationId, parent.targetAgentIds[0]!);
 			if (latest) {
+				const entry = this.deps.queue.get(parent.threadId, latest.queueEntryId);
+				multiMentionRequestId = entry?.execution.multiMentionRequestId ?? null;
 				this.deps.queue.deleteEntry(parent.threadId, latest.queueEntryId);
 			}
 		});
+		if (multiMentionRequestId) {
+			this.deps.multiMentionOrchestrator?.cancelRequest(multiMentionRequestId, "operator_abandon", now);
+		}
 		return { outcome: "abandoned" };
 	}
 
@@ -904,8 +910,7 @@ export class QueueProcessor {
 		const callback = this.deps.multiMention.getCallback(requestId);
 		if (
 			callback &&
-			(callback.queueEntryId === entry.queueEntryId ||
-				callback.aggregateMessageId === entry.payload.sourceRecordId)
+			(callback.queueEntryId === entry.queueEntryId || callback.aggregateMessageId === entry.payload.sourceRecordId)
 		) {
 			if (
 				parent.status === "completed" ||
@@ -916,14 +921,10 @@ export class QueueProcessor {
 				const latest = this.deps.attempts.getLatest(invocationId, callback.callbackToAgentId);
 				this.deps.multiMention.updateCallback(requestId, {
 					status:
-						parent.status === "completed"
-							? "completed"
-							: parent.status === "canceled"
-								? "canceled"
-								: "failed",
+						parent.status === "completed" ? "completed" : parent.status === "canceled" ? "canceled" : "failed",
 					parentInvocationId: invocationId,
 					turnExecutionId: latest?.turnExecutionId ?? null,
-					reason: parent.status === "completed" ? null : parent.terminalReason ?? parent.status,
+					reason: parent.status === "completed" ? null : (parent.terminalReason ?? parent.status),
 					now: this.now(),
 				});
 			}
@@ -954,11 +955,7 @@ export class QueueProcessor {
 						responseState,
 						now,
 					});
-				} else if (
-					child.status === "failed" ||
-					child.status === "interrupted" ||
-					child.status === "canceled"
-				) {
+				} else if (child.status === "failed" || child.status === "interrupted" || child.status === "canceled") {
 					this.deps.multiMention.recordTargetOutcome({
 						requestId,
 						targetAgentId: agentId,
