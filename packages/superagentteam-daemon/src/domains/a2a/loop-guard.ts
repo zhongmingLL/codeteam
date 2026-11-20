@@ -13,7 +13,15 @@ export const LOOP_GUARD_BLOCK_THRESHOLD = 4;
 export const LOOP_GUARD_OUTPUT_LENGTH = 200;
 const MAX_LINEAGE_SCAN = 256;
 
-const NON_SUBSTANTIVE_TOOL_PATTERNS = ["post_message", "cross_post_message", "multi_mention", "hold_ball"];
+// Substring match is intentional: provider-prefixed names (mcp__...__post_message)
+// must also count as routing/holding rather than substantive work.
+const NON_SUBSTANTIVE_TOOL_PATTERNS = [
+	"post_message",
+	"cross_post_message",
+	"multi_mention",
+	"thread_context",
+	"hold_ball",
+];
 
 export function isSubstantiveTool(toolName: string): boolean {
 	if (!toolName) return false;
@@ -22,10 +30,17 @@ export function isSubstantiveTool(toolName: string): boolean {
 
 function hasSubstantiveTool(events: readonly unknown[] | undefined): boolean {
 	return (events ?? []).some((event) => {
-		const toolEvent = event as Partial<StoredToolEvent>;
-		if (toolEvent.type !== "tool_use") return false;
-		const name = String(toolEvent.toolName ?? toolEvent.label ?? "");
-		return isSubstantiveTool(name);
+		const toolEvent = event as Partial<StoredToolEvent> & { name?: unknown };
+		// Legacy StoredToolEvent shape (messages/tests).
+		if (toolEvent.type === "tool_use") {
+			return isSubstantiveTool(String(toolEvent.toolName ?? toolEvent.label ?? ""));
+		}
+		// F018 ResponseEventSink ToolEventRecord shape (draft + T2 messages):
+		// { toolCallId, name, status, at } — no `type`/`label`.
+		if (typeof toolEvent.name === "string") {
+			return isSubstantiveTool(toolEvent.name);
+		}
+		return false;
 	});
 }
 
@@ -44,7 +59,6 @@ function samePair(a: { from: string; to: string }, from: string, to: string): bo
 }
 
 export interface LoopGuardCheck {
-	threadId: string;
 	callerTurnExecutionId: string;
 	callerAgentId: string;
 	targetAgentId: string;
@@ -79,6 +93,9 @@ export class LoopGuardService {
 			if (!parent) break;
 			const triggerId = current.causal.a2aTriggerMessageId;
 			const trigger = triggerId ? this.messages.get(triggerId, { includeDeleted: true }) : null;
+			// Historical triggers are input messages (no toolEvents); their only
+			// substantive signal is long content. Current-edge activity comes
+			// from the live draft below.
 			edges.push({ from: parent.agentId, to: current.agentId, substantive: messageActivity(trigger) });
 			current = parent;
 		}

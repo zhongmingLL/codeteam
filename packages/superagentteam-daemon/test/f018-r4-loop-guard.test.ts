@@ -120,7 +120,7 @@ function addDraft(
 	world: ReturnType<typeof makeWorld>,
 	turnExecutionId: string,
 	agentId: string,
-	options: { content?: string; toolName?: string } = {},
+	options: { content?: string; toolName?: string; sinkToolName?: string } = {},
 ): void {
 	const attemptId = `att:${randomUUID()}`;
 	const attempt =
@@ -145,9 +145,11 @@ function addDraft(
 		threadId: "t1",
 		agentId,
 		content: options.content ?? "short",
-		toolEvents: options.toolName
-			? [{ id: "e1", type: "tool_use", label: options.toolName, toolName: options.toolName, timestamp: 5 }]
-			: [],
+		toolEvents: options.sinkToolName
+			? [{ toolCallId: "tool-1", name: options.sinkToolName, status: "completed", at: 5 }]
+			: options.toolName
+				? [{ id: "e1", type: "tool_use", label: options.toolName, toolName: options.toolName, timestamp: 5 }]
+				: [],
 		thinking: null,
 		createdAt: 5,
 		updatedAt: 5,
@@ -167,7 +169,7 @@ describe("F018 R4-b loop guard", () => {
 	it("warns at 2/3 and blocks at 4 for a short same-pair streak", () => {
 		const w = makeWorld();
 		const warn2 = buildChain(w, [{ from: "a2", to: "a1" }]);
-		expect(w.guard.checkPush({ ...warn2, targetAgentId: "a2", threadId: "t1" })).toMatchObject({
+		expect(w.guard.checkPush({ ...warn2, targetAgentId: "a2" })).toMatchObject({
 			count: 2,
 			warn: true,
 			block: false,
@@ -176,7 +178,7 @@ describe("F018 R4-b loop guard", () => {
 			{ from: "a2", to: "a1" },
 			{ from: "a1", to: "a2" },
 		]);
-		expect(w.guard.checkPush({ ...warn3, targetAgentId: "a1", threadId: "t1" })).toMatchObject({
+		expect(w.guard.checkPush({ ...warn3, targetAgentId: "a1" })).toMatchObject({
 			count: 3,
 			warn: true,
 			block: false,
@@ -186,7 +188,7 @@ describe("F018 R4-b loop guard", () => {
 			{ from: "a1", to: "a2" },
 			{ from: "a2", to: "a1" },
 		]);
-		expect(w.guard.checkPush({ ...block4, targetAgentId: "a2", threadId: "t1" })).toMatchObject({
+		expect(w.guard.checkPush({ ...block4, targetAgentId: "a2" })).toMatchObject({
 			count: 4,
 			warn: false,
 			block: true,
@@ -200,7 +202,7 @@ describe("F018 R4-b loop guard", () => {
 			{ from: "a1", to: "a2", long: true },
 			{ from: "a2", to: "a1" },
 		]);
-		expect(w.guard.checkPush({ ...longEdge, targetAgentId: "a2", threadId: "t1" }).count).toBe(3);
+		expect(w.guard.checkPush({ ...longEdge, targetAgentId: "a2" }).count).toBe(3);
 
 		const toolDraft = buildChain(w, [
 			{ from: "a2", to: "a1" },
@@ -208,7 +210,7 @@ describe("F018 R4-b loop guard", () => {
 			{ from: "a2", to: "a1" },
 		]);
 		addDraft(w, toolDraft.callerTurnExecutionId, toolDraft.callerAgentId, { toolName: "read" });
-		expect(w.guard.checkPush({ ...toolDraft, targetAgentId: "a2", threadId: "t1" }).count).toBe(1);
+		expect(w.guard.checkPush({ ...toolDraft, targetAgentId: "a2" }).count).toBe(1);
 
 		const routingDraft = buildChain(w, [
 			{ from: "a2", to: "a1" },
@@ -216,14 +218,49 @@ describe("F018 R4-b loop guard", () => {
 			{ from: "a2", to: "a1" },
 		]);
 		addDraft(w, routingDraft.callerTurnExecutionId, routingDraft.callerAgentId, { toolName: "post_message" });
-		expect(w.guard.checkPush({ ...routingDraft, targetAgentId: "a2", threadId: "t1" }).block).toBe(true);
+		expect(w.guard.checkPush({ ...routingDraft, targetAgentId: "a2" }).block).toBe(true);
+
+		const sinkDraft = buildChain(w, [
+			{ from: "a2", to: "a1" },
+			{ from: "a1", to: "a2" },
+			{ from: "a2", to: "a1" },
+		]);
+		addDraft(w, sinkDraft.callerTurnExecutionId, sinkDraft.callerAgentId, { sinkToolName: "read_file" });
+		expect(w.guard.checkPush({ ...sinkDraft, targetAgentId: "a2" }).count).toBe(1);
+
+		const readContextDraft = buildChain(w, [
+			{ from: "a2", to: "a1" },
+			{ from: "a1", to: "a2" },
+			{ from: "a2", to: "a1" },
+		]);
+		addDraft(w, readContextDraft.callerTurnExecutionId, readContextDraft.callerAgentId, {
+			toolName: "thread_context",
+		});
+		expect(w.guard.checkPush({ ...readContextDraft, targetAgentId: "a2" }).block).toBe(true);
 
 		const pairChange = buildChain(w, [
 			{ from: "a2", to: "a1" },
 			{ from: "a1", to: "a2" },
 			{ from: "a2", to: "a1" },
 		]);
-		expect(w.guard.checkPush({ ...pairChange, targetAgentId: "a3", threadId: "t1" }).count).toBe(1);
+		expect(w.guard.checkPush({ ...pairChange, targetAgentId: "a3" }).count).toBe(1);
+	});
+
+	it("rebuilds the same decision after a restart without in-memory state", () => {
+		const w = makeWorld();
+		const chain = buildChain(w, [
+			{ from: "a2", to: "a1" },
+			{ from: "a1", to: "a2" },
+			{ from: "a2", to: "a1" },
+		]);
+		const before = w.guard.checkPush({ ...chain, targetAgentId: "a2" });
+		expect(before.block).toBe(true);
+		const restarted = new LoopGuardService({
+			turns: new TurnExecutionStore(w.fd.db),
+			messages: new MessageStore(w.fd.db),
+			drafts: new ResponseDraftStore(w.fd.db),
+		});
+		expect(restarted.checkPush({ ...chain, targetAgentId: "a2" })).toEqual(before);
 	});
 
 	it("rejects a blocked post before any message or queue write", () => {

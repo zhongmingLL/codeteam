@@ -280,18 +280,6 @@ export class A2AToolService {
 
 		const depth = Math.max(0, ctx.a2aDepth ?? 0) + 1;
 		if (depth > MAX_A2A_DEPTH) fail("a2a_depth_exceeded");
-		let warnPingPong = false;
-		if (targets.length > 0) {
-			const verdict = this.deps.loopGuard?.checkPush({
-				threadId: targetThreadId,
-				callerTurnExecutionId: ctx.callerTurnExecutionId,
-				callerAgentId: ctx.callerAgentId,
-				targetAgentId: targets[0]!.id,
-			});
-			if (verdict?.block) fail("loop_guard");
-			warnPingPong = verdict?.warn ?? false;
-		}
-
 		const intentHash = computeA2AToolIntentHash({
 			tool: crossPost ? "cross_post_message" : "post_message",
 			sourceThreadId: ctx.threadId,
@@ -311,8 +299,18 @@ export class A2AToolService {
 				replayed: true,
 				sourceThreadId: ctx.threadId,
 				targetThreadId,
-				...(warnPingPong ? { warnPingPong } : {}),
 			};
+		}
+
+		let warnPingPong = false;
+		if (targets.length > 0) {
+			const verdict = this.deps.loopGuard?.checkPush({
+				callerTurnExecutionId: ctx.callerTurnExecutionId,
+				callerAgentId: ctx.callerAgentId,
+				targetAgentId: targets[0]!.id,
+			});
+			if (verdict?.block) fail("loop_guard");
+			warnPingPong = verdict?.warn ?? false;
 		}
 
 		const messageId = `msg:${targetThreadId}:${now}:${randomUUID().slice(0, 8)}`;
