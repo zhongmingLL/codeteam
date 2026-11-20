@@ -712,4 +712,71 @@ describe("F018 R3-b multi_mention create", () => {
 		expect(stateFor("resp-terminal")).toBe("terminal");
 		expect(stateFor("resp-missing")).toBe("missing");
 	});
+
+	it("closes a non-terminal group when the parent invocation is abandoned", () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMention.createRequest({
+			requestId: "mm-abandon",
+			threadId: "t1",
+			userId: "u1",
+			initiatorAgentId: "a1",
+			initiatorTurnExecutionId: "te-caller",
+			callbackToAgentId: "a1",
+			question: "abandon",
+			targetAgentIds: ["a2", "a3"],
+			timeoutMinutes: 8,
+			parentInvocationId: "inv-abandon",
+			sourceRecordId: "src-abandon",
+			now: 1000,
+		});
+		expect(created.outcome).toBe("created");
+		w.runtime.multiMention.setStatus("mm-abandon", "running", 1000);
+		w.runtime.records.create({
+			invocationId: "inv-abandon",
+			threadId: "t1",
+			userId: "u1",
+			sourceRecordId: "src-abandon",
+			userMessageId: null,
+			targetAgentIds: ["a2", "a3"],
+			now: 1000,
+		});
+		w.runtime.records.markRunning("inv-abandon", 1000);
+		w.runtime.records.setTerminal("inv-abandon", "failed", "provider_error", 1001);
+		const enqueued = w.runtime.queue.enqueue(
+			{
+				threadId: "t1",
+				sourceRecordId: "src-abandon",
+				messageId: null,
+				owner: { kind: "system", service: "multi_mention" },
+				kind: "message_wake",
+				from: { kind: "system", service: "multi_mention" },
+				content: "mm-abandon",
+				targets: [
+					{ kind: "agent", id: "a2" },
+					{ kind: "agent", id: "a3" },
+				],
+				execution: { multiMentionRequestId: "mm-abandon" },
+			},
+			1000,
+		);
+		expect(enqueued.outcome).toBe("enqueued");
+		const queueEntryId = enqueued.entry!.queueEntryId;
+		const attempt = w.runtime.attempts.appendQueued({
+			attemptId: "att-abandon",
+			parentInvocationId: "inv-abandon",
+			queueEntryId,
+			threadId: "t1",
+			targetAgentId: "a2",
+			attempt: 1,
+			now: 1000,
+		});
+		w.runtime.attempts.markPrestartTerminal(attempt.record.attemptId, {
+			status: "failed",
+			terminalReason: "target_invalid",
+			endedAt: 1001,
+		});
+		expect(w.runtime.processor.abandon("inv-abandon", 1002).outcome).toBe("abandoned");
+		expect(w.runtime.multiMention.get("mm-abandon")?.status).toBe("failed");
+		expect(w.runtime.queue.get("t1", queueEntryId)).toBeNull();
+	});
 });
