@@ -17,6 +17,7 @@ import {
 	type StoredMessage,
 } from "@superagentteam/shared/types";
 import { runInTransaction } from "../../infrastructure/db/database.ts";
+import type { LoopGuardService } from "../a2a/loop-guard.ts";
 import {
 	type A2ATarget,
 	type A2AToolContext,
@@ -58,6 +59,7 @@ export interface MultiMentionCreateResult {
 	targetAgentIds: string[];
 	callbackTo: string;
 	replayed: boolean;
+	warnPingPong?: boolean;
 }
 
 export interface MultiMentionOrchestratorDeps {
@@ -70,6 +72,7 @@ export interface MultiMentionOrchestratorDeps {
 	attempts: InvocationAttemptStore;
 	turns: TurnExecutionStore;
 	store: MultiMentionStore;
+	loopGuard?: LoopGuardService;
 	clock?: () => number;
 }
 
@@ -169,6 +172,17 @@ export class MultiMentionOrchestrator {
 		const callbackDepth = Math.max(0, ctx.multiMentionCallbackDepth ?? 0) + 1;
 		if (callbackDepth > MULTI_MENTION_MAX_CALLBACK_DEPTH) fail("multi_mention_cascade");
 		if (this.deps.store.isActiveTarget(ctx.callerAgentId)) fail("multi_mention_cascade");
+		let warnPingPong = false;
+		for (const target of targets) {
+			const verdict = this.deps.loopGuard?.checkPush({
+				threadId: ctx.threadId,
+				callerTurnExecutionId: ctx.callerTurnExecutionId,
+				callerAgentId: ctx.callerAgentId,
+				targetAgentId: target.id,
+			});
+			if (verdict?.block) fail("loop_guard");
+			warnPingPong = warnPingPong || (verdict?.warn ?? false);
+		}
 
 		const intentHash = computeMultiMentionIntentHash({
 			threadId: ctx.threadId,
@@ -196,6 +210,7 @@ export class MultiMentionOrchestrator {
 				targetAgentIds: existing.targetAgentIds,
 				callbackTo: existing.callbackToAgentId,
 				replayed: true,
+				...(warnPingPong ? { warnPingPong } : {}),
 			};
 		}
 
@@ -290,6 +305,7 @@ export class MultiMentionOrchestrator {
 					targetAgentIds: replayRequest.targetAgentIds,
 					callbackTo: replayRequest.callbackToAgentId,
 					replayed: true,
+					...(warnPingPong ? { warnPingPong } : {}),
 				};
 			}
 			if (error instanceof Error && error.message === "credential_not_found") fail("credential_not_found");
@@ -304,6 +320,7 @@ export class MultiMentionOrchestrator {
 			targetAgentIds: targets.map((target) => target.id),
 			callbackTo: input.callbackTo,
 			replayed: false,
+			...(warnPingPong ? { warnPingPong } : {}),
 		};
 	}
 

@@ -8,6 +8,7 @@ import type { InvocationCredentialStore } from "../auth/store.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { QueueLedgerStore } from "../queue/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
+import type { LoopGuardService } from "./loop-guard.ts";
 
 // F018 R3-a A2A text tools (0007 §3.8): post_message / cross_post_message.
 // One agent target max; message + queue + dispatchRefs are one transaction.
@@ -40,6 +41,7 @@ export type A2AToolErrorCode =
 	| "thread_project_path_required"
 	| "invalid_reply_to"
 	| "a2a_depth_exceeded"
+	| "loop_guard"
 	| "pi_ext_tool_call_conflict"
 	| "pi_ext_tool_call_replay_missing"
 	| "queue_full"
@@ -99,6 +101,7 @@ export interface PostMessageResult {
 	message: StoredMessage;
 	queueEntryId: string | null;
 	replayed: boolean;
+	warnPingPong?: boolean;
 }
 
 export interface CrossPostMessageResult extends PostMessageResult {
@@ -113,6 +116,7 @@ export interface A2AToolServiceDeps {
 	messages: MessageStore;
 	queue: QueueLedgerStore;
 	credentials: InvocationCredentialStore;
+	loopGuard?: LoopGuardService;
 	clock?: () => number;
 }
 
@@ -273,6 +277,17 @@ export class A2AToolService {
 
 		const depth = Math.max(0, ctx.a2aDepth ?? 0) + 1;
 		if (depth > MAX_A2A_DEPTH) fail("a2a_depth_exceeded");
+		let warnPingPong = false;
+		if (targets.length > 0) {
+			const verdict = this.deps.loopGuard?.checkPush({
+				threadId: targetThreadId,
+				callerTurnExecutionId: ctx.callerTurnExecutionId,
+				callerAgentId: ctx.callerAgentId,
+				targetAgentId: targets[0]!.id,
+			});
+			if (verdict?.block) fail("loop_guard");
+			warnPingPong = verdict?.warn ?? false;
+		}
 
 		const intentHash = computeA2AToolIntentHash({
 			tool: crossPost ? "cross_post_message" : "post_message",
@@ -293,6 +308,7 @@ export class A2AToolService {
 				replayed: true,
 				sourceThreadId: ctx.threadId,
 				targetThreadId,
+				...(warnPingPong ? { warnPingPong } : {}),
 			};
 		}
 
@@ -378,6 +394,7 @@ export class A2AToolService {
 					replayed: true,
 					sourceThreadId: ctx.threadId,
 					targetThreadId,
+					...(warnPingPong ? { warnPingPong } : {}),
 				};
 			}
 			if (error instanceof Error && error.message === "credential_not_found") fail("credential_not_found");
@@ -390,6 +407,7 @@ export class A2AToolService {
 			replayed: false,
 			sourceThreadId: ctx.threadId,
 			targetThreadId,
+			...(warnPingPong ? { warnPingPong } : {}),
 		};
 	}
 }

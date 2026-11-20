@@ -9,16 +9,17 @@ import { InvocationOwnerReaper, type RecoveryDeps, TurnExecutionStartupReconcile
 import { ResponseRecoveryService } from "../invocation/settlement.ts";
 import { InvocationAttemptStore, InvocationRecordStore, TurnExecutionStore } from "../invocation/store.ts";
 import { AgentReadStateStore, MessageStore } from "../message/store.ts";
+import { MultiMentionOrchestrator } from "../multi-mention/orchestrator.ts";
+import { MultiMentionStore } from "../multi-mention/store.ts";
 import { QueueProcessor } from "../queue/processor.ts";
 import { QueueLedgerStore } from "../queue/store.ts";
 import { InvocationTracker } from "../queue/tracker.ts";
 import { ResponseDraftStore } from "../response/store.ts";
 import { AgentSessionStore } from "../session/store.ts";
 import { ThreadStore } from "../thread/store.ts";
-import { MultiMentionOrchestrator } from "../multi-mention/orchestrator.ts";
-import { MultiMentionStore } from "../multi-mention/store.ts";
 import { WorkerPool, type WorkerSpawnPort } from "../worker/pool.ts";
 import { WorkerBindingStore, WorkerStore } from "../worker/store.ts";
+import { LoopGuardService } from "./loop-guard.ts";
 import { A2AToolService } from "./tool-service.ts";
 
 // F018 R2-d composition root: one wiring point for the daemon (and the E2E
@@ -79,7 +80,17 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 	const pool = new WorkerPool({ workers: workerStore, bindings: bindingStore, spawn: deps.spawn, clock });
 	const assembler = new HistoryAssembler({ messages, readState });
 	const ingress = new OperatorMessageIngress({ db, registry: deps.registry, threads, messages, queue });
-	const a2aTools = new A2AToolService({ db, registry: deps.registry, threads, messages, queue, credentials, clock });
+	const loopGuard = new LoopGuardService({ turns, messages, drafts });
+	const a2aTools = new A2AToolService({
+		db,
+		registry: deps.registry,
+		threads,
+		messages,
+		queue,
+		credentials,
+		loopGuard,
+		clock,
+	});
 	const multiMentionOrchestrator = new MultiMentionOrchestrator({
 		db,
 		registry: deps.registry,
@@ -90,6 +101,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		attempts,
 		turns,
 		store: multiMention,
+		loopGuard,
 		clock,
 	});
 	const runAgentTurn = new RunAgentTurn({
