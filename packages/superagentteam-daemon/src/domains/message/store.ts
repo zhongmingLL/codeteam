@@ -197,6 +197,25 @@ export class MessageStore {
 		return rows.map(mapMessage).reverse();
 	}
 
+	/** Ascending window strictly before a seq (thread_context older-window read). */
+	getByThreadBefore(
+		threadId: string,
+		beforeSeq: number,
+		limit = 50,
+		options: ListMessagesOptions = {},
+	): StoredMessage[] {
+		const rows = (options.includeDeleted
+			? this.db
+					.prepare("SELECT * FROM messages WHERE thread_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?")
+					.all(threadId, beforeSeq, limit)
+			: this.db
+					.prepare(
+						"SELECT * FROM messages WHERE thread_id = ? AND seq < ? AND deleted_at IS NULL ORDER BY seq DESC LIMIT ?",
+					)
+					.all(threadId, beforeSeq, limit)) as unknown as MessageRow[];
+		return rows.map(mapMessage).reverse();
+	}
+
 	/**
 	 * Earliest response-lifecycle message still in 'processing' status with
 	 * seq > afterSeq (0007 §3.5.1 boundary cap). Independent of any fetch
