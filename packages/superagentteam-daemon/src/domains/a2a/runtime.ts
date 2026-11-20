@@ -103,6 +103,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		credentials,
 		attempts,
 		turns,
+		records,
 		store: multiMention,
 		loopGuard,
 		clock,

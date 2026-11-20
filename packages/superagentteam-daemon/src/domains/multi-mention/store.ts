@@ -536,6 +536,16 @@ export class MultiMentionStore {
 		return rows.map(mapCallback);
 	}
 
+	/** Non-terminal groups (startup orphan/abandon reconciliation). */
+	listActive(): MultiMentionRequest[] {
+		const rows = this.db
+			.prepare(
+				"SELECT * FROM multi_mention_requests WHERE status IN ('pending', 'running', 'partial') ORDER BY created_at",
+			)
+			.all() as unknown as RequestRow[];
+		return rows.map(mapRequest);
+	}
+
 	listExpired(now: number): MultiMentionRequest[] {
 		const rows = this.db
 			.prepare(

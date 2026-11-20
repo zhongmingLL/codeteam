@@ -27,7 +27,7 @@ import {
 } from "../a2a/tool-service.ts";
 import type { AgentRegistry } from "../agent/registry.ts";
 import type { InvocationCredentialStore } from "../auth/store.ts";
-import type { InvocationAttemptStore, TurnExecutionStore } from "../invocation/store.ts";
+import type { InvocationAttemptStore, InvocationRecordStore, TurnExecutionStore } from "../invocation/store.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { QueueLedgerStore } from "../queue/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
@@ -71,6 +71,7 @@ export interface MultiMentionOrchestratorDeps {
 	credentials: InvocationCredentialStore;
 	attempts: InvocationAttemptStore;
 	turns: TurnExecutionStore;
+	records?: InvocationRecordStore;
 	store: MultiMentionStore;
 	loopGuard?: LoopGuardService;
 	clock?: () => number;
@@ -380,7 +381,7 @@ export class MultiMentionOrchestrator {
 			targetAgentId,
 			status: "failed",
 			responseState: "missing",
-			reason,
+			reason: `canceled:${reason}`,
 			now,
 		});
 		const responses = this.deps.store.listResponses(requestId);
@@ -401,7 +402,7 @@ export class MultiMentionOrchestrator {
 				targetAgentId,
 				status: "failed",
 				responseState: "missing",
-				reason,
+				reason: `canceled:${reason}`,
 				now,
 			});
 		}
@@ -413,6 +414,12 @@ export class MultiMentionOrchestrator {
 	/** Startup: settle expired requests and re-deliver pending callbacks only. */
 	recover(now: number): { settled: number; callbacksDelivered: number } {
 		const settled = this.settleExpired(now);
+		for (const request of this.deps.store.listActive()) {
+			if (!request.parentInvocationId) continue;
+			const parent = this.deps.records?.get(request.parentInvocationId);
+			const reason = !parent ? "parent_missing" : parent.status === "canceled" ? "operator_abandon" : null;
+			if (reason) this.cancelRequest(request.requestId, reason, now);
+		}
 		let callbacksDelivered = 0;
 		for (const callback of this.deps.store.listPendingCallbacks()) {
 			this.deliverCallback(callback.requestId, now);
@@ -576,8 +583,7 @@ export class MultiMentionOrchestrator {
 	private finalStatus(responses: MultiMentionResponse[]): "done" | "failed" {
 		const allNotReceived = responses.every((response) => response.status !== "received");
 		const allCanceled =
-			allNotReceived &&
-			responses.every((response) => response.reason !== null && /cancel|abandon/i.test(response.reason));
+			allNotReceived && responses.every((response) => response.reason?.startsWith("canceled:") === true);
 		return allCanceled ? "failed" : "done";
 	}
 
@@ -649,7 +655,10 @@ export class MultiMentionOrchestrator {
 					responseMessageId: latest.responseMessageId,
 					status: "failed",
 					responseState: this.responseStateFor(latest.responseMessageId),
-					reason: child.terminalReason ?? child.status,
+					reason:
+						child.status === "canceled"
+							? `canceled:${child.terminalReason ?? child.status}`
+							: (child.terminalReason ?? child.status),
 					now,
 				});
 			} else if (
@@ -665,7 +674,10 @@ export class MultiMentionOrchestrator {
 					responseMessageId: latest.responseMessageId,
 					status: "failed",
 					responseState: this.responseStateFor(latest.responseMessageId),
-					reason: latest.terminalReason ?? latest.deliveryState,
+					reason:
+						latest.deliveryState === "canceled"
+							? `canceled:${latest.terminalReason ?? latest.deliveryState}`
+							: (latest.terminalReason ?? latest.deliveryState),
 					now,
 				});
 			}
