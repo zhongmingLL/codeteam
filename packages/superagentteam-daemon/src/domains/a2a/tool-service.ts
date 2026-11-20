@@ -119,7 +119,7 @@ export interface A2AToolServiceDeps {
 	messages: MessageStore;
 	queue: QueueLedgerStore;
 	credentials: InvocationCredentialStore;
-	loopGuard?: LoopGuardService;
+	loopGuard: LoopGuardService;
 	clock?: () => number;
 }
 
@@ -129,6 +129,7 @@ interface AdmittedMessage {
 	replayed: boolean;
 	targetThreadId: string;
 	sourceThreadId: string;
+	warnPingPong?: boolean;
 }
 
 class ReplayRace extends Error {}
@@ -202,7 +203,12 @@ export class A2AToolService {
 
 	postMessage(ctx: A2AToolContext, input: PostMessageInput): PostMessageResult {
 		const admitted = this.admit(ctx, input, ctx.threadId, false);
-		return { message: admitted.message, queueEntryId: admitted.queueEntryId, replayed: admitted.replayed };
+		return {
+			message: admitted.message,
+			queueEntryId: admitted.queueEntryId,
+			replayed: admitted.replayed,
+			...(admitted.warnPingPong ? { warnPingPong: true } : {}),
+		};
 	}
 
 	crossPostMessage(ctx: A2AToolContext, input: CrossPostMessageInput): CrossPostMessageResult {
@@ -213,6 +219,7 @@ export class A2AToolService {
 			replayed: admitted.replayed,
 			sourceThreadId: admitted.sourceThreadId,
 			targetThreadId: admitted.targetThreadId,
+			...(admitted.warnPingPong ? { warnPingPong: true } : {}),
 		};
 	}
 
@@ -304,7 +311,7 @@ export class A2AToolService {
 
 		let warnPingPong = false;
 		if (targets.length > 0) {
-			const verdict = this.deps.loopGuard?.checkPush({
+			const verdict = this.deps.loopGuard.checkPush({
 				callerTurnExecutionId: ctx.callerTurnExecutionId,
 				callerAgentId: ctx.callerAgentId,
 				targetAgentId: targets[0]!.id,

@@ -3,12 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AccountConfig, AgentCatalog, AgentConfig } from "@superagentteam/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { LoopGuardService } from "../src/domains/a2a/loop-guard.ts";
 import { type A2AToolContext, A2AToolError, A2AToolService } from "../src/domains/a2a/tool-service.ts";
 import { buildRegistry } from "../src/domains/agent/registry.ts";
 import { InvocationCredentialStore } from "../src/domains/auth/store.ts";
 import { InvocationRecordStore, TurnExecutionStore } from "../src/domains/invocation/store.ts";
 import { MessageStore } from "../src/domains/message/store.ts";
 import { QueueLedgerStore } from "../src/domains/queue/store.ts";
+import { ResponseDraftStore } from "../src/domains/response/store.ts";
 import { AgentSessionStore } from "../src/domains/session/store.ts";
 import { ThreadStore } from "../src/domains/thread/store.ts";
 import { F018Database } from "../src/infrastructure/db/database.ts";
@@ -43,6 +45,7 @@ function makeWorld(allowedTools: string[] = ["post_message", "cross_post_message
 	const queue = new QueueLedgerStore(fd.db);
 	const records = new InvocationRecordStore(fd.db);
 	const turns = new TurnExecutionStore(fd.db);
+	const drafts = new ResponseDraftStore(fd.db);
 	const sessions = new AgentSessionStore(fd.db);
 	const credentials = new InvocationCredentialStore(fd.db);
 	const catalog: AgentCatalog = {
@@ -96,7 +99,8 @@ function makeWorld(allowedTools: string[] = ["post_message", "cross_post_message
 		allowedTools,
 		now: 4,
 	});
-	const service = new A2AToolService({ db: fd.db, registry, threads, messages, queue, credentials });
+	const loopGuard = new LoopGuardService({ turns, messages, drafts });
+	const service = new A2AToolService({ db: fd.db, registry, threads, messages, queue, credentials, loopGuard });
 	return { fd, threads, messages, queue, credentials, service };
 }
 

@@ -497,6 +497,7 @@ describe("F018 R3-b multi_mention create", () => {
 			attempts: w.runtime.attempts,
 			turns: w.runtime.turns,
 			store: w.runtime.multiMention,
+			loopGuard: w.runtime.loopGuard,
 			clock: () => w.now,
 		});
 		const recovered = orchestrator.recover(1004);
