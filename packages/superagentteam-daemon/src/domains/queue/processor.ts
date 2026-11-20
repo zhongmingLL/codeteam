@@ -963,7 +963,10 @@ export class QueueProcessor {
 						responseMessageId: latest.responseMessageId,
 						status: "failed",
 						responseState,
-						reason: child.terminalReason ?? child.status,
+						reason:
+							child.status === "canceled"
+								? `canceled:${child.terminalReason ?? child.status}`
+								: (child.terminalReason ?? child.status),
 						now,
 					});
 				}
@@ -981,7 +984,10 @@ export class QueueProcessor {
 					responseMessageId: latest.responseMessageId,
 					status: "failed",
 					responseState: "missing",
-					reason: latest.terminalReason ?? latest.deliveryState,
+					reason:
+						latest.deliveryState === "canceled"
+							? `canceled:${latest.terminalReason ?? latest.deliveryState}`
+							: (latest.terminalReason ?? latest.deliveryState),
 					now,
 				});
 			}

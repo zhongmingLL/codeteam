@@ -656,7 +656,7 @@ describe("F018 R3-b multi_mention create", () => {
 		expect(request.status).toBe("failed");
 		const responses = w.runtime.multiMention.listResponses(created.requestId);
 		expect(responses.every((response) => response.status === "failed")).toBe(true);
-		expect(responses.every((response) => response.reason === "operator_cancel")).toBe(true);
+		expect(responses.every((response) => response.reason === "canceled:operator_cancel")).toBe(true);
 		expect(w.runtime.messages.get(request.aggregateMessageId!)?.extra?.multiMention?.status).toBe("failed");
 		expect(w.runtime.multiMention.getCallback(created.requestId)?.status).toBe("queued");
 	});
@@ -778,5 +778,61 @@ describe("F018 R3-b multi_mention create", () => {
 		expect(w.runtime.processor.abandon("inv-abandon", 1002).outcome).toBe("abandoned");
 		expect(w.runtime.multiMention.get("mm-abandon")?.status).toBe("failed");
 		expect(w.runtime.queue.get("t1", queueEntryId)).toBeNull();
+	});
+
+	it("does not treat non-cancel failures as cancellation", () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMentionOrchestrator.create(ctx(), multiMentionInput());
+		w.runtime.multiMention.setStatus(created.requestId, "running", 1000);
+		for (const agentId of ["a2", "a3"]) {
+			w.runtime.multiMention.recordTargetOutcome({
+				requestId: created.requestId,
+				targetAgentId: agentId,
+				status: "failed",
+				responseState: "missing",
+				reason: "upstream cancelled the batch", // contains "cancel" but is not a structured cancel
+				now: 1001,
+			});
+		}
+		expect(w.runtime.multiMentionOrchestrator.finalizeIfReady(created.requestId, 1002)).toBe("finalized");
+		expect(w.runtime.multiMention.get(created.requestId)?.status).toBe("done");
+		expect(w.runtime.multiMention.statusView(created.requestId)?.allFailed).toBe(true);
+	});
+
+	it("recovers a running group whose parent was canceled before T3", () => {
+		const w = makeWorld();
+		const created = w.runtime.multiMention.createRequest({
+			requestId: "mm-orphan",
+			threadId: "t1",
+			userId: "u1",
+			initiatorAgentId: "a1",
+			initiatorTurnExecutionId: "te-caller",
+			callbackToAgentId: "a1",
+			question: "orphan",
+			targetAgentIds: ["a2", "a3"],
+			timeoutMinutes: 8,
+			parentInvocationId: "inv-orphan",
+			sourceRecordId: "src-orphan",
+			now: 1000,
+		});
+		expect(created.outcome).toBe("created");
+		w.runtime.multiMention.setStatus("mm-orphan", "running", 1000);
+		w.runtime.records.create({
+			invocationId: "inv-orphan",
+			threadId: "t1",
+			userId: "u1",
+			sourceRecordId: "src-orphan",
+			userMessageId: null,
+			targetAgentIds: ["a2", "a3"],
+			now: 1000,
+		});
+		w.runtime.records.markRunning("inv-orphan", 1000);
+		w.runtime.records.setTerminal("inv-orphan", "failed", "provider_error", 1001);
+		w.runtime.records.abandon("inv-orphan", "operator_abandon", 1001);
+		const recovered = w.runtime.multiMentionOrchestrator.recover(1002);
+		expect(recovered.settled).toBe(0);
+		expect(w.runtime.multiMention.get("mm-orphan")?.status).toBe("failed");
+		const responses = w.runtime.multiMention.listResponses("mm-orphan");
+		expect(responses.every((response) => response.reason === "canceled:operator_abandon")).toBe(true);
 	});
 });
