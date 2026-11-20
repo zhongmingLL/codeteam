@@ -48,6 +48,7 @@ export interface A2ARuntime {
 	a2aTools: A2AToolService;
 	threadContext: ThreadContextService;
 	multiMentionOrchestrator: MultiMentionOrchestrator;
+	loopGuard: LoopGuardService;
 	records: InvocationRecordStore;
 	turns: TurnExecutionStore;
 	attempts: InvocationAttemptStore;
@@ -196,6 +197,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		a2aTools,
 		threadContext,
 		multiMentionOrchestrator,
+		loopGuard,
 		records,
 		turns,
 		attempts,

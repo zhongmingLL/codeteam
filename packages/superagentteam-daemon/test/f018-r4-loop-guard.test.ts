@@ -263,6 +263,59 @@ describe("F018 R4-b loop guard", () => {
 		expect(restarted.checkPush({ ...chain, targetAgentId: "a2" })).toEqual(before);
 	});
 
+	it("warn-level ping-pong admits the post without writing a queue note", () => {
+		const w = makeWorld();
+		const chain = buildChain(w, [{ from: "a2", to: "a1" }]);
+		const session = w.sessions.ensureActive({
+			threadId: "t1",
+			agentId: chain.callerAgentId,
+			userId: "u1",
+			workingDirectory: "/p",
+			now: 1,
+		});
+		w.credentials.create({
+			turnExecutionId: chain.callerTurnExecutionId,
+			parentInvocationId: "inv-loop",
+			threadId: "t1",
+			agentId: chain.callerAgentId,
+			agentSessionId: session.id,
+			userId: "u1",
+			allowedTools: ["post_message"],
+			now: 4,
+		});
+		const service = new A2AToolService({
+			db: w.fd.db,
+			registry: w.registry,
+			threads: w.threads,
+			messages: w.messages,
+			queue: w.queue,
+			credentials: w.credentials,
+			loopGuard: w.guard,
+		});
+		const messagesBefore = w.messages.getByThread("t1", 50).length;
+		const result = service.postMessage(
+			{
+				threadId: "t1",
+				userId: "u1",
+				callerAgentId: chain.callerAgentId,
+				callerTurnExecutionId: chain.callerTurnExecutionId,
+				piExtToolCallId: "loop-ping",
+				triggerMessageId: "root",
+				a2aDepth: 0,
+				now: 100,
+			},
+			{ targets: [{ kind: "agent", id: "a2" }], bodyMd: "two-way ping" },
+		);
+		expect(result.warnPingPong).toBe(true);
+		expect(w.messages.getByThread("t1", 50)).toHaveLength(messagesBefore + 1);
+		const entry = w.queue.get("t1", result.queueEntryId!);
+		expect(entry?.status).toBe("queued");
+		// The warn is a typed return value; it must not become a durable
+		// queue note or a second system message.
+		expect(JSON.stringify(entry)).not.toContain("warn");
+		expect(w.messages.getByThread("t1", 50).some((message) => message.content.includes("loop_guard"))).toBe(false);
+	});
+
 	it("rejects a blocked post before any message or queue write", () => {
 		const w = makeWorld();
 		const session = w.sessions.ensureActive({

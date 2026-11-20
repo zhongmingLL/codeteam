@@ -1,14 +1,15 @@
 ---
 title: "F018 — R4 execution plan (loop guard / observation / multi-agent / recovery)"
 doc_kind: plan
-status: in-progress
+status: done
 created: 2026-11-20
-updated: 2026-11-20
+updated: 2026-11-21
 owner: "宪宪 (DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash, standby)]
 feature: F018
 source_plan: "docs/plans/0020-f018-thread-first-runtime.md#r4--loop-guard--observation--多-agent"
 source_closeout: "docs/reports/2026-11-20-f018-r3-closeout.md"
+result_closeout: "docs/reports/2026-11-21-f018-r4-closeout.md"
 ---
 
 # F018 — R4 execution plan
@@ -16,6 +17,10 @@ source_closeout: "docs/reports/2026-11-20-f018-r3-closeout.md"
 > 契约源是 `0020 §R4`、`0007 §3.8`（thread_context / E17）、`0005 §5`
 > （E12/E17/E20）与 `docs/reports/2026-11-20-f018-r3-closeout.md` 的 R4 遗留表。
 > R3 已交付 post/cross_post/multi_mention 与 four-tool allowlist；R4 不重做。
+>
+> **R4 执行结果（2026-11-21）**：R4-a/R4-b/R4-c/R4-d1/R4-d2 均已交付并合入
+> `superagentteam-work`；出口证据见 `docs/reports/2026-11-21-f018-r4-closeout.md`。
+> R4-d2 的 PR/merge 坐标随 close-out 报告记录。
 
 ## 0. 结论先行
 
@@ -68,14 +73,18 @@ source_closeout: "docs/reports/2026-11-20-f018-r3-closeout.md"
 - backfill `responseState` 按 R 实际 lifecycle 判（terminal/pending/missing）。
 - `queue_admission_conflict` 死码与 `content` 长度校验一并收。
 
-### R4-d observation + restart E2E + close-out
+### R4-d observation + restart E2E + close-out（已完成）
 
-- observation：识别 4 个新工具名；agent final response / A2A body `@` 负例不误报；
-  operator 正文 `@` 正例；disabled pattern 负例（E12）。
-- 多 agent thread：一个 message、一个 parent、N child、N response（按 0007 §3.8）。
-- restart/recovery E2E：cutoff/protected、response_pending、expired claim restore、
-  callback pending 恢复、不重复 terminal（E20）。
-- R4 close-out 报告 + R5 移交清单。
+- observation：v1-native `domains/a2a/observation.ts` 只识别四个 model-facing
+  工具（canonical 与 credential 名）；agent final response 的 text-`@` 不产生
+  `missing_a2a_tool_call`；operator 正文 `@` 正例/未命中 pattern/disabled 负例
+  由 E12 单测钉住。
+- 多 agent thread：一个 message、一个 parent、N child、N response（按 0007 §3.8），
+  已由 R3-b/R4-c 的 fan-out/aggregate/callback 测试覆盖。
+- restart/recovery E2E：`f018-r4-d2-restart.test.ts` 覆盖 expired claim restore、
+  pending callback 跨重启恰好一次、response_pending 从 draft 结算、重复 startup/reaper
+  不重复 terminal、当前进程 running child 的 cutoff 保护。
+- R4 close-out 报告（`docs/reports/2026-11-21-f018-r4-closeout.md`）+ R5 移交清单。
 
 ## 2. 每片出口（统一）
 

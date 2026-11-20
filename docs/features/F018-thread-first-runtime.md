@@ -7,7 +7,7 @@ owner: "砚砚 (GLM 5.3 Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
 created: 2026-11-04
-updated: 2026-11-20
+updated: 2026-11-21
 source_plan: "docs/plans/0020-f018-thread-first-runtime.md"
 source_architecture: "docs/architecture/0005-thread-first-runtime.md"
 source_decision: "operator 2026-11-04 C: v1 = pure A2A runtime; a2a_send/handoff_* retired; code delivery frozen; 2026-11-14 BBBA: mentionPatterns body match / multi_mention callback child / completed dedupe accepted risk / allFailed derived; 2026-11-18: F018 development ownership handed to 砚砚"
@@ -77,8 +77,9 @@ Thread/Invocation 模型不一致。operator 2026-11-04 决定：
 | R4 | loop guard/idempotency/observation；multi_mention timeout/anti-cascade；多 agent thread；recovery | E17/E20 |
 | R5 | cutover CLI/daemon；旧 code delivery 归档；F018 close | A2A runtime 单一真相 |
 
-R3 交付与出口证据：`docs/reports/2026-11-20-f018-r3-closeout.md`；R4 接手
-loop guard/observation/recovery 与 multi_mention 逐 target cancel/retry。
+R3 交付与出口证据：`docs/reports/2026-11-20-f018-r3-closeout.md`。
+R4 交付与出口证据：`docs/reports/2026-11-21-f018-r4-closeout.md`；R5 接手
+pi extension 工具面、daemon/CLI cutover 与 F018 close。
 
 ## 验收方向
 

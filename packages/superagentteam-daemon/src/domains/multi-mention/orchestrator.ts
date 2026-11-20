@@ -73,7 +73,7 @@ export interface MultiMentionOrchestratorDeps {
 	turns: TurnExecutionStore;
 	records?: InvocationRecordStore;
 	store: MultiMentionStore;
-	loopGuard?: LoopGuardService;
+	loopGuard: LoopGuardService;
 	clock?: () => number;
 }
 
@@ -204,7 +204,7 @@ export class MultiMentionOrchestrator {
 
 		let warnPingPong = false;
 		for (const target of targets) {
-			const verdict = this.deps.loopGuard?.checkPush({
+			const verdict = this.deps.loopGuard.checkPush({
 				callerTurnExecutionId: ctx.callerTurnExecutionId,
 				callerAgentId: ctx.callerAgentId,
 				targetAgentId: target.id,
