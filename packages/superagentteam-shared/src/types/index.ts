@@ -13,3 +13,4 @@ export * from "./invocation.ts";
 export * from "./message.ts";
 export * from "./multi-mention.ts";
 export * from "./thread.ts";
+export * from "./thread-context.ts";
