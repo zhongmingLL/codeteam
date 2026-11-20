@@ -20,7 +20,7 @@ result_closeout: "docs/reports/2026-11-21-f018-r4-closeout.md"
 >
 > **R4 执行结果（2026-11-21）**：R4-a/R4-b/R4-c/R4-d1/R4-d2 均已交付并合入
 > `superagentteam-work`；出口证据见 `docs/reports/2026-11-21-f018-r4-closeout.md`。
-> R4-d2 的 PR/merge 坐标随 close-out 报告记录。
+> R4-d2 PR #117；merge commit 以合入后的 `superagentteam-work` 为准。
 
 ## 0. 结论先行
 
