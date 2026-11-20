@@ -20,6 +20,7 @@ import { ThreadStore } from "../thread/store.ts";
 import { WorkerPool, type WorkerSpawnPort } from "../worker/pool.ts";
 import { WorkerBindingStore, WorkerStore } from "../worker/store.ts";
 import { LoopGuardService } from "./loop-guard.ts";
+import { ThreadContextService } from "./thread-context.ts";
 import { A2AToolService } from "./tool-service.ts";
 
 // F018 R2-d composition root: one wiring point for the daemon (and the E2E
@@ -45,6 +46,7 @@ export interface A2ARuntime {
 	drafts: ResponseDraftStore;
 	multiMention: MultiMentionStore;
 	a2aTools: A2AToolService;
+	threadContext: ThreadContextService;
 	multiMentionOrchestrator: MultiMentionOrchestrator;
 	records: InvocationRecordStore;
 	turns: TurnExecutionStore;
@@ -91,6 +93,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		loopGuard,
 		clock,
 	});
+	const threadContext = new ThreadContextService({ threads, messages });
 	const multiMentionOrchestrator = new MultiMentionOrchestrator({
 		db,
 		registry: deps.registry,
@@ -190,6 +193,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		drafts,
 		multiMention,
 		a2aTools,
+		threadContext,
 		multiMentionOrchestrator,
 		records,
 		turns,
