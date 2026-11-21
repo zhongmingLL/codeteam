@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { AgentSession } from "@superagentteam/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PiWorkerSpawnPort } from "../src/domains/worker/pi-spawn.ts";
+import { freshPiSessionId, PiWorkerSpawnPort } from "../src/domains/worker/pi-spawn.ts";
 
 // F018 R3-d: real child-process spawn contract. This is not a mock spawn port:
 // PiWorkerSpawnPort launches a Node process over stdio and speaks the pi RPC
@@ -146,5 +146,14 @@ describe("F018 R3-d real worker spawn surface", () => {
 		} finally {
 			await spawned.connection.finish();
 		}
+	});
+});
+
+describe("freshPiSessionId", () => {
+	it("sanitizes colon-delimited agent session ids into a CLI-valid pi session id", () => {
+		const id = freshPiSessionId({ ...makeSession("/tmp"), id: "sess:t1:a1:0" }, 1_000);
+		expect(id).toMatch(/^sat-sess-t1-a1-0-[a-z0-9]+$/);
+		expect(id).not.toContain(":");
+		expect(id).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$/);
 	});
 });
