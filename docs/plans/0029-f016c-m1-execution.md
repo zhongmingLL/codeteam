@@ -148,6 +148,17 @@ labels / workspace）：
     0005 E18 行记录排除理由。
   - M1 message append 不支持 `contextAttachments` / whisper；当前返回 422
     `unsupported_input`，S5 决定是否接入，不静默丢数据。
+- S3 review 的 P3 记账：
+  - replay 202 在 queue entry 已被消费时可能省略 `entryId` /
+    `queuePosition` / `targetAgentIds`；消费方必须把这几个字段当 optional。
+  - `extra` 在 M1 只承诺 `rich`；其它 key 不属于 M1 契约。
+  - `visibility` 只定义 `whisper`（422）；S5 要确认 classic Hub 的完整值域。
+  - `mentions` 值域是 `agentId`；S5 real-Hub E2E 首验 Hub 发的是 ID 而不是 handle。
+  - replay 身份对 `rich` 用 JSON 文本比较（key 顺序敏感）；若需要语义等价，
+    后续换 canonical JSON。
+  - 同时带 `targets` + `mentions` 时按 union 去重；M1 接受，S5 如需更严格再收紧。
+  - deleted thread 的 list/detail/messages 语义合并为一个 S5 决策：当前 list
+    隐藏；detail/messages 对 owner 仍可读并带 `deletedAt`。
 
 ## 6. 风险与开放问题
 

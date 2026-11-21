@@ -5,7 +5,8 @@ import type { RichMessageExtra, StoredMessage } from "@superagentteam/shared/typ
 
 import type { A2ARuntime } from "../../domains/a2a/runtime.ts";
 import { HttpError, readJsonBody, sendError, sendJson } from "../http.ts";
-import { type BrowserSession, requireCsrf } from "../session.ts";
+import { requireCsrf } from "../session.ts";
+import type { ApiRouteContext } from "./context.ts";
 
 const MESSAGES_PATH = "/api/messages";
 const DEFAULT_MESSAGE_LIMIT = 50;
@@ -29,13 +30,8 @@ export interface MessageView {
 	extra?: StoredMessage["extra"];
 }
 
-export interface MessageRouteContext {
-	session: BrowserSession;
-	origin: string | undefined;
-}
-
 export interface MessageRoutes {
-	handle(request: IncomingMessage, response: ServerResponse, url: URL, context: MessageRouteContext): Promise<boolean>;
+	handle(request: IncomingMessage, response: ServerResponse, url: URL, context: ApiRouteContext): Promise<boolean>;
 }
 
 export interface MessageRoutesOptions {
@@ -125,7 +121,7 @@ export function createMessageRoutes(options: MessageRoutesOptions): MessageRoute
 	const clock = options.clock ?? Date.now;
 	const { threads, messages, ingress } = options.runtime;
 
-	async function listMessages(response: ServerResponse, url: URL, context: MessageRouteContext): Promise<true> {
+	async function listMessages(response: ServerResponse, url: URL, context: ApiRouteContext): Promise<true> {
 		const threadId = url.searchParams.get("threadId");
 		if (threadId === null || threadId.trim() === "") {
 			return fail(response, 400, "invalid_input", "threadId is required");
@@ -163,7 +159,7 @@ export function createMessageRoutes(options: MessageRoutesOptions): MessageRoute
 	async function appendMessage(
 		request: IncomingMessage,
 		response: ServerResponse,
-		context: MessageRouteContext,
+		context: ApiRouteContext,
 	): Promise<true> {
 		const csrf = request.headers["x-csrf-token"];
 		const csrfToken = Array.isArray(csrf) ? csrf[0] : csrf;
@@ -305,7 +301,7 @@ export function createMessageRoutes(options: MessageRoutesOptions): MessageRoute
 		request: IncomingMessage,
 		response: ServerResponse,
 		url: URL,
-		context: MessageRouteContext,
+		context: ApiRouteContext,
 	): Promise<boolean> {
 		if (url.pathname !== MESSAGES_PATH) return false;
 		if (request.method === "GET") return listMessages(response, url, context);

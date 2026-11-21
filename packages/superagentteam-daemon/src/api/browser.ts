@@ -1,10 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { A2ARuntime } from "../domains/a2a/runtime.ts";
+import type { AgentRegistry } from "../domains/agent/registry.ts";
 import { verifyConsoleToken } from "./console-link.ts";
 import { sendError, sendJson } from "./http.ts";
+import { type AgentRoutes, createAgentRoutes } from "./routes/agents.ts";
+import type { ApiRouteContext } from "./routes/context.ts";
+import { createLiveRoutes, type LiveRoutes } from "./routes/live.ts";
 import { createMessageRoutes, type MessageRoutes } from "./routes/messages.ts";
-import { createThreadRoutes, type ThreadRouteContext } from "./routes/threads.ts";
+import { createQueueRoutes, type QueueRoutes } from "./routes/queue.ts";
+import { createThreadRoutes } from "./routes/threads.ts";
 import {
 	hasForbiddenIdentityHeaders,
 	isAllowedOrigin,
@@ -21,7 +26,7 @@ export interface BrowserApiOptions {
 	clock?: () => number;
 	secureCookies?: boolean;
 	sessionStore?: SessionStore;
-	a2a?: { runtime: A2ARuntime };
+	a2a?: { runtime: A2ARuntime; registry: AgentRegistry };
 }
 
 export interface BrowserApi {
@@ -36,6 +41,11 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 	const threadRoutes = options.a2a ? createThreadRoutes({ runtime: options.a2a.runtime, clock }) : null;
 	const messageRoutes: MessageRoutes | null = options.a2a
 		? createMessageRoutes({ runtime: options.a2a.runtime, clock })
+		: null;
+	const queueRoutes: QueueRoutes | null = options.a2a ? createQueueRoutes({ runtime: options.a2a.runtime }) : null;
+	const liveRoutes: LiveRoutes | null = options.a2a ? createLiveRoutes({ runtime: options.a2a.runtime }) : null;
+	const agentRoutes: AgentRoutes | null = options.a2a
+		? createAgentRoutes({ registry: options.a2a.registry, tracker: options.a2a.runtime.tracker, clock })
 		: null;
 
 	function sendUnauthorized(response: ServerResponse, message: string): void {
@@ -52,7 +62,7 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 		return true;
 	}
 
-	function authenticate(request: IncomingMessage, response: ServerResponse): ThreadRouteContext | null {
+	function authenticate(request: IncomingMessage, response: ServerResponse): ApiRouteContext | null {
 		const origin = request.headers.origin;
 		if (origin !== undefined && !isAllowedOrigin(origin, options.hubOrigin)) {
 			sendError(response, 403, "forbidden", "origin not allowed");
@@ -134,8 +144,11 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 			const context = authenticate(request, response);
 			if (!context) return true;
 			if (threadRoutes && (await threadRoutes.handle(request, response, url, context))) return true;
+			if (queueRoutes?.handle(request, response, url, context)) return true;
+			if (liveRoutes?.handle(request, response, url, context)) return true;
 			if (messageRoutes && (await messageRoutes.handle(request, response, url, context))) return true;
-			if (!threadRoutes || !messageRoutes) {
+			if (agentRoutes?.handle(request, response, url)) return true;
+			if (!threadRoutes || !messageRoutes || !queueRoutes || !liveRoutes || !agentRoutes) {
 				sendError(response, 503, "unavailable", "A2A runtime is not available in this daemon mode");
 				return true;
 			}
