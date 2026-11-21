@@ -32,13 +32,16 @@ describe("F016c-M1 S5 legacy surface shells", () => {
 	let root: string;
 	let dataDir: string;
 	let installationRoot: string;
+	let projectDir: string;
 	let daemon: DaemonHandle | null;
 
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "f016c-s5-legacy-"));
 		dataDir = join(root, "data");
 		installationRoot = join(root, "install");
+		projectDir = join(root, "project");
 		mkdirSync(installationRoot);
+		mkdirSync(projectDir);
 		initOperatorCredential({ dataDir });
 		const catalog: AgentCatalog = { version: 1, agents: [agentConfig("a1")] };
 		writeFileSync(join(dataDir, "agent-catalog.json"), JSON.stringify(catalog));
@@ -84,7 +87,7 @@ describe("F016c-M1 S5 legacy surface shells", () => {
 		const response = await fetch(`${base}/api/threads`, {
 			method: "POST",
 			headers: { ...writeHeaders(auth), "content-type": "application/json" },
-			body: JSON.stringify({ projectPath: "/tmp/s5-project", idempotencyKey: "thread-1" }),
+			body: JSON.stringify({ projectPath: projectDir, idempotencyKey: "thread-1" }),
 		});
 		expect(response.status).toBe(201);
 		return ((await response.json()) as { id: string }).id;
@@ -133,7 +136,7 @@ describe("F016c-M1 S5 legacy surface shells", () => {
 		const threadId = await createThread(base, auth);
 		daemon!.a2aControlPlane!.runtime.threads.create({
 			id: "thread:foreign",
-			projectPath: "/tmp/foreign",
+			projectPath: projectDir,
 			createdBy: "operator:other",
 			now: Date.now(),
 		});

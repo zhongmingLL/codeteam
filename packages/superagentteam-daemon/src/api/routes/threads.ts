@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isAbsolute } from "node:path";
 import type { Thread, ThreadTitleSource } from "@superagentteam/shared/types";
 
 import type { A2ARuntime } from "../../domains/a2a/runtime.ts";
@@ -110,7 +112,10 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 		if (typeof projectPathValue !== "string" || projectPathValue.trim() === "") {
 			return fail(response, 400, "invalid_input", "projectPath must be a non-empty string");
 		}
-		const projectPath = projectPathValue;
+		const projectPath = projectPathValue.trim();
+		if (!isAbsolute(projectPath)) {
+			return fail(response, 422, "project_path_invalid", "projectPath must be an absolute directory path");
+		}
 		const parsedTitle = parseTitle(input);
 		if (!parsedTitle) return fail(response, 400, "invalid_input", "title must be a non-empty string when provided");
 
@@ -129,6 +134,20 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 				return fail(response, 409, "idempotency_conflict", "idempotencyKey was used with another payload");
 			sendJson(response, 200, toView(existing));
 			return true;
+		}
+
+		try {
+			if (!statSync(projectPath).isDirectory()) {
+				return fail(response, 422, "project_path_invalid", "projectPath must be a directory");
+			}
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			return fail(
+				response,
+				422,
+				"project_path_invalid",
+				code === "ENOENT" ? "projectPath does not exist" : "projectPath is not accessible",
+			);
 		}
 
 		try {

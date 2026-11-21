@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NewThreadDialog } from "@/components/threads/NewThreadDialog";
 import type { ThreadView } from "@/domains/thread/api";
 import { useThreadStore } from "@/domains/thread/store";
+import { ApiError } from "@/lib/api/client";
 
 const created: ThreadView = {
 	id: "thread:new",
@@ -53,6 +54,19 @@ describe("new thread dialog", () => {
 		expect(create).toHaveBeenCalledWith(
 			expect.objectContaining({ projectPath: "/tmp/new", idempotencyKey: expect.any(String) }),
 		);
+	});
+
+	it("shows a human error when the daemon rejects the project path", async () => {
+		const create = vi.fn(async () =>
+			Promise.reject(new ApiError(422, "project_path_invalid", "projectPath does not exist", {})),
+		);
+		useThreadStore.setState({ create });
+		render(<NewThreadDialog open onClose={() => {}} onCreated={() => {}} />);
+
+		fireEvent.change(screen.getByPlaceholderText("/path/to/project"), { target: { value: "/missing" } });
+		fireEvent.click(screen.getByRole("button", { name: "创建" }));
+
+		expect(await screen.findByText("请填写一个存在的绝对目录路径")).toBeInTheDocument();
 	});
 
 	it("traps Tab inside the dialog and restores focus when it closes", () => {
