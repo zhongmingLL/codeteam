@@ -25,6 +25,7 @@ export interface ThreadView {
 	createdAt: number;
 	updatedAt: number;
 	deletedAt?: number | null;
+	unreadCount: number;
 }
 
 export interface ThreadRoutes {
@@ -37,7 +38,7 @@ export interface ThreadRoutesOptions {
 	clock?: () => number;
 }
 
-function toView(thread: Thread): ThreadView {
+function toView(thread: Thread, unreadCount = 0): ThreadView {
 	return {
 		id: thread.id,
 		projectPath: thread.projectPath,
@@ -49,6 +50,7 @@ function toView(thread: Thread): ThreadView {
 		createdAt: thread.createdAt,
 		updatedAt: thread.updatedAt,
 		deletedAt: thread.deletedAt ?? null,
+		unreadCount,
 	};
 }
 
@@ -135,7 +137,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 			if (!replay)
 				return fail(response, 409, "idempotency_conflict", "idempotencyKey was used with another payload");
 			options.changeBus?.publish(existing.id, ["thread"]);
-			sendJson(response, 200, toView(existing));
+			sendJson(response, 200, toView(existing, threads.unreadCount(context.session.userId, existing.id)));
 			return true;
 		}
 
@@ -175,8 +177,70 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 			if (!replay)
 				return fail(response, 409, "idempotency_conflict", "idempotencyKey was used with another payload");
 			options.changeBus?.publish(raced.id, ["thread"]);
-			sendJson(response, 200, toView(raced));
+			sendJson(response, 200, toView(raced, threads.unreadCount(context.session.userId, raced.id)));
 		}
+		return true;
+	}
+
+	async function readThread(
+		request: IncomingMessage,
+		response: ServerResponse,
+		context: ApiRouteContext,
+		rawThreadId: string,
+	): Promise<true> {
+		const csrf = request.headers["x-csrf-token"];
+		const csrfToken = Array.isArray(csrf) ? csrf[0] : csrf;
+		if (!requireCsrf(context.session, csrfToken)) return fail(response, 403, "csrf_failed", "invalid CSRF token");
+
+		let threadId: string;
+		try {
+			threadId = decodeURIComponent(rawThreadId);
+		} catch {
+			return fail(response, 400, "invalid_input", "thread id is not valid URL encoding");
+		}
+		const thread = threads.get(threadId);
+		if (!thread || (thread.deletedAt !== null && thread.deletedAt !== undefined)) {
+			return fail(response, 404, "thread_not_found", `thread ${threadId} not found`);
+		}
+		if (thread.createdBy !== context.session.userId) {
+			return fail(response, 403, "forbidden", `thread ${threadId} belongs to another user`);
+		}
+
+		let body: unknown;
+		try {
+			body = await readJsonBody(request);
+		} catch (error) {
+			if (error instanceof HttpError) return fail(response, error.status, error.code, error.message);
+			throw error;
+		}
+		let messageId: string | undefined;
+		if (body !== undefined) {
+			if (typeof body !== "object" || body === null || Array.isArray(body)) {
+				return fail(response, 400, "invalid_input", "request body must be a JSON object");
+			}
+			const input = body as Record<string, unknown>;
+			if (input.messageId !== undefined) {
+				if (typeof input.messageId !== "string" || input.messageId.trim() === "") {
+					return fail(response, 400, "invalid_input", "messageId must be a non-empty string");
+				}
+				messageId = input.messageId;
+			}
+		}
+
+		let seq: number;
+		if (messageId !== undefined) {
+			const message = options.runtime.messages.get(messageId);
+			if (!message || message.threadId !== threadId) {
+				return fail(response, 400, "invalid_input", "messageId does not reference a message in this thread");
+			}
+			seq = message.seq;
+		} else {
+			seq = options.runtime.messages.latestSeq(threadId);
+		}
+		threads.markRead(context.session.userId, threadId, seq, clock());
+		const unreadCount = threads.unreadCount(context.session.userId, threadId);
+		options.changeBus?.publish(threadId, ["thread"]);
+		sendJson(response, 200, { threadId, unreadCount });
 		return true;
 	}
 
@@ -197,7 +261,9 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 				const limit = parseLimit(url.searchParams.get("limit"));
 				if (limit === null)
 					return fail(response, 400, "invalid_input", "limit must be an integer between 1 and 200");
-				const items = threads.list({ createdBy: context.session.userId, limit }).map(toView);
+				const items = threads
+					.listWithReadState({ createdBy: context.session.userId, limit })
+					.map((item) => toView(item.thread, item.unreadCount));
 				sendJson(response, 200, { threads: items });
 				return true;
 			}
@@ -206,11 +272,17 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 		}
 
 		const suffix = url.pathname.slice(THREADS_PATH.length + 1);
-		if (suffix === "" || suffix.includes("/")) return false;
+		if (suffix === "") return false;
+		const segments = suffix.split("/");
+		if (segments.length === 2 && segments[1] === "read") {
+			if (request.method !== "POST") return false;
+			return readThread(request, response, context, segments[0]!);
+		}
+		if (segments.length !== 1) return false;
 		if (request.method !== "GET") return false;
 		let threadId: string;
 		try {
-			threadId = decodeURIComponent(suffix);
+			threadId = decodeURIComponent(segments[0]!);
 		} catch {
 			return fail(response, 400, "invalid_input", "thread id is not valid URL encoding");
 		}
@@ -219,7 +291,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 		if (thread.createdBy !== context.session.userId) {
 			return fail(response, 403, "forbidden", `thread ${threadId} belongs to another user`);
 		}
-		sendJson(response, 200, toView(thread));
+		sendJson(response, 200, toView(thread, threads.unreadCount(context.session.userId, threadId)));
 		return true;
 	}
 

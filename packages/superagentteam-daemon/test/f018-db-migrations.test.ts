@@ -55,6 +55,7 @@ describe("F018 greenfield migration harness", () => {
 		expect(tables).toContain("multi_mention_requests");
 		expect(tables).toContain("multi_mention_responses");
 		expect(tables).toContain("multi_mention_callbacks");
+		expect(tables).toContain("thread_read_state");
 		// Greenfield guarantee: no task-first tables.
 		for (const legacyTable of ["tasks", "runs", "handoffs", "custody_events", "budgets", "reviews", "merges"]) {
 			expect(tables).not.toContain(legacyTable);
@@ -63,7 +64,7 @@ describe("F018 greenfield migration harness", () => {
 
 	it("applies pending migrations and is idempotent on re-run", () => {
 		const { db } = makeDb();
-		expect(db.migrateUp()).toBe(5);
+		expect(db.migrateUp()).toBe(6);
 		expect(db.migrateUp()).toBe(0);
 		expect(db.appliedVersions().map((row) => row.name)).toEqual([
 			"core",
@@ -71,12 +72,21 @@ describe("F018 greenfield migration harness", () => {
 			"invocation-queue",
 			"auth-session-worker-draft",
 			"multi-mention",
+			"thread-read-state",
 		]);
 	});
 
 	it("rolls back the newest migration and re-applies it", () => {
 		const { db } = makeDb();
 		db.migrateUp();
+		expect(db.migrateDown()).toBe(true);
+		expect(db.appliedVersions().map((row) => row.name)).toEqual([
+			"core",
+			"messages",
+			"invocation-queue",
+			"auth-session-worker-draft",
+			"multi-mention",
+		]);
 		expect(db.migrateDown()).toBe(true);
 		expect(db.appliedVersions().map((row) => row.name)).toEqual([
 			"core",
@@ -99,7 +109,8 @@ describe("F018 greenfield migration harness", () => {
 		).map((row) => row.name);
 		expect(tables).not.toContain("threads");
 		expect(tables).not.toContain("multi_mention_requests");
-		expect(db.migrateUp()).toBe(5);
+		expect(tables).not.toContain("thread_read_state");
+		expect(db.migrateUp()).toBe(6);
 	});
 
 	it("creates and drops the multi_mention tables (0007 §3.8)", () => {
@@ -113,7 +124,8 @@ describe("F018 greenfield migration harness", () => {
 		expect(tables).toContain("multi_mention_requests");
 		expect(tables).toContain("multi_mention_responses");
 		expect(tables).toContain("multi_mention_callbacks");
-		expect(db.migrateDown()).toBe(true);
+		expect(db.migrateDown()).toBe(true); // thread-read-state
+		expect(db.migrateDown()).toBe(true); // multi-mention
 		const after = (
 			db.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as {
 				name: string;
@@ -122,6 +134,7 @@ describe("F018 greenfield migration harness", () => {
 		expect(after).not.toContain("multi_mention_requests");
 		expect(after).not.toContain("multi_mention_responses");
 		expect(after).not.toContain("multi_mention_callbacks");
+		expect(after).not.toContain("thread_read_state");
 	});
 
 	it("maps messages physical columns per 0007 §3.1.1 (author columns, mentions index)", () => {

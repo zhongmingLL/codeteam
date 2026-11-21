@@ -169,6 +169,14 @@ export class MessageStore {
 		return row ? mapMessage(row) : null;
 	}
 
+	/** Highest visible seq in a thread; 0 when the thread has no visible messages. */
+	latestSeq(threadId: string): number {
+		const row = this.db
+			.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM messages WHERE thread_id = ? AND deleted_at IS NULL")
+			.get(threadId) as { seq: number };
+		return row.seq;
+	}
+
 	/** Ascending window after a cursor (0007 §3.5.1 read surface). */
 	getByThreadAfter(
 		threadId: string,

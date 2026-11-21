@@ -21,6 +21,17 @@ export interface ListThreadsFilter {
 	limit?: number;
 }
 
+export interface ThreadListItem {
+	thread: Thread;
+	lastReadSeq: number;
+	unreadCount: number;
+}
+
+export interface ThreadReadState {
+	lastReadSeq: number;
+	updatedAt: number;
+}
+
 interface ThreadRow {
 	id: string;
 	project_path: string;
@@ -93,6 +104,62 @@ export class ThreadStore {
 					)
 					.all(filter.createdBy, limit)) as unknown as ThreadRow[];
 		return rows.map((row) => mapThread(row, this.listParticipants(row.id)));
+	}
+
+	/** Operator-facing list with derived unread counts in one query. */
+	listWithReadState(filter: ListThreadsFilter): ThreadListItem[] {
+		const limit = filter.limit ?? 50;
+		const rows = this.db
+			.prepare(
+				`SELECT t.*, COALESCE(rs.last_read_seq, 0) AS last_read_seq,
+					(SELECT COUNT(*) FROM messages m
+					 WHERE m.thread_id = t.id AND m.seq > COALESCE(rs.last_read_seq, 0)
+					   AND m.deleted_at IS NULL AND m.author_kind != 'user') AS unread_count
+				 FROM threads t
+				 LEFT JOIN thread_read_state rs ON rs.thread_id = t.id AND rs.user_id = ?
+				 WHERE t.created_by = ? AND t.deleted_at IS NULL
+				 ORDER BY t.last_active_at DESC LIMIT ?`,
+			)
+			.all(filter.createdBy, filter.createdBy, limit) as unknown as Array<
+			ThreadRow & { last_read_seq: number; unread_count: number }
+		>;
+		return rows.map((row) => ({
+			thread: mapThread(row, this.listParticipants(row.id)),
+			lastReadSeq: row.last_read_seq,
+			unreadCount: row.unread_count,
+		}));
+	}
+
+	getReadState(userId: string, threadId: string): ThreadReadState | null {
+		const row = this.db
+			.prepare("SELECT last_read_seq, updated_at FROM thread_read_state WHERE user_id = ? AND thread_id = ?")
+			.get(userId, threadId) as { last_read_seq: number; updated_at: number } | undefined;
+		return row ? { lastReadSeq: row.last_read_seq, updatedAt: row.updated_at } : null;
+	}
+
+	/** Monotonic read cursor; older marks are no-ops. */
+	markRead(userId: string, threadId: string, seq: number, now: number): ThreadReadState {
+		this.db
+			.prepare(
+				`INSERT INTO thread_read_state (user_id, thread_id, last_read_seq, updated_at)
+				 VALUES (?, ?, ?, ?)
+				 ON CONFLICT(user_id, thread_id) DO UPDATE SET
+				   last_read_seq = MAX(thread_read_state.last_read_seq, excluded.last_read_seq),
+				   updated_at = excluded.updated_at`,
+			)
+			.run(userId, threadId, seq, now);
+		return this.getReadState(userId, threadId)!;
+	}
+
+	unreadCount(userId: string, threadId: string): number {
+		const lastReadSeq = this.getReadState(userId, threadId)?.lastReadSeq ?? 0;
+		const row = this.db
+			.prepare(
+				`SELECT COUNT(*) AS count FROM messages
+				 WHERE thread_id = ? AND seq > ? AND deleted_at IS NULL AND author_kind != 'user'`,
+			)
+			.get(threadId, lastReadSeq) as { count: number };
+		return row.count;
 	}
 
 	/** Soft delete only (0009 §2.1); data preserved, operator can clear deleted_at. */

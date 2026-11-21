@@ -22,7 +22,7 @@ function thread(overrides: Partial<ThreadView> = {}): ThreadView {
 describe("thread detail", () => {
 	it("loads the detail endpoint even when the thread is gone from the list", async () => {
 		const deleted = thread({ deletedAt: 42 });
-		const api = { list: vi.fn(), create: vi.fn(), get: vi.fn(async () => deleted) };
+		const api = { list: vi.fn(), create: vi.fn(), get: vi.fn(async () => deleted), markRead: vi.fn() };
 		const store = createThreadStore({ api });
 
 		await store.getState().loadDetail("thread:1");
@@ -37,6 +37,7 @@ describe("thread detail", () => {
 			list: vi.fn(),
 			create: vi.fn(),
 			get: vi.fn(async () => Promise.reject(new ApiError(404, "thread_not_found", "not found", {}))),
+			markRead: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 

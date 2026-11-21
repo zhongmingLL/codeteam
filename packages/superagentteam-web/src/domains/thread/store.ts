@@ -17,15 +17,17 @@ export interface ThreadState {
 	refresh(): Promise<boolean>;
 	loadDetail(threadId: string): Promise<boolean>;
 	create(input: CreateThreadInput): Promise<ThreadView>;
+	markRead(threadId: string, messageId?: string): Promise<boolean>;
 	setQuery(query: string): void;
 }
 
 export interface ThreadStoreDeps {
-	api: Pick<ThreadApi, "list" | "get" | "create">;
+	api: Pick<ThreadApi, "list" | "get" | "create" | "markRead">;
 }
 
 export function createThreadStore(deps: ThreadStoreDeps) {
-	return create<ThreadState>((set) => {
+	return create<ThreadState>((set, get) => {
+		let listSeq = 0;
 		let detailSeq = 0;
 		return {
 			threads: [],
@@ -35,17 +37,22 @@ export function createThreadStore(deps: ThreadStoreDeps) {
 			detailError: undefined,
 			query: "",
 			async load() {
+				const seq = ++listSeq;
 				set({ status: "loading", error: undefined });
 				try {
 					const body = await deps.api.list();
+					if (seq !== listSeq) return;
 					set({ threads: body.threads, status: "ready", error: undefined });
 				} catch (error) {
+					if (seq !== listSeq) return;
 					set({ status: "error", error: error instanceof Error ? error.message : "无法加载对话" });
 				}
 			},
 			async refresh() {
+				const seq = ++listSeq;
 				try {
 					const body = await deps.api.list();
+					if (seq !== listSeq) return true;
 					set((state) => {
 						const currentDetail = state.detail;
 						const nextDetail = currentDetail
@@ -60,6 +67,7 @@ export function createThreadStore(deps: ThreadStoreDeps) {
 					});
 					return true;
 				} catch (error) {
+					if (seq !== listSeq) return true;
 					set((state) => ({
 						status: state.threads.length === 0 ? "error" : "ready",
 						error: error instanceof Error ? error.message : "无法加载对话",
@@ -94,8 +102,50 @@ export function createThreadStore(deps: ThreadStoreDeps) {
 			},
 			async create(input) {
 				const thread = await deps.api.create(input);
+				listSeq += 1;
 				set((state) => ({ threads: [thread, ...state.threads.filter((item) => item.id !== thread.id)] }));
 				return thread;
+			},
+			async markRead(threadId, messageId) {
+				// Invalidate list reads that started before this write; they may
+				// carry the pre-read unread count.
+				listSeq += 1;
+				const previous = get().threads.find((thread) => thread.id === threadId)?.unreadCount ?? 0;
+				const previousDetail = get().detail?.id === threadId ? (get().detail?.unreadCount ?? 0) : undefined;
+				set((state) => ({
+					threads: state.threads.map((thread) =>
+						thread.id === threadId ? { ...thread, unreadCount: 0 } : thread,
+					),
+					...(state.detail?.id === threadId && state.detail
+						? { detail: { ...state.detail, unreadCount: 0 } }
+						: {}),
+				}));
+				try {
+					const receipt = await deps.api.markRead(threadId, messageId);
+					// Also invalidate list reads started during the write; only
+					// post-commit reads are authoritative.
+					listSeq += 1;
+					set((state) => ({
+						threads: state.threads.map((thread) =>
+							thread.id === threadId ? { ...thread, unreadCount: receipt.unreadCount } : thread,
+						),
+						...(state.detail?.id === threadId && state.detail
+							? { detail: { ...state.detail, unreadCount: receipt.unreadCount } }
+							: {}),
+					}));
+					return true;
+				} catch {
+					listSeq += 1;
+					set((state) => ({
+						threads: state.threads.map((thread) =>
+							thread.id === threadId ? { ...thread, unreadCount: previous } : thread,
+						),
+						...(state.detail?.id === threadId && state.detail
+							? { detail: { ...state.detail, unreadCount: previousDetail ?? 0 } }
+							: {}),
+					}));
+					return false;
+				}
 			},
 			setQuery(query) {
 				set({ query });

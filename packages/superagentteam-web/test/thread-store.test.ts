@@ -27,6 +27,7 @@ describe("thread store", () => {
 			})),
 			get: vi.fn(),
 			create: vi.fn(),
+			markRead: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 
@@ -46,6 +47,7 @@ describe("thread store", () => {
 			list: vi.fn(async () => ({ threads: [thread()] })),
 			get: vi.fn(),
 			create: vi.fn(async () => created),
+			markRead: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 		await store.getState().load();
@@ -60,11 +62,67 @@ describe("thread store", () => {
 			list: vi.fn(async () => Promise.reject(new Error("daemon down"))),
 			get: vi.fn(),
 			create: vi.fn(),
+			markRead: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 
 		await store.getState().load();
 
 		expect(store.getState()).toMatchObject({ status: "error", error: "daemon down" });
+	});
+
+	it("marks a thread read optimistically with the message cursor", async () => {
+		const api = {
+			list: vi.fn(async () => ({ threads: [thread({ unreadCount: 2 })] })),
+			get: vi.fn(),
+			create: vi.fn(),
+			markRead: vi.fn(async () => ({ threadId: "thread:1", unreadCount: 0 })),
+		};
+		const store = createThreadStore({ api });
+		await store.getState().load();
+
+		await store.getState().markRead("thread:1", "msg:agent");
+
+		expect(api.markRead).toHaveBeenCalledWith("thread:1", "msg:agent");
+		expect(store.getState().threads[0]?.unreadCount).toBe(0);
+	});
+
+	it("restores the unread count when mark-read fails", async () => {
+		const api = {
+			list: vi.fn(async () => ({ threads: [thread({ unreadCount: 2 })] })),
+			get: vi.fn(),
+			create: vi.fn(),
+			markRead: vi.fn(async () => Promise.reject(new Error("daemon down"))),
+		};
+		const store = createThreadStore({ api });
+		await store.getState().load();
+
+		await store.getState().markRead("thread:1", "msg:agent");
+
+		expect(store.getState().threads[0]?.unreadCount).toBe(2);
+	});
+
+	it("ignores a list response that started before mark-read completed", async () => {
+		let resolveList: ((value: { threads: ThreadView[] }) => void) | undefined;
+		const api = {
+			list: vi.fn(
+				() =>
+					new Promise<{ threads: ThreadView[] }>((resolve) => {
+						resolveList = resolve;
+					}),
+			),
+			get: vi.fn(),
+			create: vi.fn(),
+			markRead: vi.fn(async () => ({ threadId: "thread:1", unreadCount: 0 })),
+		};
+		const store = createThreadStore({ api });
+		store.setState({ threads: [thread({ unreadCount: 2 })], status: "ready" });
+
+		const refresh = store.getState().refresh();
+		await store.getState().markRead("thread:1", "msg:agent");
+		resolveList?.({ threads: [thread({ unreadCount: 2 })] });
+		await refresh;
+
+		expect(store.getState().threads[0]?.unreadCount).toBe(0);
 	});
 });

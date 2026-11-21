@@ -54,6 +54,20 @@ describe("thread sidebar", () => {
 		expect(screen.getByText("Beta")).toBeInTheDocument();
 	});
 
+	it("shows an accessible unread count on a thread row", () => {
+		useThreadStore.setState({
+			threads: [thread({ unreadCount: 3 })],
+			status: "ready",
+		});
+		render(
+			<MemoryRouter>
+				<ThreadSidebar open onClose={() => {}} />
+			</MemoryRouter>,
+		);
+
+		expect(screen.getByLabelText("3 条未读")).toHaveTextContent("3");
+	});
+
 	it("shows the empty state and opens the new-thread dialog", () => {
 		useThreadStore.setState({ threads: [], status: "ready", query: "" });
 		render(
