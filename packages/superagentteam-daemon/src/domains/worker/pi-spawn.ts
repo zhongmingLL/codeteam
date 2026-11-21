@@ -18,6 +18,7 @@ export interface PiSpawnOptions {
 	sessionDir: string;
 	workerAgentDir: string;
 	extensionPath?: string;
+	controlSocketPath?: string;
 	env?: Record<string, string | undefined>;
 	offline?: boolean;
 	clock?: () => number;
@@ -39,6 +40,7 @@ export class PiWorkerSpawnPort implements WorkerSpawnPort {
 		poolKey: WorkerPoolKey;
 		session: AgentSession;
 		now: number;
+		credentialToken: string;
 	}): Promise<SpawnedWorker> {
 		const startedAt = this.options.clock?.() ?? Date.now();
 		const sessionFile =
@@ -81,6 +83,10 @@ export class PiWorkerSpawnPort implements WorkerSpawnPort {
 				...(this.options.env ?? process.env),
 				PI_CODING_AGENT_DIR: this.options.workerAgentDir,
 				SUPERAGENTTEAM_WORKER_ID: input.workerId,
+				...(this.options.controlSocketPath
+					? { SUPERAGENTTEAM_CONTROL_SOCKET: this.options.controlSocketPath }
+					: {}),
+				...(input.credentialToken ? { SUPERAGENTTEAM_CONTROL_TOKEN: input.credentialToken } : {}),
 			},
 			args,
 		});

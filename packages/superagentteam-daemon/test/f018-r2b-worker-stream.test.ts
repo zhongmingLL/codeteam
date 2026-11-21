@@ -219,13 +219,13 @@ describe("WorkerPool (0007 §3.5.2)", () => {
 			now: 10,
 		});
 		const key = { projectPath: "/p", accountRef: "main", provider: "pi", model: "m1" };
-		const first = await w.pool.ensure(key, session);
+		const first = await w.pool.ensure(key, session, "test-token");
 		expect(w.spawnPort.spawns).toBe(1);
 		expect(first.piSessionId).toBe("pi-1");
 		expect(w.workerStore.get(first.workerId)?.state).toBe("online");
 		expect(w.bindingStore.getBySession(session.id)?.state).toBe("attached");
 
-		const second = await w.pool.ensure(key, session);
+		const second = await w.pool.ensure(key, session, "test-token");
 		expect(w.spawnPort.spawns).toBe(1); // reuse
 		expect(second.workerId).toBe(first.workerId);
 
@@ -233,7 +233,7 @@ describe("WorkerPool (0007 §3.5.2)", () => {
 		expect(w.workerStore.get(first.workerId)?.state).toBe("retired");
 		expect(w.bindingStore.getBySession(session.id)).toBeNull();
 
-		const third = await w.pool.ensure(key, session);
+		const third = await w.pool.ensure(key, session, "test-token");
 		expect(w.spawnPort.spawns).toBe(2);
 		await w.pool.release(third, "turn-complete");
 
@@ -252,7 +252,7 @@ describe("WorkerPool (0007 §3.5.2)", () => {
 			now: 10,
 		});
 		const key = { projectPath: "/p", accountRef: "main", provider: "pi", model: "m1" };
-		const handle = await w.pool.ensure(key, session);
+		const handle = await w.pool.ensure(key, session, "test-token");
 		w.advance(5000);
 		await w.pool.release(handle, "done");
 		expect(w.pool.snapshotMetrics().busyMsTotal).toBe(5000);
@@ -269,6 +269,25 @@ describe("WorkerPool (0007 §3.5.2)", () => {
 		}
 		expect(w.pool.checkCapacity(key).ok).toBe(true);
 		expect(w.pool.snapshotMetrics().evictedCount).toBe(8);
+	});
+
+	it("does not reuse a live worker across credential tokens", async () => {
+		const w = makeWorld();
+		const session = w.sessions.ensureActive({
+			threadId: "t1",
+			agentId: "a1",
+			userId: "u1",
+			workingDirectory: "/p",
+			now: 10,
+		});
+		const key = { projectPath: "/p", accountRef: "main", provider: "pi", model: "m1" };
+		const first = await w.pool.ensure(key, session, "token-a");
+		const second = await w.pool.ensure(key, session, "token-b");
+		expect(w.spawnPort.spawns).toBe(2);
+		expect(second.workerId).not.toBe(first.workerId);
+		expect(w.workerStore.get(first.workerId)?.state).toBe("retired");
+		expect(w.bindingStore.getBySession(session.id)?.workerId).toBe(second.workerId);
+		await w.pool.release(second, "turn-complete");
 	});
 });
 

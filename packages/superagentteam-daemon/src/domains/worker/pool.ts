@@ -32,6 +32,8 @@ export interface WorkerSpawnPort {
 		poolKey: WorkerPoolKey;
 		session: AgentSession;
 		now: number;
+		/** Child-TurnExecution capability token for the A2A control channel. */
+		credentialToken: string;
 	}): Promise<SpawnedWorker>;
 }
 
@@ -71,6 +73,8 @@ export class WorkerPool {
 	private readonly clock: () => number;
 	private readonly leaseTtlMs: number;
 	private readonly acquiredAt = new Map<string, number>();
+	/** Credential token currently installed in each live worker's env. */
+	private readonly credentialTokens = new Map<string, string>();
 	private metrics: WorkerPoolMetrics = {
 		spawnCount: 0,
 		spawnMsTotal: 0,
@@ -128,7 +132,7 @@ export class WorkerPool {
 	 * spawn (real port: pi RPC process with --session / --session-id). Binds
 	 * the session (generation-fenced).
 	 */
-	async ensure(poolKey: WorkerPoolKey, session: AgentSession): Promise<WorkerHandle> {
+	async ensure(poolKey: WorkerPoolKey, session: AgentSession, credentialToken: string): Promise<WorkerHandle> {
 		const now = this.now();
 		const existing = this.bindings.getBySession(session.id);
 		if (existing && existing.state === "attached") {
@@ -142,7 +146,7 @@ export class WorkerPool {
 				worker.poolKey.model === poolKey.model;
 			if (worker && sameKey) {
 				const connection = this.liveConnections.get(existing.workerId);
-				if (connection) {
+				if (connection && this.credentialTokens.get(existing.workerId) === credentialToken) {
 					// Renew the lease ONLY on an actual reuse return — a zombie
 					// row without a live connection must not get its lease
 					// extended before we fall through to a fresh spawn (review).
@@ -160,17 +164,28 @@ export class WorkerPool {
 						piSessionFile: session.piSessionFile,
 					};
 				}
+				// A live worker from an older turn carries the old credential
+				// token. Never reuse it: retire it and spawn with this turn's
+				// token so A2A control auth cannot silently use stale capability.
+				if (connection) {
+					this.credentialTokens.delete(existing.workerId);
+					this.liveConnections.delete(existing.workerId);
+					await connection.finish("token-rotation").catch(() => {});
+					this.workers.release(existing.workerId, now);
+					this.bindings.unbind(session.id, existing.generation);
+				}
 			}
 		}
 		// Capacity gate before spawn (evict idle first).
 		const capacity = this.checkCapacity(poolKey);
 		if (!capacity.ok) throw new Error("worker_capacity");
 		const workerId = `w:${session.id}:${now}:${Math.random().toString(36).slice(2, 8)}`;
-		const spawned = await this.spawnPort.spawn({ workerId, poolKey, session, now });
+		const spawned = await this.spawnPort.spawn({ workerId, poolKey, session, now, credentialToken });
 		this.workers.ensure({ workerId, poolKey, now, leaseTtlMs: this.leaseTtlMs });
 		this.workers.markOnline(workerId, spawned.pid ?? -1, now);
 		const binding = this.bindings.bind({ agentSessionId: session.id, workerId, now });
 		this.liveConnections.set(workerId, spawned.connection);
+		this.credentialTokens.set(workerId, credentialToken);
 		this.metrics.spawnCount += 1;
 		this.metrics.spawnMsTotal += spawned.spawnMs;
 		this.metrics.spawnMsMax = Math.max(this.metrics.spawnMsMax, spawned.spawnMs);
@@ -201,6 +216,7 @@ export class WorkerPool {
 			this.acquiredAt.delete(handle.workerId);
 		}
 		this.liveConnections.delete(handle.workerId);
+		this.credentialTokens.delete(handle.workerId);
 		await handle.connection.finish("turn-complete").catch(() => {});
 		this.workers.release(handle.workerId, now);
 		this.bindings.unbind(handle.agentSessionId, handle.generation);
