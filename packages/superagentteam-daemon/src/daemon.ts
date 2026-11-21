@@ -6,6 +6,7 @@ import { createStaticHandler } from "./api/static.ts";
 import { appendBootRecord, nextBootSequence } from "./boot-ledger.ts";
 import { A2ADaemonControlPlane, type A2ADaemonControlPlaneOptions } from "./daemon-a2a.ts";
 import { DaemonControlPlane, type DaemonControlPlaneOptions } from "./daemon-runtime.ts";
+import { ChangeBus } from "./domains/events/bus.ts";
 import { envValue } from "./env.ts";
 import { DaemonError } from "./errors.ts";
 import { acquireFence, releaseFence } from "./fence.ts";
@@ -28,6 +29,8 @@ export interface StartDaemonOptions {
 	port?: number;
 	/** Directory containing the built SPA; false disables static serving. */
 	staticDir?: string | false;
+	/** SSE heartbeat interval for tests/dev; defaults to 15s. */
+	eventHeartbeatMs?: number;
 	/** Defaults to a local observability runtime; pass false to disable telemetry. */
 	observability?: ObservabilityRuntime | false;
 	/** Legacy task-first control plane (frozen); use {} for its defaults. */
@@ -129,6 +132,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	let hubOrigin = configuredHubOrigin ?? "http://localhost:3000";
 	const staticRoot = resolveStaticDir(options.staticDir);
 	const staticHandler = staticRoot ? createStaticHandler(staticRoot) : null;
+	const changeBus = new ChangeBus();
 
 	let state: DaemonState = "requested";
 	let healthPort: number | null = null;
@@ -199,6 +203,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 				a2aControlPlane = new A2ADaemonControlPlane({
 					...a2aOptions,
 					dataDir: paths.dataDir,
+					changeBus,
 				});
 				await a2aControlPlane.start();
 			} else {
@@ -323,6 +328,8 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		hubOrigin,
 		consoleRedirect: serveStatic ? "/" : undefined,
 		secureCookies: options.secureCookies ?? false,
+		changeBus,
+		eventHeartbeatMs: options.eventHeartbeatMs,
 		a2a: a2aControlPlane ? { runtime: a2aControlPlane.runtime, registry: a2aControlPlane.registry } : undefined,
 	});
 

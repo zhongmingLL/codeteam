@@ -4,6 +4,7 @@ import { runInTransaction } from "../../infrastructure/db/database.ts";
 import { parseOperatorMentions } from "../agent/mentions.ts";
 import type { AgentRegistry, ResolvedTarget } from "../agent/registry.ts";
 import { resolveExplicitTarget } from "../agent/registry.ts";
+import type { ChangeBus } from "../events/bus.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { QueueLedgerStore } from "../queue/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
@@ -32,6 +33,7 @@ export interface OperatorMessageIngressDeps {
 	threads: ThreadStore;
 	messages: MessageStore;
 	queue: QueueLedgerStore;
+	changeBus?: ChangeBus;
 }
 
 export interface SubmitOperatorMessageInput {
@@ -59,6 +61,7 @@ export class OperatorMessageIngress {
 	private readonly threads: ThreadStore;
 	private readonly messages: MessageStore;
 	private readonly queue: QueueLedgerStore;
+	private readonly changeBus?: ChangeBus;
 
 	constructor(deps: OperatorMessageIngressDeps) {
 		this.db = deps.db;
@@ -66,6 +69,7 @@ export class OperatorMessageIngress {
 		this.threads = deps.threads;
 		this.messages = deps.messages;
 		this.queue = deps.queue;
+		this.changeBus = deps.changeBus;
 	}
 
 	/** 0010 §6.1.3 ingress gate: an implicit candidate must be routable now. */
@@ -200,6 +204,7 @@ export class OperatorMessageIngress {
 				if (!sameIdentity) throw new Error("ingress_message_id_conflict");
 				const liveEntry = this.queue.getBySource(input.threadId, existing.id, 1);
 				if (!liveEntry) throw new Error("ingress_replay_entry_missing");
+				this.changeBus?.publish(input.threadId, ["messages", "queue", "thread"]);
 				return {
 					message: existing,
 					queueEntry: liveEntry,
@@ -216,7 +221,7 @@ export class OperatorMessageIngress {
 		if (resolved.kind !== "ok") throw new Error(`${resolved.kind}: ${resolved.pattern}`);
 		const targetAgentIds = resolved.targetAgentIds;
 		if (targetAgentIds.length > 0 && !thread.projectPath.trim()) throw new Error("thread_project_path_required");
-		return runInTransaction(this.db, () => {
+		const result = runInTransaction(this.db, () => {
 			const message = this.messages.append({
 				id: input.messageId ?? `msg:${input.threadId}:${input.now}:${Math.random().toString(36).slice(2, 8)}`,
 				threadId: input.threadId,
@@ -250,5 +255,7 @@ export class OperatorMessageIngress {
 				reason: resolved.reason,
 			};
 		});
+		this.changeBus?.publish(input.threadId, ["messages", "queue", "thread"]);
+		return result;
 	}
 }

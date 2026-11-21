@@ -1,7 +1,7 @@
 ---
 title: "F016c-M2 — event invalidation + history refetch"
 doc_kind: plan
-status: draft-for-review
+status: accepted
 created: 2026-11-21
 updated: 2026-11-21
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"

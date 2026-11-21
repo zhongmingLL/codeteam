@@ -80,6 +80,19 @@ async function waitFor<T>(check: () => Promise<T | null>, timeoutMs = 30_000): P
 	throw new Error("timed out waiting for live worker state");
 }
 
+async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, marker: string): Promise<string> {
+	const decoder = new TextDecoder();
+	let buffer = "";
+	const deadline = Date.now() + 5_000;
+	while (!buffer.includes(marker)) {
+		if (Date.now() > deadline) throw new Error(`timed out waiting for ${marker}`);
+		const { value, done } = await reader.read();
+		if (done) throw new Error(`stream ended before ${marker}`);
+		buffer += decoder.decode(value, { stream: true });
+	}
+	return buffer;
+}
+
 describe("F021 real worker busy live state", () => {
 	let root: string;
 	let dataDir: string;
@@ -153,52 +166,65 @@ describe("F021 real worker busy live state", () => {
 		expect(threadResponse.status).toBe(201);
 		const thread = (await threadResponse.json()) as { id: string };
 
-		const post = await fetch(`${base}/api/messages`, {
-			method: "POST",
-			headers,
-			body: JSON.stringify({
-				threadId: thread.id,
-				content: "hold the turn open",
-				idempotencyKey: "busy-message",
-				targets: ["a1"],
-			}),
+		const eventsResponse = await fetch(`${base}/api/events?threadId=${encodeURIComponent(thread.id)}`, {
+			headers: { cookie },
 		});
-		expect(post.status).toBe(202);
+		expect(eventsResponse.status).toBe(200);
+		const reader = eventsResponse.body!.getReader();
 
-		const busy = await waitFor(async () => {
-			const response = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}/live`, {
-				headers: { cookie },
+		try {
+			await readUntil(reader, "event: ready");
+			const post = await fetch(`${base}/api/messages`, {
+				method: "POST",
+				headers,
+				body: JSON.stringify({
+					threadId: thread.id,
+					content: "hold the turn open",
+					idempotencyKey: "busy-message",
+					targets: ["a1"],
+				}),
 			});
-			const body = (await response.json()) as {
-				invocations: Array<{ agentId: string; responseStatus: string }>;
-			};
-			return body.invocations.length > 0 ? body : null;
-		});
-		expect(busy.invocations[0]?.agentId).toBe("a1");
-		expect(["missing", "processing"]).toContain(busy.invocations[0]?.responseStatus);
-		const agentsResponse = await fetch(`${base}/api/agents`, { headers: { cookie } });
-		const agents = (await agentsResponse.json()) as { agents: Array<{ id: string; status?: string }> };
-		expect(agents.agents.find((agent) => agent.id === "a1")?.status).toBe("working");
+			expect(post.status).toBe(202);
+			const change = await readUntil(reader, '"live"');
+			expect(change).toContain('"live"');
 
-		const done = await waitFor(async () => {
-			const response = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}/live`, {
-				headers: { cookie },
+			const busy = await waitFor(async () => {
+				const response = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}/live`, {
+					headers: { cookie },
+				});
+				const body = (await response.json()) as {
+					invocations: Array<{ agentId: string; responseStatus: string }>;
+				};
+				return body.invocations.length > 0 ? body : null;
 			});
-			const live = (await response.json()) as { invocations: unknown[] };
-			if (live.invocations.length > 0) return null;
-			const messagesResponse = await fetch(
-				`${base}/api/messages?threadId=${encodeURIComponent(thread.id)}&limit=50`,
-				{ headers: { cookie } },
-			);
-			const messages = (await messagesResponse.json()) as {
-				messages: Array<{ type: string; content: string }>;
-			};
-			return messages.messages.some(
-				(message) => message.type === "assistant" && message.content.includes("BUSY_DONE"),
-			)
-				? messages
-				: null;
-		});
-		expect(done.messages.some((message) => message.type === "assistant")).toBe(true);
+			expect(busy.invocations[0]?.agentId).toBe("a1");
+			expect(["missing", "processing"]).toContain(busy.invocations[0]?.responseStatus);
+			const agentsResponse = await fetch(`${base}/api/agents`, { headers: { cookie } });
+			const agents = (await agentsResponse.json()) as { agents: Array<{ id: string; status?: string }> };
+			expect(agents.agents.find((agent) => agent.id === "a1")?.status).toBe("working");
+
+			const done = await waitFor(async () => {
+				const response = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}/live`, {
+					headers: { cookie },
+				});
+				const live = (await response.json()) as { invocations: unknown[] };
+				if (live.invocations.length > 0) return null;
+				const messagesResponse = await fetch(
+					`${base}/api/messages?threadId=${encodeURIComponent(thread.id)}&limit=50`,
+					{ headers: { cookie } },
+				);
+				const messages = (await messagesResponse.json()) as {
+					messages: Array<{ type: string; content: string }>;
+				};
+				return messages.messages.some(
+					(message) => message.type === "assistant" && message.content.includes("BUSY_DONE"),
+				)
+					? messages
+					: null;
+			});
+			expect(done.messages.some((message) => message.type === "assistant")).toBe(true);
+		} finally {
+			await reader.cancel();
+		}
 	}, 60_000);
 });

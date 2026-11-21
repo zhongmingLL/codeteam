@@ -2,10 +2,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { A2ARuntime } from "../domains/a2a/runtime.ts";
 import type { AgentRegistry } from "../domains/agent/registry.ts";
+import type { ChangeBus } from "../domains/events/bus.ts";
 import { verifyConsoleToken } from "./console-link.ts";
 import { sendError, sendJson } from "./http.ts";
 import { type AgentRoutes, createAgentRoutes } from "./routes/agents.ts";
 import type { ApiRouteContext } from "./routes/context.ts";
+import { createEventRoutes, type EventRoutes } from "./routes/events.ts";
 import { createLegacyRoutes, type LegacyRoutes } from "./routes/legacy.ts";
 import { createLiveRoutes, type LiveRoutes } from "./routes/live.ts";
 import { createMessageRoutes, type MessageRoutes } from "./routes/messages.ts";
@@ -28,6 +30,8 @@ export interface BrowserApiOptions {
 	consoleRedirect?: string;
 	clock?: () => number;
 	secureCookies?: boolean;
+	changeBus?: ChangeBus;
+	eventHeartbeatMs?: number;
 	sessionStore?: SessionStore;
 	a2a?: { runtime: A2ARuntime; registry: AgentRegistry };
 }
@@ -41,7 +45,9 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 	const clock = options.clock ?? Date.now;
 	const sessions = options.sessionStore ?? new SessionStore({ clock });
 	const nonces = new Map<string, number>();
-	const threadRoutes = options.a2a ? createThreadRoutes({ runtime: options.a2a.runtime, clock }) : null;
+	const threadRoutes = options.a2a
+		? createThreadRoutes({ runtime: options.a2a.runtime, clock, changeBus: options.changeBus })
+		: null;
 	const messageRoutes: MessageRoutes | null = options.a2a
 		? createMessageRoutes({ runtime: options.a2a.runtime, clock })
 		: null;
@@ -50,6 +56,16 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 	const agentRoutes: AgentRoutes | null = options.a2a
 		? createAgentRoutes({ registry: options.a2a.registry, tracker: options.a2a.runtime.tracker, clock })
 		: null;
+	const eventRoutes: EventRoutes | null =
+		options.a2a && options.changeBus
+			? createEventRoutes({
+					runtime: options.a2a.runtime,
+					bus: options.changeBus,
+					sessions,
+					clock,
+					heartbeatMs: options.eventHeartbeatMs,
+				})
+			: null;
 	const legacyRoutes: LegacyRoutes | null = options.a2a ? createLegacyRoutes({ runtime: options.a2a.runtime }) : null;
 
 	function sendUnauthorized(response: ServerResponse, message: string): void {
@@ -147,6 +163,7 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 		if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
 			const context = authenticate(request, response);
 			if (!context) return true;
+			if (eventRoutes?.handle(request, response, url, context)) return true;
 			if (threadRoutes && (await threadRoutes.handle(request, response, url, context))) return true;
 			if (queueRoutes?.handle(request, response, url, context)) return true;
 			if (liveRoutes?.handle(request, response, url, context)) return true;

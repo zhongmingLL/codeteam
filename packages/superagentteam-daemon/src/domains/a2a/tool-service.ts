@@ -5,6 +5,7 @@ import { MAX_A2A_DEPTH, type StoredMessage } from "@superagentteam/shared/types"
 import { runInTransaction } from "../../infrastructure/db/database.ts";
 import type { AgentRegistry } from "../agent/registry.ts";
 import type { InvocationCredentialStore } from "../auth/store.ts";
+import type { ChangeBus } from "../events/bus.ts";
 import type { MessageStore } from "../message/store.ts";
 import type { QueueLedgerStore } from "../queue/store.ts";
 import type { ThreadStore } from "../thread/store.ts";
@@ -120,6 +121,7 @@ export interface A2AToolServiceDeps {
 	queue: QueueLedgerStore;
 	credentials: InvocationCredentialStore;
 	loopGuard: LoopGuardService;
+	changeBus?: ChangeBus;
 	clock?: () => number;
 }
 
@@ -203,6 +205,7 @@ export class A2AToolService {
 
 	postMessage(ctx: A2AToolContext, input: PostMessageInput): PostMessageResult {
 		const admitted = this.admit(ctx, input, ctx.threadId, false);
+		this.deps.changeBus?.publish(admitted.targetThreadId, ["messages", "queue", "thread"]);
 		return {
 			message: admitted.message,
 			queueEntryId: admitted.queueEntryId,
@@ -213,6 +216,7 @@ export class A2AToolService {
 
 	crossPostMessage(ctx: A2AToolContext, input: CrossPostMessageInput): CrossPostMessageResult {
 		const admitted = this.admit(ctx, input, input.threadId, true);
+		this.deps.changeBus?.publish(admitted.targetThreadId, ["messages", "queue", "thread"]);
 		return {
 			message: admitted.message,
 			queueEntryId: admitted.queueEntryId,

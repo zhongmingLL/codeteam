@@ -4,6 +4,7 @@ import { OperatorMessageIngress } from "../a2a/router.ts";
 import type { AgentRegistry } from "../agent/registry.ts";
 import { RunAgentTurn } from "../agent/turn.ts";
 import { InvocationCredentialStore } from "../auth/store.ts";
+import type { ChangeBus } from "../events/bus.ts";
 import { HistoryAssembler } from "../history/assembler.ts";
 import { InvocationOwnerReaper, type RecoveryDeps, TurnExecutionStartupReconciler } from "../invocation/recovery.ts";
 import { ResponseRecoveryService } from "../invocation/settlement.ts";
@@ -33,6 +34,7 @@ export interface A2ARuntimeDeps {
 	registry: AgentRegistry;
 	spawn: WorkerSpawnPort;
 	onStreamEvent?: (event: AgentStreamEvent) => void;
+	changeBus?: ChangeBus;
 	clock?: () => number;
 	processStartedAt?: number;
 	promptTimeoutMs?: number;
@@ -87,7 +89,14 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 	const bindingStore = new WorkerBindingStore(db);
 	const pool = new WorkerPool({ workers: workerStore, bindings: bindingStore, spawn: deps.spawn, clock });
 	const assembler = new HistoryAssembler({ messages, readState });
-	const ingress = new OperatorMessageIngress({ db, registry: deps.registry, threads, messages, queue });
+	const ingress = new OperatorMessageIngress({
+		db,
+		registry: deps.registry,
+		threads,
+		messages,
+		queue,
+		changeBus: deps.changeBus,
+	});
 	const loopGuard = new LoopGuardService({ turns, messages, drafts });
 	const a2aTools = new A2AToolService({
 		db,
@@ -97,6 +106,7 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		queue,
 		credentials,
 		loopGuard,
+		changeBus: deps.changeBus,
 		clock,
 	});
 	const threadContext = new ThreadContextService({ threads, messages });

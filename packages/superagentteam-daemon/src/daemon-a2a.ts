@@ -6,6 +6,7 @@ import { defaultA2AControlSocketPath } from "./domains/a2a/control.ts";
 import { type A2ARuntime, buildA2ARuntime } from "./domains/a2a/runtime.ts";
 import type { AgentRegistry } from "./domains/agent/registry.ts";
 import { loadRegistryFromFiles } from "./domains/agent/registry.ts";
+import type { ChangeBus } from "./domains/events/bus.ts";
 import { PiWorkerSpawnPort, resolveA2AExtensionPath } from "./domains/worker/pi-spawn.ts";
 import type { WorkerSpawnPort } from "./domains/worker/pool.ts";
 import { envValue } from "./env.ts";
@@ -39,6 +40,7 @@ export interface A2ADaemonControlPlaneOptions {
 	readonly clock?: () => number;
 	readonly processStartedAt?: number;
 	readonly onStreamEvent?: (event: AgentStreamEvent) => void;
+	readonly changeBus?: ChangeBus;
 }
 
 export interface A2ADaemonControlPlaneReady {
@@ -66,6 +68,7 @@ export class A2ADaemonControlPlane {
 	readonly controlSocket: string;
 	private readonly ownsDatabase: boolean;
 	private readonly clock: () => number;
+	private readonly changeBus?: ChangeBus;
 	private readonly pollIntervalMs: number;
 	private readonly sweepIntervalMs: number;
 	private started = false;
@@ -83,6 +86,7 @@ export class A2ADaemonControlPlane {
 	constructor(options: A2ADaemonControlPlaneOptions) {
 		this.dataDir = options.dataDir;
 		this.clock = options.clock ?? Date.now;
+		this.changeBus = options.changeBus;
 		this.pollIntervalMs = Math.max(options.pollIntervalMs ?? 250, 25);
 		this.sweepIntervalMs = Math.max(options.sweepIntervalMs ?? 30_000, 1_000);
 		this.ownsDatabase = options.database === undefined;
@@ -128,6 +132,7 @@ export class A2ADaemonControlPlane {
 				processStartedAt: options.processStartedAt ?? this.clock(),
 				promptTimeoutMs: options.promptTimeoutMs,
 				onStreamEvent: options.onStreamEvent,
+				changeBus: options.changeBus,
 			});
 		} catch (error) {
 			if (this.ownsDatabase) this.database.close();
@@ -234,13 +239,19 @@ export class A2ADaemonControlPlane {
 		if (!this.started || this.closing) return null;
 		if (this.ticking) return (await this.ticking) as Awaited<ReturnType<A2ARuntime["processor"]["drainAll"]>>;
 		if (this.runtime.queue.countQueuedAll() === 0) return null;
+		const queuedThreads = this.runtime.queue.listQueuedThreadIds();
+		for (const threadId of queuedThreads) this.changeBus?.publish(threadId, ["queue", "live"]);
 		this.ticking = (async () => {
 			const result = await this.runtime.processor.drainAll(maxEntries);
 			this.lastDrainAt = this.clock();
 			return result;
 		})();
 		try {
-			return (await this.ticking) as Awaited<ReturnType<A2ARuntime["processor"]["drainAll"]>>;
+			const result = (await this.ticking) as Awaited<ReturnType<A2ARuntime["processor"]["drainAll"]>>;
+			for (const threadId of queuedThreads) {
+				this.changeBus?.publish(threadId, ["messages", "queue", "live", "thread"]);
+			}
+			return result;
 		} finally {
 			this.ticking = null;
 		}

@@ -5,6 +5,7 @@ import { isAbsolute } from "node:path";
 import type { Thread, ThreadTitleSource } from "@superagentteam/shared/types";
 
 import type { A2ARuntime } from "../../domains/a2a/runtime.ts";
+import type { ChangeBus } from "../../domains/events/bus.ts";
 import { HttpError, readJsonBody, sendError, sendJson } from "../http.ts";
 import { requireCsrf } from "../session.ts";
 import type { ApiRouteContext } from "./context.ts";
@@ -32,6 +33,7 @@ export interface ThreadRoutes {
 
 export interface ThreadRoutesOptions {
 	runtime: A2ARuntime;
+	changeBus?: ChangeBus;
 	clock?: () => number;
 }
 
@@ -132,6 +134,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 				existing.titleSource === parsedTitle.titleSource;
 			if (!replay)
 				return fail(response, 409, "idempotency_conflict", "idempotencyKey was used with another payload");
+			options.changeBus?.publish(existing.id, ["thread"]);
 			sendJson(response, 200, toView(existing));
 			return true;
 		}
@@ -159,6 +162,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 				createdBy: context.session.userId,
 				now: clock(),
 			});
+			options.changeBus?.publish(thread.id, ["thread"]);
 			sendJson(response, 201, toView(thread));
 		} catch (error) {
 			const raced = threads.get(id);
@@ -170,6 +174,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 				raced.titleSource === parsedTitle.titleSource;
 			if (!replay)
 				return fail(response, 409, "idempotency_conflict", "idempotencyKey was used with another payload");
+			options.changeBus?.publish(raced.id, ["thread"]);
 			sendJson(response, 200, toView(raced));
 		}
 		return true;
