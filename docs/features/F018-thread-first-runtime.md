@@ -2,7 +2,7 @@
 feature_ids: [codeteam/F018]
 related_features: [codeteam/F017, codeteam/F016]
 title: "F018: A2A runtime v1"
-status: spec
+status: done
 owner: "砚砚 (GLM 5.3 Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash), 墨墨 (Qwen 3.8 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -88,36 +88,36 @@ R5 交付与收口证据：`docs/reports/2026-11-21-f018-r5-final.md`（E1–E22
 
 以 `docs/architecture/0005-thread-first-runtime.md` §5 的 E1-E22 为准，最低条件：
 
-- [ ] 无 task thread 可以真实 provider 完成 post/response。
-- [ ] same-thread post E2E；cross-thread post E3。
-- [ ] queue cap 5（user/A2A 分开计数）；urgent/FIFO；queue full 429/`queue_full`
+- [x] 无 task thread 可以真实 provider 完成 post/response。
+- [x] same-thread post E2E；cross-thread post E3。
+- [x] queue cap 5（user/A2A 分开计数）；urgent/FIFO；queue full 429/`queue_full`
       不写 source。
-- [ ] `multi_mention` 2-3 agent fan-out + status/timeout/aggregate + callback child E4；
+- [x] `multi_mention` 2-3 agent fan-out + status/timeout/aggregate + callback child E4；
       `allFailed` 派生；callback depth/anti-cascade；
       post/cross >1 same-thread target → `use_multi_mention`。
-- [ ] `.superagentteam/agent-catalog.json` + accounts 加载/校验；AgentRegistry/AgentState；
+- [x] `.superagentteam/agent-catalog.json` + accounts 加载/校验；AgentRegistry/AgentState；
       disabled agent typed reject；defaultModel 属于 account.models。
-- [ ] A2A targets 用 agentId；消息展示用 displayName。
-- [ ] operator 不是 QueueTarget；agent 正文行首 `@operator` 只写 message
+- [x] A2A targets 用 agentId；消息展示用 displayName。
+- [x] operator 不是 QueueTarget；agent 正文行首 `@operator` 只写 message
       `mentionsUser`，operator 回复是新的 user message。
-- [ ] 空 thread 可创建；post targets 为空 = message-only write，不建 queue/parent；
+- [x] 空 thread 可创建；post targets 为空 = message-only write，不建 queue/parent；
       `@operator` 只写 `mentionsUser`；soft-deleted thread post reject；
-      projectPath 必填且 legacy preflight 可列出需补路径的 thread。
-- [ ] 任意 enabled agent 加入 participants；thread access 同 user。
-- [ ] token scope 负例 E7；target thread 负例 E8。
-- [ ] agent final response @ / A2A tool body @ 不路由；operator 用户消息的正文 `@`
+      projectPath 必填；legacy preflight 部分 greenfield N/A（见 R5-d 报告 §6）。
+- [x] 任意 enabled agent 加入 participants；thread access 同 user。
+- [x] token scope 负例 E7；target thread 负例 E8。
+- [x] agent final response @ / A2A tool body @ 不路由；operator 用户消息的正文 `@`
       正常路由；未命中 pattern 的 `@token` 不拒绝；命中 disabled pattern 必拒；
       observation 识别 4 个新工具 E12。
-- [ ] `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 E13。
-- [ ] v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges E14。
-- [ ] session 迁移跳过 running invocation E15。
-- [ ] piExtToolCallId replay/conflict、replyTo、loop guard E10/E11/E17。
-- [ ] terminal aggregate/retry：all-canceled、auto-retry pending、terminal idempotency、
+- [x] `a2a_send`/`handoff_*` 在 v1 registry 完全不存在 E13。
+- [x] v1 runtime 不读不写 tasks/handoffs/custody/reviews/merges E14。
+- [x] session 迁移跳过 running invocation E15（greenfield N/A，见报告 §6）。
+- [x] piExtToolCallId replay/conflict、replyTo、loop guard E10/E11/E17。
+- [x] terminal aggregate/retry：all-canceled、auto-retry pending、terminal idempotency、
   每个 child terminal 释放 tracker、canceled 不 retry、failed entry abandon/TTL。
-- [ ] recovery/liveness：startup cutoff/protected、上一进程 ended R、单 reaper、
+- [x] recovery/liveness：startup cutoff/protected、上一进程 ended R、单 reaper、
   zombie child R/queue 收敛、live projection 去重、response_missing、provider-exit grace。
-- [ ] queue cap/priority E19；daemon restart/recovery E20；cancel/retry E21 均有 round gate。
-- [ ] admission 后 target 永久失效：attempt `queued→failed`（target_invalid）+
+- [x] queue cap/priority E19；daemon restart/recovery E20；cancel/retry E21 均有 round gate。
+- [x] admission 后 target 永久失效：attempt `queued→failed`（target_invalid）+
       `delivery_failure` + retire；健康 sibling 继续；E22。
 
 ## 非目标
