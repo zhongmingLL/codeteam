@@ -235,6 +235,7 @@ describe("W5d deployment wait", () => {
 			deploymentId: "local",
 			runningRevision: "a".repeat(40),
 			services: ["daemon"],
+			a2aControlPlane: false,
 		});
 		daemon.markReady();
 		const observer = new DeploymentObservationService({ dataDir, installationRoot, deploymentId: "local" });

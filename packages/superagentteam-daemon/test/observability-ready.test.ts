@@ -32,6 +32,7 @@ describe("W6c daemon readiness and metrics", () => {
 			installationRoot,
 			dataDir,
 			runningRevision: "rev-1",
+			a2aControlPlane: false,
 			...overrides,
 		});
 		running.push(daemon);

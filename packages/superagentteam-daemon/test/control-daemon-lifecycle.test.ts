@@ -266,6 +266,7 @@ describe("W5d daemon lifecycle", () => {
 			deploymentId: "local",
 			runningRevision: "a".repeat(40),
 			services: ["daemon"],
+			a2aControlPlane: false,
 		});
 		daemon.markReady();
 		expect(daemon.health()).toMatchObject({
