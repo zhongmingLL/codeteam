@@ -45,6 +45,17 @@ describe("thread row live presence", () => {
 			</MemoryRouter>,
 		);
 
-		expect(screen.getByLabelText("执行中")).toBeInTheDocument();
+		expect(screen.getByText("执行中")).toBeInTheDocument();
+	});
+
+	it("does not mark a thread that is not the active live thread", () => {
+		useA2AStore.setState({ threadId: "thread:2", live: [] });
+		render(
+			<MemoryRouter>
+				<ThreadRow thread={thread} />
+			</MemoryRouter>,
+		);
+
+		expect(screen.queryByText("执行中")).not.toBeInTheDocument();
 	});
 });

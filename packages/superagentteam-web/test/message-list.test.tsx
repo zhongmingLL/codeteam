@@ -123,4 +123,28 @@ describe("message list", () => {
 		expect(screen.getByText("已受理")).toBeInTheDocument();
 		expect(screen.getByText(/正在处理/)).toBeInTheDocument();
 	});
+
+	it("shows a visible terminal state when a response failed without content", () => {
+		renderList({
+			messages: [
+				message({
+					id: "msg:failed",
+					type: "assistant",
+					from: { kind: "agent", agentId: "a1" },
+					content: "",
+					lifecycle: {
+						kind: "response",
+						parentInvocationId: "inv:1",
+						turnExecutionId: "turn:1",
+						target: { kind: "agent", id: "a1" },
+						status: "failed",
+						startedAt: 1,
+						endedAt: 2,
+					},
+				}),
+			],
+		});
+
+		expect(screen.getByText("回复失败")).toBeInTheDocument();
+	});
 });

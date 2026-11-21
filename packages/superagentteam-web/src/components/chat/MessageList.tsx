@@ -37,9 +37,18 @@ function isProcessing(message: MessageView): boolean {
 	return message.lifecycle?.kind === "response" && message.lifecycle.status === "processing";
 }
 
+function terminalStatus(message: MessageView): { label: string; status: string } | null {
+	if (message.lifecycle?.kind !== "response") return null;
+	if (message.lifecycle.status === "failed") return { label: "回复失败", status: "failed" };
+	if (message.lifecycle.status === "interrupted") return { label: "已中断", status: "interrupted" };
+	if (message.lifecycle.status === "canceled") return { label: "已取消", status: "canceled" };
+	return null;
+}
+
 function MessageRow({ message }: { message: MessageView }) {
 	const sender = message.from.kind;
 	const processing = isProcessing(message);
+	const terminal = terminalStatus(message);
 	return (
 		<article className={`st-message is-${sender}`} data-message-id={message.id}>
 			<div className="st-message-meta">
@@ -48,6 +57,7 @@ function MessageRow({ message }: { message: MessageView }) {
 			</div>
 			{message.content !== "" ? <MessageContent content={message.content} /> : null}
 			{processing ? <p className="st-message-processing">正在回复…</p> : null}
+			{terminal ? <p className={`st-message-terminal is-${terminal.status}`}>{terminal.label}</p> : null}
 		</article>
 	);
 }
@@ -68,17 +78,53 @@ export function MessageList({
 	onResumeLatest,
 }: MessageListProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const positionedThread = useRef<string | null>(null);
+	const pinnedRef = useRef(true);
 	const [pinned, setPinned] = useState(true);
+	const scrollKey = `superagentteam:scroll:${thread.id}`;
+	pinnedRef.current = pinned;
 
 	useEffect(() => {
 		const element = scrollRef.current;
-		if (!element || !pinned) return;
-		element.scrollTop = element.scrollHeight;
-	}, [messages.length, pendingUserMessages.length, pinned, thread.id]);
+		if (!element || messages.length === 0) return;
+		if (positionedThread.current !== thread.id) {
+			positionedThread.current = thread.id;
+			let saved: number | null = null;
+			try {
+				const raw = window.sessionStorage.getItem(scrollKey);
+				if (raw !== null) saved = Number(raw);
+			} catch {
+				saved = null;
+			}
+			if (saved === null || !Number.isFinite(saved) || saved < 0) {
+				element.scrollTop = element.scrollHeight;
+				pinnedRef.current = true;
+				setPinned(true);
+				return;
+			}
+			element.scrollTop = saved;
+			const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+			pinnedRef.current = atBottom;
+			setPinned(atBottom);
+			return;
+		}
+		if (pinned) element.scrollTop = element.scrollHeight;
+	}, [messages.length, pendingUserMessages.length, pinned, scrollKey, thread.id]);
+
+	useEffect(() => {
+		const element = scrollRef.current;
+		if (!element || typeof ResizeObserver === "undefined") return;
+		const observer = new ResizeObserver(() => {
+			if (pinnedRef.current) element.scrollTop = element.scrollHeight;
+		});
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, []);
 
 	const showLatest = !followingLatest || !pinned;
 	const scrollToLatest = (): void => {
 		if (!followingLatest) onResumeLatest();
+		pinnedRef.current = true;
 		setPinned(true);
 		const element = scrollRef.current;
 		if (element) element.scrollTop = element.scrollHeight;
@@ -90,7 +136,14 @@ export function MessageList({
 			ref={scrollRef}
 			onScroll={(event) => {
 				const element = event.currentTarget;
-				setPinned(element.scrollHeight - element.scrollTop - element.clientHeight < 80);
+				const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+				pinnedRef.current = atBottom;
+				setPinned(atBottom);
+				try {
+					window.sessionStorage.setItem(scrollKey, String(element.scrollTop));
+				} catch {
+					// Storage may be unavailable; live scrolling still works.
+				}
 			}}
 		>
 			{error && (messages.length > 0 || pendingUserMessages.length > 0) ? (

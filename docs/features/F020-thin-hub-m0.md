@@ -28,8 +28,9 @@ source_plan: "docs/plans/0030-f020-thin-hub-m0.md"
 - H3 queue/live/agents（queue strip、live pill、agent 弹层与目标选择、
   “已受理未开口”占位、active thread 进行中点）已合入 `f5a68989`。
 - H5 daemon 承载（同源 `/` 服务 SPA、console-link 跳 `/`、`/api/*` JSON 404
-  硬边界、静态路径安全）在 review。
-- H4 打磨随后。
+  硬边界、静态路径安全）已合入 `f4ef2602`。
+- H4 打磨（失败/中断终态可见、A2A 降级提示、presence 文字、暗色切换、
+  草稿/滚动保持与 401 走查、键盘/窄屏）在 review。
 
 ## Why
 

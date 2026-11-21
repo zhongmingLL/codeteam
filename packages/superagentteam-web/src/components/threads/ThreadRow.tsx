@@ -17,7 +17,12 @@ export function ThreadRow({ thread }: { thread: ThreadView }) {
 					{thread.projectPath}
 				</span>
 				<span className="st-thread-status">
-					{live ? <span className="st-thread-live-dot" title="执行中" aria-label="执行中" /> : null}
+					{live ? (
+						<span className="st-thread-live" title="执行中">
+							<span className="st-thread-live-dot" aria-hidden="true" />
+							<span>执行中</span>
+						</span>
+					) : null}
 					{formatRelative(thread.lastActiveAt)}
 				</span>
 			</span>

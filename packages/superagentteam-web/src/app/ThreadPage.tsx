@@ -20,6 +20,7 @@ export function ThreadPage() {
 	const loadDetail = useThreadStore((state) => state.loadDetail);
 
 	const messages = useChatStore((state) => state.messages);
+	const chatThreadId = useChatStore((state) => state.threadId);
 	const chatStatus = useChatStore((state) => state.status);
 	const chatError = useChatStore((state) => state.error);
 	const hasMore = useChatStore((state) => state.hasMore);
@@ -36,6 +37,8 @@ export function ThreadPage() {
 	const a2aQueue = useA2AStore((state) => state.queue);
 	const a2aLive = useA2AStore((state) => state.live);
 	const a2aCap = useA2AStore((state) => state.cap);
+	const a2aStatus = useA2AStore((state) => state.status);
+	const a2aError = useA2AStore((state) => state.error);
 	const loadA2A = useA2AStore((state) => state.load);
 	const refreshA2A = useA2AStore((state) => state.refresh);
 	const resetA2A = useA2AStore((state) => state.reset);
@@ -109,8 +112,9 @@ export function ThreadPage() {
 
 	const deleted = thread.deletedAt !== null && thread.deletedAt !== undefined;
 	const a2aMatches = a2aThreadId === threadId;
+	const chatMatches = chatThreadId === threadId;
 	return (
-		<section className="st-thread-page" aria-busy={chatStatus === "loading"}>
+		<section className="st-thread-page" aria-busy={!chatMatches || chatStatus === "loading"}>
 			<header className="st-thread-header">
 				<h1>{thread.title ?? "未命名对话"}</h1>
 				<div className="st-thread-header-meta">
@@ -121,19 +125,27 @@ export function ThreadPage() {
 			{deleted ? <p className="st-thread-deleted">这个对话已删除，历史只读。</p> : null}
 			<MessageList
 				thread={thread}
-				messages={messages}
-				status={chatStatus}
-				error={chatError}
-				hasMore={hasMore}
-				loadingOlder={loadingOlder}
-				followingLatest={followingLatest}
-				pendingUserMessages={pendingUserMessages}
+				messages={chatMatches ? messages : []}
+				status={chatMatches ? chatStatus : "loading"}
+				error={chatMatches ? chatError : undefined}
+				hasMore={chatMatches ? hasMore : false}
+				loadingOlder={chatMatches ? loadingOlder : false}
+				followingLatest={chatMatches ? followingLatest : true}
+				pendingUserMessages={chatMatches ? pendingUserMessages : []}
 				onLoadOlder={() => void loadOlder()}
 				onRetry={() => void refresh()}
 				onResumeLatest={() => void resumeLatest()}
 				liveInvocations={a2aMatches ? a2aLive : []}
 				agentLabel={(agentId) => agents.find((agent) => agent.id === agentId)?.displayName ?? agentId}
 			/>
+			{a2aMatches && (a2aStatus === "error" || a2aError !== undefined) ? (
+				<p className="st-a2a-degraded" role="status">
+					队列状态暂时不可用{a2aError ? `：${a2aError}` : "。"}
+					<button type="button" className="st-link-button" onClick={() => void refreshA2A()}>
+						重试
+					</button>
+				</p>
+			) : null}
 			<QueueStrip queue={a2aMatches ? a2aQueue : []} agents={agents} cap={a2aCap} />
 			<Composer
 				key={threadId}

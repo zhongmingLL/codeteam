@@ -7,6 +7,7 @@ import { useThreadStore } from "@/domains/thread/store";
 import { useNewThreadDialog } from "@/domains/thread/dialog-store";
 import { useA2AStore } from "@/domains/a2a/store";
 import { useAgentStore } from "@/domains/agent/store";
+import { applyTheme, readTheme, type Theme } from "@/lib/theme";
 import { ThreadSidebar } from "@/components/threads/ThreadSidebar";
 import { NewThreadDialog } from "@/components/threads/NewThreadDialog";
 import { usePolling } from "@/lib/polling";
@@ -37,12 +38,17 @@ export function AppShell() {
 	const dialogOpen = useNewThreadDialog((state) => state.open);
 	const hideDialog = useNewThreadDialog((state) => state.hide);
 	const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia("(max-width: 900px)").matches);
+	const [theme, setTheme] = useState<Theme>(() => readTheme());
 	const activeThreadId = threadIdFromPath(location.pathname);
 	const activeThread = detail?.id === activeThreadId ? detail : threads.find((thread) => thread.id === activeThreadId);
 	const showLive = activeThreadId !== undefined && a2aThreadId === activeThreadId;
 
 	usePolling(refresh, { intervalMs: 10_000 });
 	usePolling(refreshAgents, { intervalMs: 10_000 });
+
+	useEffect(() => {
+		applyTheme(theme);
+	}, [theme]);
 
 	useEffect(() => {
 		if (window.matchMedia("(max-width: 900px)").matches) setSidebarOpen(false);
@@ -69,6 +75,14 @@ export function AppShell() {
 					<span className="st-topbar-title">{activeThread?.title ?? "对话"}</span>
 					<div className="st-topbar-actions">
 						{showLive ? <LivePill live={a2aLive} agents={agents} /> : null}
+						<button
+							type="button"
+							className="st-icon-button st-theme-button"
+							aria-label={theme === "dark" ? "切换浅色主题" : "切换深色主题"}
+							onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+						>
+							{theme === "dark" ? "☀" : "☾"}
+						</button>
 						<AgentPopover
 							agents={agents}
 							status={agentStatus}
