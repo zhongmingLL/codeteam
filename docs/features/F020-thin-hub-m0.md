@@ -30,7 +30,23 @@ source_plan: "docs/plans/0030-f020-thin-hub-m0.md"
 - H5 daemon 承载（同源 `/` 服务 SPA、console-link 跳 `/`、`/api/*` JSON 404
   硬边界、静态路径安全）已合入 `f4ef2602`。
 - H4 打磨（失败/中断终态可见、A2A 降级提示、presence 文字、暗色切换、
-  草稿/滚动保持与 401 走查、键盘/窄屏）在 review。
+  草稿/滚动保持与 401 走查、键盘/窄屏）已合入 `7467a027`。
+- **M0 实现已完成，等待 operator close 确认。**
+
+## M0 交付证据
+
+- 单进程 daemon 承载闭环已实测：console-link → `302 /` → SPA → thread →
+  发送 202 → 消息出现 + queue 更新；`/api/*` 保持 JSON，静态 fallback 不吞 API。
+- Web 59 tests / 19 files、daemon 854 tests（3 skipped）、typecheck 0；
+  H0–H5 每个 PR 双面 review + CI 绿后合入。
+- 暗色/亮色小字号对比：live presence 6.13/6.06、muted 5.79/5.91、
+  danger 5.15/4.54，均 ≥ 4.5:1；reduced-motion 下 sidebar transition 与
+  processing 动画均为 none（Playwright 实测）。
+- 401 模拟走查：清 cookie → `/relogin`；draft/scroll/theme 在 relogin 往返后保留。
+
+**close 前已知 carry**：长 thread saved-position 浏览器实测（有真实长对话后）、
+relogin 深链接回跳、真实 worker 的 busy live smoke、classic Hub 兼容轨道、
+M0.5 projectPath 存在性检查。
 
 ## Why
 
