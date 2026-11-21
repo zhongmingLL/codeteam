@@ -34,7 +34,8 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > classic Hub 的真实 E2E 只属于可选兼容轨道（0029 §5 挂账），不再是 M2 前置。
 > M2 计划 `docs/plans/0031-f016c-m2-events.md` 已进入 review：第一方 Hub 采用
 > SSE invalidation channel + HTTP refetch，Socket.IO 只在 classic compat 确有消费者时适配。
-> M2-S1（daemon ChangeBus + `/api/events` SSE + commit 后发布）已实现，待 review。
+> M2-S1（daemon ChangeBus + `/api/events` SSE + commit 后发布）已合入 `7fe1c148`；
+> M2-S2 Web EventSource/refetch/fallback 待开。
 > F016b wait 仍未交付。
 
 ## Why
