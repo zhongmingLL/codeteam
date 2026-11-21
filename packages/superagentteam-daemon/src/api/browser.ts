@@ -8,6 +8,7 @@ import { sendError, sendJson } from "./http.ts";
 import { type AgentRoutes, createAgentRoutes } from "./routes/agents.ts";
 import type { ApiRouteContext } from "./routes/context.ts";
 import { createEventRoutes, type EventRoutes } from "./routes/events.ts";
+import { createInvocationRoutes, type InvocationRoutes } from "./routes/invocations.ts";
 import { createLegacyRoutes, type LegacyRoutes } from "./routes/legacy.ts";
 import { createLiveRoutes, type LiveRoutes } from "./routes/live.ts";
 import { createMessageRoutes, type MessageRoutes } from "./routes/messages.ts";
@@ -53,6 +54,9 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 		: null;
 	const queueRoutes: QueueRoutes | null = options.a2a ? createQueueRoutes({ runtime: options.a2a.runtime }) : null;
 	const liveRoutes: LiveRoutes | null = options.a2a ? createLiveRoutes({ runtime: options.a2a.runtime }) : null;
+	const invocationRoutes: InvocationRoutes | null = options.a2a
+		? createInvocationRoutes({ runtime: options.a2a.runtime, changeBus: options.changeBus })
+		: null;
 	const agentRoutes: AgentRoutes | null = options.a2a
 		? createAgentRoutes({ registry: options.a2a.registry, tracker: options.a2a.runtime.tracker, clock })
 		: null;
@@ -164,13 +168,22 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 			const context = authenticate(request, response);
 			if (!context) return true;
 			if (eventRoutes?.handle(request, response, url, context)) return true;
+			if (invocationRoutes?.handle(request, response, url, context)) return true;
 			if (threadRoutes && (await threadRoutes.handle(request, response, url, context))) return true;
 			if (queueRoutes?.handle(request, response, url, context)) return true;
 			if (liveRoutes?.handle(request, response, url, context)) return true;
 			if (messageRoutes && (await messageRoutes.handle(request, response, url, context))) return true;
 			if (agentRoutes?.handle(request, response, url)) return true;
 			if (legacyRoutes?.handle(request, response, url, context)) return true;
-			if (!threadRoutes || !messageRoutes || !queueRoutes || !liveRoutes || !agentRoutes || !legacyRoutes) {
+			if (
+				!threadRoutes ||
+				!messageRoutes ||
+				!queueRoutes ||
+				!liveRoutes ||
+				!invocationRoutes ||
+				!agentRoutes ||
+				!legacyRoutes
+			) {
 				sendError(response, 503, "unavailable", "A2A runtime is not available in this daemon mode");
 				return true;
 			}

@@ -36,6 +36,7 @@ created: 2026-10-25
 | F021 | thin Hub M0.5 hardening（projectPath 校验、relogin 深链接、长 thread/busy live 证据） | done (implementation merged `e478f5b9`; dual review approve; operator close 2026-11-21) | 宪宪 | [F021](docs/features/F021-thin-hub-m05-hardening.md) |
 | F022 | W7b thin Hub M1-A — unread/read state（sidebar 未读、per-thread read cursor、跨 tab 收敛） | done (implementation merged `a6ae8e40f`; dual review approve incl. P3 delta `31d982da2`; operator close 2026-11-21) | 宪宪 | [F022](docs/features/F022-thin-hub-m1-unread.md) |
 | F023 | W7b thin Hub M1-B — thread rename（header inline edit、titleSource=user、sidebar 同步） | done (implementation merged `15d8ab9f5`; dual review approve @ `4aee2a75c`; operator close 2026-11-21) | 宪宪 | [F023](docs/features/F023-thin-hub-m1-rename.md) |
+| F024 | W7b thin Hub M1-C — failed-invocation retry（failed/interrupted 回复重试、复用 requestRetry） | in_progress (feature doc + implementation in progress) | 宪宪 | [F024](docs/features/F024-thin-hub-m1-retry.md) |
 
 > Naming (F019): new and active docs use `superagentteam/Fxxx`; F001–F018 retain
 > `codeteam/Fxxx` for history. Package/env/data/CLI/tool names use `superagentteam*`

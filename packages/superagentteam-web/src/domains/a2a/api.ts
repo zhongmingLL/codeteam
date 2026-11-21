@@ -39,15 +39,26 @@ export interface LiveSnapshot {
 	invocations: LiveInvocationView[];
 }
 
+export interface RetryInvocationReceipt {
+	status: "retrying";
+	retriedAgentIds: string[];
+}
+
 export interface A2AApi {
 	queue(threadId: string): Promise<QueueSnapshot>;
 	live(threadId: string): Promise<LiveSnapshot>;
+	retryInvocation(threadId: string, invocationId: string): Promise<RetryInvocationReceipt>;
 }
 
-export function createA2AApi(client: Pick<ApiClient, "get">): A2AApi {
+export function createA2AApi(client: Pick<ApiClient, "get" | "post">): A2AApi {
 	return {
 		queue: (threadId) => client.get<QueueSnapshot>(`/api/threads/${encodeURIComponent(threadId)}/queue`),
 		live: (threadId) => client.get<LiveSnapshot>(`/api/threads/${encodeURIComponent(threadId)}/live`),
+		retryInvocation: (threadId, invocationId) =>
+			client.post<RetryInvocationReceipt>(
+				`/api/threads/${encodeURIComponent(threadId)}/invocations/${encodeURIComponent(invocationId)}/retry`,
+				{},
+			),
 	};
 }
 
