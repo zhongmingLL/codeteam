@@ -225,4 +225,16 @@ export class WorkerPool {
 	snapshotMetrics(): Readonly<WorkerPoolMetrics> {
 		return { ...this.metrics };
 	}
+
+	/** Daemon shutdown: finish every live carrier and retire its row. */
+	async closeAll(reason = "daemon-shutdown"): Promise<void> {
+		const now = this.now();
+		for (const [workerId, connection] of this.liveConnections) {
+			this.credentialTokens.delete(workerId);
+			await connection.finish(reason).catch(() => {});
+			this.workers.release(workerId, now);
+		}
+		this.liveConnections.clear();
+		this.acquiredAt.clear();
+	}
 }

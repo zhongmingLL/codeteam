@@ -330,6 +330,28 @@ export class QueueLedgerStore {
 		return rows.map(mapEntry);
 	}
 
+	/** Global drain candidate selection (R5-b): threads with at least one queued target. */
+	listQueuedThreadIds(): string[] {
+		const rows = this.db
+			.prepare(
+				`SELECT DISTINCT thread_id FROM invocation_queue
+				 WHERE status = 'queued' AND json_array_length(targets_json) > 0
+				 ORDER BY thread_id`,
+			)
+			.all() as Array<{ thread_id: string }>;
+		return rows.map((row) => row.thread_id);
+	}
+
+	countQueuedAll(): number {
+		const row = this.db
+			.prepare(
+				`SELECT COUNT(*) AS n FROM invocation_queue
+				 WHERE status = 'queued' AND json_array_length(targets_json) > 0`,
+			)
+			.get() as { n: number };
+		return row.n;
+	}
+
 	listActive(threadId: string): QueueEntry[] {
 		const rows = this.db
 			.prepare("SELECT * FROM invocation_queue WHERE thread_id = ? AND status = 'claimed'")
