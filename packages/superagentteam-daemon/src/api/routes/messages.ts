@@ -254,7 +254,12 @@ export function createMessageRoutes(options: MessageRoutesOptions): MessageRoute
 			const text = error instanceof Error ? error.message : String(error);
 			if (text.startsWith("ingress_replay_entry_missing")) {
 				const existing = messages.get(messageId, { includeDeleted: true });
-				if (existing && existing.threadId === threadId && existing.from.kind === "user") {
+				if (
+					existing &&
+					existing.threadId === threadId &&
+					existing.from.kind === "user" &&
+					existing.from.userId === context.session.userId
+				) {
 					sendJson(response, 202, { status: "queued", userMessageId: existing.id, merged: false });
 					return true;
 				}
