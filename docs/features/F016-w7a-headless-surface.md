@@ -36,6 +36,8 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > SSE invalidation channel + HTTP refetch，Socket.IO 只在 classic compat 确有消费者时适配。
 > M2-S1（daemon ChangeBus + `/api/events` SSE + commit 后发布）已合入 `7fe1c148`；
 > M2-S2 Web EventSource/refetch/fallback 已实现，待 review。
+> M2-S3 验收记录：`docs/reports/2026-11-21-f016c-m2-s3-acceptance.md`
+> （SSE 延迟 <500ms 断言、static/Vite proxy、fallback/polling/reconnect 双向证据）。
 > F016b wait 仍未交付。
 
 ## Why
