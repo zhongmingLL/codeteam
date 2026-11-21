@@ -18,6 +18,12 @@ export class ApiError extends Error {
 	}
 }
 
+let unauthorizedHandler: (() => void) | undefined;
+
+export function setUnauthorizedHandler(handler: (() => void) | undefined): void {
+	unauthorizedHandler = handler;
+}
+
 export interface ApiClientOptions {
 	baseUrl?: string;
 	fetchImpl?: typeof fetch;
@@ -53,6 +59,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 			}
 		}
 		if (!response.ok) {
+			if (response.status === 401) unauthorizedHandler?.();
 			const errorBody = typeof body === "object" && body !== null ? (body as ApiErrorBody) : undefined;
 			throw new ApiError(
 				response.status,

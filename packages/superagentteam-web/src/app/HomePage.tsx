@@ -1,13 +1,21 @@
-import { useSessionStore } from "@/domains/session/store";
+import { useNewThreadDialog } from "@/domains/thread/dialog-store";
+import { useThreadStore } from "@/domains/thread/store";
 
 export function HomePage() {
-	const userId = useSessionStore((state) => state.userId);
+	const threads = useThreadStore((state) => state.threads);
+	const showDialog = useNewThreadDialog((state) => state.show);
 
 	return (
-		<main className="st-home">
-			<h1>SuperAgentTeam</h1>
-			<p>已连接到 daemon。{userId ? <span>当前 operator：{userId}</span> : null}</p>
-			<p>F020 H0 脚手架已就位；sidebar/threads/chat 在 H1–H2 接入。</p>
-		</main>
+		<section className="st-hero">
+			<h1>{threads.length === 0 ? "开始一段对话" : "选择一个对话继续"}</h1>
+			<p>
+				{threads.length === 0
+					? "每个对话都有真实的项目路径、消息记录和 agent 状态。"
+					: "从左侧选择对话，或者新建一个。"}
+			</p>
+			<button type="button" className="st-button" onClick={() => showDialog()}>
+				+ 新对话
+			</button>
+		</section>
 	);
 }

@@ -2,7 +2,7 @@
 feature_ids: [superagentteam/F020]
 related_features: [codeteam/F016]
 title: "F020: W7b thin Hub M0"
-status: planning
+status: in_progress
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash), 烁烁 (Kimi K3)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -17,6 +17,12 @@ source_plan: "docs/plans/0030-f020-thin-hub-m0.md"
 > W7b Console M0 独立立项，不属于 F016（F016 是 W7a headless surface）。
 > operator 2026-11-21 拍 `DP-WEB-2=C`：自建 thin first-party Hub，参考
 > clowder Hub 设计；classic Hub 只保留为可选兼容客户端。
+
+## 进度
+
+- H0 脚手架（Vite/React/tokens/API client/session/relogin）已合入 `46b0cd19`。
+- H1 shell/sidebar/threads（AppShell、线程列表/搜索/创建、路由、10s 轮询）在 review。
+- H2 chat/composer、H3 queue/live/agents、H4 打磨、H5 daemon 承载随后。
 
 ## Why
 
