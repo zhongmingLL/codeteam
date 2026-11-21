@@ -28,7 +28,7 @@ created: 2026-10-25
 | F013 | W6c Observability / Trajectory | done | 宪宪 | [F013](docs/features/F013-w6c-observability-trajectory.md) |
 | F014 | W6b Eval / Outcome / Harness Eval | done | 宪宪 | [F014](docs/features/F014-w6b-eval-outcome-harness-eval.md) |
 | F015 | A2A E2E Foundation | done | 宪宪 | [F015](docs/features/F015-a2a-e2e-foundation.md) |
-| F016 | W7a headless surface + A2A ingress E2E | in_progress (F016a done; re-scope signed A/A/A; F016c-M1 next) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
+| F016 | W7a headless surface + A2A ingress E2E | in_progress (F016a done; re-scope signed A/A/A; F016c-M1 plan 0029 in review) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
 | F017 | A2A surface unification（post/cross-post + full A2A custody） | phase-a-archive (historical input; F018 owns A2A runtime v1) | 宪宪 | [F017](docs/features/F017-a2a-surface-unification.md) |
 | F018 | A2A runtime v1（AgentConfig config-as-code；Thread/InvocationRecord/TurnExecution；post/cross/multi_mention/thread_context；纯 A2A；code delivery 冻结） | done | 砚砚 | [F018](docs/features/F018-thread-first-runtime.md) |
 | F019 | SuperAgentTeam rename（platform/team/SOP 分层；`@superagentteam/*`；env/data/CLI/tool aliases；repo/branch last） | done (F019.5 alias cleanup complete) | 宪宪 | [F019](docs/features/F019-superagentteam-rename.md) |

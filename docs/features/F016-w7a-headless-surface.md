@@ -107,6 +107,9 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
 - 2026-11-21：F018 已 done，F016b/F016c 进入 re-scope；提案见
   `docs/plans/0028-f016-w7a-rescope.md`。F016c-M1 建议优先，F016b 暂缓；
   旧 `codeteam_wait_*` / handoff events 与 Hub backlog/approval P0 不再按原样实现。
+- 2026-11-21：operator 签字 D1=A / D2=A / D3=A；F016c-M1 执行计划
+  `docs/plans/0029-f016c-m1-execution.md` 已起草，待砚砚/墨墨 review。
+  代码未开始。
 
 ## 非目标
 
