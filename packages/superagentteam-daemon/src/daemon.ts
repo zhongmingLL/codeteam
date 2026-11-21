@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createBrowserApi } from "./api/browser.ts";
 import { appendBootRecord, nextBootSequence } from "./boot-ledger.ts";
 import { A2ADaemonControlPlane, type A2ADaemonControlPlaneOptions } from "./daemon-a2a.ts";
@@ -218,9 +218,9 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 
 	let server: Server;
 	try {
-		server = createServer((request, response) => {
+		async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
 			const url = new URL(request.url ?? "/", "http://127.0.0.1");
-			if (browserApi.handle(request, response)) return;
+			if (await browserApi.handle(request, response)) return;
 			if (request.method === "GET" && url.pathname === "/health") {
 				response.writeHead(state === "ready" ? 200 : 503, { "content-type": "application/json" });
 				response.end(JSON.stringify(health()));
@@ -244,6 +244,16 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 			}
 			response.writeHead(404, { "content-type": "application/json" });
 			response.end(JSON.stringify({ error: "not_found" }));
+		}
+		server = createServer((request, response) => {
+			void handleRequest(request, response).catch(() => {
+				if (!response.headersSent) {
+					response.writeHead(500, { "content-type": "application/json" });
+					response.end(JSON.stringify({ error: "internal_error" }));
+				} else {
+					response.destroy();
+				}
+			});
 		});
 		await new Promise<void>((resolve, reject) => {
 			const onError = (error: Error): void => {
@@ -309,6 +319,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 				server.closeAllConnections();
 				server.close(() => resolve());
 			});
+			browserApi.close();
 			await a2aControlPlane?.close().catch(() => {});
 			await controlPlane?.close().catch(() => {});
 			state = "stopped";

@@ -345,6 +345,22 @@ describe("F018 R3-a cross_post_message", () => {
 		} catch (error) {
 			expectCode(error, "thread_project_path_required");
 		}
+		try {
+			w.service.postMessage(ctx({ threadId: "t-empty", piExtToolCallId: "post-empty-target" }), {
+				targets: [{ kind: "agent", id: "a2" }],
+				bodyMd: "target",
+			});
+			throw new Error("expected error");
+		} catch (error) {
+			expectCode(error, "thread_project_path_required");
+		}
+		const messageOnlyPost = w.service.postMessage(
+			ctx({ threadId: "t-empty", piExtToolCallId: "post-empty-message" }),
+			{
+				bodyMd: "message only",
+			},
+		);
+		expect(messageOnlyPost.queueEntryId).toBeNull();
 		const messageOnly = w.service.crossPostMessage(ctx({ piExtToolCallId: "cross-empty-message" }), {
 			threadId: "t-empty",
 			bodyMd: "message only",

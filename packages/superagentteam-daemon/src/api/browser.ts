@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { verifyConsoleToken } from "./console-link.ts";
 import { sendError, sendJson } from "./http.ts";
+import { createThreadRoutes, type ThreadRouteContext } from "./routes/threads.ts";
 import {
 	hasForbiddenIdentityHeaders,
 	isAllowedOrigin,
@@ -21,14 +22,16 @@ export interface BrowserApiOptions {
 }
 
 export interface BrowserApi {
-	handle(request: IncomingMessage, response: ServerResponse): boolean;
+	handle(request: IncomingMessage, response: ServerResponse): Promise<boolean>;
 	sessions: SessionStore;
+	close(): void;
 }
 
 export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 	const clock = options.clock ?? Date.now;
 	const sessions = options.sessionStore ?? new SessionStore({ clock });
 	const nonces = new Map<string, number>();
+	const threadRoutes = createThreadRoutes({ dataDir: options.dataDir, clock });
 
 	function sendUnauthorized(response: ServerResponse, message: string): void {
 		sendJson(response, 401, { error: "unauthorized", message, relogin_hint: RELOGIN_HINT });
@@ -44,7 +47,30 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 		return true;
 	}
 
-	function handle(request: IncomingMessage, response: ServerResponse): boolean {
+	function authenticate(request: IncomingMessage, response: ServerResponse): ThreadRouteContext | null {
+		const origin = request.headers.origin;
+		if (origin !== undefined && !isAllowedOrigin(origin, options.hubOrigin)) {
+			sendError(response, 403, "forbidden", "origin not allowed");
+			return null;
+		}
+		if (hasForbiddenIdentityHeaders(request.headers)) {
+			sendError(response, 403, "forbidden", "identity must come from the browser session");
+			return null;
+		}
+		const sessionId = readSessionId(request.headers);
+		if (!sessionId) {
+			sendUnauthorized(response, "missing browser session");
+			return null;
+		}
+		const session = sessions.get(sessionId, clock());
+		if (!session) {
+			sendUnauthorized(response, "browser session expired");
+			return null;
+		}
+		return { session, origin };
+	}
+
+	async function handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
 		const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
 		if (request.method === "GET" && url.pathname === "/auth/console") {
@@ -83,25 +109,9 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 		}
 
 		if (request.method === "GET" && url.pathname === "/api/session") {
-			const origin = request.headers.origin;
-			if (origin !== undefined && !isAllowedOrigin(origin, options.hubOrigin)) {
-				sendError(response, 403, "forbidden", "origin not allowed");
-				return true;
-			}
-			if (hasForbiddenIdentityHeaders(request.headers)) {
-				sendError(response, 403, "forbidden", "identity must come from the browser session");
-				return true;
-			}
-			const sessionId = readSessionId(request.headers);
-			if (!sessionId) {
-				sendUnauthorized(response, "missing browser session");
-				return true;
-			}
-			const session = sessions.get(sessionId, clock());
-			if (!session) {
-				sendUnauthorized(response, "browser session expired");
-				return true;
-			}
+			const context = authenticate(request, response);
+			if (!context) return true;
+			const { session } = context;
 			sendJson(
 				response,
 				200,
@@ -115,8 +125,16 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 			return true;
 		}
 
+		if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+			const context = authenticate(request, response);
+			if (!context) return true;
+			if (await threadRoutes.handle(request, response, url, context)) return true;
+			sendError(response, 404, "not_found", "unknown API route");
+			return true;
+		}
+
 		return false;
 	}
 
-	return { handle, sessions };
+	return { handle, sessions, close: () => threadRoutes.close() };
 }
