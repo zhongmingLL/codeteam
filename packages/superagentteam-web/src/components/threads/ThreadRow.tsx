@@ -1,9 +1,11 @@
 import { NavLink } from "react-router-dom";
 
+import { useA2AStore } from "@/domains/a2a/store";
 import type { ThreadView } from "@/domains/thread/api";
 import { formatRelative } from "@/lib/time";
 
 export function ThreadRow({ thread }: { thread: ThreadView }) {
+	const live = useA2AStore((state) => state.threadId === thread.id && state.live.length > 0);
 	return (
 		<NavLink
 			to={`/thread/${encodeURIComponent(thread.id)}`}
@@ -14,7 +16,10 @@ export function ThreadRow({ thread }: { thread: ThreadView }) {
 				<span className="st-thread-project" title={thread.projectPath}>
 					{thread.projectPath}
 				</span>
-				<span>{formatRelative(thread.lastActiveAt)}</span>
+				<span className="st-thread-status">
+					{live ? <span className="st-thread-live-dot" title="执行中" aria-label="执行中" /> : null}
+					{formatRelative(thread.lastActiveAt)}
+				</span>
 			</span>
 		</NavLink>
 	);

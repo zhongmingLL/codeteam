@@ -23,7 +23,7 @@ export interface ChatState {
 	refresh(): Promise<boolean>;
 	loadOlder(): Promise<boolean>;
 	resumeLatest(): Promise<boolean>;
-	send(content: string, idempotencyKey: string): Promise<SendMessageReceipt>;
+	send(content: string, idempotencyKey: string, targetAgentIds?: string[]): Promise<SendMessageReceipt>;
 	reset(): void;
 }
 
@@ -138,13 +138,18 @@ export function createChatStore(deps: ChatStoreDeps) {
 				return fetchLatest(threadId);
 			},
 
-			async send(content, idempotencyKey) {
+			async send(content, idempotencyKey, targetAgentIds) {
 				const threadId = get().threadId;
 				if (!threadId) throw new Error("没有打开的对话");
 				if (get().sending) throw new Error("正在发送上一条消息");
 				set({ sending: true });
 				try {
-					const receipt = await deps.api.send({ threadId, content, idempotencyKey });
+					const receipt = await deps.api.send({
+						threadId,
+						content,
+						idempotencyKey,
+						...(targetAgentIds && targetAgentIds.length > 0 ? { targets: targetAgentIds } : {}),
+					});
 					set((state) => ({
 						sending: false,
 						pendingUserMessages: [

@@ -6,3 +6,10 @@ export function formatRelative(timestamp: number): string {
 	if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} 天前`;
 	return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric" }).format(timestamp);
 }
+
+export function formatElapsed(startedAt: number, now = Date.now()): string {
+	const minutes = Math.max(0, Math.floor((now - startedAt) / 60_000));
+	if (minutes < 60) return `${minutes} 分`;
+	const hours = Math.floor(minutes / 60);
+	return `${hours} 时`;
+}

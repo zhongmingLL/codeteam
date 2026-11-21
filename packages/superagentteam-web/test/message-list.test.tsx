@@ -101,4 +101,26 @@ describe("message list", () => {
 		expect(screen.getByText("new message")).toBeInTheDocument();
 		expect(screen.getByText("发送中…")).toBeInTheDocument();
 	});
+
+	it("shows a live placeholder when an agent accepted a turn but has not produced a response message", () => {
+		renderList({
+			messages: [],
+			liveInvocations: [
+				{
+					agentId: "a1",
+					turnExecutionId: "turn:1",
+					parentInvocationId: "inv:1",
+					startedAt: Date.now() - 60_000,
+					childStatus: "running",
+					responseStatus: "missing",
+					evidenceRank: "record+tracker",
+				},
+			],
+			agentLabel: (agentId) => (agentId === "a1" ? "Agent A1" : agentId),
+		});
+
+		expect(screen.getByText("Agent A1")).toBeInTheDocument();
+		expect(screen.getByText("已受理")).toBeInTheDocument();
+		expect(screen.getByText(/正在处理/)).toBeInTheDocument();
+	});
 });

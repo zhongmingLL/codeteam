@@ -24,8 +24,10 @@ source_plan: "docs/plans/0030-f020-thin-hub-m0.md"
 - H1 shell/sidebar/threads（AppShell、线程列表/搜索/创建、路由、10s 轮询）已合入 `5ae478aa`。
 - H2 chat/composer（消息历史、发送 202、receipt 驱动 pending、2s 最新窗口轮询、
   invalid cursor 重拉、纯文本/代码块安全渲染、draft/retry、thread detail、
-  shared polling backoff、dialog focus trap）在 review。
-- H3 queue/live/agents、H4 打磨、H5 daemon 承载随后。
+  shared polling backoff、dialog focus trap）已合入 `cf653a86`。
+- H3 queue/live/agents（queue strip、live pill、agent 弹层与目标选择、
+  “已受理未开口”占位、active thread 进行中点）在 review。
+- H4 打磨、H5 daemon 承载随后。
 
 ## Why
 

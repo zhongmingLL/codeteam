@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Composer } from "@/components/chat/Composer";
+import type { AgentView } from "@/domains/agent/api";
 
 afterEach(() => {
 	window.sessionStorage.clear();
@@ -77,5 +78,21 @@ describe("composer", () => {
 
 		render(<Composer threadId="thread:1" onSend={onSend} />);
 		expect(screen.getByLabelText("消息内容")).toHaveValue("unfinished");
+	});
+
+	it("sends to an explicit target and hides disabled agents", async () => {
+		const onSend = vi.fn(async () => {});
+		const agents: AgentView[] = [
+			{ id: "a1", displayName: "Agent A1", enabled: true, status: "idle" },
+			{ id: "a2", displayName: "Agent A2", enabled: false, status: "offline" },
+		];
+		render(<Composer threadId="thread:1" onSend={onSend} agents={agents} />);
+
+		expect(screen.queryByRole("option", { name: "Agent A2" })).not.toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText("收件人"), { target: { value: "a1" } });
+		fireEvent.change(screen.getByLabelText("消息内容"), { target: { value: "hello" } });
+		fireEvent.keyDown(screen.getByLabelText("消息内容"), { key: "Enter" });
+
+		await waitFor(() => expect(onSend).toHaveBeenCalledWith("hello", expect.any(String), ["a1"]));
 	});
 });
