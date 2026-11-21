@@ -247,7 +247,7 @@ packages/superagentteam-web/
 | H2 chat + composer | 历史可见；发送 202；消息出现；双击不双发；最新窗口 replace；坏 cursor 清游标重拉；纯文本/代码块不注入 HTML | `domains/chat/*`、`components/Composer`、`MessageRow` | send/idempotency、cursor replace、invalid_cursor 单测；浏览器 smoke |
 | H3 queue/live/agents | queue strip、live pill、agent 状态；轮询不重叠 | `domains/a2a/*`、`domains/agent/*`、`lib/polling` | polling 单测；浏览器 smoke |
 | H4 打磨 | 空/错/加载、窄屏、键盘、暗色 token、reduced motion；8h absolute 中途 401 保留草稿并进 relogin | `app/*`、`styles/*`、`components/ui/*` | 1440/1024/390 手验；键盘走查；对比度检查；8h 401 走查 |
-| H5 承载 + CI | daemon 在 `/` 服务 SPA；console-link 跳 `/`；未知 `/api/*` 返回 JSON 404（静态 catch-all 不吞 API）；根 build/check/test 绿 | daemon static serving、CLI redirect、根脚本、CI | `npm run build:offline`、`npm run check`、`./test.sh`；`GET /api/unknown` JSON 404；浏览器 smoke |
+| H5 承载 + CI | daemon 在 `/` 服务 SPA；console-link 跳 `/`；未知 `/api/*` 返回 JSON 404（静态 catch-all 不吞 API）；路径穿越/非 dist 文件 404/403；根 build/check/test 绿 | daemon static serving、CLI redirect、根脚本、CI | `npm run build:offline`、`npm run check`、`./test.sh`；`GET /api/unknown` JSON 404；`/..%2f`、`/package.json` 等 404/403；浏览器 smoke |
 
 每个行为单元先写 RED（Vitest/Testing Library 或浏览器 smoke），再实现；纯样式/
 文档走格式/截图检查。
@@ -267,7 +267,7 @@ packages/superagentteam-web/
 - **视觉/可用性**：1440/1024/390 可用；键盘可完成发送；焦点环/对比度/状态文字；
   reduced motion 下不跑动画。
 - **静态/API 边界**：SPA fallback 不吞 `/api/*`；`GET /api/不存在` 返回 JSON 404，
-  不是 index.html。
+  不是 index.html；路径穿越/非 dist 路径（`/..%2f`、`/package.json`）返回 404/403。
 - **构建**：web build/typecheck/test、根 `check`/`build:offline`、CI 绿；依赖
   pin/supply-chain 通过；`npm install --ignore-scripts` 下 Vite/esbuild 可用。
 

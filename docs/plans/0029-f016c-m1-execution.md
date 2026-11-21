@@ -159,6 +159,11 @@ labels / workspace）：
   - 同时带 `targets` + `mentions` 时按 union 去重；M1 接受，S5 如需更严格再收紧。
   - deleted thread 的 list/detail/messages 语义合并为一个 S5 决策：当前 list
     隐藏；detail/messages 对 owner 仍可读并带 `deletedAt`。
+- S5 review 的 P3 记账（classic 兼容轨道）：
+  - `governance/health` 的 `{status:"ok", disabled:true}` 有双义；real-Hub 首验时确认
+    老 Hub 是否把 `disabled` 当隐藏，必要时换成更中性的形状。
+  - `/api/governance/*` 写面不在 `LEGACY_WRITE_PREFIXES`，当前走 404 而非 501；real-Hub
+    首验时用真实调用清单对齐 legacy 写面前缀，必要时补齐。
 - S4 review 的 P3 记账：
   - `queueRevision` 不交付；Hub reconcile 走 full replace，不用 revision 缓存。
   - `/queue` 的 `queue` 是 `entries` 的 Hub alias；两者同数组，未来只改一个会漂移。
