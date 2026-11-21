@@ -3,7 +3,7 @@ title: "SuperAgentTeam 执行计划索引"
 doc_kind: index
 status: reviewed
 created: 2026-10-21
-updated: 2026-11-18
+updated: 2026-11-21
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 ---
 
@@ -57,6 +57,10 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0022-codeteam-web-surface.md`](0022-codeteam-web-surface.md) | W7b web surface 目录设计：Next/React 分层、domains、shared DTO、API/WS 边界；不属 R1 | 墨墨（UX/流程）+ 砚砚（security/provenance）+ 烁烁（runtime 接口） |
 | [`0023-f019-superagentteam-rename.md`](0023-f019-superagentteam-rename.md) | F019 SuperAgentTeam rename：platform/team/SOP 分层、`@superagentteam/*`、env/data/CLI/tool alias、repo/branch last；R1-0 前置 | 砚砚（packages/auth/security）+ 墨墨（docs/naming）+ 烁烁（runtime/CLI） |
 | [`0024-f018-r2-execution.md`](0024-f018-r2-execution.md) | F018 R2 执行计划：R2-0 session/history 基座 → R2-a dispatch 管线 → R2-b worker/provider/stream → R2-c settlement T1-T4 → R2-d retry/recovery/出口；复用地图与 review 分工 | 宪宪（契约/事务）+ 烁烁（worker 集成）+ 墨墨（验收/文档） |
+| [`0025-f018-r3-execution.md`](0025-f018-r3-execution.md) | F018 R3 执行计划：cross-thread post、multi_mention、thread access、participants、typed negative；E3/E4/E5/E6/E8/E10/E11/E16/E21 | 烁烁（dispatch/queue）+ 砚砚（auth/cross-thread）+ 墨墨（vision） |
+| [`0026-f018-r4-execution.md`](0026-f018-r4-execution.md) | F018 R4 执行计划：loop guard、idempotency、observation、multi_mention timeout/anti-cascade、recovery；E17/E20 | 砚砚（security/recovery）+ 墨墨（vision/eval）+ 烁烁（dispatch） |
+| [`0027-f018-r5-execution.md`](0027-f018-r5-execution.md) | F018 R5 执行计划：v1 tool bridge、A2A daemon、CLI/default-entry cutover、F018 close；E1 live + legacy freeze | 砚砚（code/security）+ 墨墨（vision）+ 烁烁（standby） |
+| [`0028-f016-w7a-rescope.md`](0028-f016-w7a-rescope.md) | F016 W7a re-scope after F018：wait D1、Hub legacy surface D2、F016c-M1 first D3；不恢复 custody/task-first | 砚砚（API/security）+ 墨墨（vision/UX）+ 烁烁（standby） |
 
 ## W0–W8 一览
 
@@ -108,7 +112,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W4 | closed (F007, operator confirmed) | PR #47 `4743137c9` + PR #48 `772dd1741`；264 passed / 1 skipped；22/22 AC；vision guard 烁烁 approve；W7a residuals tracked（`0009` / F007） |
 | W5 | closed (W5a/W5b/W5c core/W5d; operator confirmed) | F008/`0010` + F009/`0011`（W5b closed）+ F010/`0012`（W5c core closed，PR #52 `959ef7e76`）+ F011/`0013`（W5d closed：PR #56 `168e67dd0` reviewed HEAD `dfb872d9c`；烁烁 post-merge P2 修复 PR #59 `125ba4f81` reviewed HEAD `d96ca039b`，APPROVED；operator signoff `0001793204552090-003817-65582a68`） |
 | W6 | closed (W6a/W6b/W6c; operator confirmed) | W6a/F012 PR #62 `c82b0679c`；W6c/F013 PR #63 `12c546854`；W6b/F014 PR #66 `b74952ac2`；operator signoff `0001793276746238-003935-3d7a01c4` |
-| W7 | in_progress | W7a A2A E2E foundation merged（F015，PR #72 `b941dde32`）；F016a ingress/tool E2E merged（PR #81 `bc778185e`）；F016b wait、F016c headless API/Hub 兼容待做；W7b Console 后置，复用基线 `DP-WEB-1=B`（classic） |
+| W7 | in_progress | W7a A2A E2E foundation merged（F015，PR #72 `b941dde32`）；F016a ingress/tool E2E merged（PR #81 `bc778185e`）；F016b/F016c re-scope 见 plan 0028（建议 F016c-M1 先做，F016b wait deferred）；W7b Console 后置，复用基线 `DP-WEB-1=B`（classic） |
 | W8 | planned | github-signals W8 契约已冻结；待 Forge connector |
 
 ---
