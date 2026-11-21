@@ -14,8 +14,13 @@ import { F018Database } from "../src/infrastructure/db/database.ts";
 // coding-agent CLI through a provider. Run with:
 //   SUPERAGENTTEAM_LIVE_PROVIDER=1 OPENROUTER_API_KEY=... \
 //     npx vitest --run test/f018-r3-live.e2e.test.ts
+// Provider selection can be overridden for other live environments:
+//   SUPERAGENTTEAM_LIVE_PROVIDER_ID=deepseek
+//   SUPERAGENTTEAM_LIVE_API_KEY_REF=DEEPSEEK_API_KEY
 
-const liveEnabled = process.env.SUPERAGENTTEAM_LIVE_PROVIDER === "1" && Boolean(process.env.OPENROUTER_API_KEY);
+const liveProvider = process.env.SUPERAGENTTEAM_LIVE_PROVIDER_ID ?? "openrouter";
+const liveApiKeyRef = process.env.SUPERAGENTTEAM_LIVE_API_KEY_REF ?? "OPENROUTER_API_KEY";
+const liveEnabled = process.env.SUPERAGENTTEAM_LIVE_PROVIDER === "1" && Boolean(process.env[liveApiKeyRef]);
 const liveModel = process.env.SUPERAGENTTEAM_LIVE_MODEL ?? "~deepseek/deepseek-flash-latest";
 const REAL_CLI_PATH = join(import.meta.dirname, "..", "..", "coding-agent", "dist", "cli.js");
 
@@ -57,8 +62,8 @@ describe.skipIf(!liveEnabled)("F018 R3-d live pi RPC E2E", () => {
 		const catalog: AgentCatalog = { version: 1, agents: [agentConfig("a1")] };
 		const account: AccountConfig = {
 			ref: "live",
-			provider: "openrouter",
-			apiKeyRef: "OPENROUTER_API_KEY",
+			provider: liveProvider,
+			apiKeyRef: liveApiKeyRef,
 			models: [liveModel],
 		};
 		const runtime = buildA2ARuntime({

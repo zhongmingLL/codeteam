@@ -26,8 +26,10 @@ export interface PiSpawnOptions {
 	clock?: () => number;
 }
 
-function freshPiSessionId(session: AgentSession, now: number): string {
-	return `sat-${session.id}-${now.toString(36)}`;
+export function freshPiSessionId(session: AgentSession, now: number): string {
+	const safe = session.id.replace(/[^A-Za-z0-9._-]/g, "-").replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "");
+	const base = safe.length > 0 ? safe : "session";
+	return `sat-${base}-${now.toString(36)}`;
 }
 
 /** R5-b: resolve the v1 A2A extension (not the legacy task-first extension). */
