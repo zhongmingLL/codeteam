@@ -24,6 +24,8 @@ export const RELOGIN_HINT = "run `superagentteam auth console-link` and open the
 export interface BrowserApiOptions {
 	dataDir: string;
 	hubOrigin: string;
+	/** Where a successful console exchange redirects; defaults to hubOrigin. */
+	consoleRedirect?: string;
 	clock?: () => number;
 	secureCookies?: boolean;
 	sessionStore?: SessionStore;
@@ -111,7 +113,7 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 				// Keep the token-bearing URL out of any Referer; a future multi-origin
 				// allowlist must choose the matched origin rather than a single field.
 				response.writeHead(302, {
-					location: options.hubOrigin,
+					location: options.consoleRedirect ?? options.hubOrigin,
 					"cache-control": "no-store",
 					"referrer-policy": "no-referrer",
 					"set-cookie": serializeSessionCookie(session.id, {

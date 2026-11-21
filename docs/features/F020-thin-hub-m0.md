@@ -26,8 +26,10 @@ source_plan: "docs/plans/0030-f020-thin-hub-m0.md"
   invalid cursor 重拉、纯文本/代码块安全渲染、draft/retry、thread detail、
   shared polling backoff、dialog focus trap）已合入 `cf653a86`。
 - H3 queue/live/agents（queue strip、live pill、agent 弹层与目标选择、
-  “已受理未开口”占位、active thread 进行中点）在 review。
-- H4 打磨、H5 daemon 承载随后。
+  “已受理未开口”占位、active thread 进行中点）已合入 `f5a68989`。
+- H5 daemon 承载（同源 `/` 服务 SPA、console-link 跳 `/`、`/api/*` JSON 404
+  硬边界、静态路径安全）在 review。
+- H4 打磨随后。
 
 ## Why
 
