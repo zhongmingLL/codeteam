@@ -2,7 +2,7 @@
 feature_ids: [superagentteam/F024]
 related_features: [superagentteam/F020, superagentteam/F021, superagentteam/F022, superagentteam/F023]
 title: "F024: W7b thin Hub M1-C — failed-invocation retry"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -91,8 +91,16 @@ source_feature: "superagentteam/F020"
   `not_retryable` 409，不改数据。修法已明确：MessageList 用既有
   `liveInvocations` 判定该 `parentInvocationId` 是否在跑，在跑时隐藏入口。
   close 前补或作为 F024 close 的具名 carry，不阻塞合并。
-- **P3 修复（本 PR）**：MessageList 已用 `liveInvocations` 的
+- **P3 修复（#161）**：MessageList 已用 `liveInvocations` 的
   `parentInvocationId` 集合给重试入口加 live gate；运行中隐藏「重试」，
-  新增单测覆盖。F024 close 时把该 carry 标记为已关闭。
+  新增单测覆盖；#161 merged `cb5ef44d4`。该 carry 已关闭。
+
+## Close-out
+
+- 2026-11-21 operator 确认 close。主实现 PR #159 merged `fffc32685`，
+  双面 review approve @ `e4ead3882`；P3 fix PR #161 merged `cb5ef44d4`，
+  墨墨 delta approve @ `e161c4397`。
+- F024 无剩余 carry。abandon / running cancel 明确 deferred 到独立平台 track，
+  不计入本 feature。
 
 [宪宪/deepseek-flash🐾]
