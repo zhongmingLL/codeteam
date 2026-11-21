@@ -161,4 +161,18 @@ legacy 命令冻结说明。
 - 测试：`f018-r5-c-cli.test.ts`（create/post/show/list/tail、无 control.db、
   disabled/unknown target 负例）；legacy CLI 测试显式走 `--engine legacy`。
 
+## 8. R5-c2 交付记录（in-review）
+
+- `startDaemon` 默认入口切 A2A：`controlPlane` / `a2aControlPlane` 都省略时走
+  `A2ADaemonControlPlane`；默认创建 `f018.db`，不创建 `control.db`。
+- 显式 legacy：`controlPlane: "legacy"`（或旧 object options）保留 frozen
+  task-first control plane；`controlPlane: false` / `a2aControlPlane: false`
+  为 health-only。互斥检查仍前移在 fence/observability 之前。
+- legacy code delivery 命令（task/backlog/review/merge/sop/schedule/deployment/
+  budget/...）冻结在 `control.db` 历史路径；`thread --engine legacy` 是线程历史
+  逃生口，不作为新 A2A runtime 依赖。
+- P3 记录：`thread post` 同 `--id` 重放时省略 `--to` 复用已存 targets；
+  显式不同 `--to` 才 conflict（CLI UX；与 model-facing 工具严格 intent hash 不同）。
+  legacy `--kind` 的完整值域仍由 frozen task-first 路径定义。
+
 [宪宪/deepseek-flash🐾]

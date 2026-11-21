@@ -144,6 +144,7 @@ function writeUsage(): void {
 	writeLine("backlog dispatch: <id> --to <profile> [--phase coding|research|brainstorm] [--body]");
 	writeLine("thread create: --project-path <path> [--title <text>] [--id <threadId>]");
 	writeLine("thread post: <threadId> <body> [--to <agentId> ...] [--id <messageId>] [--engine a2a|legacy]");
+	writeLine("thread post replay: same --id + omitted --to reuses stored targets; different --to conflicts");
 	writeLine("thread tail: <threadId> [--after-seq N] [--follow] [--interval-ms N]");
 	writeLine("sop evidence: <backlogId> <check> <evidenceRef> --subject-revision <sha>");
 	writeLine("sop update: <backlogId> --stage <stage> --baton <profile|operator> --focus <text>");

@@ -25,9 +25,9 @@ export interface StartDaemonOptions {
 	port?: number;
 	/** Defaults to a local observability runtime; pass false to disable telemetry. */
 	observability?: ObservabilityRuntime | false;
-	/** Defaults to the production control plane; pass false for health-only tests. */
-	controlPlane?: Omit<DaemonControlPlaneOptions, "dataDir"> | false;
-	/** R5-b opt-in A2A runtime control plane; legacy default remains until R5-c. */
+	/** Legacy task-first control plane (frozen); use "legacy" for its defaults. */
+	controlPlane?: "legacy" | Omit<DaemonControlPlaneOptions, "dataDir"> | false;
+	/** A2A runtime control plane; the default when neither option is provided. */
 	a2aControlPlane?: Omit<A2ADaemonControlPlaneOptions, "dataDir"> | false;
 }
 
@@ -81,11 +81,15 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	const paths = resolveDaemonPaths(options.dataDir);
 	const installation = resolveInstallation(options.installationRoot);
 	const deploymentId = validateDeploymentId(options.deploymentId);
-	const useA2A = options.a2aControlPlane !== undefined && options.a2aControlPlane !== false;
-	if (useA2A && options.controlPlane !== undefined && options.controlPlane !== false) {
+	const legacyRequested =
+		options.controlPlane === "legacy" || (typeof options.controlPlane === "object" && options.controlPlane !== null);
+	const a2aRequested = options.a2aControlPlane !== undefined && options.a2aControlPlane !== false;
+	const defaultEntry = options.controlPlane === undefined && options.a2aControlPlane === undefined;
+	if (a2aRequested && legacyRequested) {
 		throw new DaemonError("invalid_state", "controlPlane and a2aControlPlane are mutually exclusive");
 	}
-	const useLegacy = !useA2A && options.controlPlane !== false;
+	const useA2A = a2aRequested || defaultEntry;
+	const useLegacy = legacyRequested;
 	const bootId = randomUUID();
 	const bootSequence = nextBootSequence(paths.ledgerFile);
 	const declaredServices = [...(options.services ?? [])];
@@ -152,13 +156,21 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	if (useA2A || useLegacy) {
 		try {
 			if (useA2A) {
+				const a2aOptions =
+					options.a2aControlPlane === undefined || options.a2aControlPlane === false
+						? {}
+						: options.a2aControlPlane;
 				a2aControlPlane = new A2ADaemonControlPlane({
-					...(options.a2aControlPlane as Omit<A2ADaemonControlPlaneOptions, "dataDir">),
+					...a2aOptions,
 					dataDir: paths.dataDir,
 				});
 				await a2aControlPlane.start();
 			} else {
-				controlPlane = new DaemonControlPlane({ ...options.controlPlane, dataDir: paths.dataDir });
+				const legacyOptions =
+					options.controlPlane === "legacy" || options.controlPlane === false || options.controlPlane === undefined
+						? {}
+						: options.controlPlane;
+				controlPlane = new DaemonControlPlane({ ...legacyOptions, dataDir: paths.dataDir });
 				await controlPlane.start();
 			}
 		} catch (error) {

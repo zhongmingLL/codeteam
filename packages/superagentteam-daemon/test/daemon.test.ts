@@ -38,6 +38,7 @@ describe("SuperAgentTeam daemon lifecycle", () => {
 			installationRoot,
 			dataDir,
 			runningRevision: "rev-1",
+			a2aControlPlane: false,
 			...overrides,
 		});
 		running.push(daemon);
@@ -54,7 +55,11 @@ describe("SuperAgentTeam daemon lifecycle", () => {
 		delete process.env.SUPERAGENTTEAM_DATA_DIR;
 		delete process.env.SUPERAGENTTEAM_DATA_DIR;
 		try {
-			const daemon = await startDaemon({ installationRoot, runningRevision: "rev-1" });
+			const daemon = await startDaemon({
+				installationRoot,
+				runningRevision: "rev-1",
+				controlPlane: "legacy",
+			});
 			running.push(daemon);
 			expect(existsSync(join(home, ".superagentteam", "control.db"))).toBe(true);
 		} finally {
