@@ -260,7 +260,7 @@ export class A2AToolService {
 			fail("thread_deleted", `thread ${targetThreadId} is deleted`);
 		}
 		if (targetThread.createdBy !== ctx.userId) fail("thread_access_denied", "target thread belongs to another user");
-		if (crossPost && targets.length > 0 && !targetThread.projectPath.trim()) {
+		if (targets.length > 0 && !targetThread.projectPath.trim()) {
 			fail("thread_project_path_required");
 		}
 

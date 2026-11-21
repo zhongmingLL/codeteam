@@ -150,6 +150,7 @@ describe("F016c-M1 S2 thread API", () => {
 		const response = await createThread(base, auth, {
 			userId: "user:forged",
 			idempotencyKey: "hub-shape",
+			projectPath: "/tmp/hub-project",
 			temporaryTitle: "New conversation",
 		});
 		expect(response.status).toBe(201);
@@ -159,7 +160,7 @@ describe("F016c-M1 S2 thread API", () => {
 			titleSource?: string;
 			createdBy: string;
 		};
-		expect(thread.projectPath).toBe("default");
+		expect(thread.projectPath).toBe("/tmp/hub-project");
 		expect(thread.title).toBe("New conversation");
 		expect(thread.titleSource).toBe("system");
 		expect(thread.createdBy).not.toBe("user:forged");
@@ -167,6 +168,19 @@ describe("F016c-M1 S2 thread API", () => {
 		const deleted = await fetch(`${base}/api/threads?deleted=true`, { headers: { cookie: auth.cookie } });
 		expect(deleted.status).toBe(200);
 		expect(((await deleted.json()) as { threads: unknown[] }).threads).toEqual([]);
+	});
+
+	it("requires a real projectPath instead of inventing a default workspace", async () => {
+		const base = await start();
+		const auth = await login(base);
+		const response = await createThread(base, auth, {
+			idempotencyKey: "no-project",
+			temporaryTitle: "New conversation",
+		});
+		expect(response.status).toBe(400);
+		const body = (await response.json()) as { error: string; message: string };
+		expect(body.error).toBe("invalid_input");
+		expect(body.message).toContain("projectPath is required");
 	});
 
 	it("allows a headless client to write with a valid CSRF token and no Origin", async () => {

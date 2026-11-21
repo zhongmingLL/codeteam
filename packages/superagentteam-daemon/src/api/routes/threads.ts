@@ -121,10 +121,13 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 			return fail(response, 400, "invalid_input", "idempotencyKey is required");
 		}
 		const projectPathValue = input.projectPath;
-		if (projectPathValue !== undefined && (typeof projectPathValue !== "string" || projectPathValue.trim() === "")) {
-			return fail(response, 400, "invalid_input", "projectPath must be a non-empty string when provided");
+		if (projectPathValue === undefined) {
+			return fail(response, 400, "invalid_input", "projectPath is required for thread create");
 		}
-		const projectPath = projectPathValue === undefined ? "default" : projectPathValue;
+		if (typeof projectPathValue !== "string" || projectPathValue.trim() === "") {
+			return fail(response, 400, "invalid_input", "projectPath must be a non-empty string");
+		}
+		const projectPath = projectPathValue;
 		const parsedTitle = parseTitle(input);
 		if (!parsedTitle) return fail(response, 400, "invalid_input", "title must be a non-empty string when provided");
 
