@@ -65,9 +65,12 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 					return true;
 				}
 				const session = sessions.create(payload.sub, clock());
+				// Keep the token-bearing URL out of any Referer; a future multi-origin
+				// allowlist must choose the matched origin rather than a single field.
 				response.writeHead(302, {
 					location: options.hubOrigin,
 					"cache-control": "no-store",
+					"referrer-policy": "no-referrer",
 					"set-cookie": serializeSessionCookie(session.id, {
 						secure: options.secureCookies ?? false,
 					}),

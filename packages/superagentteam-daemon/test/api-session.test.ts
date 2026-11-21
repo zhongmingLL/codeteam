@@ -51,6 +51,7 @@ describe("F016c-M1 S1 browser session", () => {
 			redirect: "manual",
 		});
 		expect(response.status).toBe(302);
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
 		const setCookie = response.headers.get("set-cookie");
 		expect(setCookie).toContain("superagentteam_session=");
 		expect(setCookie).toContain("HttpOnly");
