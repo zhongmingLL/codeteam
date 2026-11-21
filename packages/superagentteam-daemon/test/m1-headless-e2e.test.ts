@@ -32,13 +32,16 @@ describe("F016c-M1 headless end-to-end", () => {
 	let root: string;
 	let dataDir: string;
 	let installationRoot: string;
+	let projectDir: string;
 	let daemon: DaemonHandle | null;
 
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "f016c-m1-e2e-"));
 		dataDir = join(root, "data");
 		installationRoot = join(root, "install");
+		projectDir = join(root, "project");
 		mkdirSync(installationRoot);
+		mkdirSync(projectDir);
 		initOperatorCredential({ dataDir });
 		const catalog: AgentCatalog = { version: 1, agents: [agentConfig("a1")] };
 		writeFileSync(join(dataDir, "agent-catalog.json"), JSON.stringify(catalog));
@@ -83,7 +86,7 @@ describe("F016c-M1 headless end-to-end", () => {
 		const created = await fetch(`${base}/api/threads`, {
 			method: "POST",
 			headers,
-			body: JSON.stringify({ projectPath: "/tmp/m1-e2e-project", title: "E2E", idempotencyKey: "thread-e2e" }),
+			body: JSON.stringify({ projectPath: projectDir, title: "E2E", idempotencyKey: "thread-e2e" }),
 		});
 		expect(created.status).toBe(201);
 		const thread = (await created.json()) as { id: string; createdBy: string };

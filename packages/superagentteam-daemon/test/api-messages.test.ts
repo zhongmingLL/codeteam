@@ -32,13 +32,16 @@ describe("F016c-M1 S3 message API", () => {
 	let root: string;
 	let dataDir: string;
 	let installationRoot: string;
+	let projectDir: string;
 	let daemon: DaemonHandle | null;
 
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "f016c-s3-messages-"));
 		dataDir = join(root, "data");
 		installationRoot = join(root, "install");
+		projectDir = join(root, "project");
 		mkdirSync(installationRoot);
+		mkdirSync(projectDir);
 		initOperatorCredential({ dataDir });
 		const catalog: AgentCatalog = { version: 1, agents: [agentConfig("a1"), agentConfig("a2", false)] };
 		writeFileSync(join(dataDir, "agent-catalog.json"), JSON.stringify(catalog));
@@ -93,7 +96,7 @@ describe("F016c-M1 S3 message API", () => {
 		const response = await fetch(`${base}/api/threads`, {
 			method: "POST",
 			headers: writeHeaders(auth),
-			body: JSON.stringify({ projectPath: "/tmp/s3-project", idempotencyKey }),
+			body: JSON.stringify({ projectPath: projectDir, idempotencyKey }),
 		});
 		expect(response.status).toBe(201);
 		return (await response.json()) as { id: string };
@@ -341,7 +344,7 @@ describe("F016c-M1 S3 message API", () => {
 
 		daemon!.a2aControlPlane!.runtime.threads.create({
 			id: "thread:foreign",
-			projectPath: "/tmp/foreign",
+			projectPath: projectDir,
 			createdBy: "operator:other",
 			now: Date.now(),
 		});

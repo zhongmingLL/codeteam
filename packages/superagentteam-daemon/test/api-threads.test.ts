@@ -34,13 +34,22 @@ describe("F016c-M1 S2 thread API", () => {
 	let root: string;
 	let dataDir: string;
 	let installationRoot: string;
+	let projectA: string;
+	let projectB: string;
+	let projectFile: string;
 	let daemon: DaemonHandle | null;
 
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "f016c-s2-threads-"));
 		dataDir = join(root, "data");
 		installationRoot = join(root, "install");
+		projectA = join(root, "project-a");
+		projectB = join(root, "project-b");
+		projectFile = join(root, "not-a-directory");
 		mkdirSync(installationRoot);
+		mkdirSync(projectA);
+		mkdirSync(projectB);
+		writeFileSync(projectFile, "not a directory");
 		initOperatorCredential({ dataDir });
 		const catalog: AgentCatalog = { version: 1, agents: [agentConfig("a1")] };
 		writeFileSync(join(dataDir, "agent-catalog.json"), JSON.stringify(catalog));
@@ -111,7 +120,7 @@ describe("F016c-M1 S2 thread API", () => {
 		const auth = await login(base);
 
 		const first = await createThread(base, auth, {
-			projectPath: "/tmp/project-a",
+			projectPath: projectA,
 			title: "Thread A",
 			idempotencyKey: "create-a",
 		});
@@ -122,7 +131,7 @@ describe("F016c-M1 S2 thread API", () => {
 		expect(firstThread.participants).toEqual([]);
 
 		const replay = await createThread(base, auth, {
-			projectPath: "/tmp/project-a",
+			projectPath: projectA,
 			title: "Thread A",
 			idempotencyKey: "create-a",
 		});
@@ -130,7 +139,7 @@ describe("F016c-M1 S2 thread API", () => {
 		expect(((await replay.json()) as { id: string }).id).toBe(firstThread.id);
 
 		const conflict = await createThread(base, auth, {
-			projectPath: "/tmp/project-b",
+			projectPath: projectB,
 			title: "Thread A",
 			idempotencyKey: "create-a",
 		});
@@ -142,7 +151,7 @@ describe("F016c-M1 S2 thread API", () => {
 		const base = await start();
 		const auth = await login(base);
 
-		const missingKey = await createThread(base, auth, { projectPath: "/tmp/project-a" });
+		const missingKey = await createThread(base, auth, { projectPath: projectA });
 		expect(missingKey.status).toBe(400);
 
 		const emptyPath = await createThread(base, auth, { projectPath: "  ", idempotencyKey: "k1" });
@@ -151,7 +160,7 @@ describe("F016c-M1 S2 thread API", () => {
 		const noCsrf = await fetch(`${base}/api/threads`, {
 			method: "POST",
 			headers: { cookie: auth.cookie, origin: HUB_ORIGIN, "content-type": "application/json" },
-			body: JSON.stringify({ projectPath: "/tmp/project-a", idempotencyKey: "k2" }),
+			body: JSON.stringify({ projectPath: projectA, idempotencyKey: "k2" }),
 		});
 		expect(noCsrf.status).toBe(403);
 		expect(((await noCsrf.json()) as { error: string }).error).toBe("csrf_failed");
@@ -159,12 +168,27 @@ describe("F016c-M1 S2 thread API", () => {
 		const badOrigin = await fetch(`${base}/api/threads`, {
 			method: "POST",
 			headers: { ...writeHeaders(auth), origin: "http://evil.example" },
-			body: JSON.stringify({ projectPath: "/tmp/project-a", idempotencyKey: "k3" }),
+			body: JSON.stringify({ projectPath: projectA, idempotencyKey: "k3" }),
 		});
 		expect(badOrigin.status).toBe(403);
 
 		const list = await fetch(`${base}/api/threads`, { headers: { cookie: auth.cookie } });
 		expect(((await list.json()) as { threads: unknown[] }).threads).toEqual([]);
+	});
+
+	it("rejects relative, missing, and non-directory project paths", async () => {
+		const base = await start();
+		const auth = await login(base);
+		const invalidPaths = ["relative/project", join(root, "missing-project"), projectFile];
+
+		for (const [index, projectPath] of invalidPaths.entries()) {
+			const response = await createThread(base, auth, {
+				projectPath,
+				idempotencyKey: `invalid-path-${index}`,
+			});
+			expect(response.status).toBe(422);
+			expect(((await response.json()) as { error: string }).error).toBe("project_path_invalid");
+		}
 	});
 
 	it("accepts the classic Hub create body shape without trusting body identity", async () => {
@@ -173,7 +197,7 @@ describe("F016c-M1 S2 thread API", () => {
 		const response = await createThread(base, auth, {
 			userId: "user:forged",
 			idempotencyKey: "hub-shape",
-			projectPath: "/tmp/hub-project",
+			projectPath: projectA,
 			temporaryTitle: "New conversation",
 		});
 		expect(response.status).toBe(201);
@@ -183,7 +207,7 @@ describe("F016c-M1 S2 thread API", () => {
 			titleSource?: string;
 			createdBy: string;
 		};
-		expect(thread.projectPath).toBe("/tmp/hub-project");
+		expect(thread.projectPath).toBe(projectA);
 		expect(thread.title).toBe("New conversation");
 		expect(thread.titleSource).toBe("system");
 		expect(thread.createdBy).not.toBe("user:forged");
@@ -197,13 +221,13 @@ describe("F016c-M1 S2 thread API", () => {
 		const base = await start();
 		const auth = await login(base);
 		const first = await createThread(base, auth, {
-			projectPath: "/tmp/project-a",
+			projectPath: projectA,
 			title: "Same title",
 			idempotencyKey: "attribution",
 		});
 		expect(first.status).toBe(201);
 		const conflict = await createThread(base, auth, {
-			projectPath: "/tmp/project-a",
+			projectPath: projectA,
 			temporaryTitle: "Same title",
 			idempotencyKey: "attribution",
 		});
@@ -233,7 +257,7 @@ describe("F016c-M1 S2 thread API", () => {
 				"x-csrf-token": auth.csrfToken,
 				"content-type": "application/json",
 			},
-			body: JSON.stringify({ projectPath: "/tmp/headless", idempotencyKey: "headless-1" }),
+			body: JSON.stringify({ projectPath: projectA, idempotencyKey: "headless-1" }),
 		});
 		expect(response.status).toBe(201);
 	});
@@ -243,7 +267,7 @@ describe("F016c-M1 S2 thread API", () => {
 		try {
 			new ThreadStore(foreign.db).create({
 				id: "thread:foreign",
-				projectPath: "/tmp/foreign",
+				projectPath: projectB,
 				title: "Foreign",
 				createdBy: "operator:other",
 				now: Date.now(),
@@ -255,7 +279,7 @@ describe("F016c-M1 S2 thread API", () => {
 		const base = await start();
 		const auth = await login(base);
 		const created = await createThread(base, auth, {
-			projectPath: "/tmp/own",
+			projectPath: projectA,
 			title: "Own",
 			idempotencyKey: "own-1",
 		});
