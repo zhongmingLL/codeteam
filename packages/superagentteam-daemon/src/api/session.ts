@@ -29,6 +29,8 @@ export interface SessionStoreOptions {
 }
 
 export class SessionStore {
+	// In-memory by design: a daemon restart invalidates every browser session.
+	// The operator reconnects by running `superagentteam auth console-link` again.
 	private readonly sessions = new Map<string, BrowserSession>();
 	private readonly clock: () => number;
 	private readonly idleTtlMs: number;
