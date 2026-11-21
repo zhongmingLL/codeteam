@@ -35,7 +35,7 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > M2 计划 `docs/plans/0031-f016c-m2-events.md` 已进入 review：第一方 Hub 采用
 > SSE invalidation channel + HTTP refetch，Socket.IO 只在 classic compat 确有消费者时适配。
 > M2-S1（daemon ChangeBus + `/api/events` SSE + commit 后发布）已合入 `7fe1c148`；
-> M2-S2 Web EventSource/refetch/fallback 待开。
+> M2-S2 Web EventSource/refetch/fallback 已实现，待 review。
 > F016b wait 仍未交付。
 
 ## Why

@@ -62,4 +62,33 @@ describe("session store", () => {
 		expect(store.getState().status).toBe("unauthenticated");
 		expect(setToken).toHaveBeenCalledWith(undefined);
 	});
+
+	it("probes without replacing the page with a loading state", async () => {
+		const setToken = vi.fn();
+		const client = { get: vi.fn(async () => ({ userId: "operator:1", csrfToken: "csrf" })) } as unknown as Pick<
+			ApiClient,
+			"get"
+		>;
+		const store = createSessionStore({ client, setToken });
+		store.setState({ status: "authenticated", userId: "operator:1", csrfToken: "csrf" });
+
+		await expect(store.getState().probe()).resolves.toBe("ok");
+		expect(store.getState().status).toBe("authenticated");
+	});
+
+	it("probes a 401 as unauthorized and a network failure as unavailable", async () => {
+		const setToken = vi.fn();
+		const unauthorized = {
+			get: vi.fn(async () => Promise.reject(new ApiError(401, "unauthorized", "expired", undefined))),
+		} as unknown as Pick<ApiClient, "get">;
+		const first = createSessionStore({ client: unauthorized, setToken });
+		await expect(first.getState().probe()).resolves.toBe("unauthorized");
+		expect(first.getState().status).toBe("unauthenticated");
+
+		const down = { get: vi.fn(async () => Promise.reject(new Error("down"))) } as unknown as Pick<ApiClient, "get">;
+		const second = createSessionStore({ client: down, setToken });
+		second.setState({ status: "authenticated" });
+		await expect(second.getState().probe()).resolves.toBe("unavailable");
+		expect(second.getState().status).toBe("authenticated");
+	});
 });

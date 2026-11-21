@@ -10,6 +10,7 @@ export interface SessionResponse {
 }
 
 export type SessionStatus = "loading" | "authenticated" | "unauthenticated" | "error";
+export type SessionProbe = "ok" | "unauthorized" | "unavailable";
 
 export interface SessionState {
 	status: SessionStatus;
@@ -17,6 +18,7 @@ export interface SessionState {
 	csrfToken?: string;
 	error?: string;
 	load(): Promise<void>;
+	probe(): Promise<SessionProbe>;
 	markUnauthenticated(): void;
 }
 
@@ -49,6 +51,26 @@ export function createSessionStore(deps: SessionStoreDeps) {
 					status: "error",
 					error: error instanceof Error ? error.message : "无法连接 daemon",
 				});
+			}
+		},
+		async probe() {
+			try {
+				const body = await deps.client.get<SessionResponse>("/api/session");
+				deps.setToken(body.csrfToken);
+				set({ status: "authenticated", userId: body.userId, csrfToken: body.csrfToken, error: undefined });
+				return "ok";
+			} catch (error) {
+				if (error instanceof ApiError && error.status === 401) {
+					deps.setToken(undefined);
+					set({
+						status: "unauthenticated",
+						userId: undefined,
+						csrfToken: undefined,
+						error: undefined,
+					});
+					return "unauthorized";
+				}
+				return "unavailable";
 			}
 		},
 		markUnauthenticated() {

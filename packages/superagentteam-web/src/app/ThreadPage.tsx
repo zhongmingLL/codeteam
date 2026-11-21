@@ -7,6 +7,9 @@ import { QueueStrip } from "@/components/a2a/QueueStrip";
 import { useA2AStore } from "@/domains/a2a/store";
 import { useAgentStore } from "@/domains/agent/store";
 import { useChatStore } from "@/domains/chat/store";
+import type { ChangeTopic } from "@/domains/events/client";
+import { useEventStore } from "@/domains/events/store";
+import { useThreadEvents } from "@/domains/events/use-thread-events";
 import { useThreadStore } from "@/domains/thread/store";
 import { usePolling } from "@/lib/polling";
 
@@ -43,6 +46,19 @@ export function ThreadPage() {
 	const refreshA2A = useA2AStore((state) => state.refresh);
 	const resetA2A = useA2AStore((state) => state.reset);
 	const agents = useAgentStore((state) => state.agents);
+	const resolvedThread = detail?.id === threadId ? detail : listThread;
+
+	const handleEventRefresh = useCallback(
+		(topics: readonly ChangeTopic[]) => {
+			if (topics.includes("messages")) void refresh();
+			if (topics.includes("queue") || topics.includes("live")) void refreshA2A();
+			if (topics.includes("thread") && threadId) void loadDetail(threadId);
+		},
+		[refresh, refreshA2A, loadDetail, threadId],
+	);
+	useThreadEvents({ threadId: resolvedThread?.id, onRefresh: handleEventRefresh });
+	const realtimeStatus = useEventStore((state) => (state.threadId === threadId ? state.status : "idle"));
+	const realtimeLive = realtimeStatus === "live";
 
 	useEffect(() => {
 		if (!threadId) return;
@@ -60,14 +76,14 @@ export function ThreadPage() {
 		if (useChatStore.getState().threadId !== threadId) return true;
 		return refresh();
 	}, [threadId, detailStatus, refresh]);
-	usePolling(poll, { intervalMs: 2000, runImmediately: false });
+	usePolling(poll, { intervalMs: realtimeLive ? 30_000 : 2_000, runImmediately: false });
 	const pollA2A = useCallback(async () => {
 		if (!threadId || detailStatus === "not_found") return true;
 		if (detail?.deletedAt !== null && detail?.deletedAt !== undefined) return true;
 		if (useA2AStore.getState().threadId !== threadId) return true;
 		return refreshA2A();
 	}, [threadId, detailStatus, detail?.deletedAt, refreshA2A]);
-	usePolling(pollA2A, { intervalMs: 2000, runImmediately: false });
+	usePolling(pollA2A, { intervalMs: realtimeLive ? 30_000 : 2_000, runImmediately: false });
 
 	if (!threadId) {
 		return (
@@ -80,7 +96,7 @@ export function ThreadPage() {
 		);
 	}
 
-	const thread = detail?.id === threadId ? detail : listThread;
+	const thread = resolvedThread;
 	if (!thread && detailStatus === "not_found") {
 		return (
 			<section className="st-empty-panel">
@@ -123,6 +139,11 @@ export function ThreadPage() {
 				</div>
 			</header>
 			{deleted ? <p className="st-thread-deleted">这个对话已删除，历史只读。</p> : null}
+			{realtimeStatus === "fallback" ? (
+				<p className="st-realtime-note" role="status">
+					实时更新不可用，正在使用轮询。
+				</p>
+			) : null}
 			<MessageList
 				thread={thread}
 				messages={chatMatches ? messages : []}
