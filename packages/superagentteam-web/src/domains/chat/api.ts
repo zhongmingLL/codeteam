@@ -42,6 +42,7 @@ export interface SendMessageInput {
 	threadId: string;
 	content: string;
 	idempotencyKey: string;
+	targets?: string[];
 }
 
 export interface SendMessageReceipt {

@@ -3,6 +3,9 @@ import { Link, useParams } from "react-router-dom";
 
 import { Composer } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
+import { QueueStrip } from "@/components/a2a/QueueStrip";
+import { useA2AStore } from "@/domains/a2a/store";
+import { useAgentStore } from "@/domains/agent/store";
 import { useChatStore } from "@/domains/chat/store";
 import { useThreadStore } from "@/domains/thread/store";
 import { usePolling } from "@/lib/polling";
@@ -29,13 +32,25 @@ export function ThreadPage() {
 	const refresh = useChatStore((state) => state.refresh);
 	const send = useChatStore((state) => state.send);
 	const reset = useChatStore((state) => state.reset);
+	const a2aThreadId = useA2AStore((state) => state.threadId);
+	const a2aQueue = useA2AStore((state) => state.queue);
+	const a2aLive = useA2AStore((state) => state.live);
+	const a2aCap = useA2AStore((state) => state.cap);
+	const loadA2A = useA2AStore((state) => state.load);
+	const refreshA2A = useA2AStore((state) => state.refresh);
+	const resetA2A = useA2AStore((state) => state.reset);
+	const agents = useAgentStore((state) => state.agents);
 
 	useEffect(() => {
 		if (!threadId) return;
 		void loadDetail(threadId);
 		void loadLatest(threadId);
-		return () => reset();
-	}, [threadId, loadDetail, loadLatest, reset]);
+		void loadA2A(threadId);
+		return () => {
+			reset();
+			resetA2A();
+		};
+	}, [threadId, loadDetail, loadLatest, loadA2A, reset, resetA2A]);
 
 	const poll = useCallback(async () => {
 		if (!threadId || detailStatus === "not_found") return true;
@@ -43,6 +58,13 @@ export function ThreadPage() {
 		return refresh();
 	}, [threadId, detailStatus, refresh]);
 	usePolling(poll, { intervalMs: 2000, runImmediately: false });
+	const pollA2A = useCallback(async () => {
+		if (!threadId || detailStatus === "not_found") return true;
+		if (detail?.deletedAt !== null && detail?.deletedAt !== undefined) return true;
+		if (useA2AStore.getState().threadId !== threadId) return true;
+		return refreshA2A();
+	}, [threadId, detailStatus, detail?.deletedAt, refreshA2A]);
+	usePolling(pollA2A, { intervalMs: 2000, runImmediately: false });
 
 	if (!threadId) {
 		return (
@@ -86,6 +108,7 @@ export function ThreadPage() {
 	}
 
 	const deleted = thread.deletedAt !== null && thread.deletedAt !== undefined;
+	const a2aMatches = a2aThreadId === threadId;
 	return (
 		<section className="st-thread-page" aria-busy={chatStatus === "loading"}>
 			<header className="st-thread-header">
@@ -108,12 +131,18 @@ export function ThreadPage() {
 				onLoadOlder={() => void loadOlder()}
 				onRetry={() => void refresh()}
 				onResumeLatest={() => void resumeLatest()}
+				liveInvocations={a2aMatches ? a2aLive : []}
+				agentLabel={(agentId) => agents.find((agent) => agent.id === agentId)?.displayName ?? agentId}
 			/>
+			<QueueStrip queue={a2aMatches ? a2aQueue : []} agents={agents} cap={a2aCap} />
 			<Composer
 				key={threadId}
 				threadId={threadId}
-				onSend={async (content, idempotencyKey) => {
-					await send(content, idempotencyKey);
+				agents={agents}
+				onSend={async (content, idempotencyKey, targetAgentIds) => {
+					if (targetAgentIds) await send(content, idempotencyKey, targetAgentIds);
+					else await send(content, idempotencyKey);
+					await refreshA2A();
 				}}
 				disabled={deleted}
 				disabledReason="这个对话已删除，不能再发送消息。"

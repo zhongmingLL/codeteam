@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
+import type { LiveInvocationView } from "@/domains/a2a/api";
 import type { MessageView } from "@/domains/chat/api";
 import type { ThreadView } from "@/domains/thread/api";
-import { formatRelative } from "@/lib/time";
+import { formatElapsed, formatRelative } from "@/lib/time";
 import { MessageContent } from "./MessageContent";
 
 export interface PendingUserMessageView {
@@ -19,6 +20,8 @@ export interface MessageListProps {
 	loadingOlder: boolean;
 	followingLatest: boolean;
 	pendingUserMessages: PendingUserMessageView[];
+	liveInvocations?: LiveInvocationView[];
+	agentLabel?: (agentId: string) => string;
 	onLoadOlder: () => void;
 	onRetry: () => void;
 	onResumeLatest: () => void;
@@ -58,6 +61,8 @@ export function MessageList({
 	loadingOlder,
 	followingLatest,
 	pendingUserMessages,
+	liveInvocations = [],
+	agentLabel,
 	onLoadOlder,
 	onRetry,
 	onResumeLatest,
@@ -131,6 +136,17 @@ export function MessageList({
 					<MessageContent content={pending.content} />
 				</article>
 			))}
+			{liveInvocations
+				.filter((invocation) => invocation.responseStatus === "missing")
+				.map((invocation) => (
+					<article className="st-message is-agent is-live" key={invocation.turnExecutionId}>
+						<div className="st-message-meta">
+							<span className="st-message-sender">{agentLabel?.(invocation.agentId) ?? invocation.agentId}</span>
+							<span>已受理</span>
+						</div>
+						<p className="st-message-processing">正在处理… · {formatElapsed(invocation.startedAt)}</p>
+					</article>
+				))}
 			{showLatest ? (
 				<div className="st-latest-anchor">
 					<button type="button" className="st-button st-button-secondary" onClick={scrollToLatest}>

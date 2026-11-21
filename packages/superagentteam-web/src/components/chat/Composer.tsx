@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
+import type { AgentView } from "@/domains/agent/api";
+
 export interface ComposerProps {
 	threadId: string;
-	onSend: (content: string, idempotencyKey: string) => Promise<void>;
+	onSend: (content: string, idempotencyKey: string, targetAgentIds?: string[]) => Promise<void>;
+	agents?: AgentView[];
 	disabled?: boolean;
 	disabledReason?: string;
 }
@@ -28,13 +31,16 @@ function writeDraft(threadId: string, content: string): void {
 	}
 }
 
-export function Composer({ threadId, onSend, disabled = false, disabledReason }: ComposerProps) {
+export function Composer({ threadId, onSend, agents = [], disabled = false, disabledReason }: ComposerProps) {
 	const [content, setContent] = useState(() => readDraft(threadId));
 	const [sending, setSending] = useState(false);
 	const [error, setError] = useState<string | undefined>();
+	const [targetAgentId, setTargetAgentId] = useState("");
 	const idempotencyKey = useRef<string | null>(null);
 	const keyedContent = useRef<string | null>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const enabledAgents = agents.filter((agent) => agent.enabled);
+	const selectedTarget = enabledAgents.some((agent) => agent.id === targetAgentId) ? targetAgentId : "";
 
 	useEffect(() => {
 		writeDraft(threadId, content);
@@ -59,7 +65,8 @@ export function Composer({ threadId, onSend, disabled = false, disabledReason }:
 		setSending(true);
 		setError(undefined);
 		try {
-			await onSend(text, idempotencyKey.current);
+			if (selectedTarget === "") await onSend(text, idempotencyKey.current);
+			else await onSend(text, idempotencyKey.current, [selectedTarget]);
 			idempotencyKey.current = null;
 			keyedContent.current = null;
 			setContent("");
@@ -86,6 +93,25 @@ export function Composer({ threadId, onSend, disabled = false, disabledReason }:
 					{error}
 				</p>
 			) : null}
+			{enabledAgents.length > 0 ? (
+				<div className="st-composer-target">
+					<label htmlFor={`st-target-${threadId}`}>发给</label>
+					<select
+						id={`st-target-${threadId}`}
+						aria-label="收件人"
+						value={selectedTarget}
+						onChange={(event) => setTargetAgentId(event.target.value)}
+						disabled={sending}
+					>
+						<option value="">自动</option>
+						{enabledAgents.map((agent) => (
+							<option value={agent.id} key={agent.id}>
+								{agent.displayName}
+							</option>
+						))}
+					</select>
+				</div>
+			) : null}
 			<div className="st-composer-row">
 				<textarea
 					ref={textareaRef}
@@ -111,7 +137,10 @@ export function Composer({ threadId, onSend, disabled = false, disabledReason }:
 					{sending ? "发送中…" : "发送"}
 				</button>
 			</div>
-			<p className="st-composer-hint">发给：自动 · Enter 发送 · Shift+Enter 换行</p>
+			<p className="st-composer-hint">
+				发给：{selectedTarget === "" ? "自动" : (enabledAgents.find((agent) => agent.id === selectedTarget)?.displayName ?? "自动")} ·
+				Enter 发送 · Shift+Enter 换行
+			</p>
 		</div>
 	);
 }

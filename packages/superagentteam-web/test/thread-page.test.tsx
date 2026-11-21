@@ -3,8 +3,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ThreadPage } from "@/app/ThreadPage";
+import { useA2AStore } from "@/domains/a2a/store";
 import type { MessageView } from "@/domains/chat/api";
 import { useChatStore } from "@/domains/chat/store";
+import { useAgentStore } from "@/domains/agent/store";
 import type { ThreadView } from "@/domains/thread/api";
 import { useThreadStore } from "@/domains/thread/store";
 
@@ -36,6 +38,8 @@ function message(overrides: Partial<MessageView> = {}): MessageView {
 
 afterEach(() => {
 	useChatStore.getState().reset();
+	useA2AStore.getState().reset();
+	useAgentStore.setState({ agents: [], status: "idle", error: undefined });
 	useThreadStore.setState({
 		threads: [],
 		status: "ready",
@@ -50,6 +54,11 @@ describe("thread page", () => {
 	it("loads the thread detail and message window, then renders the composer", async () => {
 		const loadDetail = vi.fn(async () => true);
 		const loadLatest = vi.fn(async () => true);
+		useA2AStore.setState({
+			load: vi.fn(async () => true),
+			refresh: vi.fn(async () => true),
+			reset: vi.fn(),
+		});
 		useThreadStore.setState({ threads: [thread], status: "ready", loadDetail, detailStatus: "idle" });
 		useChatStore.setState({
 			threadId: thread.id,
@@ -76,6 +85,11 @@ describe("thread page", () => {
 
 	it("sends from the composer through the chat store", async () => {
 		const send = vi.fn(async () => ({ status: "queued" as const, userMessageId: "msg:2" }));
+		useA2AStore.setState({
+			load: vi.fn(async () => true),
+			refresh: vi.fn(async () => true),
+			reset: vi.fn(),
+		});
 		useThreadStore.setState({ threads: [thread], status: "ready", detailStatus: "ready", detail: thread });
 		useChatStore.setState({
 			threadId: thread.id,
