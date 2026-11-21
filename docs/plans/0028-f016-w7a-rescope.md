@@ -1,7 +1,7 @@
 ---
 title: "F016 — W7a re-scope after A2A runtime v1"
 doc_kind: plan
-status: draft-for-review
+status: accepted
 created: 2026-11-21
 updated: 2026-11-21
 owner: "宪宪 (DeepSeek Flash)"
@@ -56,7 +56,7 @@ related_features: [codeteam/F016, codeteam/F018]
 
 | 选项 | 内容 | 评价 |
 |---|---|---|
-| **A（建议）** | backlog/approval/workflow SOP 返回诚实的空读或 501；UI 显式降级 | 不伪造、不把 legacy 带进 A2A；W7a-M1 最小 |
+| **A（建议，operator 2026-11-21 已签）** | backlog/approval/workflow SOP 返回诚实的空读或 501；Hub 先隐藏这些面板 | 不伪造、不把 legacy 带进 A2A；当前阶段不需要 legacy 视图 |
 | B | 显式 legacy 只读：从 `control.db` 读，标注 frozen/read-only | 需要额外授权与清晰边界；不能写 |
 | C | 把 backlog/approval/workflow SOP 重新实现成 A2A 功能 | **不做**；这是新 feature，不是 F016 re-scope |
 
@@ -86,7 +86,8 @@ related_features: [codeteam/F016, codeteam/F018]
 ### 3.2 Legacy 面（本轮不实现）
 
 - backlog items / workflow SOP / approval pending/settled/decide / tasks /
-  artifacts / labels / workspace：返回诚实的空读或 501，并在 Hub 显式隐藏或降级。
+  artifacts / labels / workspace：返回诚实的空读或 501，并在 Hub 先隐藏
+  （operator 2026-11-21）；当前阶段不接 legacy 视图。
 - 不读 `control.db` 作为 A2A 面的数据源；legacy 只读若要做，必须单独授权并
   标注 frozen。
 
@@ -159,15 +160,15 @@ related_features: [codeteam/F016, codeteam/F018]
 - SSE/replay log、Hub v2、MCP ingress、Console M0；
 - 任何新的 task-first/legacy 表读写。
 
-## 9. 待拍板
+## 9. 已拍板（2026-11-21）
 
-请 operator 对以下三项给出选择：
+Operator 签字：
 
-- **D1**：A 暂缓 wait（建议）/ B 纯 A2A wait / C 恢复旧 wait（不做）
-- **D2**：A 诚实空读/501（建议）/ B legacy 只读 / C 重造成 A2A（不做）
-- **D3**：A F016c-M1 先（建议）/ B F016b 先 / C 只做 hardening
+- **D1=A**：暂缓 F016b wait；等真实 caller 再立纯 A2A wait。
+- **D2=A**：legacy 面板先隐藏；当前阶段不需要 legacy 只读或重造。
+- **D3=A**：F016c-M1 先做，随后 M2。
 
-签字后，F016c-M1 另开执行 plan；F016b 保持 deferred，直到出现真实 caller。
+F016c-M1 另开执行 plan；F016b 保持 deferred，直到出现真实 caller。
 
 ## References
 

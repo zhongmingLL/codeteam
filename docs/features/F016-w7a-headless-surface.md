@@ -23,7 +23,8 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > F016b/F016c 的旧 wait/custody 与 backlog/approval Hub 面不再按原样成立。
 > 当前提案见 `docs/plans/0028-f016-w7a-rescope.md`：建议 F016c-M1 先做，
 > F016b wait 暂缓到真实 caller；legacy 面诚实空读/501，不在本轮补新能力。
-> 在 operator 对 D1/D2/D3 签字前不写产品代码。
+> operator 2026-11-21 已签字 D1=A / D2=A / D3=A：F016c-M1 先做，
+> F016b defer；legacy 面板先隐藏；F016c-M1 另开执行 plan。
 
 ## Why
 
