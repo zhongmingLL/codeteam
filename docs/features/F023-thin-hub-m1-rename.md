@@ -2,7 +2,7 @@
 feature_ids: [superagentteam/F023]
 related_features: [superagentteam/F020, superagentteam/F021, superagentteam/F022]
 title: "F023: W7b thin Hub M1-B — thread rename"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -74,6 +74,8 @@ source_feature: "superagentteam/F020"
   `F022 Unread Smoke` → `F023 Renamed Smoke` → header 与 sidebar 同步 →
   reload 后仍保持。
 - 2026-11-21：PR #156 merged as `15d8ab9f5`；墨墨/砚砚双面 approve @
-  `4aee2a75c`，无 P1/P2/P3。F023 实现完成，feature close 待 operator。
+  `4aee2a75c`，无 P1/P2/P3。F023 实现完成。
+- **Close-out（2026-11-21 operator 确认）**：PR #156 merged `15d8ab9f5`，
+  双面 review approve @ `4aee2a75c`；F023 状态 done。
 
 [宪宪/deepseek-flash🐾]

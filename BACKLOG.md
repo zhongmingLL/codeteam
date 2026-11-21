@@ -28,14 +28,14 @@ created: 2026-10-25
 | F013 | W6c Observability / Trajectory | done | 宪宪 | [F013](docs/features/F013-w6c-observability-trajectory.md) |
 | F014 | W6b Eval / Outcome / Harness Eval | done | 宪宪 | [F014](docs/features/F014-w6b-eval-outcome-harness-eval.md) |
 | F015 | A2A E2E Foundation | done | 宪宪 | [F015](docs/features/F015-a2a-e2e-foundation.md) |
-| F016 | W7a headless surface + A2A ingress E2E | in_progress (F016a done; F016c-M1 S1–S5 delivered; F020 M0 closed; F016c-M2 S0–S4 merged: plan `ad18dad0`, S1 `7fe1c148`, S2 `00a9b0a2`, S3 `ed4fed04`, S4 `49b8114dd`; classic real-Hub E2E = optional compat track; F016b deferred; umbrella close pending operator) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
+| F016 | W7a headless surface + A2A ingress E2E | done (F016a done; F016c-M1 S1–S5 done; F020 M0 closed; F016c-M2 S0–S4 merged: plan `ad18dad0`, S1 `7fe1c148`, S2 `00a9b0a2`, S3 `ed4fed04`, S4 `49b8114dd`; F016b deferred by D1=A; classic real-Hub E2E = optional compat track; operator close 2026-11-21) | 宪宪 | [F016](docs/features/F016-w7a-headless-surface.md) |
 | F017 | A2A surface unification（post/cross-post + full A2A custody） | phase-a-archive (historical input; F018 owns A2A runtime v1) | 宪宪 | [F017](docs/features/F017-a2a-surface-unification.md) |
 | F018 | A2A runtime v1（AgentConfig config-as-code；Thread/InvocationRecord/TurnExecution；post/cross/multi_mention/thread_context；纯 A2A；code delivery 冻结） | done | 砚砚 | [F018](docs/features/F018-thread-first-runtime.md) |
 | F019 | SuperAgentTeam rename（platform/team/SOP 分层；`@superagentteam/*`；env/data/CLI/tool aliases；repo/branch last） | done (F019.5 alias cleanup complete) | 宪宪 | [F019](docs/features/F019-superagentteam-rename.md) |
 | F020 | W7b thin Hub M0（自建 A2A Hub，参考 clowder 设计；classic Hub 降为可选兼容客户端） | done (M0 H0–H5 merged: `46b0cd19`/`5ae478aa`/`cf653a86`/`f5a68989`/`f4ef2602`/`7467a027`; carry: M0.5 hardening, real-worker busy smoke, classic Hub compat track) | 宪宪 | [F020](docs/features/F020-thin-hub-m0.md) |
-| F021 | thin Hub M0.5 hardening（projectPath 校验、relogin 深链接、长 thread/busy live 证据） | in_progress (implementation merged `e478f5b9`; close pending operator) | 宪宪 | [F021](docs/features/F021-thin-hub-m05-hardening.md) |
-| F022 | W7b thin Hub M1-A — unread/read state（sidebar 未读、per-thread read cursor、跨 tab 收敛） | in_progress (implementation merged `a6ae8e40f`; dual review approve; close pending operator) | 宪宪 | [F022](docs/features/F022-thin-hub-m1-unread.md) |
-| F023 | W7b thin Hub M1-B — thread rename（header inline edit、titleSource=user、sidebar 同步） | in_progress (implementation merged `15d8ab9f5`; dual review approve; close pending operator) | 宪宪 | [F023](docs/features/F023-thin-hub-m1-rename.md) |
+| F021 | thin Hub M0.5 hardening（projectPath 校验、relogin 深链接、长 thread/busy live 证据） | done (implementation merged `e478f5b9`; dual review approve; operator close 2026-11-21) | 宪宪 | [F021](docs/features/F021-thin-hub-m05-hardening.md) |
+| F022 | W7b thin Hub M1-A — unread/read state（sidebar 未读、per-thread read cursor、跨 tab 收敛） | done (implementation merged `a6ae8e40f`; dual review approve incl. P3 delta `31d982da2`; operator close 2026-11-21) | 宪宪 | [F022](docs/features/F022-thin-hub-m1-unread.md) |
+| F023 | W7b thin Hub M1-B — thread rename（header inline edit、titleSource=user、sidebar 同步） | done (implementation merged `15d8ab9f5`; dual review approve @ `4aee2a75c`; operator close 2026-11-21) | 宪宪 | [F023](docs/features/F023-thin-hub-m1-rename.md) |
 
 > Naming (F019): new and active docs use `superagentteam/Fxxx`; F001–F018 retain
 > `codeteam/Fxxx` for history. Package/env/data/CLI/tool names use `superagentteam*`

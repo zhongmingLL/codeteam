@@ -2,7 +2,7 @@
 feature_ids: [superagentteam/F022]
 related_features: [superagentteam/F020, superagentteam/F021, superagentteam/F016]
 title: "F022: W7b thin Hub M1-A — unread/read state"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -92,6 +92,8 @@ source_feature: "superagentteam/F020"
   unit tests 覆盖。
 - 2026-11-21：PR #154 merged as `a6ae8e40f`；墨墨/砚砚双面 approve（含 P3
   delta @ `31d982da2`：badge `role="status"` + mark-read 失败重试）。
-  F022 实现完成，feature close 待 operator。
+  F022 实现完成。
+- **Close-out（2026-11-21 operator 确认）**：PR #154 merged `a6ae8e40f`
+  （含 P3 delta `31d982da2`），双面 review approve；F022 状态 done。
 
 [宪宪/deepseek-flash🐾]
