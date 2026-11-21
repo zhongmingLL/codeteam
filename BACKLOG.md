@@ -32,7 +32,7 @@ created: 2026-10-25
 | F017 | A2A surface unification（post/cross-post + full A2A custody） | phase-a-archive (historical input; F018 owns A2A runtime v1) | 宪宪 | [F017](docs/features/F017-a2a-surface-unification.md) |
 | F018 | A2A runtime v1（AgentConfig config-as-code；Thread/InvocationRecord/TurnExecution；post/cross/multi_mention/thread_context；纯 A2A；code delivery 冻结） | done | 砚砚 | [F018](docs/features/F018-thread-first-runtime.md) |
 | F019 | SuperAgentTeam rename（platform/team/SOP 分层；`@superagentteam/*`；env/data/CLI/tool aliases；repo/branch last） | done (F019.5 alias cleanup complete) | 宪宪 | [F019](docs/features/F019-superagentteam-rename.md) |
-| F020 | W7b thin Hub M0（自建 A2A Hub，参考 clowder 设计；classic Hub 降为可选兼容客户端） | in_progress (H0 merged `46b0cd19`; H1 shell/sidebar/threads in review) | 宪宪 | [F020](docs/features/F020-thin-hub-m0.md) |
+| F020 | W7b thin Hub M0（自建 A2A Hub，参考 clowder 设计；classic Hub 降为可选兼容客户端） | in_progress (H0 merged `46b0cd19`; H1 merged `5ae478aa`; H2 chat/composer in review) | 宪宪 | [F020](docs/features/F020-thin-hub-m0.md) |
 
 > Naming (F019): new and active docs use `superagentteam/Fxxx`; F001–F018 retain
 > `codeteam/Fxxx` for history. Package/env/data/CLI/tool names use `superagentteam*`

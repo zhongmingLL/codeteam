@@ -315,17 +315,31 @@ textarea {
 }
 
 .st-thread-page {
+	height: 100%;
 	max-width: 720px;
 	margin: 0 auto;
 	display: flex;
 	flex-direction: column;
-	gap: 24px;
+	gap: 14px;
+	min-height: 0;
 }
 
 .st-thread-header {
+	flex: none;
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
+}
+
+.st-thread-deleted {
+	flex: none;
+	margin: 0;
+	padding: 8px 10px;
+	border: 1px solid var(--st-hairline);
+	border-radius: var(--st-radius-md);
+	background: var(--st-surface-2);
+	color: var(--st-muted);
+	font-size: 12px;
 }
 
 .st-thread-header-meta {
@@ -354,6 +368,205 @@ textarea {
 	padding-top: 48px;
 	text-align: center;
 	color: var(--st-muted);
+}
+
+.st-thread-empty p {
+	margin: 0;
+}
+
+.st-thread-empty-hint {
+	margin-top: 6px !important;
+	font-size: 12px;
+}
+
+.st-message-scroll {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 2px 2px 14px;
+	scrollbar-gutter: stable;
+}
+
+.st-inline-error {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 8px 10px;
+	border: 1px solid var(--st-hairline);
+	border-radius: var(--st-radius-md);
+	background: var(--st-surface-2);
+	color: var(--st-danger);
+	font-size: 12px;
+}
+
+.st-load-older,
+.st-latest-anchor {
+	display: flex;
+	justify-content: center;
+	padding: 4px 0;
+}
+
+.st-message {
+	max-width: 86%;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	padding: 9px 12px;
+	border: 1px solid var(--st-hairline);
+	border-radius: var(--st-radius-lg);
+	background: var(--st-canvas);
+}
+
+.st-message.is-agent {
+	align-self: flex-start;
+	border-top-left-radius: var(--st-radius-sm);
+}
+
+.st-message.is-user {
+	align-self: flex-end;
+	background: var(--st-primary-soft);
+	border-top-right-radius: var(--st-radius-sm);
+}
+
+.st-message.is-system {
+	align-self: center;
+	max-width: 100%;
+	background: transparent;
+	border-color: transparent;
+	color: var(--st-muted);
+	text-align: center;
+	font-size: 12px;
+}
+
+.st-message.is-pending {
+	opacity: 0.72;
+	border-style: dashed;
+}
+
+.st-message-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--st-muted);
+	font-size: 11px;
+}
+
+.st-message.is-user .st-message-meta {
+	justify-content: flex-end;
+}
+
+.st-message-sender {
+	color: var(--st-ink);
+	font-weight: 500;
+}
+
+.st-message-content {
+	overflow-wrap: anywhere;
+	color: var(--st-body);
+	font-size: 14px;
+	line-height: 1.6;
+	white-space: pre-wrap;
+}
+
+.st-message-text {
+	white-space: pre-wrap;
+}
+
+.st-code-block {
+	margin: 6px 0;
+	padding: 10px 12px;
+	overflow-x: auto;
+	border: 1px solid var(--st-hairline);
+	border-radius: var(--st-radius-md);
+	background: var(--st-surface-3);
+	color: var(--st-ink);
+	font-family: var(--st-font-mono);
+	font-size: 12.5px;
+	line-height: 1.55;
+	white-space: pre;
+}
+
+.st-code-block code {
+	font-family: inherit;
+	white-space: pre;
+}
+
+.st-message-processing {
+	margin: 0;
+	color: var(--st-muted);
+	font-size: 12px;
+	animation: st-pulse 1.4s ease-in-out infinite;
+}
+
+.st-composer {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding-top: 12px;
+	border-top: 1px solid var(--st-hairline);
+}
+
+.st-composer.is-disabled {
+	padding: 12px 0 2px;
+	color: var(--st-muted);
+}
+
+.st-composer-note {
+	margin: 0;
+	font-size: 12px;
+}
+
+.st-composer-row {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+}
+
+.st-composer textarea {
+	flex: 1;
+	min-height: 40px;
+	max-height: 200px;
+	padding: 9px 11px;
+	border: 1px solid var(--st-hairline-strong);
+	border-radius: var(--st-radius-md);
+	background: var(--st-canvas);
+	color: var(--st-ink);
+	line-height: 1.5;
+	outline: none;
+	resize: none;
+	overflow-y: auto;
+}
+
+.st-composer textarea:focus-visible {
+	border-color: var(--st-primary);
+	outline: 2px solid var(--st-focus);
+	outline-offset: 2px;
+}
+
+.st-send-button {
+	flex: none;
+	min-width: 64px;
+}
+
+.st-composer-hint {
+	margin: 0;
+	color: var(--st-muted);
+	font-size: 11px;
+}
+
+@keyframes st-pulse {
+	0%,
+	100% {
+		opacity: 0.55;
+	}
+	50% {
+		opacity: 1;
+	}
 }
 
 .st-dialog-backdrop {
@@ -451,10 +664,22 @@ textarea {
 	.st-content {
 		padding: 20px;
 	}
+
+	.st-message {
+		max-width: 94%;
+	}
+
+	.st-composer-hint {
+		display: none;
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {
 	.st-sidebar {
 		transition: none;
+	}
+
+	.st-message-processing {
+		animation: none;
 	}
 }

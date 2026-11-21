@@ -25,6 +25,7 @@ describe("thread store", () => {
 			list: vi.fn(async () => ({
 				threads: [thread(), thread({ id: "thread:2", title: "Beta", projectPath: "/tmp/b" })],
 			})),
+			get: vi.fn(),
 			create: vi.fn(),
 		};
 		const store = createThreadStore({ api });
@@ -43,6 +44,7 @@ describe("thread store", () => {
 		const created = thread({ id: "thread:new", title: "New" });
 		const api = {
 			list: vi.fn(async () => ({ threads: [thread()] })),
+			get: vi.fn(),
 			create: vi.fn(async () => created),
 		};
 		const store = createThreadStore({ api });
@@ -56,6 +58,7 @@ describe("thread store", () => {
 	it("keeps the error retryable when loading fails", async () => {
 		const api = {
 			list: vi.fn(async () => Promise.reject(new Error("daemon down"))),
+			get: vi.fn(),
 			create: vi.fn(),
 		};
 		const store = createThreadStore({ api });
