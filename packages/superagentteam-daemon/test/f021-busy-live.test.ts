@@ -174,6 +174,7 @@ describe("F021 real worker busy live state", () => {
 
 		try {
 			await readUntil(reader, "event: ready");
+			const startedAt = performance.now();
 			const post = await fetch(`${base}/api/messages`, {
 				method: "POST",
 				headers,
@@ -186,7 +187,9 @@ describe("F021 real worker busy live state", () => {
 			});
 			expect(post.status).toBe(202);
 			const change = await readUntil(reader, '"live"');
+			const elapsed = performance.now() - startedAt;
 			expect(change).toContain('"live"');
+			expect(elapsed).toBeLessThan(500);
 
 			const busy = await waitFor(async () => {
 				const response = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}/live`, {

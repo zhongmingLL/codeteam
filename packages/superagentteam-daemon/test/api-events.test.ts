@@ -121,6 +121,7 @@ describe("F016c-M2 S1 SSE invalidation", () => {
 		try {
 			expect(await readUntil(reader, "event: ready")).toContain(threadId);
 
+			const startedAt = performance.now();
 			const post = await fetch(`${base}/api/messages`, {
 				method: "POST",
 				headers: {
@@ -139,7 +140,9 @@ describe("F016c-M2 S1 SSE invalidation", () => {
 			expect(post.status).toBe(202);
 
 			const change = await readUntil(reader, "event: change");
+			const elapsed = performance.now() - startedAt;
 			expect(change).toContain('"topics":["messages","queue","thread"]');
+			expect(elapsed).toBeLessThan(500);
 		} finally {
 			await reader.cancel();
 		}
