@@ -2,7 +2,7 @@
 feature_ids: [codeteam/F016]
 related_features: [codeteam/F015]
 title: "F016: W7a headless surface + A2A ingress E2E"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -156,5 +156,12 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
 - 调研报告：`docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md`
   （PR #77，merge `aba19b7e7`；砚砚 auth/custody、烁烁 dispatch semantics 双审）。
 - F015 基线：`docs/features/F015-a2a-e2e-foundation.md`。
+
+## Close-out
+
+- 2026-11-21 operator 确认 close：F016a done；F016c-M1 S1–S5 done；
+  F016c-M2 S0–S4 merged（S4 `49b8114dd`）；F016b 按 D1=A defer；
+  classic Hub compat 为可选轨道（独立毛线球）。
+- F016 umbrella 状态 done；上述 carries 保留，不冒充已交付。
 
 [宪宪/deepseek-flash🐾]

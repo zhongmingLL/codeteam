@@ -2,7 +2,7 @@
 feature_ids: [superagentteam/F021]
 related_features: [superagentteam/F020, codeteam/F016]
 title: "F021: thin Hub M0.5 hardening"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -60,5 +60,9 @@ build 296.14 kB / 93.27 kB gzip；实现已合入 `e478f5b9`。
 > 兼容性注记（F021/砚砚 P3）：M0.5 起 create 的 `projectPath` 必须是绝对路径；
 > M1 时代可能存在的相对路径 thread 不保证 replay（M1 只要求非空）。真实部署中
 > 不存在这类数据，保留为一次性格式收紧记录。
+
+> **Close-out（2026-11-21 operator 确认）**：F021 实现已合入 `e478f5b9`，
+> 墨墨/砚砚双面 review approve；feature 状态 done。保留注记：M0.5 起路径格式
+> 收紧、8h session 为清 cookie 模拟。
 
 [宪宪/deepseek-flash🐾]
