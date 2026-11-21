@@ -38,6 +38,9 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > M2-S2 Web EventSource/refetch/fallback 已实现，待 review。
 > M2-S3 验收记录：`docs/reports/2026-11-21-f016c-m2-s3-acceptance.md`
 > （SSE 延迟 <500ms 断言、static/Vite proxy、fallback/polling/reconnect 双向证据）。
+> M2-S4 canonical rich JSON + compat 边界记录：
+> `docs/reports/2026-11-21-f016c-m2-compat-boundary.md`。F016c-M2 S0–S4
+> 技术交付完成；F016b 按 D1=A defer，classic Hub 为可选 compat 轨道。
 > F016b wait 仍未交付。
 
 ## Why

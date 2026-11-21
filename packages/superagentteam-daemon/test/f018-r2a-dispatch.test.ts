@@ -234,6 +234,38 @@ describe("OperatorMessageIngress (0007 §3.0)", () => {
 		).toThrowError(/ingress_message_id_conflict/);
 	});
 
+	it("treats semantically equal rich payloads with different key order as replay", () => {
+		const w = makeWorld();
+		const first = w.ingress.submit({
+			threadId: "t1",
+			userId: "u1",
+			body: "rich @a1",
+			messageId: "m-rich",
+			extra: { rich: { v: 1, blocks: [{ id: "b1", kind: "card", v: 1, payload: { b: 2, a: 1 } }] } },
+			now: 10,
+		});
+		const replay = w.ingress.submit({
+			threadId: "t1",
+			userId: "u1",
+			body: "rich @a1",
+			messageId: "m-rich",
+			extra: { rich: { blocks: [{ payload: { a: 1, b: 2 }, v: 1, kind: "card", id: "b1" }], v: 1 } },
+			now: 20,
+		});
+		expect(replay.message.id).toBe(first.message.id);
+
+		expect(() =>
+			w.ingress.submit({
+				threadId: "t1",
+				userId: "u1",
+				body: "rich @a1",
+				messageId: "m-rich",
+				extra: { rich: { v: 1, blocks: [{ id: "b1", kind: "card", v: 1, payload: { a: 9 } }] } },
+				now: 30,
+			}),
+		).toThrowError(/ingress_message_id_conflict/);
+	});
+
 	it("queue_full rolls the message back (admission is atomic)", () => {
 		const w = makeWorld();
 		for (let i = 0; i < 5; i += 1) {
