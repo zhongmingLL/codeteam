@@ -18,6 +18,8 @@ fs.writeFileSync(process.env.SPAWN_CONTRACT_FILE, JSON.stringify({
   cwd: process.cwd(),
   agentDir: process.env.PI_CODING_AGENT_DIR,
   workerId: process.env.SUPERAGENTTEAM_WORKER_ID,
+  controlSocket: process.env.SUPERAGENTTEAM_CONTROL_SOCKET,
+  controlToken: process.env.SUPERAGENTTEAM_CONTROL_TOKEN,
 }));
 let buffer = "";
 const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
@@ -88,6 +90,7 @@ describe("F018 R3-d real worker spawn surface", () => {
 			cliPath: stubPath,
 			sessionDir,
 			workerAgentDir,
+			controlSocketPath: "/tmp/superagentteam-a2a.sock",
 			env: { ...process.env, SPAWN_CONTRACT_FILE: contractFile },
 			offline: true,
 		});
@@ -96,6 +99,7 @@ describe("F018 R3-d real worker spawn surface", () => {
 			poolKey: { projectPath, accountRef: "main", provider: "openrouter", model: "model-1" },
 			session: makeSession(projectPath),
 			now: 1_000,
+			credentialToken: "ct1.test.secret",
 		});
 		try {
 			const contract = JSON.parse(readFileSync(contractFile, "utf8")) as {
@@ -103,10 +107,14 @@ describe("F018 R3-d real worker spawn surface", () => {
 				cwd: string;
 				agentDir: string;
 				workerId: string;
+				controlSocket: string;
+				controlToken: string;
 			};
 			expect(contract.cwd).toBe(projectPath);
 			expect(contract.agentDir).toBe(workerAgentDir);
 			expect(contract.workerId).toBe("worker-1");
+			expect(contract.controlSocket).toBe("/tmp/superagentteam-a2a.sock");
+			expect(contract.controlToken).toBe("ct1.test.secret");
 			expect(contract.argv).toEqual(
 				expect.arrayContaining([
 					"--mode",

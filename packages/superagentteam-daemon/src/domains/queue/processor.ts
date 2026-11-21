@@ -39,6 +39,8 @@ export interface PreparedDispatch {
 	agentSessionId: string;
 	responseMessageId: string;
 	claimId: string;
+	/** Child-TurnExecution capability for the worker's A2A control channel. */
+	credentialToken: string;
 }
 
 /**
@@ -299,7 +301,12 @@ export class QueueProcessor {
 	async processEntry(entry: QueueEntry, claimId: string, userId: string): Promise<ProcessEntryResult> {
 		const now = this.now();
 		const invocationId = `inv:${entry.threadId}:${entry.payload.sourceRecordId}`;
-		let phaseA: Array<{ agentId: string; turnExecutionId: string; attemptId: string }> = [];
+		let phaseA: Array<{
+			agentId: string;
+			turnExecutionId: string;
+			attemptId: string;
+			credentialToken?: string;
+		}> = [];
 		let startable: Array<Extract<PreflightTarget, { kind: "startable" }>> = [];
 		let invalid: Array<Extract<PreflightTarget, { kind: "invalid" }>> = [];
 		try {
@@ -561,7 +568,7 @@ export class QueueProcessor {
 							responseMessageId,
 							now,
 						});
-						this.deps.credentials.create({
+						const minted = this.deps.credentials.create({
 							turnExecutionId: prepared.turnExecutionId,
 							parentInvocationId: invocationId,
 							threadId: entry.threadId,
@@ -571,6 +578,8 @@ export class QueueProcessor {
 							allowedTools: [...A2A_CREDENTIAL_TOOL_NAMES],
 							now,
 						});
+						if (!minted.token) throw new Error("phase_b_credential_token_missing");
+						prepared.credentialToken = minted.token;
 						this.deps.drafts.create({
 							attemptId: prepared.attemptId,
 							turnExecutionId: prepared.turnExecutionId,
@@ -674,6 +683,7 @@ export class QueueProcessor {
 						agentSessionId: session.id,
 						responseMessageId: `resp:${prepared.turnExecutionId}`,
 						claimId,
+						credentialToken: prepared.credentialToken ?? "",
 					});
 				} catch {
 					// P1-2: provider-phase failure must NOT strand an appended

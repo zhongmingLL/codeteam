@@ -19,6 +19,7 @@ import { AgentSessionStore } from "../session/store.ts";
 import { ThreadStore } from "../thread/store.ts";
 import { WorkerPool, type WorkerSpawnPort } from "../worker/pool.ts";
 import { WorkerBindingStore, WorkerStore } from "../worker/store.ts";
+import { A2AControlServer } from "./control.ts";
 import { LoopGuardService } from "./loop-guard.ts";
 import { ThreadContextService } from "./thread-context.ts";
 import { A2AToolService } from "./tool-service.ts";
@@ -35,6 +36,8 @@ export interface A2ARuntimeDeps {
 	clock?: () => number;
 	processStartedAt?: number;
 	promptTimeoutMs?: number;
+	/** Enables the v1 worker A2A control channel when provided. */
+	controlSocketPath?: string;
 }
 
 export interface A2ARuntime {
@@ -49,12 +52,14 @@ export interface A2ARuntime {
 	threadContext: ThreadContextService;
 	multiMentionOrchestrator: MultiMentionOrchestrator;
 	loopGuard: LoopGuardService;
+	control: A2AControlServer | null;
 	records: InvocationRecordStore;
 	turns: TurnExecutionStore;
 	attempts: InvocationAttemptStore;
 	queue: QueueLedgerStore;
 	tracker: InvocationTracker;
 	workerStore: WorkerStore;
+	bindings: WorkerBindingStore;
 	pool: WorkerPool;
 	ingress: OperatorMessageIngress;
 	processor: QueueProcessor;
@@ -109,6 +114,19 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		loopGuard,
 		clock,
 	});
+	const control = deps.controlSocketPath
+		? new A2AControlServer({
+				socketPath: deps.controlSocketPath,
+				credentials,
+				turns,
+				workers: workerStore,
+				bindings: bindingStore,
+				a2aTools,
+				multiMention: multiMentionOrchestrator,
+				threadContext,
+				clock,
+			})
+		: null;
 	const runAgentTurn = new RunAgentTurn({
 		db,
 		assembler,
@@ -198,12 +216,14 @@ export function buildA2ARuntime(deps: A2ARuntimeDeps): A2ARuntime {
 		threadContext,
 		multiMentionOrchestrator,
 		loopGuard,
+		control,
 		records,
 		turns,
 		attempts,
 		queue,
 		tracker,
 		workerStore,
+		bindings: bindingStore,
 		pool,
 		ingress,
 		processor,

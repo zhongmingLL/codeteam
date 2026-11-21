@@ -89,7 +89,7 @@ export class RunAgentTurn implements DispatchTargetPort {
 		// leak the worker (port contract: release before any throw).
 		let handle: Awaited<ReturnType<WorkerPool["ensure"]>> | null = null;
 		try {
-			handle = await this.deps.pool.ensure(poolKey, session);
+			handle = await this.deps.pool.ensure(poolKey, session, prepared.credentialToken);
 			this.deps.attempts.bindWorker(prepared.attemptId, handle.workerId);
 
 			// Bind the pi session identity on first spawn (resume continuity).
