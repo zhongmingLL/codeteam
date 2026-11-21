@@ -80,6 +80,16 @@ source_feature: "superagentteam/F020"
 - 浏览器 smoke（隔离 daemon + Vite，seed failed invocation）：界面显示
   「回复失败」+「重试」→ 点击后「已重新排队」；DB 侧 invocation 变
   `queued` / `retry_count=1`，同一 queue entry 仍为 `queued`、target `a1`。
-- 状态：implementation complete，待双面 review。abandon/running cancel 不在本刀。
+- 2026-11-21：PR #159 merged as `fffc32685`；墨墨/砚砚双面 approve @
+  `e4ead3882`。状态：implementation merged，feature close 待 operator。
+  abandon/running cancel 仍不在本刀。
+
+## Known carry
+
+- **P3（墨墨）**：点击重试后 invocation 进入 running，若此时 reload，旧 failed
+  行的局部 `已重新排队` 动作态会复位，重试按钮短暂重现；点击会得到诚实的
+  `not_retryable` 409，不改数据。修法已明确：MessageList 用既有
+  `liveInvocations` 判定该 `parentInvocationId` 是否在跑，在跑时隐藏入口。
+  close 前补或作为 F024 close 的具名 carry，不阻塞合并。
 
 [宪宪/deepseek-flash🐾]
