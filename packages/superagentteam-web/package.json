@@ -1,0 +1,29 @@
+{
+	"name": "@superagentteam/web",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc -p tsconfig.json --noEmit && vite build",
+		"test": "vitest --run",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"dependencies": {
+		"@superagentteam/shared": "0.0.0",
+		"react": "19.3.1",
+		"react-dom": "19.3.1",
+		"react-router-dom": "7.18.6",
+		"zustand": "5.1.0"
+	},
+	"devDependencies": {
+		"@testing-library/jest-dom": "8.0.0",
+		"@testing-library/react": "16.3.3",
+		"@types/react": "19.3.0",
+		"@types/react-dom": "19.3.0",
+		"@vitejs/plugin-react": "6.3.0",
+		"jsdom": "31.0.1",
+		"vite": "8.0.16",
+		"vitest": "5.1.1"
+	}
+}

@@ -56,6 +56,7 @@ These checks prove the upstream build and tests. They do **not** prove the W0a a
 
 ## Downstream divergences
 
+- `packages/superagentteam-web/`: new downstream F020 thin Hub (React/Vite) that consumes the daemon headless API. Reason: W7b product UI is a first-party surface; it does not modify upstream files and does not import the pi kernel.
 - Root `AGENTS.md`: SuperAgentTeam project instructions. The pi `v1.4.0` `AGENTS.md` is preserved at `docs/upstream/pi-development-rules.md` and applies to pi package work. Reason: F302 treats an existing root `AGENTS.md` as the canonical project guide and skips generation; keeping pi rules at root would leave project-specific agent instructions unmaterialized.
 - `README.md`: added a SuperAgentTeam banner pointing to `SUPERAGENTTEAM.md`; the upstream Pi README body is unchanged. Reason: F019.1 requires the repository landing page to show the platform name without rewriting upstream documentation; the banner is the only downstream edit.
 - `.gitignore`: narrowed the upstream `plans/` rule to `/plans/` so `docs/plans/` is versioned as the project plan truth source; added local agent/tool state directories (`.cat-cafe/`, `.codex/`, `.gemini/`, `.kimi-code/`; `.claude/` was already ignored). Reason: a clean clone must contain the W0–W8 plans, while local agent state must never be committed.

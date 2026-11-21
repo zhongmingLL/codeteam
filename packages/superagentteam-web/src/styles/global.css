@@ -1,0 +1,94 @@
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	height: 100%;
+	margin: 0;
+}
+
+body {
+	background: var(--st-canvas);
+	color: var(--st-body);
+	font-family: var(--st-font-body);
+	font-size: 14px;
+	line-height: 1.55;
+	-webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea {
+	font: inherit;
+	color: inherit;
+}
+
+.st-splash,
+.st-relogin,
+.st-home {
+	min-height: 100%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 16px;
+	padding: 32px;
+	text-align: center;
+}
+
+.st-relogin {
+	background: var(--st-surface-1);
+}
+
+.st-relogin h1,
+.st-home h1 {
+	font-family: var(--st-font-display);
+	font-weight: 400;
+	font-size: 28px;
+	line-height: 1.2;
+	color: var(--st-ink);
+	margin: 0;
+}
+
+.st-relogin p,
+.st-home p {
+	max-width: 560px;
+	margin: 0;
+	color: var(--st-muted);
+}
+
+.st-relogin code {
+	font-family: var(--st-font-mono);
+	font-size: 13px;
+	background: var(--st-canvas);
+	border: 1px solid var(--st-hairline);
+	border-radius: var(--st-radius-md);
+	padding: 8px 12px;
+	color: var(--st-ink);
+}
+
+.st-button {
+	height: 32px;
+	padding: 0 12px;
+	border-radius: var(--st-radius-md);
+	border: 1px solid var(--st-hairline-strong);
+	background: var(--st-primary);
+	color: var(--st-on-primary);
+	cursor: pointer;
+}
+
+.st-button:hover {
+	background: var(--st-primary-active);
+}
+
+.st-button:focus-visible {
+	outline: 2px solid var(--st-focus);
+	outline-offset: 2px;
+}
+
+.st-error {
+	color: #c64545;
+	font-size: 13px;
+}

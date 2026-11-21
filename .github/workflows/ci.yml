@@ -131,7 +131,7 @@ jobs:
         if: needs.changes.outputs.mode == 'superagentteam'
         run: |
           node scripts/check-legacy-boundary.mjs
-          npm test --workspace @superagentteam/pi-adapter --workspace @superagentteam/skills --workspace @superagentteam/daemon
+          npm test --workspace @superagentteam/pi-adapter --workspace @superagentteam/skills --workspace @superagentteam/daemon --workspace @superagentteam/web
 
   supply-chain:
     runs-on: ubuntu-latest
