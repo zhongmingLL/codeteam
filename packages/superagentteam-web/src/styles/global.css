@@ -499,6 +499,42 @@ textarea {
 	gap: 8px;
 }
 
+.st-thread-title-row {
+	display: flex;
+	align-items: baseline;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.st-rename-form {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.st-rename-input {
+	height: 36px;
+	min-width: 240px;
+	max-width: 100%;
+	padding: 0 10px;
+	border: 1px solid var(--st-hairline-strong);
+	border-radius: var(--st-radius-md);
+	background: var(--st-canvas);
+	color: var(--st-ink);
+	outline: none;
+}
+
+.st-rename-input:focus-visible {
+	border-color: var(--st-primary);
+	box-shadow: 0 0 0 1px var(--st-primary);
+}
+
+.st-rename-actions {
+	display: flex;
+	gap: 6px;
+}
+
 .st-thread-deleted {
 	flex: none;
 	margin: 0;

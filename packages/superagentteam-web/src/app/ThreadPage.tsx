@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { Composer } from "@/components/chat/Composer";
@@ -49,6 +49,7 @@ export function ThreadPage() {
 	const resolvedThread = detail?.id === threadId ? detail : listThread;
 	const markRead = useThreadStore((state) => state.markRead);
 	const refreshThreads = useThreadStore((state) => state.refresh);
+	const rename = useThreadStore((state) => state.rename);
 	const chatMatches = chatThreadId === threadId;
 	const deleted = resolvedThread?.deletedAt !== null && resolvedThread?.deletedAt !== undefined;
 	const latestMessageId = chatMatches && messages.length > 0 ? messages[messages.length - 1]?.id : undefined;
@@ -57,6 +58,10 @@ export function ThreadPage() {
 	);
 	const openedThreadRef = useRef<string | null>(null);
 	const lastMarkedRef = useRef<{ threadId: string; messageId: string } | null>(null);
+	const [renaming, setRenaming] = useState(false);
+	const [titleDraft, setTitleDraft] = useState("");
+	const [renameBusy, setRenameBusy] = useState(false);
+	const [renameError, setRenameError] = useState<string | undefined>();
 
 	const handleEventRefresh = useCallback(
 		(topics: readonly ChangeTopic[]) => {
@@ -89,6 +94,11 @@ export function ThreadPage() {
 		document.addEventListener("visibilitychange", onChange);
 		return () => document.removeEventListener("visibilitychange", onChange);
 	}, []);
+
+	useEffect(() => {
+		setRenaming(false);
+		setRenameError(undefined);
+	}, [threadId]);
 
 	useEffect(() => {
 		if (!threadId || !chatMatches || chatStatus !== "ready" || deleted) return;
@@ -168,11 +178,78 @@ export function ThreadPage() {
 		return <p className="st-page-note">{detailStatus === "loading" || listStatus === "loading" ? "正在加载对话…" : "对话不存在"}</p>;
 	}
 
+	const startRename = (): void => {
+		setTitleDraft(thread.title ?? "");
+		setRenameError(undefined);
+		setRenaming(true);
+	};
+	const submitRename = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+		event.preventDefault();
+		const title = titleDraft.trim();
+		if (!title || renameBusy) return;
+		setRenameBusy(true);
+		setRenameError(undefined);
+		try {
+			await rename(thread.id, title);
+			setRenaming(false);
+		} catch (error) {
+			setRenameError(error instanceof Error ? error.message : "重命名失败");
+		} finally {
+			setRenameBusy(false);
+		}
+	};
 	const a2aMatches = a2aThreadId === threadId;
 	return (
 		<section className="st-thread-page" aria-busy={!chatMatches || chatStatus === "loading"}>
 			<header className="st-thread-header">
-				<h1>{thread.title ?? "未命名对话"}</h1>
+				{renaming ? (
+					<form className="st-rename-form" onSubmit={submitRename}>
+						<input
+							className="st-rename-input"
+							aria-label="对话名"
+							value={titleDraft}
+							onChange={(event) => setTitleDraft(event.target.value)}
+							onKeyDown={(event) => {
+								if (event.key === "Escape") setRenaming(false);
+							}}
+							maxLength={200}
+							autoFocus
+							disabled={renameBusy}
+						/>
+						<div className="st-rename-actions">
+							<button type="submit" className="st-button" disabled={renameBusy || !titleDraft.trim()}>
+								{renameBusy ? "保存中…" : "保存"}
+							</button>
+							<button
+								type="button"
+								className="st-button st-button-secondary"
+								onClick={() => setRenaming(false)}
+								disabled={renameBusy}
+							>
+								取消
+							</button>
+						</div>
+						{renameError ? (
+							<p className="st-error" role="alert">
+								{renameError}
+							</p>
+						) : null}
+					</form>
+				) : (
+					<div className="st-thread-title-row">
+						<h1>{thread.title ?? "未命名对话"}</h1>
+						{!deleted ? (
+							<button
+								type="button"
+								className="st-link-button"
+								onClick={startRename}
+								aria-label="重命名对话"
+							>
+								重命名
+							</button>
+						) : null}
+					</div>
+				)}
 				<div className="st-thread-header-meta">
 					<code title={thread.projectPath}>{thread.projectPath}</code>
 					<span>{thread.participants.length > 0 ? `${thread.participants.length} 位成员` : "还没有成员"}</span>

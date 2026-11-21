@@ -28,6 +28,7 @@ describe("thread store", () => {
 			get: vi.fn(),
 			create: vi.fn(),
 			markRead: vi.fn(),
+			rename: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 
@@ -48,6 +49,7 @@ describe("thread store", () => {
 			get: vi.fn(),
 			create: vi.fn(async () => created),
 			markRead: vi.fn(),
+			rename: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 		await store.getState().load();
@@ -63,6 +65,7 @@ describe("thread store", () => {
 			get: vi.fn(),
 			create: vi.fn(),
 			markRead: vi.fn(),
+			rename: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 
@@ -77,6 +80,7 @@ describe("thread store", () => {
 			get: vi.fn(),
 			create: vi.fn(),
 			markRead: vi.fn(async () => ({ threadId: "thread:1", unreadCount: 0 })),
+			rename: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 		await store.getState().load();
@@ -93,6 +97,7 @@ describe("thread store", () => {
 			get: vi.fn(),
 			create: vi.fn(),
 			markRead: vi.fn(async () => Promise.reject(new Error("daemon down"))),
+			rename: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 		await store.getState().load();
@@ -114,6 +119,7 @@ describe("thread store", () => {
 			get: vi.fn(),
 			create: vi.fn(),
 			markRead: vi.fn(async () => ({ threadId: "thread:1", unreadCount: 0 })),
+			rename: vi.fn(),
 		};
 		const store = createThreadStore({ api });
 		store.setState({ threads: [thread({ unreadCount: 2 })], status: "ready" });
@@ -124,5 +130,25 @@ describe("thread store", () => {
 		await refresh;
 
 		expect(store.getState().threads[0]?.unreadCount).toBe(0);
+	});
+
+	it("renames a thread in both list and detail", async () => {
+		const renamed = thread({ title: "Beta", titleSource: "user" });
+		const api = {
+			list: vi.fn(async () => ({ threads: [thread()] })),
+			get: vi.fn(),
+			create: vi.fn(),
+			markRead: vi.fn(),
+			rename: vi.fn(async () => renamed),
+		};
+		const store = createThreadStore({ api });
+		await store.getState().load();
+		store.setState({ detail: thread(), detailStatus: "ready" });
+
+		await store.getState().rename("thread:1", "Beta");
+
+		expect(api.rename).toHaveBeenCalledWith("thread:1", "Beta");
+		expect(store.getState().threads[0]?.title).toBe("Beta");
+		expect(store.getState().detail?.title).toBe("Beta");
 	});
 });

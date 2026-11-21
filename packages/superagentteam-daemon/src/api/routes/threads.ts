@@ -244,6 +244,52 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 		return true;
 	}
 
+	async function renameThread(
+		request: IncomingMessage,
+		response: ServerResponse,
+		context: ApiRouteContext,
+		rawThreadId: string,
+	): Promise<true> {
+		const csrf = request.headers["x-csrf-token"];
+		const csrfToken = Array.isArray(csrf) ? csrf[0] : csrf;
+		if (!requireCsrf(context.session, csrfToken)) return fail(response, 403, "csrf_failed", "invalid CSRF token");
+
+		let threadId: string;
+		try {
+			threadId = decodeURIComponent(rawThreadId);
+		} catch {
+			return fail(response, 400, "invalid_input", "thread id is not valid URL encoding");
+		}
+		const thread = threads.get(threadId);
+		if (!thread || (thread.deletedAt !== null && thread.deletedAt !== undefined)) {
+			return fail(response, 404, "thread_not_found", `thread ${threadId} not found`);
+		}
+		if (thread.createdBy !== context.session.userId) {
+			return fail(response, 403, "forbidden", `thread ${threadId} belongs to another user`);
+		}
+
+		let body: unknown;
+		try {
+			body = await readJsonBody(request);
+		} catch (error) {
+			if (error instanceof HttpError) return fail(response, error.status, error.code, error.message);
+			throw error;
+		}
+		if (body === undefined || typeof body !== "object" || body === null || Array.isArray(body)) {
+			return fail(response, 400, "invalid_input", "request body must be a JSON object");
+		}
+		const title = (body as Record<string, unknown>).title;
+		if (typeof title !== "string" || title.trim() === "") {
+			return fail(response, 400, "invalid_input", "title must be a non-empty string");
+		}
+
+		const updated = threads.updateTitle(threadId, title.trim(), "user", clock());
+		if (!updated) return fail(response, 404, "thread_not_found", `thread ${threadId} not found`);
+		options.changeBus?.publish(threadId, ["thread"]);
+		sendJson(response, 200, toView(updated, threads.unreadCount(context.session.userId, threadId)));
+		return true;
+	}
+
 	async function handle(
 		request: IncomingMessage,
 		response: ServerResponse,
@@ -279,6 +325,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 			return readThread(request, response, context, segments[0]!);
 		}
 		if (segments.length !== 1) return false;
+		if (request.method === "PATCH") return renameThread(request, response, context, segments[0]!);
 		if (request.method !== "GET") return false;
 		let threadId: string;
 		try {

@@ -171,6 +171,18 @@ export class ThreadStore {
 		);
 	}
 
+	/** Rename without touching last_active_at; updated_at tracks config changes. */
+	updateTitle(id: string, title: string, titleSource: "user" | "agent" | "system", now: number): Thread | null {
+		if (!title.trim()) throw new Error("thread_title_empty");
+		const changed =
+			this.db
+				.prepare(
+					"UPDATE threads SET title = ?, title_source = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+				)
+				.run(title, titleSource, now, id).changes > 0;
+		return changed ? this.get(id) : null;
+	}
+
 	restore(id: string, now: number): boolean {
 		return (
 			this.db.prepare("UPDATE threads SET deleted_at = NULL, updated_at = ? WHERE id = ?").run(now, id).changes > 0
