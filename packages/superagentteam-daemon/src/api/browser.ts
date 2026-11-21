@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { A2ARuntime } from "../domains/a2a/runtime.ts";
 import { verifyConsoleToken } from "./console-link.ts";
 import { sendError, sendJson } from "./http.ts";
+import { createMessageRoutes, type MessageRoutes } from "./routes/messages.ts";
 import { createThreadRoutes, type ThreadRouteContext } from "./routes/threads.ts";
 import {
 	hasForbiddenIdentityHeaders,
@@ -19,19 +21,22 @@ export interface BrowserApiOptions {
 	clock?: () => number;
 	secureCookies?: boolean;
 	sessionStore?: SessionStore;
+	a2a?: { runtime: A2ARuntime };
 }
 
 export interface BrowserApi {
 	handle(request: IncomingMessage, response: ServerResponse): Promise<boolean>;
 	sessions: SessionStore;
-	close(): void;
 }
 
 export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 	const clock = options.clock ?? Date.now;
 	const sessions = options.sessionStore ?? new SessionStore({ clock });
 	const nonces = new Map<string, number>();
-	const threadRoutes = createThreadRoutes({ dataDir: options.dataDir, clock });
+	const threadRoutes = options.a2a ? createThreadRoutes({ runtime: options.a2a.runtime, clock }) : null;
+	const messageRoutes: MessageRoutes | null = options.a2a
+		? createMessageRoutes({ runtime: options.a2a.runtime, clock })
+		: null;
 
 	function sendUnauthorized(response: ServerResponse, message: string): void {
 		sendJson(response, 401, { error: "unauthorized", message, relogin_hint: RELOGIN_HINT });
@@ -128,7 +133,12 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 		if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
 			const context = authenticate(request, response);
 			if (!context) return true;
-			if (await threadRoutes.handle(request, response, url, context)) return true;
+			if (threadRoutes && (await threadRoutes.handle(request, response, url, context))) return true;
+			if (messageRoutes && (await messageRoutes.handle(request, response, url, context))) return true;
+			if (!threadRoutes || !messageRoutes) {
+				sendError(response, 503, "unavailable", "A2A runtime is not available in this daemon mode");
+				return true;
+			}
 			sendError(response, 404, "not_found", "unknown API route");
 			return true;
 		}
@@ -136,5 +146,5 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 		return false;
 	}
 
-	return { handle, sessions, close: () => threadRoutes.close() };
+	return { handle, sessions };
 }

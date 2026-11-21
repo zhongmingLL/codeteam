@@ -139,6 +139,15 @@ labels / workspace）：
   terminal 后不再出现。
 - Legacy：读端点 200 空列表 + `disabled:true`；写端点 501；UI 隐藏。
 - 非目标：M1 不注册 Socket.IO events、不实现 cancel、不实现 SSE/replay。
+- S5 real-Hub E2E 必须收口的挂账：
+  - Hub 新建 thread 的 `projectPath` 动线：Hub 表单补字段，或 daemon 配置真实
+    默认 workspace（绝对路径 + 存在校验）；M1 缺路径返回 400 是保守正确行为。
+  - 直连跨 origin（Hub `localhost:3000` → daemon loopback 端口）需要 CORS +
+    credentials；S5 要么验证同源反代配方，要么补 CORS contract test。
+  - `multi_mention` 的 projectPath defense-in-depth：补同款 E18 gate，或在
+    0005 E18 行记录排除理由。
+  - M1 message append 不支持 `contextAttachments` / whisper；当前返回 422
+    `unsupported_input`，S5 决定是否接入，不静默丢数据。
 
 ## 6. 风险与开放问题
 

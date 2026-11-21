@@ -214,6 +214,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		dataDir: paths.dataDir,
 		hubOrigin,
 		secureCookies: options.secureCookies ?? false,
+		a2a: a2aControlPlane ? { runtime: a2aControlPlane.runtime } : undefined,
 	});
 
 	let server: Server;
@@ -319,7 +320,6 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 				server.closeAllConnections();
 				server.close(() => resolve());
 			});
-			browserApi.close();
 			await a2aControlPlane?.close().catch(() => {});
 			await controlPlane?.close().catch(() => {});
 			state = "stopped";
