@@ -159,6 +159,14 @@ labels / workspace）：
   - 同时带 `targets` + `mentions` 时按 union 去重；M1 接受，S5 如需更严格再收紧。
   - deleted thread 的 list/detail/messages 语义合并为一个 S5 决策：当前 list
     隐藏；detail/messages 对 owner 仍可读并带 `deletedAt`。
+- S4 review 的 P3 记账：
+  - `queueRevision` 不交付；Hub reconcile 走 full replace，不用 revision 缓存。
+  - `/queue` 的 `queue` 是 `entries` 的 Hub alias；两者同数组，未来只改一个会漂移。
+  - `LiveInvocationView.parentInvocationId` 在 tracker-only 且无 durable attempt
+    时为 `null`；其余情况为字符串。
+  - `AgentStatus` 的 M1 产出子集是 `idle | working | offline`；`thinking | error`
+    保留给后续，不承诺出现。
+  - queue 排序是跨 kind 的 priority → position 值排序，不是“kind 内平铺”。
 
 ## 6. 风险与开放问题
 

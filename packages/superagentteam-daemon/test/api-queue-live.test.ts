@@ -285,7 +285,7 @@ describe("F016c-M1 S4 queue and live API", () => {
 		expect(body.invocations).toEqual([
 			expect.objectContaining({
 				turnExecutionId: "turn:orphan",
-				parentInvocationId: "",
+				parentInvocationId: null,
 				evidenceRank: "tracker-only",
 				responseStatus: "missing",
 			}),

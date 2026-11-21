@@ -11,7 +11,7 @@ export type LiveEvidenceRank = "record+tracker" | "tracker-only" | "record-only"
 export interface LiveInvocationView {
 	agentId: string;
 	turnExecutionId: string;
-	parentInvocationId: string;
+	parentInvocationId: string | null;
 	startedAt: number;
 	childStatus: LiveChildStatus;
 	responseStatus: LiveResponseStatus;
@@ -27,7 +27,7 @@ export interface LiveInvocationDeps {
 
 interface LiveCandidate {
 	agentId: string;
-	parentInvocationId: string;
+	parentInvocationId: string | null;
 	startedAt: number;
 	childStatus: LiveChildStatus;
 	responseMessageId: string | null;
@@ -78,7 +78,7 @@ export function getThreadLiveInvocations(deps: LiveInvocationDeps, threadId: str
 		const attempt = deps.attempts.getByTurnExecutionId(slot.turnExecutionId);
 		candidates.set(slot.turnExecutionId, {
 			agentId: slot.agentId,
-			parentInvocationId: attempt?.parentInvocationId ?? "",
+			parentInvocationId: attempt?.parentInvocationId ?? null,
 			startedAt: attempt?.startedAt ? Math.min(slot.startedAt, attempt.startedAt) : slot.startedAt,
 			childStatus: "running",
 			responseMessageId: attempt?.responseMessageId ?? null,

@@ -6,6 +6,7 @@ import { verifyConsoleToken } from "./console-link.ts";
 import { sendError, sendJson } from "./http.ts";
 import { type AgentRoutes, createAgentRoutes } from "./routes/agents.ts";
 import type { ApiRouteContext } from "./routes/context.ts";
+import { createLegacyRoutes, type LegacyRoutes } from "./routes/legacy.ts";
 import { createLiveRoutes, type LiveRoutes } from "./routes/live.ts";
 import { createMessageRoutes, type MessageRoutes } from "./routes/messages.ts";
 import { createQueueRoutes, type QueueRoutes } from "./routes/queue.ts";
@@ -47,6 +48,7 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 	const agentRoutes: AgentRoutes | null = options.a2a
 		? createAgentRoutes({ registry: options.a2a.registry, tracker: options.a2a.runtime.tracker, clock })
 		: null;
+	const legacyRoutes: LegacyRoutes | null = options.a2a ? createLegacyRoutes({ runtime: options.a2a.runtime }) : null;
 
 	function sendUnauthorized(response: ServerResponse, message: string): void {
 		sendJson(response, 401, { error: "unauthorized", message, relogin_hint: RELOGIN_HINT });
@@ -148,7 +150,8 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 			if (liveRoutes?.handle(request, response, url, context)) return true;
 			if (messageRoutes && (await messageRoutes.handle(request, response, url, context))) return true;
 			if (agentRoutes?.handle(request, response, url)) return true;
-			if (!threadRoutes || !messageRoutes || !queueRoutes || !liveRoutes || !agentRoutes) {
+			if (legacyRoutes?.handle(request, response, url, context)) return true;
+			if (!threadRoutes || !messageRoutes || !queueRoutes || !liveRoutes || !agentRoutes || !legacyRoutes) {
 				sendError(response, 503, "unavailable", "A2A runtime is not available in this daemon mode");
 				return true;
 			}
