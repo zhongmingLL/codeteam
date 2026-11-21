@@ -35,7 +35,7 @@ created: 2026-10-25
 | F020 | W7b thin Hub M0（自建 A2A Hub，参考 clowder 设计；classic Hub 降为可选兼容客户端） | done (M0 H0–H5 merged: `46b0cd19`/`5ae478aa`/`cf653a86`/`f5a68989`/`f4ef2602`/`7467a027`; carry: M0.5 hardening, real-worker busy smoke, classic Hub compat track) | 宪宪 | [F020](docs/features/F020-thin-hub-m0.md) |
 | F021 | thin Hub M0.5 hardening（projectPath 校验、relogin 深链接、长 thread/busy live 证据） | in_progress (implementation merged `e478f5b9`; close pending operator) | 宪宪 | [F021](docs/features/F021-thin-hub-m05-hardening.md) |
 | F022 | W7b thin Hub M1-A — unread/read state（sidebar 未读、per-thread read cursor、跨 tab 收敛） | in_progress (implementation merged `a6ae8e40f`; dual review approve; close pending operator) | 宪宪 | [F022](docs/features/F022-thin-hub-m1-unread.md) |
-| F023 | W7b thin Hub M1-B — thread rename（header inline edit、titleSource=user、sidebar 同步） | in_progress (feature doc + implementation in progress) | 宪宪 | [F023](docs/features/F023-thin-hub-m1-rename.md) |
+| F023 | W7b thin Hub M1-B — thread rename（header inline edit、titleSource=user、sidebar 同步） | in_progress (implementation merged `15d8ab9f5`; dual review approve; close pending operator) | 宪宪 | [F023](docs/features/F023-thin-hub-m1-rename.md) |
 
 > Naming (F019): new and active docs use `superagentteam/Fxxx`; F001–F018 retain
 > `codeteam/Fxxx` for history. Package/env/data/CLI/tool names use `superagentteam*`
