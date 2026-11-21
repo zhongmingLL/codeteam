@@ -7,7 +7,7 @@ owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [烁烁 (Kimi K3), 砚砚 (GLM 5.3 Flash)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
 created: 2026-10-31
-updated: 2026-10-31
+updated: 2026-11-21
 source_plan: "docs/plans/0018-f016a-a2a-ingress-e2e.md"
 source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 ---
@@ -18,6 +18,13 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > tools 和一条真实 RPC 主链；F016 先把 **8 类 queue ingress × 场景** 接到
 > 同一条 queue/dispatch/worker 链上跑真实 E2E，再补 headless API/事件重放和
 > Hub 兼容子集。Console M0 是 W7b，不是 F016。
+
+> **2026-11-21 re-scope after F018 done.** F018 已把 runtime 切成纯 A2A；
+> F016b/F016c 的旧 wait/custody 与 backlog/approval Hub 面不再按原样成立。
+> 当前提案见 `docs/plans/0028-f016-w7a-rescope.md`：建议 F016c-M1 先做，
+> F016b wait 暂缓到真实 caller；legacy 面诚实空读/501，不在本轮补新能力。
+> operator 2026-11-21 已签字 D1=A / D2=A / D3=A：F016c-M1 先做，
+> F016b defer；legacy 面板先隐藏；F016c-M1 另开执行 plan。
 
 ## Why
 
@@ -44,6 +51,9 @@ scenario 的真实 E2E 和 typed 失败语义。
   tool policy/allowlist、control socket 的 `toolName`、测试和文档同步更新。
   F015 文档保留历史名，F016a 负责重命名。
 
+> 以上是 F016a/F016b 的历史命名。F019.5 后新工具必须用 `superagentteam_*`；
+> F016b 的 `codeteam_wait_*` / handoff 工具在当前 re-scope 下不实现。
+
 ## 用户可见结果
 
 - operator 的 `thread post --to`、backlog dispatch、schedule、retry 和
@@ -53,16 +63,17 @@ scenario 的真实 E2E 和 typed 失败语义。
   source message。
 - handoff withdraw / parallel / loop guard / requestId / execution role 的
   语义有真实 E2E；cross-thread 明确拒绝，不伪装支持。
-- F016c 完成后，外部进程/Console 可通过 daemon API + 事件重放读取同一套
-  thread/approval/backlog 投影；F016a 不依赖 W7b。
+- F016c 完成后，外部进程/Console 可通过 daemon API + Socket.IO live events
+  读取 A2A 的 thread/message/agent/queue 投影；backlog/approval/workflow SOP
+  属于 legacy，本轮只做诚实空读/501 或显式降级，不做新 A2A 能力。
 
 ## 交付切片
 
 | Slice | 范围 | 状态 |
 |---|---|---|
 | F016a | P0 ingress × scenario real RPC E2E；现有 5 tools（重命名为 `codeteam_*`）+ `codeteam_thread_context`；withdraw queue cleanup；cross-thread negative；typed error/auth matrix | done（PR #81，`bc778185e`） |
-| F016b | wait scheduler + `codeteam_wait_arm`/`codeteam_wait_status`/`codeteam_wait_cancel`；P1 `codeteam_message_get`/`codeteam_handoff_events`；owner fence | next |
-| F016c | W7a daemon HTTP API、WS/SSE、事件 cursor/snapshot/replay、Hub 兼容子集、artifact/telemetry 只读 API | discovery（报告已合入，scope signoff pending） |
+| F016b | 旧 wait/handoff 三件套；re-scope 后建议 deferred，等真实 caller 再立纯 A2A wait | re-scope（plan 0028 D1；暂缓） |
+| F016c | W7a daemon API + Socket.IO live events + history refetch + Hub 兼容最小面 | re-scope proposed（plan 0028；建议 M1 先做） |
 
 W7b Console M0 独立立项，不进 F016；M1 继续后置。
 
@@ -76,9 +87,11 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
   withdraw、冷启动恢复都有证据。
 - [ ] `codeteam_thread_context` 按 principal.threadId 过滤，bounded/cursor/hasMore 正确；
   cross-thread 拒绝。
-- [ ] wait 三件套与最小 scheduler 在 F016b 交付；不把“三个 tool”当 wait 完成。
-- [ ] F016c 的 daemon API/WS/SSE、事件重放和 Hub 兼容 contract tests 通过；
-  未支持功能显式隐藏/降级。
+- [ ] wait 是否交付由 plan 0028 D1 决定；如交付，必须是纯 A2A wait，
+  不恢复 custody/handoff 旧三件套。
+- [ ] F016c 的 daemon API、Socket.IO live events、history refetch 收敛和
+  Hub 兼容 contract tests 通过；SSE/replay log 不在当前 scope，未支持功能
+  显式隐藏/降级。
 - [ ] 不新增第二套 queue/message/handoff store；不引入 MCP ingress。
 
 ## 当前进展
@@ -91,6 +104,9 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
   negative、typed error/auth matrix。`codeteam-daemon` 86 files / 563 tests
   passed，2 skipped。F016a 已 closed（PR #81 / `bc778185e`），进入 F016b
   （wait scheduler）。
+- 2026-11-21：F018 已 done，F016b/F016c 进入 re-scope；提案见
+  `docs/plans/0028-f016-w7a-rescope.md`。F016c-M1 建议优先，F016b 暂缓；
+  旧 `codeteam_wait_*` / handoff events 与 Hub backlog/approval P0 不再按原样实现。
 
 ## 非目标
 
@@ -103,8 +119,9 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
 
 ## 依赖与风险
 
-- 依赖 F015 的 queue/dispatch/worker/custody；依赖 W1 queue store、W5 worker
-  runtime；不依赖 W7 API。
+- F016a 的历史依赖是 F015 queue/dispatch/worker/custody；F016c re-scope 后
+  依赖 F018 A2A runtime（`f018.db`、Thread/Invocation）与 daemon composition
+  root，不再依赖 task/custody 新写入。
 - 最大风险是把 wait 当薄 wrapper、把 in-process 测试冒充 real RPC、以及
   withdraw 清理 queue 时误伤已 claimed holder；对应决定见 plan 0018。
 - Hub/API 兼容面由独立调研 thread 提供 contract；F016c 在调研结论回来前不
