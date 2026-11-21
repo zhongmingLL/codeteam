@@ -203,6 +203,8 @@ function postThread(
 		...targets.flatMap((target) => ["--to", target]),
 		"--task",
 		taskId,
+		"--engine",
+		"legacy",
 	]);
 }
 
@@ -273,7 +275,16 @@ describe("F016a ingress real RPC E2E", () => {
 		const noTask = cliJson<{
 			message: { id: string; taskId: string | null };
 			queue: { targets: string[] } | null;
-		}>(dataDir, ["thread", "post", dispatched.thread.id, "thread-scoped post", "--to", "profile:reviewer-2"]);
+		}>(dataDir, [
+			"thread",
+			"post",
+			dispatched.thread.id,
+			"thread-scoped post",
+			"--to",
+			"profile:reviewer-2",
+			"--engine",
+			"legacy",
+		]);
 		expect(noTask.message.taskId).toBeNull();
 		expect(noTask.queue?.targets).toEqual(["profile:reviewer-2"]);
 		expect(store.messages.get(noTask.message.id)?.taskId).toBeNull();
@@ -314,6 +325,8 @@ describe("F016a ingress real RPC E2E", () => {
 			"profile:coder",
 			"--task",
 			noWorktreeTask.id,
+			"--engine",
+			"legacy",
 		]);
 		expect(missingWorktree.status).not.toBe(0);
 		expect(missingWorktree.stderr).toContain("has no worktree");
@@ -329,6 +342,8 @@ describe("F016a ingress real RPC E2E", () => {
 			"profile:reviewer-2",
 			"--task",
 			dispatched.task.id,
+			"--engine",
+			"legacy",
 		]);
 		expect(noSession.status).not.toBe(0);
 		expect(noSession.stderr).toContain("0 active sessions");

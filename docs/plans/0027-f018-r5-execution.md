@@ -75,6 +75,10 @@ R5-a 是关键路径：没有它，生产 worker 仍然只会看到 retired send
   明确标记 code delivery legacy，不进入 A2A runtime。
 - 出口：operator 从 CLI 完成 thread post → queue → worker → response 的真实闭环。
 
+R5-c 拆两刀：**R5-c1** v1 `thread` CLI（create/list/show/post/tail）+
+`--engine legacy` 逃生口；**R5-c2** `startDaemon` 默认入口切 A2A +
+legacy 命令冻结说明。
+
 ### R5-d 归档与 F018 close
 
 - legacy code delivery 只读归档；`messages.kind` / legacy 列的 drop 只在
@@ -145,5 +149,16 @@ R5-a 是关键路径：没有它，生产 worker 仍然只会看到 retired send
   控制 socket、定时器、DB 按顺序收口。
 - 测试：`f018-r5-b-daemon.test.ts`（跨 thread drain + 两 response、startup
   process_restart 收敛、startDaemon opt-in/clean close）。
+
+## 7. R5-c1 交付记录（in-review）
+
+- `cli/thread-a2a.ts`：`thread create/list/show/post/tail` 走 `f018.db`；
+  `thread post` 用 `OperatorMessageIngress`，支持 `--to <agentId>` 显式目标；
+  `--engine legacy` 保留旧 ControlStore 路径，legacy-only 选项（`--task`/
+  `--backlog`/`--kind`）在 A2A 路径显式拒绝。
+- `OperatorMessageIngress.submit` 新增 `targetAgentIds` 显式目标解析；
+  replay identity 同时比较显式 target set。
+- 测试：`f018-r5-c-cli.test.ts`（create/post/show/list/tail、无 control.db、
+  disabled/unknown target 负例）；legacy CLI 测试显式走 `--engine legacy`。
 
 [宪宪/deepseek-flash🐾]

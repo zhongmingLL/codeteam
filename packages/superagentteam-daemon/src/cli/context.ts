@@ -24,7 +24,7 @@ export function openCliContext(args: ParsedArgs): CliContext {
 	return { dataDir, store: openControlStore({ dataDir }), json: flag(args, "json") };
 }
 
-export function requireOperator(context: CliContext): OperatorContext {
+export function requireOperator(context: Pick<CliContext, "dataDir">): OperatorContext {
 	const paths = operatorCredentialPaths(context.dataDir);
 	const privateKey = loadOperatorPrivateKey(context.dataDir);
 	const publicKeyPem = readFileSync(paths.publicKeyPath, "utf8");

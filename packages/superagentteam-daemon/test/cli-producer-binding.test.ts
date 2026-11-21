@@ -118,7 +118,7 @@ describe("CLI producer and provisioning entry", () => {
 			const postWithoutTask = cliJson<{
 				message: { id: string; taskId: string | null };
 				queue: { targets: string[] } | null;
-			}>(["thread", "post", dispatched.thread.id, "please work", "--to", "profile:coder"]);
+			}>(["thread", "post", dispatched.thread.id, "please work", "--to", "profile:coder", "--engine", "legacy"]);
 			expect(postWithoutTask.message.taskId).toBeNull();
 			expect(postWithoutTask.queue?.targets).toEqual(["profile:coder"]);
 			expect(store.messages.get(postWithoutTask.message.id)?.taskId).toBeNull();
@@ -158,6 +158,8 @@ describe("CLI producer and provisioning entry", () => {
 				"profile:reviewer",
 				"--task",
 				dispatched.task.id,
+				"--engine",
+				"legacy",
 			]);
 			expect(posted.message.taskId).toBe(dispatched.task.id);
 			expect(posted.queue?.targets).toEqual(["profile:reviewer"]);

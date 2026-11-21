@@ -198,6 +198,8 @@ export function postThread(
 		...targets.flatMap((target) => ["--to", target]),
 		"--task",
 		taskId,
+		"--engine",
+		"legacy",
 	]);
 }
 
