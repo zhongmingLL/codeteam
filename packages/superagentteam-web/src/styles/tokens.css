@@ -1,0 +1,39 @@
+:root {
+	--st-canvas: #fffbf6;
+	--st-surface-1: #fcf7f0;
+	--st-surface-2: #f7f2ea;
+	--st-surface-3: #efe9e3;
+	--st-hairline: #e5dfd5;
+	--st-hairline-strong: #d8d1c6;
+	--st-ink: #141413;
+	--st-body: #3d3d3a;
+	--st-muted: #5f5d57;
+	--st-primary: #b05f45;
+	--st-primary-active: #8f4730;
+	--st-primary-soft: #f3e3da;
+	--st-on-primary: #ffffff;
+	--st-focus: #b05f45;
+	--st-radius-sm: 6px;
+	--st-radius-md: 8px;
+	--st-radius-lg: 12px;
+	--st-font-display: "Source Serif 4", "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+	--st-font-body: Inter, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+	--st-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+[data-theme="dark"] {
+	--st-canvas: #181715;
+	--st-surface-1: #1f1e1b;
+	--st-surface-2: #252320;
+	--st-surface-3: #2d2b27;
+	--st-hairline: #34322d;
+	--st-hairline-strong: #45423c;
+	--st-ink: #faf9f5;
+	--st-body: #d8d4cb;
+	--st-muted: #a09d96;
+	--st-primary: #cc785c;
+	--st-primary-active: #e08d70;
+	--st-primary-soft: #3a2a24;
+	--st-on-primary: #181715;
+	--st-focus: #cc785c;
+}
