@@ -167,6 +167,11 @@ labels / workspace）：
   - `AgentStatus` 的 M1 产出子集是 `idle | working | offline`；`thinking | error`
     保留给后续，不承诺出现。
   - queue 排序是跨 kind 的 priority → position 值排序，不是“kind 内平铺”。
+- M2 gate：real-Hub E2E（本文件 §5 配方 + close-out 报告 §5）必须在 M2 立项前
+  执行，并记录 Hub `projectPath` 表单行为与 `mentions` 值域；若 operator 明确
+  授权 headless-only，则作为例外写进 M2 plan。
+- M2/W7b plan 必须带上 deferred P3s：CORS + credentials、rich replay 的
+  canonical JSON、Hub `projectPath` 动线。
 
 ## 6. 风险与开放问题
 
