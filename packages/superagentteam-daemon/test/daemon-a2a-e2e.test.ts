@@ -267,7 +267,16 @@ describe("daemon A2A end-to-end", () => {
 			const noTask = cliJson<{
 				message: { id: string; taskId: string | null };
 				queue: { targets: string[] } | null;
-			}>(dataDir, ["thread", "post", dispatched.thread.id, "thread-scoped post", "--to", "profile:coder"]);
+			}>(dataDir, [
+				"thread",
+				"post",
+				dispatched.thread.id,
+				"thread-scoped post",
+				"--to",
+				"profile:coder",
+				"--engine",
+				"legacy",
+			]);
 			expect(noTask.message.taskId).toBeNull();
 			expect(noTask.queue?.targets).toEqual(["profile:coder"]);
 			expect(store.queue.pendingCount()).toBeGreaterThanOrEqual(1);

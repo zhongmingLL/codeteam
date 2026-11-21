@@ -18,6 +18,7 @@ import { runScheduleCommand } from "./schedule.ts";
 import { runSessionCommand } from "./session.ts";
 import { runSopCommand } from "./sop.ts";
 import { runTaskCommand, runThreadCommand } from "./thread.ts";
+import { runA2AThreadCommand } from "./thread-a2a.ts";
 
 export async function runCli(argv: readonly string[]): Promise<number> {
 	const { argvWithoutGlobals, globals } = extractGlobalOptions(argv);
@@ -45,6 +46,18 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 	if (flag(args, "help")) {
 		writeUsage();
 		return 0;
+	}
+	if (command === "thread") {
+		const engine = option(args, "engine") ?? "a2a";
+		if (engine === "a2a") {
+			return await runA2AThreadCommand(args, {
+				dataDir: resolveControlDataDir(option(args, "data-dir")),
+				json: flag(args, "json"),
+			});
+		}
+		if (engine !== "legacy") {
+			throw new ControlError("invalid_input", `unknown thread engine ${engine}; use a2a or legacy`);
+		}
 	}
 	const context = openCliContext(args);
 	try {
@@ -110,7 +123,7 @@ function writeUsage(): void {
 	writeLine("  auth init [--data-dir <path>] [--rotate]");
 	writeLine("  backlog <create|list|show|approve|dispatch|done|depend>");
 	writeLine("  sop <catalog|show|update|evidence>");
-	writeLine("  thread <list|show|post|tail>");
+	writeLine("  thread <create|list|show|post|tail> [--engine a2a|legacy]");
 	writeLine("  task <create|list|status|readiness>");
 	writeLine("  approval <request|list|show|approve|reject>");
 	writeLine("  budget <set|show> <taskId>");
@@ -129,7 +142,8 @@ function writeUsage(): void {
 	writeLine("backlog create dependencies: [--depends-on <backlogId> ...]");
 	writeLine("backlog depend: <id> [--on <backlogId> ... | --clear]");
 	writeLine("backlog dispatch: <id> --to <profile> [--phase coding|research|brainstorm] [--body]");
-	writeLine("thread post: <threadId> <body> [--to <profile> ...] [--task <taskId>] [--kind chat]");
+	writeLine("thread create: --project-path <path> [--title <text>] [--id <threadId>]");
+	writeLine("thread post: <threadId> <body> [--to <agentId> ...] [--id <messageId>] [--engine a2a|legacy]");
 	writeLine("thread tail: <threadId> [--after-seq N] [--follow] [--interval-ms N]");
 	writeLine("sop evidence: <backlogId> <check> <evidenceRef> --subject-revision <sha>");
 	writeLine("sop update: <backlogId> --stage <stage> --baton <profile|operator> --focus <text>");

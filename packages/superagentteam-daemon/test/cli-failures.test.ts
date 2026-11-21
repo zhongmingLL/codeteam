@@ -203,7 +203,7 @@ describe("CLI failure paths", () => {
 	});
 
 	it("rejects tailing an unknown thread", () => {
-		const error = cliFailure(["thread", "tail", "thread-does-not-exist"]);
+		const error = cliFailure(["thread", "tail", "thread-does-not-exist", "--engine", "legacy"]);
 		expect(error.code).toBe("not_found");
 		expect(error.message).toMatch(/thread/);
 	});

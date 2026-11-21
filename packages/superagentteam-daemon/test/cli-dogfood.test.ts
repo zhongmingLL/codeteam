@@ -100,9 +100,16 @@ describe("SuperAgentTeam W4 CLI dogfood", () => {
 			queueEntry: { id: string };
 		}>(["backlog", "dispatch", backlogId, "--to", "profile:eval", "--phase", "coding", "--body", "Kickoff"]);
 		const threadId = dispatched.thread.id;
-		const listed = cliJson<Array<{ id: string; backlogItemId: string }>>(["thread", "list", "--backlog", backlogId]);
+		const listed = cliJson<Array<{ id: string; backlogItemId: string }>>([
+			"thread",
+			"list",
+			"--backlog",
+			backlogId,
+			"--engine",
+			"legacy",
+		]);
 		expect(listed.some((thread) => thread.id === threadId)).toBe(true);
-		const shown = cliJson<{ messages: Array<{ kind: string }> }>(["thread", "show", threadId]);
+		const shown = cliJson<{ messages: Array<{ kind: string }> }>(["thread", "show", threadId, "--engine", "legacy"]);
 		expect(shown.messages.some((message) => message.kind === "backlog_kickoff")).toBe(true);
 		const task = dispatched.task;
 		const prepared = cliJson<{ sessions: Array<{ id: string; role: string }> }>([
@@ -112,12 +119,25 @@ describe("SuperAgentTeam W4 CLI dogfood", () => {
 			"--profile",
 			"profile:eval",
 		]);
-		cli(["thread", "post", threadId, "please execute the dogfood", "--to", "profile:eval", "--task", task.id]);
+		cli([
+			"thread",
+			"post",
+			threadId,
+			"please execute the dogfood",
+			"--to",
+			"profile:eval",
+			"--task",
+			task.id,
+			"--engine",
+			"legacy",
+		]);
 		const directed = cliJson<{ inbox: Array<{ taskId: string }> }>([
 			"thread",
 			"post",
 			threadId,
 			"@profile:eval please continue",
+			"--engine",
+			"legacy",
 		]);
 		expect(directed.inbox[0]?.taskId).toBe(task.id);
 		const store = openControlStore({ dataDir });
@@ -140,7 +160,7 @@ describe("SuperAgentTeam W4 CLI dogfood", () => {
 		} finally {
 			store.close();
 		}
-		const tail = cli(["thread", "tail", threadId, "--after-seq", "0", "--json"]);
+		const tail = cli(["thread", "tail", threadId, "--after-seq", "0", "--json", "--engine", "legacy"]);
 		const messages = tail
 			.split(/\r?\n/)
 			.filter((line) => line.trim() !== "")
@@ -212,6 +232,8 @@ describe("SuperAgentTeam W4 CLI dogfood", () => {
 			"accepted",
 			"--kind",
 			"verdict",
+			"--engine",
+			"legacy",
 		]);
 		cli([
 			"sop",

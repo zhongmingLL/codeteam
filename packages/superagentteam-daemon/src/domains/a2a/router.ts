@@ -15,6 +15,7 @@ import type { ThreadStore } from "../thread/store.ts";
 
 export type RoutingReason =
 	| "current_message_mentions"
+	| "explicit_targets"
 	| "previous_user_mentions"
 	| "recent_replier"
 	| "thread_participant"
@@ -38,6 +39,8 @@ export interface SubmitOperatorMessageInput {
 	userId: string;
 	body: string;
 	messageId?: string;
+	/** CLI `--to` / caller-supplied agent ids; bypasses body/implicit routing. */
+	targetAgentIds?: string[];
 	now: number;
 }
 
@@ -137,6 +140,24 @@ export class OperatorMessageIngress {
 			: { kind: "no_target" };
 	}
 
+	/** Explicit `--to` targets: validate each agent config/account, no mention parsing. */
+	resolveExplicitAgentIds(agentIds: readonly string[]): ResolveTargetsResult {
+		const unique: string[] = [];
+		for (const agentId of agentIds) {
+			if (!agentId.trim()) return { kind: "agent_not_found", pattern: agentId };
+			if (!unique.includes(agentId)) unique.push(agentId);
+		}
+		for (const agentId of unique) {
+			const config = this.registry.agents.get(agentId);
+			if (!config) return { kind: "agent_not_found", pattern: agentId };
+			if (!config.enabled) return { kind: "agent_disabled", pattern: agentId };
+			if (!this.registry.accounts.get(config.accountRef)) {
+				return { kind: "account_not_found", pattern: agentId };
+			}
+		}
+		return { kind: "ok", targetAgentIds: unique, reason: "explicit_targets" };
+	}
+
 	/**
 	 * 0020 R2 gates + §3.0 step 4: deleted thread rejects post; targets must
 	 * resolve non-empty (no_target typed reject); message + queue entry commit
@@ -157,12 +178,21 @@ export class OperatorMessageIngress {
 			const existing = this.messages.get(input.messageId, { includeDeleted: true });
 			if (existing) {
 				const storedTargets = existing.extra?.targetAgentIds ?? [];
+				const requestedTargets =
+					input.targetAgentIds && input.targetAgentIds.length > 0
+						? [...new Set(input.targetAgentIds)].sort()
+						: null;
+				const sameTargets =
+					requestedTargets === null ||
+					(requestedTargets.length === storedTargets.length &&
+						requestedTargets.join("\u0000") === [...storedTargets].sort().join("\u0000"));
 				const sameIdentity =
 					existing.threadId === input.threadId &&
 					existing.from.kind === "user" &&
 					existing.from.userId === input.userId &&
 					existing.content === input.body &&
-					storedTargets.length > 0;
+					storedTargets.length > 0 &&
+					sameTargets;
 				if (!sameIdentity) throw new Error("ingress_message_id_conflict");
 				const liveEntry = this.queue.getBySource(input.threadId, existing.id, 1);
 				if (!liveEntry) throw new Error("ingress_replay_entry_missing");
@@ -174,7 +204,10 @@ export class OperatorMessageIngress {
 				};
 			}
 		}
-		const resolved = this.resolveTargets(input.threadId, input.body);
+		const resolved =
+			input.targetAgentIds && input.targetAgentIds.length > 0
+				? this.resolveExplicitAgentIds(input.targetAgentIds)
+				: this.resolveTargets(input.threadId, input.body);
 		if (resolved.kind === "no_target") throw new Error("no_target");
 		if (resolved.kind !== "ok") throw new Error(`${resolved.kind}: ${resolved.pattern}`);
 		const targetAgentIds = resolved.targetAgentIds;
