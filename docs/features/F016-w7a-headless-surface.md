@@ -30,7 +30,9 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > queue/live、agents/cats/config 的 headless 读面 + legacy 空壳/501 + headless
 > E2E 已交付。真实 classic Hub 的浏览器 E2E 未在本机执行（无运行中的 Hub），
 > 验收步骤与 P3 总账见 `docs/reports/2026-11-21-f016c-m1-s5-closeout.md`。
-> F016c-M2（Socket.IO events + history refetch）与 F016b wait 仍未交付。
+> F016c-M2（Socket.IO events + history refetch）由 F020 thin Hub 的 M0 收口后启动；
+> classic Hub 的真实 E2E 只属于可选兼容轨道（0029 §5 挂账），不再是 M2 前置。
+> F016b wait 仍未交付。
 
 ## Why
 
