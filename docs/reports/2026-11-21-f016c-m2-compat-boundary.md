@@ -43,13 +43,14 @@ Evidence:
 | S1 daemon | `7fe1c148`; ChangeBus + `/api/events` + commit-after-publish hooks; 860 daemon tests |
 | S2 web | `00a9b0a2`; EventSource/refetch/fallback/reconnect; 69 web tests |
 | S3 latency/acceptance | `ed4fed04`; <500ms assertions + static/Vite-proxy/fallback/reconnect report |
-| S4 canonical/compat | this report; canonical rich JSON + opt-in-only compat boundary |
+| S4 canonical/compat | `49b8114dd`; this report; canonical rich JSON + opt-in-only compat boundary |
 
 ## F016 umbrella close posture
 
 - F016a: done.
 - F016c-M1: done (headless API/session/legacy shells).
-- F016c-M2: S0–S4 complete; first-party event/refetch path delivered.
+- F016c-M2: S0–S4 complete and merged (`ad18dad0`, `7fe1c148`, `00a9b0a2`,
+  `ed4fed04`, `49b8114dd`); first-party event/refetch path delivered.
 - F016b: deferred by `D1=A`; no real caller in this scope.
 - Classic Hub compat: optional track, separate task; not a first-party M2 gate.
 
