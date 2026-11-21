@@ -9,6 +9,7 @@ export function formatRelative(timestamp: number): string {
 
 export function formatElapsed(startedAt: number, now = Date.now()): string {
 	const minutes = Math.max(0, Math.floor((now - startedAt) / 60_000));
+	if (minutes < 1) return "不到 1 分";
 	if (minutes < 60) return `${minutes} 分`;
 	const hours = Math.floor(minutes / 60);
 	return `${hours} 时`;

@@ -113,4 +113,34 @@ describe("thread page", () => {
 
 		await waitFor(() => expect(send).toHaveBeenCalledWith("new message", expect.any(String)));
 	});
+
+	it("shows a degraded notice instead of silently hiding queue state", async () => {
+		useThreadStore.setState({ threads: [thread], status: "ready", detailStatus: "ready", detail: thread });
+		useA2AStore.setState({
+			threadId: thread.id,
+			status: "error",
+			error: "daemon down",
+			load: vi.fn(async () => false),
+			refresh: vi.fn(async () => false),
+			reset: vi.fn(),
+		});
+		useChatStore.setState({
+			threadId: thread.id,
+			messages: [],
+			status: "ready",
+			loadLatest: vi.fn(async () => true),
+			refresh: vi.fn(async () => true),
+		});
+
+		render(
+			<MemoryRouter initialEntries={[`/thread/${encodeURIComponent(thread.id)}`]}>
+				<Routes>
+					<Route path="/thread/:threadId" element={<ThreadPage />} />
+				</Routes>
+			</MemoryRouter>,
+		);
+
+		expect(await screen.findByText(/队列状态暂时不可用/)).toBeInTheDocument();
+		expect(screen.getByText(/daemon down/)).toBeInTheDocument();
+	});
 });

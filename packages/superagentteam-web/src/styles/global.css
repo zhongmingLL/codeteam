@@ -232,6 +232,8 @@ textarea {
 }
 
 .st-topbar-title {
+	flex: 1;
+	min-width: 0;
 	font-weight: 500;
 	color: var(--st-ink);
 	overflow: hidden;
@@ -260,6 +262,13 @@ textarea {
 	font-size: 11px;
 	white-space: nowrap;
 	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.st-live-pill > span:last-child {
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
 	text-overflow: ellipsis;
 }
 
@@ -367,6 +376,13 @@ textarea {
 	gap: 6px;
 }
 
+.st-thread-live {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--st-primary-active);
+}
+
 .st-icon-button {
 	width: 32px;
 	height: 32px;
@@ -380,6 +396,11 @@ textarea {
 
 .st-icon-button:hover {
 	background: var(--st-surface-3);
+}
+
+.st-icon-button:focus-visible {
+	outline: 2px solid var(--st-focus);
+	outline-offset: 2px;
 }
 
 .st-menu-button,
@@ -633,6 +654,30 @@ textarea {
 	animation: st-pulse 1.4s ease-in-out infinite;
 }
 
+.st-message-terminal {
+	margin: 0;
+	color: var(--st-muted);
+	font-size: 12px;
+}
+
+.st-message-terminal.is-failed {
+	color: var(--st-danger);
+}
+
+.st-a2a-degraded {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	padding: 6px 9px;
+	border: 1px solid var(--st-hairline);
+	border-radius: var(--st-radius-md);
+	background: var(--st-surface-2);
+	color: var(--st-muted);
+	font-size: 12px;
+}
+
 .st-message.is-live {
 	border-style: dashed;
 }
@@ -784,6 +829,10 @@ textarea {
 	border-color: var(--st-primary);
 	outline: 2px solid var(--st-focus);
 	outline-offset: 2px;
+}
+
+.st-composer textarea[readonly] {
+	opacity: 0.82;
 }
 
 .st-send-button {

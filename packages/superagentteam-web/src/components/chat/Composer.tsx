@@ -126,7 +126,7 @@ export function Composer({ threadId, onSend, agents = [], disabled = false, disa
 					placeholder="输入消息，Enter 发送，Shift+Enter 换行"
 					aria-label="消息内容"
 					rows={1}
-					disabled={sending}
+					readOnly={sending}
 				/>
 				<button
 					type="button"

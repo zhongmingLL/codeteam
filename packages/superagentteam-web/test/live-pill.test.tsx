@@ -44,6 +44,13 @@ describe("live pill", () => {
 		expect(screen.getByText("执行中 · Agent A1 +1 · 1 分")).toBeInTheDocument();
 	});
 
+	it("does not call a sub-minute run zero minutes", () => {
+		vi.spyOn(Date, "now").mockReturnValue(30_000);
+		render(<LivePill live={[live()]} agents={agents} />);
+
+		expect(screen.getByText("执行中 · Agent A1 · 不到 1 分")).toBeInTheDocument();
+	});
+
 	it("is hidden when nothing is running", () => {
 		const { container } = render(<LivePill live={[]} agents={agents} />);
 		expect(container).toBeEmptyDOMElement();
