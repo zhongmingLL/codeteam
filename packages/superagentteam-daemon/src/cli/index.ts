@@ -1,6 +1,9 @@
 import { initOperatorCredential } from "../auth/operator.ts";
+import { createConsoleToken } from "../api/console-link.ts";
 import { resolveControlDataDir } from "../control/database.ts";
 import { ControlError } from "../control/errors.ts";
+import { resolveDaemonPaths } from "../paths.ts";
+import { readStateFile } from "../state.ts";
 import { runApprovalCommand } from "./approval.ts";
 import { flag, option, parseArgs } from "./args.ts";
 import { runBacklogCommand } from "./backlog.ts";
@@ -24,6 +27,7 @@ export async function runCli(argv: readonly string[]): Promise<number> {
 	const { argvWithoutGlobals, globals } = extractGlobalOptions(argv);
 	const [command, ...rest] = argvWithoutGlobals;
 	if (command === "auth" && rest[0] === "init") return runAuthInit([...rest.slice(1), ...globals]);
+	if (command === "auth" && rest[0] === "console-link") return runAuthConsoleLink([...rest.slice(1), ...globals]);
 	if (command === "memory") return runMemoryCommand([...rest, ...globals]);
 	if (!command || command === "help" || command === "--help") {
 		writeUsage();
@@ -117,10 +121,31 @@ function runAuthInit(argv: readonly string[]): number {
 	return 0;
 }
 
+function runAuthConsoleLink(argv: readonly string[]): number {
+	const args = parseArgs(argv, ["json"]);
+	const dataDir = resolveControlDataDir(option(args, "data-dir"));
+	const paths = resolveDaemonPaths(dataDir);
+	const state = readStateFile(paths.stateFile);
+	if (!state?.healthPort) {
+		throw new ControlError("invalid_state", "daemon is not running or has no health port; start the daemon first");
+	}
+	const ttlText = option(args, "ttl-ms");
+	const ttlMs = ttlText === undefined ? undefined : Number(ttlText);
+	if (ttlMs !== undefined && (!Number.isFinite(ttlMs) || ttlMs <= 0)) {
+		throw new ControlError("invalid_input", "--ttl-ms must be a positive number");
+	}
+	const created = createConsoleToken({ dataDir, ttlMs });
+	const url = `http://127.0.0.1:${state.healthPort}/auth/console?token=${encodeURIComponent(created.token)}`;
+	if (flag(args, "json")) writeJson({ url, expiresAt: created.payload.exp });
+	else writeLine(url);
+	return 0;
+}
+
 function writeUsage(): void {
 	writeLine("usage: superagentteam <command> [options]");
 	writeLine("commands:");
 	writeLine("  auth init [--data-dir <path>] [--rotate]");
+	writeLine("  auth console-link [--data-dir <path>] [--ttl-ms <ms>]");
 	writeLine("  backlog <create|list|show|approve|dispatch|done|depend>");
 	writeLine("  sop <catalog|show|update|evidence>");
 	writeLine("  thread <create|list|show|post|tail> [--engine a2a|legacy]");
