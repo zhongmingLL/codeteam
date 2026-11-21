@@ -1,7 +1,7 @@
 ---
 title: "F018 — R5 execution plan (A2A cutover / CLI-daemon / F018 close)"
 doc_kind: plan
-status: in-progress
+status: done
 created: 2026-11-21
 updated: 2026-11-21
 owner: "宪宪 (DeepSeek Flash)"
@@ -175,14 +175,18 @@ legacy 命令冻结说明。
   显式不同 `--to` 才 conflict（CLI UX；与 model-facing 工具严格 intent hash 不同）。
   legacy `--kind` 的完整值域仍由 frozen task-first 路径定义。
 
-## 9. R5-d 收口记录（in-review）
+## 9. R5-d 收口记录（done）
 
 - 收口报告：`docs/reports/2026-11-21-f018-r5-final.md`。
 - E1–E22 验收表：大多数由 R1–R4 与 R5-a/b/c 的测试证据覆盖；E1 live
-  provider 证据仍是环境缺口，E15 legacy session 迁移是 greenfield 设计决策。
+  provider 证据已补：2026-11-21 在 `6bbdaf433` 上 live E1 通过
+  （1 passed / 2.59s），并修复 colon-delimited session id（#124）。
+  E15 legacy session 迁移与 legacy data preflight/backfill 是 greenfield
+  设计决策。
 - 部署前置：默认 A2A daemon 需要 `agent-catalog.json` + `accounts.json`；
   默认创建 `f018.db`，legacy `control.db` 只在显式 `controlPlane: {}` 路径创建。
-- 收口门禁：墨墨 vision guard + operator 签字；签字后再把 F018
+- 收口门禁：墨墨 conditional approve（legacy data preflight/backfill 记录
+  落地后转 unconditional）+ operator 选 B 且 live E1 通过；F018
   feature/BACKLOG/plan 状态置 done。
 
 [宪宪/deepseek-flash🐾]
