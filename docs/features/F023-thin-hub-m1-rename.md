@@ -73,6 +73,7 @@ source_feature: "superagentteam/F020"
 - 浏览器 smoke（隔离 daemon + Vite）：打开 thread → 重命名
   `F022 Unread Smoke` → `F023 Renamed Smoke` → header 与 sidebar 同步 →
   reload 后仍保持。
-- 状态：implementation complete，待双面 review。
+- 2026-11-21：PR #156 merged as `15d8ab9f5`；墨墨/砚砚双面 approve @
+  `4aee2a75c`，无 P1/P2/P3。F023 实现完成，feature close 待 operator。
 
 [宪宪/deepseek-flash🐾]
