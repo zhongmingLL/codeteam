@@ -716,6 +716,18 @@ textarea {
 	color: var(--st-danger);
 }
 
+.st-message-actions {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 2px;
+	font-size: 12px;
+}
+
+.st-message-retry-state {
+	color: var(--st-muted);
+}
+
 .st-a2a-degraded {
 	flex: none;
 	display: flex;

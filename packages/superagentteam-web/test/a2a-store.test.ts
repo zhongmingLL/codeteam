@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { LiveInvocationView, QueueEntryView } from "@/domains/a2a/api";
 import { createA2AStore } from "@/domains/a2a/store";
+import { ApiError } from "@/lib/api/client";
 
 function queueEntry(overrides: Partial<QueueEntryView> = {}): QueueEntryView {
 	return {
@@ -44,6 +45,7 @@ describe("a2a store", () => {
 				activeInvocations: [invocation],
 			})),
 			live: vi.fn(async () => ({ threadId: "thread:1", invocations: [invocation] })),
+			retryInvocation: vi.fn(),
 		};
 		const store = createA2AStore({ api });
 
@@ -67,6 +69,7 @@ describe("a2a store", () => {
 				.fn()
 				.mockResolvedValueOnce({ threadId: "thread:1", invocations: [] })
 				.mockRejectedValueOnce(new Error("daemon down")),
+			retryInvocation: vi.fn(),
 		};
 		const store = createA2AStore({ api });
 		await store.getState().load("thread:1");
@@ -95,6 +98,7 @@ describe("a2a store", () => {
 				}
 				return Promise.resolve({ threadId, invocations: [live({ turnExecutionId: "turn:2" })] });
 			}),
+			retryInvocation: vi.fn(),
 		};
 		const store = createA2AStore({ api });
 
@@ -105,5 +109,44 @@ describe("a2a store", () => {
 
 		expect(store.getState().threadId).toBe("thread:2");
 		expect(store.getState().live.map((item) => item.turnExecutionId)).toEqual(["turn:2"]);
+	});
+
+	it("retries an invocation and refreshes queue/live", async () => {
+		const api = {
+			queue: vi.fn(async () => ({
+				threadId: "thread:1",
+				cap: { perKind: 20 },
+				queue: [queueEntry()],
+				entries: [queueEntry()],
+				activeInvocations: [],
+			})),
+			live: vi.fn(async () => ({ threadId: "thread:1", invocations: [] })),
+			retryInvocation: vi.fn(async () => ({ status: "retrying" as const, retriedAgentIds: ["a1"] })),
+		};
+		const store = createA2AStore({ api });
+		await store.getState().load("thread:1");
+
+		await store.getState().retryInvocation("inv:1");
+
+		expect(api.retryInvocation).toHaveBeenCalledWith("thread:1", "inv:1");
+		expect(api.queue).toHaveBeenCalledTimes(2);
+	});
+
+	it("maps typed retry errors to operator-facing messages", async () => {
+		const api = {
+			queue: vi.fn(async () => ({
+				threadId: "thread:1",
+				cap: { perKind: 20 },
+				queue: [],
+				entries: [],
+				activeInvocations: [],
+			})),
+			live: vi.fn(async () => ({ threadId: "thread:1", invocations: [] })),
+			retryInvocation: vi.fn(async () => Promise.reject(new ApiError(409, "not_retryable", "not retryable", {}))),
+		};
+		const store = createA2AStore({ api });
+		await store.getState().load("thread:1");
+
+		await expect(store.getState().retryInvocation("inv:1")).rejects.toThrow("这条回复当前不能重试");
 	});
 });

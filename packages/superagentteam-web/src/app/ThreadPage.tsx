@@ -44,6 +44,7 @@ export function ThreadPage() {
 	const a2aError = useA2AStore((state) => state.error);
 	const loadA2A = useA2AStore((state) => state.load);
 	const refreshA2A = useA2AStore((state) => state.refresh);
+	const retryInvocation = useA2AStore((state) => state.retryInvocation);
 	const resetA2A = useA2AStore((state) => state.reset);
 	const agents = useAgentStore((state) => state.agents);
 	const resolvedThread = detail?.id === threadId ? detail : listThread;
@@ -272,6 +273,7 @@ export function ThreadPage() {
 				pendingUserMessages={chatMatches ? pendingUserMessages : []}
 				onLoadOlder={() => void loadOlder()}
 				onRetry={() => void refresh()}
+				onRetryInvocation={(invocationId) => retryInvocation(invocationId)}
 				onResumeLatest={() => void resumeLatest()}
 				liveInvocations={a2aMatches ? a2aLive : []}
 				agentLabel={(agentId) => agents.find((agent) => agent.id === agentId)?.displayName ?? agentId}

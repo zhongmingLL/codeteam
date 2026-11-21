@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { MessageList } from "@/components/chat/MessageList";
 import type { MessageView } from "@/domains/chat/api";
@@ -146,5 +146,62 @@ describe("message list", () => {
 		});
 
 		expect(screen.getByText("回复失败")).toBeInTheDocument();
+	});
+
+	it("retries a failed response through the invocation id", async () => {
+		const onRetryInvocation = vi.fn(async () => {});
+		renderList({
+			messages: [
+				message({
+					id: "msg:failed",
+					type: "assistant",
+					from: { kind: "agent", agentId: "a1" },
+					content: "",
+					lifecycle: {
+						kind: "response",
+						parentInvocationId: "inv:1",
+						turnExecutionId: "turn:1",
+						target: { kind: "agent", id: "a1" },
+						status: "failed",
+						startedAt: 1,
+						endedAt: 2,
+					},
+				}),
+			],
+			onRetryInvocation,
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+		await waitFor(() => expect(onRetryInvocation).toHaveBeenCalledWith("inv:1"));
+		expect(await screen.findByText("已重新排队")).toBeInTheDocument();
+	});
+
+	it("shows a typed retry failure and keeps the action available", async () => {
+		renderList({
+			messages: [
+				message({
+					id: "msg:failed",
+					type: "assistant",
+					from: { kind: "agent", agentId: "a1" },
+					content: "",
+					lifecycle: {
+						kind: "response",
+						parentInvocationId: "inv:1",
+						turnExecutionId: "turn:1",
+						target: { kind: "agent", id: "a1" },
+						status: "failed",
+						startedAt: 1,
+						endedAt: 2,
+					},
+				}),
+			],
+			onRetryInvocation: vi.fn(async () => Promise.reject(new Error("这条回复当前不能重试"))),
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent("这条回复当前不能重试");
+		expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
 	});
 });

@@ -24,6 +24,7 @@ export interface MessageListProps {
 	agentLabel?: (agentId: string) => string;
 	onLoadOlder: () => void;
 	onRetry: () => void;
+	onRetryInvocation?: (invocationId: string) => Promise<void>;
 	onResumeLatest: () => void;
 }
 
@@ -45,10 +46,40 @@ function terminalStatus(message: MessageView): { label: string; status: string }
 	return null;
 }
 
-function MessageRow({ message }: { message: MessageView }) {
+function retryableInvocationId(message: MessageView): string | null {
+	if (message.lifecycle?.kind !== "response") return null;
+	if (message.lifecycle.status !== "failed" && message.lifecycle.status !== "interrupted") return null;
+	return message.lifecycle.parentInvocationId;
+}
+
+function MessageRow({
+	message,
+	onRetryInvocation,
+}: {
+	message: MessageView;
+	onRetryInvocation?: (invocationId: string) => Promise<void>;
+}) {
 	const sender = message.from.kind;
 	const processing = isProcessing(message);
 	const terminal = terminalStatus(message);
+	const invocationId = retryableInvocationId(message);
+	const [retrying, setRetrying] = useState(false);
+	const [retryState, setRetryState] = useState<"idle" | "queued" | "error">("idle");
+	const [retryError, setRetryError] = useState<string | undefined>();
+	const retry = async (): Promise<void> => {
+		if (!invocationId || retrying || !onRetryInvocation) return;
+		setRetrying(true);
+		setRetryError(undefined);
+		try {
+			await onRetryInvocation(invocationId);
+			setRetryState("queued");
+		} catch (error) {
+			setRetryState("error");
+			setRetryError(error instanceof Error ? error.message : "重试失败");
+		} finally {
+			setRetrying(false);
+		}
+	};
 	return (
 		<article className={`st-message is-${sender}`} data-message-id={message.id}>
 			<div className="st-message-meta">
@@ -58,6 +89,24 @@ function MessageRow({ message }: { message: MessageView }) {
 			{message.content !== "" ? <MessageContent content={message.content} /> : null}
 			{processing ? <p className="st-message-processing">正在回复…</p> : null}
 			{terminal ? <p className={`st-message-terminal is-${terminal.status}`}>{terminal.label}</p> : null}
+			{terminal && invocationId && onRetryInvocation ? (
+				<div className="st-message-actions">
+					{retryState === "queued" ? (
+						<span className="st-message-retry-state" role="status">
+							已重新排队
+						</span>
+					) : (
+						<button type="button" className="st-link-button" onClick={() => void retry()} disabled={retrying}>
+							{retrying ? "重试中…" : "重试"}
+						</button>
+					)}
+					{retryState === "error" ? (
+						<span className="st-error" role="alert">
+							{retryError ?? "重试失败"}
+						</span>
+					) : null}
+				</div>
+			) : null}
 		</article>
 	);
 }
@@ -75,6 +124,7 @@ export function MessageList({
 	agentLabel,
 	onLoadOlder,
 	onRetry,
+	onRetryInvocation,
 	onResumeLatest,
 }: MessageListProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
@@ -178,7 +228,7 @@ export function MessageList({
 				</div>
 			) : null}
 			{messages.map((message) => (
-				<MessageRow key={message.id} message={message} />
+				<MessageRow key={message.id} message={message} onRetryInvocation={onRetryInvocation} />
 			))}
 			{pendingUserMessages.map((pending) => (
 				<article className="st-message is-user is-pending" key={pending.messageId}>
