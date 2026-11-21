@@ -170,6 +170,23 @@ describe("F016c-M1 S2 thread API", () => {
 		expect(((await deleted.json()) as { threads: unknown[] }).threads).toEqual([]);
 	});
 
+	it("treats a different title attribution as a replay conflict", async () => {
+		const base = await start();
+		const auth = await login(base);
+		const first = await createThread(base, auth, {
+			projectPath: "/tmp/project-a",
+			title: "Same title",
+			idempotencyKey: "attribution",
+		});
+		expect(first.status).toBe(201);
+		const conflict = await createThread(base, auth, {
+			projectPath: "/tmp/project-a",
+			temporaryTitle: "Same title",
+			idempotencyKey: "attribution",
+		});
+		expect(conflict.status).toBe(409);
+	});
+
 	it("requires a real projectPath instead of inventing a default workspace", async () => {
 		const base = await start();
 		const auth = await login(base);

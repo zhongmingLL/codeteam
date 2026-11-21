@@ -140,7 +140,8 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 			const replay =
 				existing.createdBy === context.session.userId &&
 				existing.projectPath === projectPath &&
-				(existing.title ?? null) === (parsedTitle.title ?? null);
+				(existing.title ?? null) === (parsedTitle.title ?? null) &&
+				existing.titleSource === parsedTitle.titleSource;
 			if (!replay)
 				return fail(response, 409, "idempotency_conflict", "idempotencyKey was used with another payload");
 			sendJson(response, 200, toView(existing));
@@ -163,7 +164,8 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 			const replay =
 				raced.createdBy === context.session.userId &&
 				raced.projectPath === projectPath &&
-				(raced.title ?? null) === (parsedTitle.title ?? null);
+				(raced.title ?? null) === (parsedTitle.title ?? null) &&
+				raced.titleSource === parsedTitle.titleSource;
 			if (!replay)
 				return fail(response, 409, "idempotency_conflict", "idempotencyKey was used with another payload");
 			sendJson(response, 200, toView(raced));
