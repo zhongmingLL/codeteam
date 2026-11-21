@@ -117,6 +117,13 @@ workspace/events；先把核心动线做顺。
 - M0 无 Socket.IO：用轮询。
   - threads：10s；messages：2s（thread 可见且页面可见）；queue/live：2s；
   - 页面 hidden 时暂停；单飞（禁止重叠请求）；错误指数退避到 30s。
+  - **游标方向**：M1 `/api/messages` 只有 `before`（向旧）游标，没有 forward/
+    incremental。轮询的正确策略是“拉最新窗口整体 replace”，不发明增量语义；
+    `before` 只在“加载更早”时使用。`200 {messages:[], hasMore:false,
+    query_warnings:["invalid_cursor"]}` 表示游标损坏，UI 必须清掉游标并重拉最新窗口，
+    不能当成 thread 为空清空历史。
+  - session 是 15min idle 滑动 + 8h absolute；轮询让 idle 不过期，但 8h 封顶仍会在
+    活跃使用中途 401。401 必须保留当前草稿/滚动位置并进 `/relogin`；H4 专门走查。
 - 发送：`idempotencyKey = crypto.randomUUID()` 每次发送意图生成；重试复用同一 key；
   新消息新 key。POST 202 后刷新 messages+queue，不做乐观消息；发送中显示本地
   “发送中” chip；失败保留草稿 + 重试按钮。
@@ -125,6 +132,8 @@ workspace/events；先把核心动线做顺。
 - agent 状态：`/api/agents` 的全局汇总（idle/working/offline）；thread header 的
   live pill 用 `/live`，并注明“thread 内状态”。
 - thread create：表单要求真实 `projectPath`（无 `default` 哨兵）；标题可选。
+  M1 create 只校验非空；first-party Hub 与 daemon 同机，M0.5 可把本地路径存在性/
+  绝对路径检查提前到 create，把运行期 `worker_start_failed` 换成 create 时的诚实错误。
 - 401：进入 `/relogin`；不自动 `default-user`；不无限重试。
 - 无 read state/unread API：M0 不做未读数，sidebar row 只显示“进行中”点。
 
@@ -137,6 +146,8 @@ workspace/events；先把核心动线做顺。
   创建成功后跳到 `/thread/:id`。
 - 空/错误：thread 404 → “对话不存在” + 返回；401 → relogin；网络错误 →
   保留当前内容 + 顶部重试条；不要白屏。
+- 消息渲染：M0 纯文本 + 简单代码块；**禁止 `dangerouslySetInnerHTML`**；代码块走
+  纯文本节点或 sanitization 后的 highlighter。React 默认转义是底线，不是可关闭项。
 - 键盘/读屏：按钮有 aria-label；焦点环可见；状态文字可读；动画 respect
   `prefers-reduced-motion`。
 
@@ -192,6 +203,8 @@ packages/superagentteam-web/
   `{userId, csrfToken}`；`/relogin` 提供命令 + “我已完成，重试”按钮。
 - 开发 proxy：Vite `/api`、`/auth/console` → daemon 3011；`hubOrigin` 设为
   `http://localhost:3000`。生产：daemon 同源，`hubOrigin` 为 daemon origin。
+- Vite proxy 不改写 Origin；daemon 看到 `Origin: http://localhost:3000`，必须与
+  `hubOrigin` 匹配。H0 加“从 Vite origin 发起写请求通过 origin check”的测试。
 - 写请求幂等键：`crypto.randomUUID()`；重试复用；不要用时间戳。
 
 ### 3.4 设计 token
@@ -216,6 +229,9 @@ packages/superagentteam-web/
 - 依赖：React、React DOM、react-router-dom、Zustand、Vite、@vitejs/plugin-react、
   Vitest、@testing-library/react、jsdom。**精确 pin**，更新 lockfile；跑
   `check:pinned-deps`、`check:runtime-deps`、`supply-chain`。
+- 本项目安装走 `npm install --ignore-scripts`；H0 必须实测 esbuild/Vite 的平台包在
+  该模式下可用。若某依赖需要 install script，在 §6 显式记 exception 并提供替代方案，
+  不让 CI 第一天红。
 - 根 `check` 增加 `tsc -p packages/superagentteam-web/tsconfig.json --noEmit`
   与 biome；新增 web 构建到 `build:offline`；CI `build-check-test` 覆盖。
 - 这是新的依赖面，PR 需 supply-chain/非作者 review；在 `UPSTREAM.md` 记录
@@ -226,12 +242,12 @@ packages/superagentteam-web/
 
 | 单元 | 可观察结果 | 改动位置 | 验证 |
 |---|---|---|---|
-| H0 脚手架 + token + API/session | 页面能启动；无 session 进 relogin；console-link 后 `/api/session` 200 | `packages/superagentteam-web/{package.json,vite.config.ts,src/main.tsx,src/app,src/lib/api,src/styles}`；根 build/check 脚本 | `npm run build --workspace @superagentteam/web`；web unit；浏览器手验 |
+| H0 脚手架 + token + API/session | 页面能启动；无 session 进 relogin；console-link 后 `/api/session` 200；Vite-origin 写请求过 origin check | `packages/superagentteam-web/{package.json,vite.config.ts,src/main.tsx,src/app,src/lib/api,src/styles}`；根 build/check 脚本 | `npm install --ignore-scripts` 后 web build/unit；浏览器手验；Vite-origin POST 测试 |
 | H1 shell + sidebar + threads | 看到 thread 列表；创建/选择/搜索；空态 | `domains/thread/*`、`components/layout/*` | thread store/api 单测；浏览器 smoke |
-| H2 chat + composer | 历史可见；发送 202；消息出现；双击不双发 | `domains/chat/*`、`components/Composer`、`MessageRow` | send/idempotency 单测；浏览器 smoke |
+| H2 chat + composer | 历史可见；发送 202；消息出现；双击不双发；最新窗口 replace；坏 cursor 清游标重拉；纯文本/代码块不注入 HTML | `domains/chat/*`、`components/Composer`、`MessageRow` | send/idempotency、cursor replace、invalid_cursor 单测；浏览器 smoke |
 | H3 queue/live/agents | queue strip、live pill、agent 状态；轮询不重叠 | `domains/a2a/*`、`domains/agent/*`、`lib/polling` | polling 单测；浏览器 smoke |
-| H4 打磨 | 空/错/加载、窄屏、键盘、暗色 token、reduced motion | `app/*`、`styles/*`、`components/ui/*` | 1440/1024/390 手验；键盘走查；对比度检查 |
-| H5 承载 + CI | daemon 在 `/` 服务 SPA；console-link 跳 `/`；根 build/check/test 绿 | daemon static serving、CLI redirect、根脚本、CI | `npm run build:offline`、`npm run check`、`./test.sh`；浏览器 smoke |
+| H4 打磨 | 空/错/加载、窄屏、键盘、暗色 token、reduced motion；8h absolute 中途 401 保留草稿并进 relogin | `app/*`、`styles/*`、`components/ui/*` | 1440/1024/390 手验；键盘走查；对比度检查；8h 401 走查 |
+| H5 承载 + CI | daemon 在 `/` 服务 SPA；console-link 跳 `/`；未知 `/api/*` 返回 JSON 404（静态 catch-all 不吞 API）；根 build/check/test 绿 | daemon static serving、CLI redirect、根脚本、CI | `npm run build:offline`、`npm run check`、`./test.sh`；`GET /api/unknown` JSON 404；浏览器 smoke |
 
 每个行为单元先写 RED（Vitest/Testing Library 或浏览器 smoke），再实现；纯样式/
 文档走格式/截图检查。
@@ -250,8 +266,10 @@ packages/superagentteam-web/
   Socket.IO/不承诺 streaming。
 - **视觉/可用性**：1440/1024/390 可用；键盘可完成发送；焦点环/对比度/状态文字；
   reduced motion 下不跑动画。
+- **静态/API 边界**：SPA fallback 不吞 `/api/*`；`GET /api/不存在` 返回 JSON 404，
+  不是 index.html。
 - **构建**：web build/typecheck/test、根 `check`/`build:offline`、CI 绿；依赖
-  pin/supply-chain 通过。
+  pin/supply-chain 通过；`npm install --ignore-scripts` 下 Vite/esbuild 可用。
 
 ## 6. 风险与未决
 
@@ -263,7 +281,11 @@ packages/superagentteam-web/
 - **未读/read state**：M1 无 API，M0 不做未读；sidebar 只显示“进行中”。
 - **窄屏**：sidebar 抽屉 + composer 固定底部需要真实 390 走查。
 - **静态服务安全**：daemon 服务 SPA 时防路径穿越、正确 content-type/cache；
-  只服务 dist，不服务任意文件。
+  只服务 dist，不服务任意文件。SPA fallback 与 `/api/*` 必须硬分界。
+- **install script**：`npm install --ignore-scripts` 下 esbuild/Vite 平台包若不可用，
+  在 §6 记 exception，不用“先跑 postinstall 再说”的方式绕过供应链门禁。
+- **projectPath 存在性**：M1 create 只校验非空；M0.5 在 daemon 同机场景补本地路径
+  存在性检查，避免运行期 `worker_start_failed`。
 - **classic Hub 兼容**：F020 不再以 real-Hub E2E 为 M2 前置；classic 兼容作为
   可选轨道，真实 Hub 的两个事实（projectPath 表单、mentions 值域）仍在
   `0029 §5` 的挂账里，由兼容轨道/操作员环境处理。
