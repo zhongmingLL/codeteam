@@ -64,7 +64,7 @@ describe("F018 R5-c2 default daemon entry", () => {
 			installationRoot: legacyDir,
 			dataDir: legacyDir,
 			runningRevision: "r5c2",
-			controlPlane: "legacy",
+			controlPlane: {},
 		});
 		try {
 			legacy.markReady();

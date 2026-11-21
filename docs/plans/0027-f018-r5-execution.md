@@ -165,7 +165,7 @@ legacy 命令冻结说明。
 
 - `startDaemon` 默认入口切 A2A：`controlPlane` / `a2aControlPlane` 都省略时走
   `A2ADaemonControlPlane`；默认创建 `f018.db`，不创建 `control.db`。
-- 显式 legacy：`controlPlane: "legacy"`（或旧 object options）保留 frozen
+- 显式 legacy：`controlPlane: {}`（或旧 object options）保留 frozen
   task-first control plane；`controlPlane: false` / `a2aControlPlane: false`
   为 health-only。互斥检查仍前移在 fence/observability 之前。
 - legacy code delivery 命令（task/backlog/review/merge/sop/schedule/deployment/

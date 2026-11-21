@@ -58,7 +58,7 @@ describe("SuperAgentTeam daemon lifecycle", () => {
 			const daemon = await startDaemon({
 				installationRoot,
 				runningRevision: "rev-1",
-				controlPlane: "legacy",
+				controlPlane: {},
 			});
 			running.push(daemon);
 			expect(existsSync(join(home, ".superagentteam", "control.db"))).toBe(true);

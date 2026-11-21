@@ -25,8 +25,8 @@ export interface StartDaemonOptions {
 	port?: number;
 	/** Defaults to a local observability runtime; pass false to disable telemetry. */
 	observability?: ObservabilityRuntime | false;
-	/** Legacy task-first control plane (frozen); use "legacy" for its defaults. */
-	controlPlane?: "legacy" | Omit<DaemonControlPlaneOptions, "dataDir"> | false;
+	/** Legacy task-first control plane (frozen); use {} for its defaults. */
+	controlPlane?: Omit<DaemonControlPlaneOptions, "dataDir"> | false;
 	/** A2A runtime control plane; the default when neither option is provided. */
 	a2aControlPlane?: Omit<A2ADaemonControlPlaneOptions, "dataDir"> | false;
 }
@@ -81,8 +81,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	const paths = resolveDaemonPaths(options.dataDir);
 	const installation = resolveInstallation(options.installationRoot);
 	const deploymentId = validateDeploymentId(options.deploymentId);
-	const legacyRequested =
-		options.controlPlane === "legacy" || (typeof options.controlPlane === "object" && options.controlPlane !== null);
+	const legacyRequested = typeof options.controlPlane === "object" && options.controlPlane !== null;
 	const a2aRequested = options.a2aControlPlane !== undefined && options.a2aControlPlane !== false;
 	const defaultEntry = options.controlPlane === undefined && options.a2aControlPlane === undefined;
 	if (a2aRequested && legacyRequested) {
@@ -167,9 +166,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 				await a2aControlPlane.start();
 			} else {
 				const legacyOptions =
-					options.controlPlane === "legacy" || options.controlPlane === false || options.controlPlane === undefined
-						? {}
-						: options.controlPlane;
+					options.controlPlane === false || options.controlPlane === undefined ? {} : options.controlPlane;
 				controlPlane = new DaemonControlPlane({ ...legacyOptions, dataDir: paths.dataDir });
 				await controlPlane.start();
 			}
