@@ -58,7 +58,8 @@ related_features: [codeteam/F016, codeteam/F018]
 | `POST /api/messages` | `OperatorMessageIngress` | 复用 `thread post` 语义；M1 admission 必须要求/生成 idempotencyKey；targets 0 = message-only，1 = 普通 post，>1 = 422 `use_multi_mention`；202 queued |
 | `GET /api/threads/:id/queue` | queue + attempts | 断线 reconcile 必需；返回 `{queue, activeInvocations}`；无数据也要 200 |
 | `GET /api/threads/:id/live` | attempts + invocations | 落地 `getThreadLiveInvocations`；字段按 0007 §3.10；按 startedAt 升序；过滤 terminal；tracker/durable 去重 |
-| `GET /api/cats` | agent catalog | 显示用；不作授权 |
+| `GET /api/agents` | agent catalog | canonical agent 投影；显示/路由候选；不作授权 |
+| `GET /api/cats` | same as `/api/agents` | classic Hub alias：`catId = agentId`；仅显示/provenance；不作授权 |
 | `GET /api/config` | safe defaults | 最小 UI 默认配置 |
 
 > 所有 thread 级端点（`/threads/:id`、`/messages`、`/queue`、`/live`）必须走
@@ -112,11 +113,11 @@ labels / workspace）：
 
 | 切片 | 交付 | 验收 |
 |---|---|---|
-| S0 | code map + DTO freeze（Thread/Message/QueueView/LiveInvocationView/MessageDispatchSummary 的 M1 子集）+ session/auth 设计 + owner gate / thread-create idempotency / error-status map | 文档/接口冻结；砚砚 API/security review |
+| S0 | code map + DTO freeze（Thread/Message/QueueView/LiveInvocationView/MessageDispatchSummary 的 M1 子集）+ session/auth 设计 + owner gate / thread-create idempotency / error-status map；产物 `docs/reports/2026-11-21-f016c-m1-s0-freeze.md` | 文档/接口冻结；砚砚 API/security review |
 | S1 | 现有 Node HTTP server 上的 `/api` router + console-link session + CSRF/Origin | session 正负例；无 cookie 401；CSRF 负例 |
 | S2 | thread sidebar/detail/create | owner/access、404、空 thread、幂等创建 |
 | S3 | message list/append | cursor/hasMore、idempotencyKey replay/conflict、非法 query 空页 |
-| S4 | queue read + live read + cats/config | `/queue` 200 空读、`/live` terminal 过滤/去重/排序、cats 不作授权 |
+| S4 | queue read + live read + agents/cats/config | `/queue` 200 空读、`/live` terminal 过滤/去重/排序、agents/cats 不作授权、catId 不能替代 agentId |
 | S5 | legacy 读空壳/写 501 + contract tests + real Hub/headless E2E | `disabled:true`、501、无 `control.db`、无 `default-user` |
 
 每个切片先红后绿；S1 后可并行 S2/S4，但 S3 必须等 session/CSRF 冻结。
