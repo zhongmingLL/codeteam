@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { QueueEntry, RichMessageExtra, StoredMessage } from "@superagentteam/shared/types";
+import { canonicalJson } from "../../infrastructure/canonical-json.ts";
 import { runInTransaction } from "../../infrastructure/db/database.ts";
 import { parseOperatorMentions } from "../agent/mentions.ts";
 import type { AgentRegistry, ResolvedTarget } from "../agent/registry.ts";
@@ -198,7 +199,7 @@ export class OperatorMessageIngress {
 					existing.from.userId === input.userId &&
 					existing.content === input.body &&
 					existing.replyTo === input.replyTo &&
-					JSON.stringify(existing.extra?.rich ?? null) === JSON.stringify(input.extra?.rich ?? null) &&
+					canonicalJson(existing.extra?.rich ?? null) === canonicalJson(input.extra?.rich ?? null) &&
 					storedTargets.length > 0 &&
 					sameTargets;
 				if (!sameIdentity) throw new Error("ingress_message_id_conflict");
