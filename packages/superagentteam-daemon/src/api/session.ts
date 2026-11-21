@@ -88,16 +88,15 @@ export function readSessionId(headers: IncomingHttpHeaders): string | null {
 	return value && value.trim() !== "" ? value : null;
 }
 
-export function serializeSessionCookie(
-	id: string,
-	options: { maxAgeSeconds?: number; secure?: boolean } = {},
-): string {
+export function serializeSessionCookie(id: string, options: { maxAgeSeconds?: number; secure?: boolean } = {}): string {
 	const parts = [
 		`${SESSION_COOKIE_NAME}=${id}`,
 		"Path=/",
 		"HttpOnly",
 		"SameSite=Strict",
-		`Max-Age=${Math.max(0, Math.floor(options.maxAgeSeconds ?? DEFAULT_SESSION_IDLE_TTL_MS / 1000))}`,
+		// Keep the cookie while the server-side absolute TTL can still accept it.
+		// Idle expiry is enforced by SessionStore.get, not by the browser.
+		`Max-Age=${Math.max(0, Math.floor(options.maxAgeSeconds ?? DEFAULT_SESSION_ABSOLUTE_TTL_MS / 1000))}`,
 	];
 	if (options.secure) parts.push("Secure");
 	return parts.join("; ");

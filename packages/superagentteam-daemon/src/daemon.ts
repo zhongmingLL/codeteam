@@ -98,6 +98,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	const bootSequence = nextBootSequence(paths.ledgerFile);
 	const declaredServices = [...(options.services ?? [])];
 	const startedAt = new Date().toISOString();
+	const hubOrigin = options.hubOrigin ?? envValue(process.env, "HUB_ORIGIN") ?? "http://localhost:3000";
 
 	let state: DaemonState = "requested";
 	let healthPort: number | null = null;
@@ -114,6 +115,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		state,
 		services: declaredServices,
 		healthPort,
+		hubOrigin,
 		startedAt,
 		updatedAt: new Date().toISOString(),
 	});
@@ -210,7 +212,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 
 	const browserApi = createBrowserApi({
 		dataDir: paths.dataDir,
-		hubOrigin: options.hubOrigin ?? envValue(process.env, "HUB_ORIGIN") ?? "http://localhost:3000",
+		hubOrigin,
 		secureCookies: options.secureCookies ?? false,
 	});
 

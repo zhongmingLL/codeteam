@@ -6,9 +6,11 @@ import {
 	hasForbiddenIdentityHeaders,
 	isAllowedOrigin,
 	readSessionId,
-	serializeSessionCookie,
 	SessionStore,
+	serializeSessionCookie,
 } from "./session.ts";
+
+export const RELOGIN_HINT = "run `superagentteam auth console-link` and open the printed URL";
 
 export interface BrowserApiOptions {
 	dataDir: string;
@@ -27,6 +29,10 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 	const clock = options.clock ?? Date.now;
 	const sessions = options.sessionStore ?? new SessionStore({ clock });
 	const nonces = new Map<string, number>();
+
+	function sendUnauthorized(response: ServerResponse, message: string): void {
+		sendJson(response, 401, { error: "unauthorized", message, relogin_hint: RELOGIN_HINT });
+	}
 
 	function consumeNonce(nonce: string, expiresAt: number, now: number): boolean {
 		for (const [value, expiry] of nonces) {
@@ -49,13 +55,13 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 			}
 			const token = url.searchParams.get("token");
 			if (!token) {
-				sendError(response, 401, "unauthorized", "missing console token");
+				sendUnauthorized(response, "missing console token");
 				return true;
 			}
 			try {
 				const payload = verifyConsoleToken({ dataDir: options.dataDir, token, now: clock() });
 				if (!consumeNonce(payload.nonce, payload.exp, clock())) {
-					sendError(response, 401, "unauthorized", "console token was already used or expired");
+					sendUnauthorized(response, "console token was already used or expired");
 					return true;
 				}
 				const session = sessions.create(payload.sub, clock());
@@ -68,7 +74,7 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 				});
 				response.end();
 			} catch {
-				sendError(response, 401, "unauthorized", "invalid console token");
+				sendUnauthorized(response, "invalid console token");
 			}
 			return true;
 		}
@@ -85,12 +91,12 @@ export function createBrowserApi(options: BrowserApiOptions): BrowserApi {
 			}
 			const sessionId = readSessionId(request.headers);
 			if (!sessionId) {
-				sendError(response, 401, "unauthorized", "missing browser session");
+				sendUnauthorized(response, "missing browser session");
 				return true;
 			}
 			const session = sessions.get(sessionId, clock());
 			if (!session) {
-				sendError(response, 401, "unauthorized", "browser session expired");
+				sendUnauthorized(response, "browser session expired");
 				return true;
 			}
 			sendJson(

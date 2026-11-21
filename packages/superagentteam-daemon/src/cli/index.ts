@@ -1,7 +1,8 @@
+import { consoleLinkUrl, createConsoleToken } from "../api/console-link.ts";
 import { initOperatorCredential } from "../auth/operator.ts";
-import { createConsoleToken } from "../api/console-link.ts";
 import { resolveControlDataDir } from "../control/database.ts";
 import { ControlError } from "../control/errors.ts";
+import { envValue } from "../env.ts";
 import { resolveDaemonPaths } from "../paths.ts";
 import { readStateFile } from "../state.ts";
 import { runApprovalCommand } from "./approval.ts";
@@ -135,7 +136,9 @@ function runAuthConsoleLink(argv: readonly string[]): number {
 		throw new ControlError("invalid_input", "--ttl-ms must be a positive number");
 	}
 	const created = createConsoleToken({ dataDir, ttlMs });
-	const url = `http://127.0.0.1:${state.healthPort}/auth/console?token=${encodeURIComponent(created.token)}`;
+	const hubOrigin =
+		option(args, "hub-origin") ?? state.hubOrigin ?? envValue(process.env, "HUB_ORIGIN") ?? "http://localhost:3000";
+	const url = consoleLinkUrl({ hubOrigin, port: state.healthPort, token: created.token });
 	if (flag(args, "json")) writeJson({ url, expiresAt: created.payload.exp });
 	else writeLine(url);
 	return 0;
@@ -145,7 +148,7 @@ function writeUsage(): void {
 	writeLine("usage: superagentteam <command> [options]");
 	writeLine("commands:");
 	writeLine("  auth init [--data-dir <path>] [--rotate]");
-	writeLine("  auth console-link [--data-dir <path>] [--ttl-ms <ms>]");
+	writeLine("  auth console-link [--data-dir <path>] [--ttl-ms <ms>] [--hub-origin <url>]");
 	writeLine("  backlog <create|list|show|approve|dispatch|done|depend>");
 	writeLine("  sop <catalog|show|update|evidence>");
 	writeLine("  thread <create|list|show|post|tail> [--engine a2a|legacy]");

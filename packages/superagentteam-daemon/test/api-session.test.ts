@@ -3,16 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createConsoleToken } from "../src/api/console-link.ts";
-import {
-	hasForbiddenIdentityHeaders,
-	isAllowedOrigin,
-	requireCsrf,
-	SessionStore,
-} from "../src/api/session.ts";
+import { consoleLinkUrl, createConsoleToken } from "../src/api/console-link.ts";
+import { hasForbiddenIdentityHeaders, isAllowedOrigin, requireCsrf, SessionStore } from "../src/api/session.ts";
 import { initOperatorCredential } from "../src/auth/operator.ts";
 import { runCli } from "../src/cli/index.ts";
 import { type DaemonHandle, startDaemon } from "../src/index.ts";
+import { resolveDaemonPaths } from "../src/paths.ts";
+import { readStateFile } from "../src/state.ts";
 
 describe("F016c-M1 S1 browser session", () => {
 	let root: string;
@@ -58,6 +55,7 @@ describe("F016c-M1 S1 browser session", () => {
 		expect(setCookie).toContain("superagentteam_session=");
 		expect(setCookie).toContain("HttpOnly");
 		expect(setCookie).toContain("SameSite=Strict");
+		expect(setCookie).toContain("Max-Age=28800");
 
 		const cookie = setCookie!.split(";")[0]!;
 		const session = await fetch(`${base}/api/session`, { headers: { cookie } });
@@ -69,7 +67,9 @@ describe("F016c-M1 S1 browser session", () => {
 
 	it("rejects missing sessions, replayed tokens, and invalid tokens", async () => {
 		const base = await start();
-		expect((await fetch(`${base}/api/session`)).status).toBe(401);
+		const missing = await fetch(`${base}/api/session`);
+		expect(missing.status).toBe(401);
+		expect(((await missing.json()) as { relogin_hint?: string }).relogin_hint).toContain("auth console-link");
 
 		const created = createConsoleToken({ dataDir, ttlMs: 60_000 });
 		expect(
@@ -108,10 +108,19 @@ describe("F016c-M1 S1 browser session", () => {
 			expect(await runCli(["auth", "console-link", "--data-dir", dataDir, "--json"])).toBe(0);
 			const output = write.mock.calls.map((call) => String(call[0])).join("");
 			const parsed = JSON.parse(output) as { url: string };
-			expect(parsed.url).toContain(`${base}/auth/console?token=`);
+			const url = new URL(parsed.url);
+			expect(url.hostname).toBe("localhost");
+			expect(url.port).toBe(new URL(base).port);
+			expect(url.pathname).toBe("/auth/console");
 		} finally {
 			write.mockRestore();
 		}
+	});
+
+	it("records the Hub origin in daemon state for console-link host selection", async () => {
+		await start();
+		const state = readStateFile(resolveDaemonPaths(dataDir).stateFile);
+		expect(state?.hubOrigin).toBe("http://localhost:3000");
 	});
 });
 
@@ -149,5 +158,15 @@ describe("SessionStore", () => {
 		expect(isAllowedOrigin(undefined, "http://localhost:3000")).toBe(false);
 		expect(hasForbiddenIdentityHeaders({ authorization: "Bearer x" })).toBe(true);
 		expect(hasForbiddenIdentityHeaders({ cookie: "superagentteam_session=x" })).toBe(false);
+	});
+});
+
+describe("consoleLinkUrl", () => {
+	it("uses the Hub host rather than the daemon bind address", () => {
+		const url = new URL(consoleLinkUrl({ hubOrigin: "http://localhost:3000", port: 3011, token: "abc" }));
+		expect(url.hostname).toBe("localhost");
+		expect(url.port).toBe("3011");
+		expect(url.pathname).toBe("/auth/console");
+		expect(url.searchParams.get("token")).toBe("abc");
 	});
 });

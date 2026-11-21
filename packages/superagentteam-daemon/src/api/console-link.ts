@@ -40,6 +40,22 @@ export interface VerifyConsoleTokenOptions {
 	now?: number;
 }
 
+export interface ConsoleLinkUrlOptions {
+	hubOrigin: string;
+	port: number;
+	token: string;
+}
+
+/**
+ * The session cookie is host-scoped, so the console exchange must happen on the
+ * same hostname the Hub is served from. Cookies ignore ports; `localhost` and
+ * `127.0.0.1` are different hosts and SameSite=Strict will not cross them.
+ */
+export function consoleLinkUrl(options: ConsoleLinkUrlOptions): string {
+	const host = new URL(options.hubOrigin).hostname;
+	return `http://${host}:${options.port}/auth/console?token=${encodeURIComponent(options.token)}`;
+}
+
 function encode(value: string): string {
 	return Buffer.from(value, "utf8").toString("base64url");
 }
