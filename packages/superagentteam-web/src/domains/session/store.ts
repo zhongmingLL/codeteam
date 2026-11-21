@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import { api } from "@/lib/api";
-import { type ApiClient, ApiError } from "@/lib/api/client.ts";
+import { type ApiClient, ApiError, setUnauthorizedHandler } from "@/lib/api/client.ts";
 import { setCsrfToken } from "@/lib/api/token.ts";
 
 export interface SessionResponse {
@@ -64,3 +64,7 @@ export function createSessionStore(deps: SessionStoreDeps) {
 }
 
 export const useSessionStore = createSessionStore({ client: api, setToken: setCsrfToken });
+
+setUnauthorizedHandler(() => {
+	useSessionStore.getState().markUnauthenticated();
+});

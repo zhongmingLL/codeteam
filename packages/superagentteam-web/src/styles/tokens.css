@@ -37,3 +37,11 @@
 	--st-on-primary: #181715;
 	--st-focus: #cc785c;
 }
+
+:root {
+	--st-danger: #c64545;
+}
+
+[data-theme="dark"] {
+	--st-danger: #e06b6b;
+}

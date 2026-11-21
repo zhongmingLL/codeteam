@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import { AppShell } from "@/components/layout/AppShell";
 import { useSessionStore } from "@/domains/session/store";
 import { HomePage } from "./app/HomePage";
 import { ReloginPage } from "./app/ReloginPage";
+import { ThreadPage } from "./app/ThreadPage";
 
 export function App() {
 	const status = useSessionStore((state) => state.status);
@@ -21,13 +23,22 @@ export function App() {
 		);
 	}
 
+	if (status !== "authenticated") {
+		return (
+			<Routes>
+				<Route path="/relogin" element={<ReloginPage />} />
+				<Route path="*" element={<Navigate to="/relogin" replace />} />
+			</Routes>
+		);
+	}
+
 	return (
 		<Routes>
-			<Route path="/relogin" element={<ReloginPage />} />
-			<Route
-				path="/"
-				element={status === "authenticated" ? <HomePage /> : <Navigate to="/relogin" replace />}
-			/>
+			<Route path="/relogin" element={<Navigate to="/" replace />} />
+			<Route element={<AppShell />}>
+				<Route index element={<HomePage />} />
+				<Route path="thread/:threadId" element={<ThreadPage />} />
+			</Route>
 			<Route path="*" element={<Navigate to="/" replace />} />
 		</Routes>
 	);
