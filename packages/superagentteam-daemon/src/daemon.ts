@@ -214,7 +214,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		dataDir: paths.dataDir,
 		hubOrigin,
 		secureCookies: options.secureCookies ?? false,
-		a2a: a2aControlPlane ? { runtime: a2aControlPlane.runtime } : undefined,
+		a2a: a2aControlPlane ? { runtime: a2aControlPlane.runtime, registry: a2aControlPlane.registry } : undefined,
 	});
 
 	let server: Server;

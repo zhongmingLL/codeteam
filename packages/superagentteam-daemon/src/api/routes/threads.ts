@@ -4,7 +4,8 @@ import type { Thread, ThreadTitleSource } from "@superagentteam/shared/types";
 
 import type { A2ARuntime } from "../../domains/a2a/runtime.ts";
 import { HttpError, readJsonBody, sendError, sendJson } from "../http.ts";
-import { type BrowserSession, requireCsrf } from "../session.ts";
+import { requireCsrf } from "../session.ts";
+import type { ApiRouteContext } from "./context.ts";
 
 const THREADS_PATH = "/api/threads";
 const DEFAULT_THREAD_LIMIT = 50;
@@ -23,13 +24,8 @@ export interface ThreadView {
 	deletedAt?: number | null;
 }
 
-export interface ThreadRouteContext {
-	session: BrowserSession;
-	origin: string | undefined;
-}
-
 export interface ThreadRoutes {
-	handle(request: IncomingMessage, response: ServerResponse, url: URL, context: ThreadRouteContext): Promise<boolean>;
+	handle(request: IncomingMessage, response: ServerResponse, url: URL, context: ApiRouteContext): Promise<boolean>;
 }
 
 export interface ThreadRoutesOptions {
@@ -86,7 +82,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 	async function createThread(
 		request: IncomingMessage,
 		response: ServerResponse,
-		context: ThreadRouteContext,
+		context: ApiRouteContext,
 	): Promise<true> {
 		const csrf = request.headers["x-csrf-token"];
 		const csrfToken = Array.isArray(csrf) ? csrf[0] : csrf;
@@ -164,7 +160,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 		request: IncomingMessage,
 		response: ServerResponse,
 		url: URL,
-		context: ThreadRouteContext,
+		context: ApiRouteContext,
 	): Promise<boolean> {
 		if (url.pathname !== THREADS_PATH && !url.pathname.startsWith(`${THREADS_PATH}/`)) return false;
 
