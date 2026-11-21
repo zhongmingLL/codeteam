@@ -126,6 +126,22 @@ data: {"threadId":"thread:...","topics":["messages","queue","live"],"at":1795250
 - **顺序**：事件不排序、不带版本；客户端以 HTTP 最新窗口为准，旧响应由 store 守卫丢弃。
 - **classic Hub**：若 compat 需要 Socket.IO，单独适配，不污染第一方契约。
 
+## 7. Plan review 折叠项（S1/S2 验收）
+
+- **S1 hook 覆盖双路**：事件发布点不只挂 browser route；operator ingress 与
+  A2A tool-service 的 message append/queue 变化必须同样 publish，且都在业务
+  commit 之后。
+- **S1 heartbeat 验 session**：15s heartbeat tick 顺带验证 session 仍有效；
+  失效即 close stream，客户端走既有 401 探测/relogin 路径，不让过期 session
+  继续收事件。
+- **S2 事件错误决策树**：ES error → probe `/api/session`；401 → close ES +
+  relogin；session 200 → 不 relogin，fallback 2s polling + ES 有限退避重连
+  （daemon 不可用时禁止每秒重连风暴）。
+- **S2 降级提示双向对应**：SSE 正常时不显示“实时更新不可用”；真实 fallback
+  时不静默，提示与实际连接状态一一对应。
+- **S2 代理缓冲 smoke**：Vite/反向代理下验证事件不被缓冲；必要时调整响应头
+  或代理配置并记录。
+
 ## References
 
 - `docs/plans/0029-f016c-m1-execution.md`
