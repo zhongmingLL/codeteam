@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
+import { createBrowserApi } from "./api/browser.ts";
 import { appendBootRecord, nextBootSequence } from "./boot-ledger.ts";
 import { A2ADaemonControlPlane, type A2ADaemonControlPlaneOptions } from "./daemon-a2a.ts";
 import { DaemonControlPlane, type DaemonControlPlaneOptions } from "./daemon-runtime.ts";
@@ -29,6 +30,10 @@ export interface StartDaemonOptions {
 	controlPlane?: Omit<DaemonControlPlaneOptions, "dataDir"> | false;
 	/** A2A runtime control plane; the default when neither option is provided. */
 	a2aControlPlane?: Omit<A2ADaemonControlPlaneOptions, "dataDir"> | false;
+	/** Hub origin allowed to use the browser API; defaults to SUPERAGENTTEAM_HUB_ORIGIN or http://localhost:3000. */
+	hubOrigin?: string;
+	/** Set Secure on browser session cookies when the Hub is served over https. */
+	secureCookies?: boolean;
 }
 
 export interface DaemonBoot {
@@ -93,6 +98,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	const bootSequence = nextBootSequence(paths.ledgerFile);
 	const declaredServices = [...(options.services ?? [])];
 	const startedAt = new Date().toISOString();
+	const hubOrigin = options.hubOrigin ?? envValue(process.env, "HUB_ORIGIN") ?? "http://localhost:3000";
 
 	let state: DaemonState = "requested";
 	let healthPort: number | null = null;
@@ -109,6 +115,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		state,
 		services: declaredServices,
 		healthPort,
+		hubOrigin,
 		startedAt,
 		updatedAt: new Date().toISOString(),
 	});
@@ -203,10 +210,17 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		a2aControlPlane: a2aControlPlane?.ready() ?? null,
 	});
 
+	const browserApi = createBrowserApi({
+		dataDir: paths.dataDir,
+		hubOrigin,
+		secureCookies: options.secureCookies ?? false,
+	});
+
 	let server: Server;
 	try {
 		server = createServer((request, response) => {
 			const url = new URL(request.url ?? "/", "http://127.0.0.1");
+			if (browserApi.handle(request, response)) return;
 			if (request.method === "GET" && url.pathname === "/health") {
 				response.writeHead(state === "ready" ? 200 : 503, { "content-type": "application/json" });
 				response.end(JSON.stringify(health()));

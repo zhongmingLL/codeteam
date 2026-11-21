@@ -14,6 +14,8 @@ export interface DaemonStateFile {
 	state: DaemonState;
 	services: string[];
 	healthPort: number | null;
+	/** Hub origin the browser API advertises for console-link URL generation. */
+	hubOrigin?: string;
 	startedAt: string;
 	updatedAt: string;
 }

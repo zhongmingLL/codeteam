@@ -83,7 +83,9 @@ labels / workspace）：
 ## 3. Auth / 安全
 
 - **console-link session**：operator 通过本地 console-link 换取浏览器 session；
-  独立 cookie（建议 `superagentteam_session`），HttpOnly/SameSite/Origin
+  console-link URL 的 host 必须与 Hub 页面同 host（cookie 不能跨
+  `localhost`/`127.0.0.1`）；独立 cookie（建议 `superagentteam_session`），
+  HttpOnly/SameSite/Origin
   allowlist；写操作 CSRF。
 - **无匿名 fallback**：无 cookie/无效 session 直接 401；不复制 classic 的
   `default-user` fallback。
