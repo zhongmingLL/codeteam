@@ -63,6 +63,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0028-f016-w7a-rescope.md`](0028-f016-w7a-rescope.md) | F016 W7a re-scope after F018：wait D1、Hub legacy surface D2、F016c-M1 first D3；不恢复 custody/task-first | 砚砚（API/security）+ 墨墨（vision/UX）+ 烁烁（standby） |
 | [`0029-f016c-m1-execution.md`](0029-f016c-m1-execution.md) | F016c-M1 执行计划：daemon HTTP API、session/CSRF、thread/message、queue/live read、legacy 空壳；不含 events/cancel | 砚砚（API/security）+ 墨墨（vision/UX） |
 | [`0030-f020-thin-hub-m0.md`](0030-f020-thin-hub-m0.md) | F020 W7b thin Hub 调研与 M0 计划：clowder 设计借鉴、Vite/daemon 同源、sidebar/chat/queue/live/agents、验收与风险 | 墨墨（vision/UX）+ 砚砚（API/security）+ 烁烁（架构） |
+| [`0031-f016c-m2-events.md`](0031-f016c-m2-events.md) | F016c-M2 计划：SSE invalidation channel、HTTP history refetch、polling fallback、queue/live/message 事件、canonical rich JSON 与 compat 边界 | 墨墨（vision/UX）+ 砚砚（API/security） |
 
 ## W0–W8 一览
 
