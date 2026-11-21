@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useThreadStore } from "@/domains/thread/store";
 import type { ThreadView } from "@/domains/thread/api";
+import { ApiError } from "@/lib/api/client";
 
 export interface NewThreadDialogProps {
 	open: boolean;
@@ -79,7 +80,11 @@ export function NewThreadDialog({ open, onClose, onCreated }: NewThreadDialogPro
 			});
 			onCreated(thread);
 		} catch (caught) {
-			setError(caught instanceof Error ? caught.message : "创建对话失败");
+			if (caught instanceof ApiError && caught.code === "project_path_invalid") {
+				setError("请填写一个存在的绝对目录路径");
+			} else {
+				setError(caught instanceof Error ? caught.message : "创建对话失败");
+			}
 		} finally {
 			setSubmitting(false);
 		}
