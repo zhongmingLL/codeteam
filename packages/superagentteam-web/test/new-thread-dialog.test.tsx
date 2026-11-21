@@ -25,7 +25,7 @@ afterEach(() => {
 		error: undefined,
 		query: "",
 		load: vi.fn(async () => {}),
-		refresh: vi.fn(async () => {}),
+		refresh: vi.fn(async () => true),
 		create: vi.fn(),
 	});
 });
@@ -53,5 +53,25 @@ describe("new thread dialog", () => {
 		expect(create).toHaveBeenCalledWith(
 			expect.objectContaining({ projectPath: "/tmp/new", idempotencyKey: expect.any(String) }),
 		);
+	});
+
+	it("traps Tab inside the dialog and restores focus when it closes", () => {
+		const trigger = document.createElement("button");
+		trigger.textContent = "open";
+		document.body.append(trigger);
+		trigger.focus();
+
+		const props = { onClose: () => {}, onCreated: () => {} };
+		const view = render(<NewThreadDialog open {...props} />);
+		const dialog = screen.getByRole("dialog");
+		const focusable = dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled])");
+		const last = focusable[focusable.length - 1];
+		last.focus();
+		fireEvent.keyDown(window, { key: "Tab" });
+		expect(document.activeElement).toBe(focusable[0]);
+
+		view.rerender(<NewThreadDialog open={false} {...props} />);
+		expect(document.activeElement).toBe(trigger);
+		trigger.remove();
 	});
 });

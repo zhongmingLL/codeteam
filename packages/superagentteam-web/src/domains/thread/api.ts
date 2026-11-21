@@ -13,12 +13,14 @@ export interface CreateThreadInput {
 
 export interface ThreadApi {
 	list(): Promise<{ threads: ThreadView[] }>;
+	get(threadId: string): Promise<ThreadView>;
 	create(input: CreateThreadInput): Promise<ThreadView>;
 }
 
 export function createThreadApi(client: Pick<ApiClient, "get" | "post">): ThreadApi {
 	return {
 		list: () => client.get<{ threads: ThreadView[] }>("/api/threads"),
+		get: (threadId) => client.get<ThreadView>(`/api/threads/${encodeURIComponent(threadId)}`),
 		create: (input) => client.post<ThreadView>("/api/threads", input),
 	};
 }

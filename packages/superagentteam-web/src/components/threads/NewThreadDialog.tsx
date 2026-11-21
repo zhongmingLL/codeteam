@@ -17,11 +17,14 @@ export function NewThreadDialog({ open, onClose, onCreated }: NewThreadDialogPro
 	const [submitting, setSubmitting] = useState(false);
 	const idempotencyKey = useRef<string | null>(null);
 	const projectInput = useRef<HTMLInputElement>(null);
+	const dialogRef = useRef<HTMLDivElement>(null);
+	const previousFocus = useRef<HTMLElement | null>(null);
 	const onCloseRef = useRef(onClose);
 	onCloseRef.current = onClose;
 
 	useEffect(() => {
 		if (!open) return;
+		previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		setTitle("");
 		setProjectPath("");
 		setError(undefined);
@@ -29,12 +32,30 @@ export function NewThreadDialog({ open, onClose, onCreated }: NewThreadDialogPro
 		idempotencyKey.current = null;
 		const timer = setTimeout(() => projectInput.current?.focus(), 0);
 		const onKey = (event: KeyboardEvent): void => {
-			if (event.key === "Escape") onCloseRef.current();
+			if (event.key === "Escape") {
+				onCloseRef.current();
+				return;
+			}
+			if (event.key !== "Tab" || !dialogRef.current) return;
+			const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+				'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+			);
+			if (focusable.length === 0) return;
+			const first = focusable[0];
+			const last = focusable[focusable.length - 1];
+			if (event.shiftKey && document.activeElement === first) {
+				event.preventDefault();
+				last.focus();
+			} else if (!event.shiftKey && document.activeElement === last) {
+				event.preventDefault();
+				first.focus();
+			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => {
 			clearTimeout(timer);
 			window.removeEventListener("keydown", onKey);
+			previousFocus.current?.focus();
 		};
 	}, [open]);
 
@@ -66,7 +87,13 @@ export function NewThreadDialog({ open, onClose, onCreated }: NewThreadDialogPro
 
 	return (
 		<div className="st-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-			<div className="st-dialog" role="dialog" aria-modal="true" aria-labelledby="st-new-thread-title">
+			<div
+				ref={dialogRef}
+				className="st-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="st-new-thread-title"
+			>
 				<h2 id="st-new-thread-title">新对话</h2>
 				<form onSubmit={(event) => void submit(event)}>
 					<label className="st-field">

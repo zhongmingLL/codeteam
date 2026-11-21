@@ -30,7 +30,7 @@ afterEach(() => {
 		error: undefined,
 		query: "",
 		load: vi.fn(async () => {}),
-		refresh: vi.fn(async () => {}),
+		refresh: vi.fn(async () => true),
 		create: vi.fn(),
 	});
 });

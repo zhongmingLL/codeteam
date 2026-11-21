@@ -21,8 +21,11 @@ source_plan: "docs/plans/0030-f020-thin-hub-m0.md"
 ## 进度
 
 - H0 脚手架（Vite/React/tokens/API client/session/relogin）已合入 `46b0cd19`。
-- H1 shell/sidebar/threads（AppShell、线程列表/搜索/创建、路由、10s 轮询）在 review。
-- H2 chat/composer、H3 queue/live/agents、H4 打磨、H5 daemon 承载随后。
+- H1 shell/sidebar/threads（AppShell、线程列表/搜索/创建、路由、10s 轮询）已合入 `5ae478aa`。
+- H2 chat/composer（消息历史、发送 202、receipt 驱动 pending、2s 最新窗口轮询、
+  invalid cursor 重拉、纯文本/代码块安全渲染、draft/retry、thread detail、
+  shared polling backoff、dialog focus trap）在 review。
+- H3 queue/live/agents、H4 打磨、H5 daemon 承载随后。
 
 ## Why
 
