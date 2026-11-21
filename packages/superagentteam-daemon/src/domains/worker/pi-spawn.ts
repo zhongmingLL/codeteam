@@ -1,4 +1,6 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AgentSession } from "@superagentteam/shared/types";
 import { resolveWorkerExtensionPath } from "../../workers/harness.ts";
 import { RpcConnection } from "../../workers/rpc-client.ts";
@@ -26,6 +28,16 @@ export interface PiSpawnOptions {
 
 function freshPiSessionId(session: AgentSession, now: number): string {
 	return `sat-${session.id}-${now.toString(36)}`;
+}
+
+/** R5-b: resolve the v1 A2A extension (not the legacy task-first extension). */
+export function resolveA2AExtensionPath(): string {
+	const dir = dirname(fileURLToPath(import.meta.url));
+	const js = join(dir, "..", "..", "workers", "a2a-extension.js");
+	if (existsSync(js)) return js;
+	const ts = join(dir, "..", "..", "workers", "a2a-extension.ts");
+	if (existsSync(ts)) return ts;
+	throw new Error("a2a_worker_extension_not_found");
 }
 
 export class PiWorkerSpawnPort implements WorkerSpawnPort {

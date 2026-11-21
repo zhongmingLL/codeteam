@@ -201,6 +201,27 @@ export class QueueProcessor {
 		return { processed, deferred, convergenceFailed };
 	}
 
+	/**
+	 * R5-b daemon loop: drain queued entries across all threads. The A2A
+	 * runtime has no task/run coordinator, so the daemon must discover
+	 * candidate threads globally; each thread uses its owner as the userId.
+	 */
+	async drainAll(maxEntries = 10): Promise<DrainResult> {
+		let processed = 0;
+		let deferred = 0;
+		const convergenceFailed: string[] = [];
+		for (const threadId of this.deps.queue.listQueuedThreadIds()) {
+			if (processed >= maxEntries) break;
+			const thread = this.deps.threads.get(threadId);
+			if (!thread) continue;
+			const result = await this.drain(threadId, thread.createdBy, { maxEntries: maxEntries - processed });
+			processed += result.processed;
+			deferred += result.deferred;
+			convergenceFailed.push(...result.convergenceFailed);
+		}
+		return { processed, deferred, convergenceFailed };
+	}
+
 	private claimNext(threadId: string, userId: string): { entry: QueueEntry; claimId: string } | null {
 		const entries = this.deps.queue.listQueued(threadId);
 		const held = new Set<string>();

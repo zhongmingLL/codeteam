@@ -60,8 +60,8 @@ R5-a 是关键路径：没有它，生产 worker 仍然只会看到 retired send
 - 新增 A2A daemon control plane：`buildA2ARuntime` + `A2AControlServer` +
   `PiWorkerSpawnPort` + queue drain timer + startup reconciler + single reaper +
   multi_mention recovery + observability 事件接线。
-- `startDaemon` 默认走 A2A control plane；legacy `DaemonControlPlane` 保留为
-  frozen/legacy，不再作为默认。
+- 本片以 `startDaemon({ a2aControlPlane })` opt-in 交付；默认入口与 CLI 一起在
+  R5-c 切换。legacy `DaemonControlPlane` 保留 frozen/legacy。
 - 出口：daemon 启动/停止/重启恢复；真实 provider 或确定性 worker E2E；
   不读 legacy task/custody 表。
 
@@ -113,7 +113,9 @@ R5-a 是关键路径：没有它，生产 worker 仍然只会看到 retired send
   R5-d 愿景守护 + operator。
 - R5-a 不改 daemon/CLI 生产入口，只交付 bridge + 测试；R5-b 才切换默认路径。
 
-## 5. R5-a 交付记录（in-review）
+## 5. R5-a 交付记录（merged）
+
+- PR #119 → merge commit `e34837706`。
 
 - `domains/a2a/tool-surface.ts`：四个 canonical tool spec。
 - `domains/a2a/control.ts`：credential-scoped JSON-lines control server；
@@ -128,6 +130,20 @@ R5-a 是关键路径：没有它，生产 worker 仍然只会看到 retired send
 - 测试：`f018-r5-a-tool-bridge.test.ts`（四工具分发 + auth 负例 + extension）；
   `f018-r3-real-spawn.test.ts`（control socket/token env 契约）；
   `f018-r2b-worker-stream.test.ts`（token rotation 不复用）。
-- 本片不改 `startDaemon` / `DaemonControlPlane`；生产默认路径切换属 R5-b。
+- 本片不改 `startDaemon` / `DaemonControlPlane`；生产默认路径切换在 R5-b opt-in 之后由 R5-c 落。
+
+## 6. R5-b 交付记录（in-review）
+
+- `daemon-a2a.ts`：`A2ADaemonControlPlane` 组装 `buildA2ARuntime` + control server
+  + `PiWorkerSpawnPort`（v1 `a2a-extension`）+ startup recovery + drain/reaper loop；
+  `ready()` 暴露 pending/lastDrain/lastSweep/lastError。
+- `startDaemon({ a2aControlPlane })` opt-in；legacy `controlPlane` 保持兼容，
+  两者互斥。默认入口切换仍属 R5-c。
+- global drain：`QueueLedgerStore.listQueuedThreadIds` / `countQueuedAll` +
+  `QueueProcessor.drainAll`；每 thread 用 owner `createdBy` 作为 userId。
+- shutdown：`WorkerPool.closeAll` finish 全部 live carrier 并 retire；
+  控制 socket、定时器、DB 按顺序收口。
+- 测试：`f018-r5-b-daemon.test.ts`（跨 thread drain + 两 response、startup
+  process_restart 收敛、startDaemon opt-in/clean close）。
 
 [宪宪/deepseek-flash🐾]
