@@ -79,7 +79,7 @@ related_features: [codeteam/F016, codeteam/F018]
 | thread detail | `GET /api/threads/:id` | `f018.db` | 404 表示不存在 |
 | thread create | `POST /api/threads` | `f018.db` | 最小版；idempotencyKey 可后补 |
 | messages | `GET /api/messages?threadId=&limit=&before=` | `f018.db` messages | cursor 按 message seq/时间适配 |
-| message append | `POST /api/messages` | `OperatorMessageIngress` | 复用 `thread post` 语义；idempotencyKey 先补 |
+| message append | `POST /api/messages` | `OperatorMessageIngress` | M1 admission 必须要求/生成 idempotencyKey，复用 `thread post` 的 messageId replay 语义；不后补 |
 | queue read | `GET /api/threads/:id/queue` | `f018.db` queue/invocation | 断线 reconcile 必需；先诚实空读再补投影 |
 | cats/config | `GET /api/cats` / `GET /api/config` | `f018.db` agent catalog | 只作显示与默认配置，不作授权 |
 
@@ -96,9 +96,12 @@ related_features: [codeteam/F016, codeteam/F018]
   所有写操作 CSRF；无 cookie/无效 session 直接 401，不落 `default-user`。
 - 写 message 必须走 `OperatorMessageIngress`，并补 idempotencyKey；不能直接
   复用 legacy message append 的宽松边界。
-- `cancel_invocation` 是第一个真实 operator cancel caller。实现它时必须同时
-  补 `cancelTarget`/`cancelRequest` 的授权层与 CLI/socket caller，不能造假
-  授权层（F018 报告 §6 的 cancel caller 缺口）。
+- `cancel_invocation` 是第一个真实 operator cancel caller，但**不在 M2 交付**；
+  它必须与 P3 的授权层同 PR，不能先出现一个无授权的 Hub cancel 入口。
+  授权谓词：operator session 必须是目标 thread 的 owner；target invocation
+  必须属于该 thread；无跨 thread、无 agent 代签；`actionId` 幂等；映射到
+  该 invocation 的 `cancelTarget`/`cancelRequest`（F018 报告 §6 的 cancel
+  caller 缺口）。
 
 ## 4. F016c-M2（live events）
 
@@ -108,7 +111,9 @@ related_features: [codeteam/F016, codeteam/F018]
 - `agent_message`（同一 response messageId；文本 replace；done/error 终态）
 - `intent_mode` / `spawn_started`（invocation 开始）
 - `thread_updated` / `thread_created`（sidebar invalidation）
-- `cancel_invocation`（client→server；actionId 幂等；映射 operator cancel）
+
+> `cancel_invocation`（client→server）不在 M2 交付；它必须与 §3.3 的授权层
+> 同 PR（P3），M2 不注册该事件、不对 Hub 承诺。
 
 明确不做：
 
@@ -132,8 +137,8 @@ related_features: [codeteam/F016, codeteam/F018]
 |---|---|---|
 | P0 | 本文 + operator D1/D2/D3 签字 | docs review；不写代码 |
 | P1 | F016c-M1 API + contract tests | 砚砚 API/security；墨墨 user-facing |
-| P2 | F016c-M2 events + reconnect convergence | real Hub/headless E2E；无 cookie 负例 |
-| P3 | cancel 授权 + Hub cancel 映射 | 与第一个真实 caller 一起落 |
+| P2 | F016c-M2 events + reconnect convergence（不含 `cancel_invocation`） | real Hub/headless E2E；无 cookie 负例 |
+| P3 | cancel 授权 + Hub cancel 映射（`cancel_invocation` 与授权同 PR） | 与第一个真实 caller 一起落；M2 不注册该事件 |
 | P4 | post-F018 hardening 小批（session id 碰撞、heartbeat env、observation 等） | 小 PR，按需穿插 |
 
 ## 7. 验收
@@ -142,7 +147,9 @@ related_features: [codeteam/F016, codeteam/F018]
   签字后，才开 F016c-M1 执行 plan。
 - F016c-M1/M2 的验收必须包含：A2A 面只读 `f018.db`、不读写 `control.db`；
   legacy 面诚实空读/501；无 `default-user` fallback；写操作 CSRF/幂等；
-  cancel 授权层不是占位；断线后 history 收敛；无 custody/task-first 回潮。
+  message append 的 idempotencyKey 在 M1 admission 生效；M2 不暴露未授权
+  `cancel_invocation`；cancel 只在 P3 与授权层同 PR；断线后 history 收敛；
+  无 custody/task-first 回潮。
 
 ## 8. 非目标
 
