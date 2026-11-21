@@ -53,13 +53,17 @@ related_features: [codeteam/F016, codeteam/F018]
 | `GET /api/session` | console-link session | 返回 `{userId, csrfToken}`；Set-Cookie 独立 session；无效/缺失不落 `default-user` |
 | `GET /api/threads?view=sidebar` | threads + messages | 最小 sidebar 投影；可先不做 presence/ETag |
 | `GET /api/threads/:id` | threads | 404 表示不存在；owner/access 校验 |
-| `POST /api/threads` | threads | 最小创建；idempotencyKey 可后补，但重复创建需显式处理 |
+| `POST /api/threads` | threads | 最小创建；M1 admission 即要求/生成 idempotencyKey（client id 或 key），同 message append；重复创建不双开 |
 | `GET /api/messages?threadId=&limit=&before=` | messages | cursor 适配 message seq/时间；非法 query 返回空页而不是 400 |
-| `POST /api/messages` | `OperatorMessageIngress` | 复用 `thread post` 语义；M1 admission 必须要求/生成 idempotencyKey；202 queued |
+| `POST /api/messages` | `OperatorMessageIngress` | 复用 `thread post` 语义；M1 admission 必须要求/生成 idempotencyKey；targets 0 = message-only，1 = 普通 post，>1 = 422 `use_multi_mention`；202 queued |
 | `GET /api/threads/:id/queue` | queue + attempts | 断线 reconcile 必需；返回 `{queue, activeInvocations}`；无数据也要 200 |
 | `GET /api/threads/:id/live` | attempts + invocations | 落地 `getThreadLiveInvocations`；字段按 0007 §3.10；按 startedAt 升序；过滤 terminal；tracker/durable 去重 |
 | `GET /api/cats` | agent catalog | 显示用；不作授权 |
 | `GET /api/config` | safe defaults | 最小 UI 默认配置 |
+
+> 所有 thread 级端点（`/threads/:id`、`/messages`、`/queue`、`/live`）必须走
+> 同一 owner/access gate；不能只在 thread detail 做校验。S0 冻结这条规则，
+> S1/S2/S4 每个端点都带跨 thread/owner 负例。
 
 ### 2.2 Legacy 面（operator 2026-11-21：先隐藏）
 
@@ -88,11 +92,27 @@ labels / workspace）：
 - **cancel 不在 M1/M2**：`cancel_invocation` 只在 P3 与授权层同 PR；M1 不注册
   该入口。
 
+### 3.1 Error / status mapping（S0/S3 冻结）
+
+| 情况 | HTTP | code |
+|---|---|---|
+| 无/无效 session | 401 | `unauthorized` |
+| CSRF 缺失/不匹配 | 403 | `csrf_failed` |
+| thread 不存在 | 404 | `thread_not_found` |
+| thread 不属于 operator / 跨 owner | 403 | `forbidden` |
+| 多 target 走单条 post | 422 | `use_multi_mention` |
+| target agent disabled / unknown | 422 | `agent_disabled` / `target_invalid` |
+| queue 满 | 429 | `queue_full` |
+| 幂等 key 相同但 intent 不同 | 409 | `idempotency_conflict` |
+| 非法 query/body | 400 | `invalid_input` |
+| daemon/依赖不可用 | 503 | `unavailable` |
+| legacy 写面 | 501 | `not_implemented` |
+
 ## 4. 工作拆分
 
 | 切片 | 交付 | 验收 |
 |---|---|---|
-| S0 | code map + DTO freeze（Thread/Message/QueueView/LiveInvocationView/MessageDispatchSummary 的 M1 子集）+ session/auth 设计 | 文档/接口冻结；砚砚 API/security review |
+| S0 | code map + DTO freeze（Thread/Message/QueueView/LiveInvocationView/MessageDispatchSummary 的 M1 子集）+ session/auth 设计 + owner gate / thread-create idempotency / error-status map | 文档/接口冻结；砚砚 API/security review |
 | S1 | 现有 Node HTTP server 上的 `/api` router + console-link session + CSRF/Origin | session 正负例；无 cookie 401；CSRF 负例 |
 | S2 | thread sidebar/detail/create | owner/access、404、空 thread、幂等创建 |
 | S3 | message list/append | cursor/hasMore、idempotencyKey replay/conflict、非法 query 空页 |
@@ -107,6 +127,8 @@ labels / workspace）：
   queue/live 读取；真实 Hub 兼容面按 contract test 通过。
 - 安全：无 cookie/无效 session 401；CSRF 负例；跨 thread/owner 负例；
   不落 `default-user`。
+- Contract：每个 thread 级端点有 owner/access 负例；thread create 与 message
+  append 都在 M1 admission 生效幂等；错误码→HTTP status 按 §3.1 表冻结。
 - 数据边界：A2A 面只读 `f018.db`；不读写 `control.db`；不恢复 task/custody。
 - 幂等：同一 message idempotencyKey 重放不产生双消息/双 queue；不同 intent
   conflict。
