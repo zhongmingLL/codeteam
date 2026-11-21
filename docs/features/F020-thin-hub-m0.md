@@ -2,7 +2,7 @@
 feature_ids: [superagentteam/F020]
 related_features: [codeteam/F016]
 title: "F020: W7b thin Hub M0"
-status: in_progress
+status: done
 owner: "宪宪 (Ragdoll/DeepSeek Flash)"
 reviewers: [墨墨 (Qwen 3.8 Flash), 砚砚 (GLM 5.3 Flash), 烁烁 (Kimi K3)]
 vision_guard: 墨墨 (Qwen 3.8 Flash)
@@ -31,7 +31,7 @@ source_plan: "docs/plans/0030-f020-thin-hub-m0.md"
   硬边界、静态路径安全）已合入 `f4ef2602`。
 - H4 打磨（失败/中断终态可见、A2A 降级提示、presence 文字、暗色切换、
   草稿/滚动保持与 401 走查、键盘/窄屏）已合入 `7467a027`。
-- **M0 实现已完成，等待 operator close 确认。**
+- **2026-11-21 operator 确认 close；M0 状态 done。**
 
 ## M0 交付证据
 
@@ -47,6 +47,15 @@ source_plan: "docs/plans/0030-f020-thin-hub-m0.md"
 **close 前已知 carry**：长 thread saved-position 浏览器实测（有真实长对话后）、
 relogin 深链接回跳、真实 worker 的 busy live smoke、classic Hub 兼容轨道、
 M0.5 projectPath 存在性检查。
+
+## Close-out
+
+- operator 2026-11-21 确认 close；vision guard 墨墨 close acceptance 无异议。
+- M0 交付链：H0 `46b0cd19` → H1 `5ae478aa` → H2 `cf653a86` →
+  H3 `f5a68989` → H5 `f4ef2602` → H4 `7467a027`。
+- 后续计划：M0.5 硬化（projectPath 存在性、relogin 深链接、真实 worker
+  busy live smoke、长 thread 滚动实测）与 F016c-M2 事件/收敛 plan；classic
+  Hub 真实 E2E 留在可选兼容轨道。
 
 ## Why
 
