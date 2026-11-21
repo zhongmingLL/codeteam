@@ -26,6 +26,12 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > operator 2026-11-21 已签字 D1=A / D2=A / D3=A：F016c-M1 先做，
 > F016b defer；legacy 面板先隐藏；F016c-M1 另开执行 plan。
 
+> **2026-11-21 F016c-M1 close-out.** S0–S5 已合入：session、thread、message、
+> queue/live、agents/cats/config 的 headless 读面 + legacy 空壳/501 + headless
+> E2E 已交付。真实 classic Hub 的浏览器 E2E 未在本机执行（无运行中的 Hub），
+> 验收步骤与 P3 总账见 `docs/reports/2026-11-21-f016c-m1-s5-closeout.md`。
+> F016c-M2（Socket.IO events + history refetch）与 F016b wait 仍未交付。
+
 ## Why
 
 `docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md` 的结论是：
