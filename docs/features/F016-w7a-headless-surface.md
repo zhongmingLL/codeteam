@@ -32,16 +32,17 @@ source_report: "docs/reports/2026-10-31-f016-a2a-dispatch-tool-priority.md"
 > 验收步骤与 P3 总账见 `docs/reports/2026-11-21-f016c-m1-s5-closeout.md`。
 > F016c-M2（event invalidation + history refetch）由 F020 thin Hub 的 M0 收口后启动；
 > classic Hub 的真实 E2E 只属于可选兼容轨道（0029 §5 挂账），不再是 M2 前置。
-> M2 计划 `docs/plans/0031-f016c-m2-events.md` 已进入 review：第一方 Hub 采用
+> M2 计划 `docs/plans/0031-f016c-m2-events.md` 已接受（`ad18dad0`）：第一方 Hub 采用
 > SSE invalidation channel + HTTP refetch，Socket.IO 只在 classic compat 确有消费者时适配。
 > M2-S1（daemon ChangeBus + `/api/events` SSE + commit 后发布）已合入 `7fe1c148`；
-> M2-S2 Web EventSource/refetch/fallback 已实现，待 review。
+> M2-S2 Web EventSource/refetch/fallback 已合入 `00a9b0a2`。
 > M2-S3 验收记录：`docs/reports/2026-11-21-f016c-m2-s3-acceptance.md`
-> （SSE 延迟 <500ms 断言、static/Vite proxy、fallback/polling/reconnect 双向证据）。
+> （SSE 延迟 <500ms 断言、static/Vite proxy、fallback/polling/reconnect 双向证据；
+> merge `ed4fed04`）。
 > M2-S4 canonical rich JSON + compat 边界记录：
-> `docs/reports/2026-11-21-f016c-m2-compat-boundary.md`。F016c-M2 S0–S4
-> 技术交付完成；F016b 按 D1=A defer，classic Hub 为可选 compat 轨道。
-> F016b wait 仍未交付。
+> `docs/reports/2026-11-21-f016c-m2-compat-boundary.md`（merge `49b8114dd`）。
+> F016c-M2 S0–S4 全部合入，双面 review approve；F016b 按 D1=A defer，
+> classic Hub 为可选 compat 轨道。F016 umbrella close 待 operator 决策。
 
 ## Why
 
