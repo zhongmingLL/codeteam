@@ -61,6 +61,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | [`0026-f018-r4-execution.md`](0026-f018-r4-execution.md) | F018 R4 执行计划：loop guard、idempotency、observation、multi_mention timeout/anti-cascade、recovery；E17/E20 | 砚砚（security/recovery）+ 墨墨（vision/eval）+ 烁烁（dispatch） |
 | [`0027-f018-r5-execution.md`](0027-f018-r5-execution.md) | F018 R5 执行计划：v1 tool bridge、A2A daemon、CLI/default-entry cutover、F018 close；E1 live + legacy freeze | 砚砚（code/security）+ 墨墨（vision）+ 烁烁（standby） |
 | [`0028-f016-w7a-rescope.md`](0028-f016-w7a-rescope.md) | F016 W7a re-scope after F018：wait D1、Hub legacy surface D2、F016c-M1 first D3；不恢复 custody/task-first | 砚砚（API/security）+ 墨墨（vision/UX）+ 烁烁（standby） |
+| [`0029-f016c-m1-execution.md`](0029-f016c-m1-execution.md) | F016c-M1 执行计划：daemon HTTP API、session/CSRF、thread/message、queue/live read、legacy 空壳；不含 events/cancel | 砚砚（API/security）+ 墨墨（vision/UX） |
 
 ## W0–W8 一览
 
@@ -112,7 +113,7 @@ W0b upstream/CI 治理：与 W1–W4 并行，W5 前完成
 | W4 | closed (F007, operator confirmed) | PR #47 `4743137c9` + PR #48 `772dd1741`；264 passed / 1 skipped；22/22 AC；vision guard 烁烁 approve；W7a residuals tracked（`0009` / F007） |
 | W5 | closed (W5a/W5b/W5c core/W5d; operator confirmed) | F008/`0010` + F009/`0011`（W5b closed）+ F010/`0012`（W5c core closed，PR #52 `959ef7e76`）+ F011/`0013`（W5d closed：PR #56 `168e67dd0` reviewed HEAD `dfb872d9c`；烁烁 post-merge P2 修复 PR #59 `125ba4f81` reviewed HEAD `d96ca039b`，APPROVED；operator signoff `0001793204552090-003817-65582a68`） |
 | W6 | closed (W6a/W6b/W6c; operator confirmed) | W6a/F012 PR #62 `c82b0679c`；W6c/F013 PR #63 `12c546854`；W6b/F014 PR #66 `b74952ac2`；operator signoff `0001793276746238-003935-3d7a01c4` |
-| W7 | in_progress | W7a A2A E2E foundation merged（F015，PR #72 `b941dde32`）；F016a ingress/tool E2E merged（PR #81 `bc778185e`）；F016b/F016c re-scope signed（plan 0028 D1/D2/D3=A；F016c-M1 next，F016b deferred）；W7b Console 后置，复用基线 `DP-WEB-1=B`（classic） |
+| W7 | in_progress | W7a A2A E2E foundation merged（F015，PR #72 `b941dde32`）；F016a ingress/tool E2E merged（PR #81 `bc778185e`）；F016b/F016c re-scope signed（plan 0028 D1/D2/D3=A；F016c-M1 execution plan 0029 draft-for-review，F016b deferred）；W7b Console 后置，复用基线 `DP-WEB-1=B`（classic） |
 | W8 | planned | github-signals W8 契约已冻结；待 Forge connector |
 
 ---
