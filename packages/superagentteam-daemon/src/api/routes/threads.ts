@@ -1,11 +1,8 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { join } from "node:path";
-
 import type { Thread, ThreadTitleSource } from "@superagentteam/shared/types";
 
-import { ThreadStore } from "../../domains/thread/store.ts";
-import { F018Database } from "../../infrastructure/db/database.ts";
+import type { A2ARuntime } from "../../domains/a2a/runtime.ts";
 import { HttpError, readJsonBody, sendError, sendJson } from "../http.ts";
 import { type BrowserSession, requireCsrf } from "../session.ts";
 
@@ -33,11 +30,10 @@ export interface ThreadRouteContext {
 
 export interface ThreadRoutes {
 	handle(request: IncomingMessage, response: ServerResponse, url: URL, context: ThreadRouteContext): Promise<boolean>;
-	close(): void;
 }
 
 export interface ThreadRoutesOptions {
-	dataDir: string;
+	runtime: A2ARuntime;
 	clock?: () => number;
 }
 
@@ -85,16 +81,7 @@ function parseTitle(body: Record<string, unknown>): { title: string | null; titl
 
 export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 	const clock = options.clock ?? Date.now;
-	let database: F018Database | null = null;
-	let threads: ThreadStore | null = null;
-
-	function store(): ThreadStore {
-		if (!threads) {
-			database = new F018Database({ path: join(options.dataDir, "f018.db") });
-			threads = new ThreadStore(database.db);
-		}
-		return threads;
-	}
+	const threads = options.runtime.threads;
 
 	async function createThread(
 		request: IncomingMessage,
@@ -135,7 +122,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 			.update(`${context.session.userId}\0${idempotencyKey}`)
 			.digest("hex")
 			.slice(0, 32)}`;
-		const existing = store().get(id);
+		const existing = threads.get(id);
 		if (existing) {
 			const replay =
 				existing.createdBy === context.session.userId &&
@@ -149,7 +136,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 		}
 
 		try {
-			const thread = store().create({
+			const thread = threads.create({
 				id,
 				projectPath,
 				title: parsedTitle.title,
@@ -159,7 +146,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 			});
 			sendJson(response, 201, toView(thread));
 		} catch (error) {
-			const raced = store().get(id);
+			const raced = threads.get(id);
 			if (!raced) throw error;
 			const replay =
 				raced.createdBy === context.session.userId &&
@@ -190,7 +177,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 				const limit = parseLimit(url.searchParams.get("limit"));
 				if (limit === null)
 					return fail(response, 400, "invalid_input", "limit must be an integer between 1 and 200");
-				const items = store().list({ createdBy: context.session.userId, limit }).map(toView);
+				const items = threads.list({ createdBy: context.session.userId, limit }).map(toView);
 				sendJson(response, 200, { threads: items });
 				return true;
 			}
@@ -207,7 +194,7 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 		} catch {
 			return fail(response, 400, "invalid_input", "thread id is not valid URL encoding");
 		}
-		const thread = store().get(threadId);
+		const thread = threads.get(threadId);
 		if (!thread) return fail(response, 404, "thread_not_found", `thread ${threadId} not found`);
 		if (thread.createdBy !== context.session.userId) {
 			return fail(response, 403, "forbidden", `thread ${threadId} belongs to another user`);
@@ -216,12 +203,5 @@ export function createThreadRoutes(options: ThreadRoutesOptions): ThreadRoutes {
 		return true;
 	}
 
-	return {
-		handle,
-		close: () => {
-			database?.close();
-			database = null;
-			threads = null;
-		},
-	};
+	return { handle };
 }

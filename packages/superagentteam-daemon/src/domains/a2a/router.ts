@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { QueueEntry, StoredMessage } from "@superagentteam/shared/types";
+import type { QueueEntry, RichMessageExtra, StoredMessage } from "@superagentteam/shared/types";
 import { runInTransaction } from "../../infrastructure/db/database.ts";
 import { parseOperatorMentions } from "../agent/mentions.ts";
 import type { AgentRegistry, ResolvedTarget } from "../agent/registry.ts";
@@ -41,6 +41,8 @@ export interface SubmitOperatorMessageInput {
 	messageId?: string;
 	/** CLI `--to` / caller-supplied agent ids; bypasses body/implicit routing. */
 	targetAgentIds?: string[];
+	replyTo?: string;
+	extra?: { rich?: RichMessageExtra };
 	now: number;
 }
 
@@ -191,6 +193,8 @@ export class OperatorMessageIngress {
 					existing.from.kind === "user" &&
 					existing.from.userId === input.userId &&
 					existing.content === input.body &&
+					existing.replyTo === input.replyTo &&
+					JSON.stringify(existing.extra?.rich ?? null) === JSON.stringify(input.extra?.rich ?? null) &&
 					storedTargets.length > 0 &&
 					sameTargets;
 				if (!sameIdentity) throw new Error("ingress_message_id_conflict");
@@ -211,6 +215,7 @@ export class OperatorMessageIngress {
 		if (resolved.kind === "no_target") throw new Error("no_target");
 		if (resolved.kind !== "ok") throw new Error(`${resolved.kind}: ${resolved.pattern}`);
 		const targetAgentIds = resolved.targetAgentIds;
+		if (targetAgentIds.length > 0 && !thread.projectPath.trim()) throw new Error("thread_project_path_required");
 		return runInTransaction(this.db, () => {
 			const message = this.messages.append({
 				id: input.messageId ?? `msg:${input.threadId}:${input.now}:${Math.random().toString(36).slice(2, 8)}`,
@@ -218,7 +223,8 @@ export class OperatorMessageIngress {
 				from: { kind: "user", userId: input.userId },
 				content: input.body,
 				lifecycle: { kind: "input", dispatchRefs: [] },
-				extra: { targetAgentIds },
+				replyTo: input.replyTo,
+				extra: { ...(input.extra ?? {}), targetAgentIds },
 				now: input.now,
 			});
 			const enqueued = this.queue.enqueue(

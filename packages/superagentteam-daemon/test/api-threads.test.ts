@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AccountConfig, AgentCatalog, AgentConfig } from "@superagentteam/shared/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createConsoleToken } from "../src/api/console-link.ts";
@@ -10,6 +11,24 @@ import { type DaemonHandle, startDaemon } from "../src/index.ts";
 import { F018Database } from "../src/infrastructure/db/database.ts";
 
 const HUB_ORIGIN = "http://localhost:3000";
+const ACCOUNT: AccountConfig = { ref: "main", provider: "pi", apiKeyRef: "KEY", models: ["m1"] };
+
+function agentConfig(id: string): AgentConfig {
+	return {
+		id,
+		mentionPatterns: [`@${id}`],
+		displayName: `Agent ${id}`,
+		contextWindow: 128_000,
+		roleId: "worker",
+		roleDescription: "does things",
+		restrictions: [],
+		strengths: [],
+		accountRef: "main",
+		defaultModel: "m1",
+		sessionChain: true,
+		enabled: true,
+	};
+}
 
 describe("F016c-M1 S2 thread API", () => {
 	let root: string;
@@ -23,6 +42,9 @@ describe("F016c-M1 S2 thread API", () => {
 		installationRoot = join(root, "install");
 		mkdirSync(installationRoot);
 		initOperatorCredential({ dataDir });
+		const catalog: AgentCatalog = { version: 1, agents: [agentConfig("a1")] };
+		writeFileSync(join(dataDir, "agent-catalog.json"), JSON.stringify(catalog));
+		writeFileSync(join(dataDir, "accounts.json"), JSON.stringify([ACCOUNT]));
 		daemon = null;
 	});
 
@@ -39,6 +61,7 @@ describe("F016c-M1 S2 thread API", () => {
 			runningRevision: "f016c-s2",
 			controlPlane: false,
 			hubOrigin: HUB_ORIGIN,
+			a2aControlPlane: { pollIntervalMs: 3_600_000, sweepIntervalMs: 3_600_000 },
 		});
 		daemon.markReady();
 		return new URL(daemon.healthUrl).origin;
