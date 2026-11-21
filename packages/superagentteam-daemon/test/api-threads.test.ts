@@ -131,6 +131,19 @@ describe("F016c-M1 S2 thread API", () => {
 		});
 	}
 
+	async function renameThread(
+		base: string,
+		auth: { cookie: string; csrfToken: string },
+		threadId: string,
+		body: Record<string, unknown>,
+	): Promise<Response> {
+		return fetch(`${base}/api/threads/${encodeURIComponent(threadId)}`, {
+			method: "PATCH",
+			headers: writeHeaders(auth),
+			body: JSON.stringify(body),
+		});
+	}
+
 	it("requires a session for thread reads", async () => {
 		const base = await start();
 		const response = await fetch(`${base}/api/threads`);
@@ -286,9 +299,9 @@ describe("F016c-M1 S2 thread API", () => {
 	});
 
 	it("lists only the operator's threads and enforces the owner gate on detail", async () => {
-		const foreign = new F018Database({ path: join(dataDir, "f018.db") });
+		const foreignDb = new F018Database({ path: join(dataDir, "f018.db") });
 		try {
-			new ThreadStore(foreign.db).create({
+			new ThreadStore(foreignDb.db).create({
 				id: "thread:foreign",
 				projectPath: projectB,
 				title: "Foreign",
@@ -296,7 +309,7 @@ describe("F016c-M1 S2 thread API", () => {
 				now: Date.now(),
 			});
 		} finally {
-			foreign.close();
+			foreignDb.close();
 		}
 
 		const base = await start();
@@ -402,6 +415,66 @@ describe("F016c-M1 S2 thread API", () => {
 			method: "POST",
 			headers: { cookie: auth.cookie, origin: HUB_ORIGIN, "content-type": "application/json" },
 			body: JSON.stringify({}),
+		});
+		expect(noCsrf.status).toBe(403);
+	});
+
+	it("renames a thread from the header without touching lastActiveAt", async () => {
+		const foreignDb = new F018Database({ path: join(dataDir, "f018.db") });
+		try {
+			new ThreadStore(foreignDb.db).create({
+				id: "thread:foreign",
+				projectPath: projectB,
+				title: "Foreign",
+				createdBy: "operator:other",
+				now: Date.now(),
+			});
+		} finally {
+			foreignDb.close();
+		}
+		const base = await start();
+		const auth = await login(base);
+		const created = await createThread(base, auth, {
+			projectPath: projectA,
+			title: "Old title",
+			idempotencyKey: "rename-1",
+		});
+		const thread = (await created.json()) as { id: string; lastActiveAt: number };
+
+		const renamed = await renameThread(base, auth, thread.id, { title: "  New title  " });
+		expect(renamed.status).toBe(200);
+		const body = (await renamed.json()) as {
+			title: string;
+			titleSource?: string;
+			lastActiveAt: number;
+			unreadCount: number;
+		};
+		expect(body).toMatchObject({
+			title: "New title",
+			titleSource: "user",
+			lastActiveAt: thread.lastActiveAt,
+			unreadCount: 0,
+		});
+
+		const detail = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}`, {
+			headers: { cookie: auth.cookie },
+		});
+		expect(((await detail.json()) as { title: string }).title).toBe("New title");
+
+		const invalid = await renameThread(base, auth, thread.id, { title: "   " });
+		expect(invalid.status).toBe(400);
+		expect(((await invalid.json()) as { error: string }).error).toBe("invalid_input");
+
+		const missing = await renameThread(base, auth, "thread:missing", { title: "Nope" });
+		expect(missing.status).toBe(404);
+
+		const foreign = await renameThread(base, auth, "thread:foreign", { title: "Nope" });
+		expect(foreign.status).toBe(403);
+
+		const noCsrf = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}`, {
+			method: "PATCH",
+			headers: { cookie: auth.cookie, origin: HUB_ORIGIN, "content-type": "application/json" },
+			body: JSON.stringify({ title: "Nope" }),
 		});
 		expect(noCsrf.status).toBe(403);
 	});

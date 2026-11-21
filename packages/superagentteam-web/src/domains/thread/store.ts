@@ -18,11 +18,12 @@ export interface ThreadState {
 	loadDetail(threadId: string): Promise<boolean>;
 	create(input: CreateThreadInput): Promise<ThreadView>;
 	markRead(threadId: string, messageId?: string): Promise<boolean>;
+	rename(threadId: string, title: string): Promise<ThreadView>;
 	setQuery(query: string): void;
 }
 
 export interface ThreadStoreDeps {
-	api: Pick<ThreadApi, "list" | "get" | "create" | "markRead">;
+	api: Pick<ThreadApi, "list" | "get" | "create" | "markRead" | "rename">;
 }
 
 export function createThreadStore(deps: ThreadStoreDeps) {
@@ -146,6 +147,15 @@ export function createThreadStore(deps: ThreadStoreDeps) {
 					}));
 					return false;
 				}
+			},
+			async rename(threadId, title) {
+				const updated = await deps.api.rename(threadId, title);
+				listSeq += 1;
+				set((state) => ({
+					threads: state.threads.map((thread) => (thread.id === threadId ? updated : thread)),
+					...(state.detail?.id === threadId ? { detail: updated } : {}),
+				}));
+				return updated;
 			},
 			setQuery(query) {
 				set({ query });
