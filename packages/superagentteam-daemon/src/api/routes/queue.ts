@@ -91,7 +91,6 @@ export function createQueueRoutes(options: QueueRoutesOptions): QueueRoutes {
 			queue: entries,
 			entries,
 			activeInvocations,
-			queueRevision: entries.reduce((revision, entry) => Math.max(revision, entry.updatedAt), 0),
 		});
 		return true;
 	}
