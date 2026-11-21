@@ -82,4 +82,8 @@ W7b 的 Console M0 要从 clowder-ai Hub 复用一套 shell；**operator 2026-10
 
 2026-10-25 operator：`DP-WEB-1=B`。W7a C + W7b Console 均 classic；v2 推迟。
 
+> 2026-11-21 更新：`DP-WEB-2=C` 已把 W7b 的产品 UI 载体改为 first-party thin
+> Hub（F020）；本 DP 的 classic vs v2 选择保留为历史，classic Hub 只作为可选
+> 兼容客户端。见 `2026-11-21-dp-web-2-thin-hub.md`。
+
 [宪宪/deepseek-flash🐾]

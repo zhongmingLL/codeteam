@@ -75,6 +75,7 @@ updated: 2026-11-18
 | [`features/F017-a2a-surface-unification.md`](features/F017-a2a-surface-unification.md) | F017：A2A 模型面统一（phase-a-archive；full custody/task-first 坐标已归档为历史输入） |
 | [`features/F018-thread-first-runtime.md`](features/F018-thread-first-runtime.md) | F018：A2A runtime v1（AgentConfig config-as-code、Thread/Invocation、post/cross/multi_mention/thread_context、纯 A2A、code delivery 冻结） |
 | [`features/F019-superagentteam-rename.md`](features/F019-superagentteam-rename.md) | F019：SuperAgentTeam rename（platform/team/SOP 分层、`@superagentteam/*`、env/data/CLI/tool alias、repo/branch last；F018 R1-0 前置） |
+| [`features/F020-thin-hub-m0.md`](features/F020-thin-hub-m0.md) | F020：W7b thin Hub M0（自建 A2A Hub，参考 clowder 设计；classic Hub 可选兼容） |
 | [`plans/0015-w6c-observability-trajectory.md`](plans/0015-w6c-observability-trajectory.md) | W6c observability/trajectory 实施计划与 AC 映射 |
 | [`plans/0018-f016a-a2a-ingress-e2e.md`](plans/0018-f016a-a2a-ingress-e2e.md) | F016a：8 类 ingress × scenario real RPC E2E、P0 工具面、withdraw/parallel/loop guard |
 | [`plans/0020-f018-thread-first-runtime.md`](plans/0020-f018-thread-first-runtime.md) | F018：A2A runtime v1 R0-R5、AgentConfig/Registry、schema/migration、same/cross-thread post、multi_mention fan-out、验收与回滚 |
