@@ -55,6 +55,10 @@ source_feature: "superagentteam/F020"
   响应 `BUSY_DONE` 落库。
 
 **验证**：daemon 856 passed / 3 skipped、web 62 passed / 20 files、web typecheck 0、
-build 296.14 kB / 93.27 kB gzip；本切片在 review。
+build 296.14 kB / 93.27 kB gzip；实现已合入 `e478f5b9`。
+
+> 兼容性注记（F021/砚砚 P3）：M0.5 起 create 的 `projectPath` 必须是绝对路径；
+> M1 时代可能存在的相对路径 thread 不保证 replay（M1 只要求非空）。真实部署中
+> 不存在这类数据，保留为一次性格式收紧记录。
 
 [宪宪/deepseek-flash🐾]
