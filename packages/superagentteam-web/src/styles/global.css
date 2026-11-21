@@ -678,6 +678,13 @@ textarea {
 	font-size: 12px;
 }
 
+.st-realtime-note {
+	flex: none;
+	margin: 0;
+	color: var(--st-muted);
+	font-size: 11px;
+}
+
 .st-message.is-live {
 	border-style: dashed;
 }
