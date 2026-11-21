@@ -86,9 +86,12 @@ source_feature: "superagentteam/F020"
   `1 条未读` → 打开 thread 后清除 → reload 后仍保持已读。
 - 2026-11-21：smoke 中发现并修复“读完又被 10s 列表旧响应写回未读”的竞态；
   thread store 增加 list request sequencing，旧响应不再覆盖 read 后的状态。
-- 验证：daemon `npm test` = 866 passed / 3 skipped；web `npm test` = 76 passed
+- 验证：daemon `npm test` = 866 passed / 3 skipped；web `npm test` = 77 passed
   / 22 files；web build（typecheck + Vite）= pass；`check:doc-index` = pass。
 - Hidden、followingLatest=false、旧 cursor 不回退、旧列表响应竞态均有 web
-  unit tests 覆盖。状态：implementation complete，待双面 review。
+  unit tests 覆盖。
+- 2026-11-21：PR #154 merged as `a6ae8e40f`；墨墨/砚砚双面 approve（含 P3
+  delta @ `31d982da2`：badge `role="status"` + mark-read 失败重试）。
+  F022 实现完成，feature close 待 operator。
 
 [宪宪/deepseek-flash🐾]
