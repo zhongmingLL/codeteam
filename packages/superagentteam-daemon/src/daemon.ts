@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { createBrowserApi } from "./api/browser.ts";
+import { join } from "node:path";
+import { type BrowserApi, createBrowserApi } from "./api/browser.ts";
+import { createStaticHandler } from "./api/static.ts";
 import { appendBootRecord, nextBootSequence } from "./boot-ledger.ts";
 import { A2ADaemonControlPlane, type A2ADaemonControlPlaneOptions } from "./daemon-a2a.ts";
 import { DaemonControlPlane, type DaemonControlPlaneOptions } from "./daemon-runtime.ts";
@@ -24,6 +26,8 @@ export interface StartDaemonOptions {
 	runningRevision: string;
 	services?: string[];
 	port?: number;
+	/** Directory containing the built SPA; false disables static serving. */
+	staticDir?: string | false;
 	/** Defaults to a local observability runtime; pass false to disable telemetry. */
 	observability?: ObservabilityRuntime | false;
 	/** Legacy task-first control plane (frozen); use {} for its defaults. */
@@ -82,6 +86,29 @@ export interface DaemonHandle {
 	close(): Promise<void>;
 }
 
+function resolveStaticDir(input: string | false | undefined): string | null {
+	if (input === false) return null;
+	if (typeof input === "string" && input.trim() !== "") return input;
+	const configured = envValue(process.env, "SUPERAGENTTEAM_STATIC_DIR");
+	if (configured !== undefined) {
+		const value = configured.trim();
+		if (value === "" || value === "off" || value === "false" || value === "0") return null;
+		return value;
+	}
+	return join(import.meta.dirname, "..", "..", "superagentteam-web", "dist");
+}
+
+function originPort(origin: string | undefined): string | null {
+	if (origin === undefined) return null;
+	try {
+		const url = new URL(origin);
+		if (url.port !== "") return url.port;
+		return url.protocol === "https:" ? "443" : "80";
+	} catch {
+		return null;
+	}
+}
+
 export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHandle> {
 	const paths = resolveDaemonPaths(options.dataDir);
 	const installation = resolveInstallation(options.installationRoot);
@@ -98,7 +125,10 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 	const bootSequence = nextBootSequence(paths.ledgerFile);
 	const declaredServices = [...(options.services ?? [])];
 	const startedAt = new Date().toISOString();
-	const hubOrigin = options.hubOrigin ?? envValue(process.env, "HUB_ORIGIN") ?? "http://localhost:3000";
+	const configuredHubOrigin = options.hubOrigin ?? envValue(process.env, "HUB_ORIGIN");
+	let hubOrigin = configuredHubOrigin ?? "http://localhost:3000";
+	const staticRoot = resolveStaticDir(options.staticDir);
+	const staticHandler = staticRoot ? createStaticHandler(staticRoot) : null;
 
 	let state: DaemonState = "requested";
 	let healthPort: number | null = null;
@@ -210,18 +240,14 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 		a2aControlPlane: a2aControlPlane?.ready() ?? null,
 	});
 
-	const browserApi = createBrowserApi({
-		dataDir: paths.dataDir,
-		hubOrigin,
-		secureCookies: options.secureCookies ?? false,
-		a2a: a2aControlPlane ? { runtime: a2aControlPlane.runtime, registry: a2aControlPlane.registry } : undefined,
-	});
+	let browserApi: BrowserApi | null = null;
+	let serveStatic = false;
 
 	let server: Server;
 	try {
 		async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
 			const url = new URL(request.url ?? "/", "http://127.0.0.1");
-			if (await browserApi.handle(request, response)) return;
+			if (browserApi && (await browserApi.handle(request, response))) return;
 			if (request.method === "GET" && url.pathname === "/health") {
 				response.writeHead(state === "ready" ? 200 : 503, { "content-type": "application/json" });
 				response.end(JSON.stringify(health()));
@@ -243,6 +269,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 				response.end(observability.metrics.renderPrometheus());
 				return;
 			}
+			if (serveStatic && staticHandler?.handle(request, response, url)) return;
 			response.writeHead(404, { "content-type": "application/json" });
 			response.end(JSON.stringify({ error: "not_found" }));
 		}
@@ -286,7 +313,18 @@ export async function startDaemon(options: StartDaemonOptions): Promise<DaemonHa
 
 	const address = server.address();
 	healthPort = typeof address === "object" && address !== null ? address.port : null;
+	serveStatic =
+		staticHandler !== null &&
+		(configuredHubOrigin === undefined || originPort(configuredHubOrigin) === String(healthPort));
+	if (serveStatic && configuredHubOrigin === undefined) hubOrigin = `http://localhost:${healthPort}`;
 	persist();
+	browserApi = createBrowserApi({
+		dataDir: paths.dataDir,
+		hubOrigin,
+		consoleRedirect: serveStatic ? "/" : undefined,
+		secureCookies: options.secureCookies ?? false,
+		a2a: a2aControlPlane ? { runtime: a2aControlPlane.runtime, registry: a2aControlPlane.registry } : undefined,
+	});
 
 	let stopPromise: Promise<void> | null = null;
 
