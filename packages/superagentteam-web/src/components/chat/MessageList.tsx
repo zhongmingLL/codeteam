@@ -55,9 +55,11 @@ function retryableInvocationId(message: MessageView): string | null {
 function MessageRow({
 	message,
 	onRetryInvocation,
+	liveParentIds,
 }: {
 	message: MessageView;
 	onRetryInvocation?: (invocationId: string) => Promise<void>;
+	liveParentIds: ReadonlySet<string>;
 }) {
 	const sender = message.from.kind;
 	const processing = isProcessing(message);
@@ -89,7 +91,7 @@ function MessageRow({
 			{message.content !== "" ? <MessageContent content={message.content} /> : null}
 			{processing ? <p className="st-message-processing">正在回复…</p> : null}
 			{terminal ? <p className={`st-message-terminal is-${terminal.status}`}>{terminal.label}</p> : null}
-			{terminal && invocationId && onRetryInvocation ? (
+			{terminal && invocationId && onRetryInvocation && !liveParentIds.has(invocationId) ? (
 				<div className="st-message-actions">
 					{retryState === "queued" ? (
 						<span className="st-message-retry-state" role="status">
@@ -172,6 +174,11 @@ export function MessageList({
 	}, []);
 
 	const showLatest = !followingLatest || !pinned;
+	const liveParentIds = new Set(
+		liveInvocations
+			.map((invocation) => invocation.parentInvocationId)
+			.filter((invocationId): invocationId is string => invocationId !== null),
+	);
 	const scrollToLatest = (): void => {
 		if (!followingLatest) onResumeLatest();
 		pinnedRef.current = true;
@@ -228,7 +235,12 @@ export function MessageList({
 				</div>
 			) : null}
 			{messages.map((message) => (
-				<MessageRow key={message.id} message={message} onRetryInvocation={onRetryInvocation} />
+				<MessageRow
+					key={message.id}
+					message={message}
+					onRetryInvocation={onRetryInvocation}
+					liveParentIds={liveParentIds}
+				/>
 			))}
 			{pendingUserMessages.map((pending) => (
 				<article className="st-message is-user is-pending" key={pending.messageId}>

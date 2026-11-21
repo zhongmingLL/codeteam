@@ -204,4 +204,40 @@ describe("message list", () => {
 		expect(await screen.findByRole("alert")).toHaveTextContent("这条回复当前不能重试");
 		expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
 	});
+
+	it("hides retry while the parent invocation is live", () => {
+		renderList({
+			messages: [
+				message({
+					id: "msg:failed",
+					type: "assistant",
+					from: { kind: "agent", agentId: "a1" },
+					content: "",
+					lifecycle: {
+						kind: "response",
+						parentInvocationId: "inv:1",
+						turnExecutionId: "turn:1",
+						target: { kind: "agent", id: "a1" },
+						status: "failed",
+						startedAt: 1,
+						endedAt: 2,
+					},
+				}),
+			],
+			liveInvocations: [
+				{
+					agentId: "a1",
+					turnExecutionId: "turn:2",
+					parentInvocationId: "inv:1",
+					startedAt: Date.now(),
+					childStatus: "running",
+					responseStatus: "missing",
+					evidenceRank: "tracker-only",
+				},
+			],
+			onRetryInvocation: vi.fn(async () => {}),
+		});
+
+		expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+	});
 });

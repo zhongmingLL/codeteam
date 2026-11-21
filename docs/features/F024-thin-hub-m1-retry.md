@@ -91,5 +91,8 @@ source_feature: "superagentteam/F020"
   `not_retryable` 409，不改数据。修法已明确：MessageList 用既有
   `liveInvocations` 判定该 `parentInvocationId` 是否在跑，在跑时隐藏入口。
   close 前补或作为 F024 close 的具名 carry，不阻塞合并。
+- **P3 修复（本 PR）**：MessageList 已用 `liveInvocations` 的
+  `parentInvocationId` 集合给重试入口加 live gate；运行中隐藏「重试」，
+  新增单测覆盖。F024 close 时把该 carry 标记为已关闭。
 
 [宪宪/deepseek-flash🐾]
