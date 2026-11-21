@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { Composer } from "@/components/chat/Composer";
@@ -47,14 +47,27 @@ export function ThreadPage() {
 	const resetA2A = useA2AStore((state) => state.reset);
 	const agents = useAgentStore((state) => state.agents);
 	const resolvedThread = detail?.id === threadId ? detail : listThread;
+	const markRead = useThreadStore((state) => state.markRead);
+	const refreshThreads = useThreadStore((state) => state.refresh);
+	const chatMatches = chatThreadId === threadId;
+	const deleted = resolvedThread?.deletedAt !== null && resolvedThread?.deletedAt !== undefined;
+	const latestMessageId = chatMatches && messages.length > 0 ? messages[messages.length - 1]?.id : undefined;
+	const [visible, setVisible] = useState(
+		() => typeof document === "undefined" || document.visibilityState !== "hidden",
+	);
+	const openedThreadRef = useRef<string | null>(null);
+	const lastMarkedRef = useRef<{ threadId: string; messageId: string } | null>(null);
 
 	const handleEventRefresh = useCallback(
 		(topics: readonly ChangeTopic[]) => {
 			if (topics.includes("messages")) void refresh();
 			if (topics.includes("queue") || topics.includes("live")) void refreshA2A();
-			if (topics.includes("thread") && threadId) void loadDetail(threadId);
+			if (topics.includes("thread") && threadId) {
+				void loadDetail(threadId);
+				void refreshThreads();
+			}
 		},
-		[refresh, refreshA2A, loadDetail, threadId],
+		[refresh, refreshA2A, loadDetail, refreshThreads, threadId],
 	);
 	useThreadEvents({ threadId: resolvedThread?.id, onRefresh: handleEventRefresh });
 	const realtimeStatus = useEventStore((state) => (state.threadId === threadId ? state.status : "idle"));
@@ -70,6 +83,35 @@ export function ThreadPage() {
 			resetA2A();
 		};
 	}, [threadId, loadDetail, loadLatest, loadA2A, reset, resetA2A]);
+
+	useEffect(() => {
+		const onChange = (): void => setVisible(document.visibilityState !== "hidden");
+		document.addEventListener("visibilitychange", onChange);
+		return () => document.removeEventListener("visibilitychange", onChange);
+	}, []);
+
+	useEffect(() => {
+		if (!threadId || !chatMatches || chatStatus !== "ready" || deleted) return;
+		if (openedThreadRef.current === threadId) return;
+		openedThreadRef.current = threadId;
+		if (!latestMessageId) return;
+		lastMarkedRef.current = { threadId, messageId: latestMessageId };
+		void markRead(threadId, latestMessageId).then((ok) => {
+			if (!ok) lastMarkedRef.current = null;
+		});
+	}, [threadId, chatMatches, chatStatus, deleted, latestMessageId, markRead]);
+
+	useEffect(() => {
+		if (!threadId || !chatMatches || chatStatus !== "ready" || deleted || !latestMessageId) return;
+		if (openedThreadRef.current !== threadId) return;
+		const last = lastMarkedRef.current;
+		if (last?.threadId === threadId && last.messageId === latestMessageId) return;
+		if (!followingLatest || !visible) return;
+		lastMarkedRef.current = { threadId, messageId: latestMessageId };
+		void markRead(threadId, latestMessageId).then((ok) => {
+			if (!ok) lastMarkedRef.current = null;
+		});
+	}, [threadId, chatMatches, chatStatus, deleted, latestMessageId, followingLatest, visible, markRead]);
 
 	const poll = useCallback(async () => {
 		if (!threadId || detailStatus === "not_found") return true;
@@ -126,9 +168,7 @@ export function ThreadPage() {
 		return <p className="st-page-note">{detailStatus === "loading" || listStatus === "loading" ? "正在加载对话…" : "对话不存在"}</p>;
 	}
 
-	const deleted = thread.deletedAt !== null && thread.deletedAt !== undefined;
 	const a2aMatches = a2aThreadId === threadId;
-	const chatMatches = chatThreadId === threadId;
 	return (
 		<section className="st-thread-page" aria-busy={!chatMatches || chatStatus === "loading"}>
 			<header className="st-thread-header">

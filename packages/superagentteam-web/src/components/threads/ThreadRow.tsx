@@ -17,6 +17,11 @@ export function ThreadRow({ thread }: { thread: ThreadView }) {
 					{thread.projectPath}
 				</span>
 				<span className="st-thread-status">
+					{thread.unreadCount && thread.unreadCount > 0 ? (
+						<span className="st-thread-unread" role="status" aria-label={`${thread.unreadCount} 条未读`}>
+							{thread.unreadCount > 99 ? "99+" : thread.unreadCount}
+						</span>
+					) : null}
 					{live ? (
 						<span className="st-thread-live" title="执行中">
 							<span className="st-thread-live-dot" aria-hidden="true" />

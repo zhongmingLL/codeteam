@@ -108,6 +108,29 @@ describe("F016c-M1 S2 thread API", () => {
 		});
 	}
 
+	function appendAgentMessage(threadId: string, id: string, content: string): { id: string; seq: number } {
+		return daemon!.a2aControlPlane!.runtime.messages.append({
+			id,
+			threadId,
+			from: { kind: "agent", agentId: "a1" },
+			content,
+			now: Date.now(),
+		});
+	}
+
+	async function readThread(
+		base: string,
+		auth: { cookie: string; csrfToken: string },
+		threadId: string,
+		body: Record<string, unknown> = {},
+	): Promise<Response> {
+		return fetch(`${base}/api/threads/${encodeURIComponent(threadId)}/read`, {
+			method: "POST",
+			headers: writeHeaders(auth),
+			body: JSON.stringify(body),
+		});
+	}
+
 	it("requires a session for thread reads", async () => {
 		const base = await start();
 		const response = await fetch(`${base}/api/threads`);
@@ -316,5 +339,70 @@ describe("F016c-M1 S2 thread API", () => {
 			headers: { cookie: auth.cookie, authorization: "Bearer forged" },
 		});
 		expect(identity.status).toBe(403);
+	});
+
+	it("derives unread counts and marks read with a message cursor", async () => {
+		const base = await start();
+		const auth = await login(base);
+		const created = await createThread(base, auth, {
+			projectPath: projectA,
+			title: "Unread",
+			idempotencyKey: "unread-1",
+		});
+		const thread = (await created.json()) as { id: string };
+
+		const userResponse = await fetch(`${base}/api/messages`, {
+			method: "POST",
+			headers: writeHeaders(auth),
+			body: JSON.stringify({ threadId: thread.id, content: "hello", idempotencyKey: "unread-user" }),
+		});
+		expect(userResponse.status).toBe(202);
+		const userMessageId = ((await userResponse.json()) as { userMessageId: string }).userMessageId;
+
+		appendAgentMessage(thread.id, "msg:agent-1", "reply 1");
+		const list = await fetch(`${base}/api/threads`, { headers: { cookie: auth.cookie } });
+		const listBody = (await list.json()) as { threads: Array<Record<string, unknown>> };
+		const listed = listBody.threads.find((item) => item.id === thread.id);
+		expect(listed).toMatchObject({ unreadCount: 1 });
+		expect(listed).not.toHaveProperty("lastReadSeq");
+
+		const detail = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}`, {
+			headers: { cookie: auth.cookie },
+		});
+		expect(((await detail.json()) as { unreadCount: number }).unreadCount).toBe(1);
+
+		// An older cursor must not clear a newer agent reply.
+		const older = await readThread(base, auth, thread.id, { messageId: userMessageId });
+		expect(older.status).toBe(200);
+		expect(((await older.json()) as { unreadCount: number }).unreadCount).toBe(1);
+
+		const agentRead = await readThread(base, auth, thread.id, { messageId: "msg:agent-1" });
+		expect(agentRead.status).toBe(200);
+		expect(((await agentRead.json()) as { unreadCount: number }).unreadCount).toBe(0);
+
+		appendAgentMessage(thread.id, "msg:agent-2", "reply 2");
+		const stale = await readThread(base, auth, thread.id, { messageId: userMessageId });
+		expect(((await stale.json()) as { unreadCount: number }).unreadCount).toBe(1);
+
+		const latest = await readThread(base, auth, thread.id);
+		expect(latest.status).toBe(200);
+		expect(((await latest.json()) as { unreadCount: number }).unreadCount).toBe(0);
+
+		const other = await createThread(base, auth, {
+			projectPath: projectB,
+			title: "Other",
+			idempotencyKey: "unread-other",
+		});
+		const otherThread = (await other.json()) as { id: string };
+		appendAgentMessage(otherThread.id, "msg:other", "other");
+		const invalid = await readThread(base, auth, thread.id, { messageId: "msg:other" });
+		expect(invalid.status).toBe(400);
+
+		const noCsrf = await fetch(`${base}/api/threads/${encodeURIComponent(thread.id)}/read`, {
+			method: "POST",
+			headers: { cookie: auth.cookie, origin: HUB_ORIGIN, "content-type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(noCsrf.status).toBe(403);
 	});
 });
