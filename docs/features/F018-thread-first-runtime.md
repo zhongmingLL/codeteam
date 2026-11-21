@@ -83,6 +83,9 @@ pi extension 工具面、daemon/CLI cutover 与 F018 close。
 
 ## 验收方向
 
+R5 交付与收口证据：`docs/reports/2026-11-21-f018-r5-final.md`（E1–E22 表、
+部署前置、legacy 冻结边界；vision guard + operator 签字前 feature 不置 done）。
+
 以 `docs/architecture/0005-thread-first-runtime.md` §5 的 E1-E22 为准，最低条件：
 
 - [ ] 无 task thread 可以真实 provider 完成 post/response。
