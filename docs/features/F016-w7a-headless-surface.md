@@ -110,6 +110,9 @@ W7b Console M0 独立立项，不进 F016；M1 继续后置。
 - 2026-11-21：operator 签字 D1=A / D2=A / D3=A；F016c-M1 执行计划
   `docs/plans/0029-f016c-m1-execution.md` 已起草，待砚砚/墨墨 review。
   代码未开始。
+- 2026-11-21：S0 冻结报告 `docs/reports/2026-11-21-f016c-m1-s0-freeze.md`
+  已起草（DTO/session/owner gate/idempotency/error/contract tests），待
+  砚砚/墨墨 review；代码仍未开始。
 
 ## 非目标
 

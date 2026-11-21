@@ -112,7 +112,7 @@ labels / workspace）：
 
 | 切片 | 交付 | 验收 |
 |---|---|---|
-| S0 | code map + DTO freeze（Thread/Message/QueueView/LiveInvocationView/MessageDispatchSummary 的 M1 子集）+ session/auth 设计 + owner gate / thread-create idempotency / error-status map | 文档/接口冻结；砚砚 API/security review |
+| S0 | code map + DTO freeze（Thread/Message/QueueView/LiveInvocationView/MessageDispatchSummary 的 M1 子集）+ session/auth 设计 + owner gate / thread-create idempotency / error-status map；产物 `docs/reports/2026-11-21-f016c-m1-s0-freeze.md` | 文档/接口冻结；砚砚 API/security review |
 | S1 | 现有 Node HTTP server 上的 `/api` router + console-link session + CSRF/Origin | session 正负例；无 cookie 401；CSRF 负例 |
 | S2 | thread sidebar/detail/create | owner/access、404、空 thread、幂等创建 |
 | S3 | message list/append | cursor/hasMore、idempotencyKey replay/conflict、非法 query 空页 |
