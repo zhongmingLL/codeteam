@@ -96,7 +96,9 @@ export function ThreadPage() {
 		openedThreadRef.current = threadId;
 		if (!latestMessageId) return;
 		lastMarkedRef.current = { threadId, messageId: latestMessageId };
-		void markRead(threadId, latestMessageId);
+		void markRead(threadId, latestMessageId).then((ok) => {
+			if (!ok) lastMarkedRef.current = null;
+		});
 	}, [threadId, chatMatches, chatStatus, deleted, latestMessageId, markRead]);
 
 	useEffect(() => {
@@ -106,7 +108,9 @@ export function ThreadPage() {
 		if (last?.threadId === threadId && last.messageId === latestMessageId) return;
 		if (!followingLatest || !visible) return;
 		lastMarkedRef.current = { threadId, messageId: latestMessageId };
-		void markRead(threadId, latestMessageId);
+		void markRead(threadId, latestMessageId).then((ok) => {
+			if (!ok) lastMarkedRef.current = null;
+		});
 	}, [threadId, chatMatches, chatStatus, deleted, latestMessageId, followingLatest, visible, markRead]);
 
 	const poll = useCallback(async () => {

@@ -317,4 +317,46 @@ describe("thread page", () => {
 		await waitFor(() => expect(markRead).toHaveBeenCalledWith(thread.id, "msg:1"));
 		visibility.mockRestore();
 	});
+
+	it("retries mark-read after a failure on the next visibility change", async () => {
+		const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+		const markRead = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+		const first = message({ id: "msg:1" });
+		useThreadStore.setState({
+			threads: [thread],
+			status: "ready",
+			detailStatus: "ready",
+			detail: thread,
+			markRead,
+		});
+		useA2AStore.setState({
+			load: vi.fn(async () => true),
+			refresh: vi.fn(async () => true),
+			reset: vi.fn(),
+		});
+		useChatStore.setState({
+			threadId: thread.id,
+			messages: [first],
+			status: "ready",
+			followingLatest: true,
+			loadLatest: vi.fn(async () => true),
+			refresh: vi.fn(async () => true),
+		});
+
+		render(
+			<MemoryRouter initialEntries={[`/thread/${encodeURIComponent(thread.id)}`]}>
+				<Routes>
+					<Route path="/thread/:threadId" element={<ThreadPage />} />
+				</Routes>
+			</MemoryRouter>,
+		);
+		await waitFor(() => expect(markRead).toHaveBeenCalledTimes(1));
+
+		visibility.mockReturnValue("hidden");
+		act(() => document.dispatchEvent(new Event("visibilitychange")));
+		visibility.mockReturnValue("visible");
+		act(() => document.dispatchEvent(new Event("visibilitychange")));
+		await waitFor(() => expect(markRead).toHaveBeenCalledTimes(2));
+		visibility.mockRestore();
+	});
 });

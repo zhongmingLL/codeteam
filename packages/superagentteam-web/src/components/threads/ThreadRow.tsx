@@ -18,7 +18,7 @@ export function ThreadRow({ thread }: { thread: ThreadView }) {
 				</span>
 				<span className="st-thread-status">
 					{thread.unreadCount && thread.unreadCount > 0 ? (
-						<span className="st-thread-unread" aria-label={`${thread.unreadCount} 条未读`}>
+						<span className="st-thread-unread" role="status" aria-label={`${thread.unreadCount} 条未读`}>
 							{thread.unreadCount > 99 ? "99+" : thread.unreadCount}
 						</span>
 					) : null}
